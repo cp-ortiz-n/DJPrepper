@@ -14,3 +14,4 @@ cache/*
 *.mp3
 *.dylib
 .venv-inte-l-backup/
+.venv-intel-backup/
