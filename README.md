@@ -1,4 +1,4 @@
-# DJ Extended Edit
+# DJ Audio Extender
 
 A local macOS command-line tool that analyzes an existing track, selects strong
 beat-aligned phrases near the beginning and end, and exports a stereo WAV with a
