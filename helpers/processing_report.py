@@ -1,0 +1,230 @@
+"""Persistent human-readable and machine-readable processing reports."""
+
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from collections.abc import Iterable
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+REPORT_DIRECTORY_NAME = "reports"
+REPORT_JSON_NAME = "processing_report.json"
+REPORT_MARKDOWN_NAME = "Processing Report.md"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _candidate(candidate: Any, construction: str, automatic: bool) -> dict[str, Any] | None:
+    if candidate is None:
+        return None
+    return {
+        "source_start": candidate.start,
+        "source_end": candidate.end,
+        "loop_quality": candidate.loop_quality,
+        "instrumental_construction_quality": (
+            candidate.instrumental_loop_quality
+            if construction == "instrumental stems" else None
+        ),
+        "instrumentalness": candidate.instrumentalness,
+        "unit_bars": candidate.unit_bars,
+        "extension_bars": candidate.unit_bars * candidate.repetitions,
+        "copies": candidate.repetitions,
+        "automatic_length": automatic,
+        "energy": candidate.energy_shape,
+        "buildup_risk": candidate.buildup_risk,
+        "bass_reset_risk": candidate.bass_reset_risk,
+        "context_match": candidate.energy_context_match,
+        "chord_return": candidate.chord_return_compatibility,
+        "resolution_risk": candidate.harmonic_resolution_risk,
+        "section": candidate.section_label,
+        "section_confidence": candidate.section_confidence,
+        "arrangement_fit": candidate.arrangement_fit,
+        "local_grid": candidate.local_grid_confidence,
+        "boundary_grid": candidate.boundary_grid_confidence,
+        "vocal_coverage": candidate.vocal_coverage,
+        "vocal_boundary_risk": candidate.vocal_boundary_risk,
+        "splice_mode": candidate.splice_mode,
+        "construction": construction,
+    }
+
+
+def _result_record(result: Any) -> dict[str, Any]:
+    return {
+        "source_name": result.source_name,
+        "output_name": result.output.name,
+        "output_path": str(result.output.resolve()),
+        "status": "updated",
+        "updated_at": _now(),
+        "processing_seconds": result.elapsed,
+        "duration_seconds": result.output_duration,
+        "bpm": result.bpm,
+        "key": result.key_label,
+        "key_confidence": result.key_confidence / 100.0,
+        "beats": result.beats,
+        "bars": result.bars,
+        "beat_grid_confidence": result.beat_grid_confidence / 100.0,
+        "tempo_drift": result.tempo_drift_percent / 100.0,
+        "groove": result.groove_label,
+        "timing": result.timing_label,
+        "downbeat_continuity": result.downbeat_continuity / 100.0,
+        "preset": result.preset_name,
+        "detected_style": result.detected_style,
+        "preset_reason": result.preset_reason,
+        "stem_reliability": result.stem_reliability,
+        "cache": {
+            "track_analysis": result.analysis_cache_hit,
+            "vocal_analysis": result.vocal_cache_hit,
+        },
+        "intro": _candidate(
+            result.intro, result.intro_construction, result.automatic_intro_length
+        ),
+        "intro_disabled_reason": result.intro_rejection_reason,
+        "intro_fallback": result.intro_fallback,
+        "outro": _candidate(
+            result.outro, result.outro_construction, result.automatic_outro_length
+        ),
+        "outro_disabled_reason": result.outro_rejection_reason,
+        "outro_fallback": result.outro_fallback,
+        "mix_in": result.mix_in,
+        "mix_out": result.mix_out,
+        "cue_sheet": str(result.cue_sheet.resolve()) if result.cue_sheet else None,
+        "cues": [asdict(cue) for cue in result.cue_points],
+    }
+
+
+def _atomic_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.stem}-", suffix=".tmp", dir=path.parent
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(temporary_name, path)
+    finally:
+        if os.path.exists(temporary_name):
+            os.unlink(temporary_name)
+
+
+def _clock(seconds: float | None) -> str:
+    if seconds is None:
+        return "—"
+    minutes, remainder = divmod(max(0, round(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:d}:{minutes:02d}:{remainder:02d}" if hours else f"{minutes:02d}:{remainder:02d}"
+
+
+def _percent(value: float | None) -> str:
+    return "—" if value is None else f"{100.0 * value:.0f}%"
+
+
+def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | None) -> list[str]:
+    if data is None:
+        lines = [f"### {label}", "", "Disabled."]
+        if reason:
+            lines.append(f" Safety reason: {reason}.")
+        return lines + [""]
+    quality = (
+        data["instrumental_construction_quality"]
+        if data["instrumental_construction_quality"] is not None
+        else data["loop_quality"]
+    )
+    return [
+        f"### {label}", "",
+        f"- Source: {_clock(data['source_start'])}–{_clock(data['source_end'])}",
+        f"- Quality: {quality:.0f}% · Construction: {data['construction']} · Splice: {data['splice_mode']}",
+        f"- Material: {data['unit_bars']} unique bars · {data['extension_bars']} added bars · {data['copies']} copies",
+        f"- Section: {data['section']} ({_percent(data['section_confidence'])}) · Arrangement fit: {data['arrangement_fit']:+.0%}",
+        f"- Energy: {data['energy']} · Buildup: {_percent(data['buildup_risk'])} · Bass reset: {_percent(data['bass_reset_risk'])} · Context: {_percent(data['context_match'])}",
+        f"- Harmony: chord return {_percent(data['chord_return'])} · Resolution risk {_percent(data['resolution_risk'])}",
+        f"- Grid: local {_percent(data['local_grid'])} · Boundary {_percent(data['boundary_grid'])}",
+        f"- Vocals: coverage {_percent(data['vocal_coverage'])} · Boundary risk {_percent(data['vocal_boundary_risk'])}",
+        "",
+    ]
+
+
+def _render_markdown(document: dict[str, Any]) -> str:
+    lines = [
+        "# AudioExtender Processing Report", "",
+        f"Last report update: {document['updated_at']}", "",
+        "This report is persistent: skipped songs retain their last analysis, while rebuilt songs replace their previous record.", "",
+        "| Song | Status | BPM | Key | Intro | Outro | Mix cues |",
+        "|---|---|---:|---|---|---|---|",
+    ]
+    records = sorted(document["songs"].values(), key=lambda item: item["source_name"].casefold())
+    for record in records:
+        intro = record.get("intro")
+        outro = record.get("outro")
+        intro_text = "disabled" if intro is None else f"{intro['extension_bars']} bars / {intro['loop_quality']:.0f}%"
+        outro_text = "disabled" if outro is None else f"{outro['extension_bars']} bars / {outro['loop_quality']:.0f}%"
+        cues = f"{_clock(record.get('mix_in'))} / {_clock(record.get('mix_out'))}"
+        lines.append(
+            f"| {record['source_name']} | {record['status']} | {record.get('bpm', 0):.1f} | "
+            f"{record.get('key') or '—'} | {intro_text} | {outro_text} | {cues} |"
+        )
+    for record in records:
+        lines.extend(["", f"## {record['source_name']}", ""])
+        if record["status"] == "skipped":
+            lines.extend(["> Skipped in the latest run; the analysis below is from the last successful update.", ""])
+        lines.extend([
+            f"- Output: `{record['output_name']}`",
+            f"- Last processed: {record.get('updated_at', 'unknown')} · Processing time: {_clock(record.get('processing_seconds'))}",
+            f"- BPM: {record.get('bpm', 0):.1f} · Key: {record.get('key') or '—'} ({_percent(record.get('key_confidence'))})",
+            f"- Beat grid: {_percent(record.get('beat_grid_confidence'))} · Tempo drift: {_percent(record.get('tempo_drift'))} · Downbeat continuity: {_percent(record.get('downbeat_continuity'))}",
+            f"- Groove: {record.get('groove') or '—'} · Timing: {record.get('timing') or '—'} · Preset: {record.get('preset') or 'default'}",
+            f"- Suggested cues: mix in {_clock(record.get('mix_in'))} · mix out {_clock(record.get('mix_out'))}",
+            "",
+        ])
+        lines.extend(_candidate_markdown("Intro", record.get("intro"), record.get("intro_disabled_reason")))
+        lines.extend(_candidate_markdown("Outro", record.get("outro"), record.get("outro_disabled_reason")))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def update_processing_report(
+    output_directory: Path,
+    results: Iterable[Any],
+    skipped: Iterable[tuple[Path, Path]],
+) -> tuple[Path, Path]:
+    report_directory = output_directory.expanduser().resolve() / REPORT_DIRECTORY_NAME
+    json_path = report_directory / REPORT_JSON_NAME
+    markdown_path = report_directory / REPORT_MARKDOWN_NAME
+    document: dict[str, Any] = {"version": 1, "updated_at": _now(), "songs": {}}
+    if json_path.exists():
+        try:
+            loaded = json.loads(json_path.read_text(encoding="utf-8"))
+            if isinstance(loaded.get("songs"), dict):
+                document["songs"] = loaded["songs"]
+        except (OSError, ValueError, TypeError):
+            pass
+    for result in results:
+        document["songs"][result.source_name.casefold()] = _result_record(result)
+    for source, output in skipped:
+        key = source.name.casefold()
+        if key in document["songs"]:
+            document["songs"][key]["status"] = "skipped"
+            document["songs"][key]["last_seen_at"] = _now()
+        else:
+            document["songs"][key] = {
+                "source_name": source.name,
+                "output_name": output.name,
+                "output_path": str(output.resolve()),
+                "status": "skipped",
+                "updated_at": None,
+                "processing_seconds": None,
+                "bpm": 0.0,
+                "key": None,
+                "intro": None,
+                "outro": None,
+                "mix_in": None,
+                "mix_out": None,
+            }
+    document["updated_at"] = _now()
+    _atomic_text(json_path, json.dumps(document, indent=2, ensure_ascii=False) + "\n")
+    _atomic_text(markdown_path, _render_markdown(document))
+    return markdown_path, json_path
