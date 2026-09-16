@@ -11,3 +11,6 @@ output/*
 !output/.gitkeep
 cache/*
 !cache/.gitkeep
+*.mp3
+*.dylib
+.venv-inte-l-backup/
