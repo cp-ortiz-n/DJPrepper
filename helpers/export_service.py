@@ -18,6 +18,7 @@ from helpers.extended_edit import (
 )
 from helpers.interfaces import ProgressReporter
 from helpers.section_selector import SectionCandidate
+from settings import EXTENDED_OUTPUT_FOLDER_NAME
 
 AudioWriter = Callable[[AudioData, Path, int], None]
 CueBuilder = Callable[..., tuple[CuePoint, ...]]
@@ -29,6 +30,8 @@ class ExportRequest:
     source: Path
     output: Path
     edited_audio: AudioData
+    original_audio: AudioData
+    wav_output: Path
     analysis: TrackAnalysis
     intro: SectionCandidate | None
     outro: SectionCandidate | None
@@ -58,8 +61,16 @@ class ExportService:
         self._cue_writer = cue_writer
 
     @staticmethod
+    def artifact_root(output: Path) -> Path:
+        return (
+            output.parent.parent
+            if output.parent.name == EXTENDED_OUTPUT_FOLDER_NAME
+            else output.parent
+        )
+
+    @staticmethod
     def preview_directory(source: Path, output: Path) -> Path:
-        directory = output.parent / "previews" / source.stem
+        directory = ExportService.artifact_root(output) / "previews" / source.stem
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 
@@ -81,6 +92,22 @@ class ExportService:
                     request.config.crossfade_ms,
                     request.config.preview_seconds,
                 )
+                # A rebuilt track may now reject a side that previously had a
+                # preview. Remove only that track's obsolete generated files so
+                # the preview folder cannot advertise a splice the current WAV
+                # and report no longer contain.
+                if intro_audio is None:
+                    for path in (
+                        directory / "Intro Preview.wav",
+                        *directory.glob("Intro Candidate *.wav"),
+                    ):
+                        path.unlink(missing_ok=True)
+                if outro_audio is None:
+                    for path in (
+                        directory / "Outro Preview.wav",
+                        *directory.glob("Outro Candidate *.wav"),
+                    ):
+                        path.unlink(missing_ok=True)
                 if intro_audio is not None:
                     intro_preview_path = directory / "Intro Preview.wav"
                     self._audio_writer(
@@ -95,7 +122,14 @@ class ExportService:
                     progress.log(f"Outro preview: {outro_preview_path}")
 
             if not request.config.preview_only:
-                progress.update(97, "Exporting WAV")
+                progress.update(96, "Exporting source WAV")
+                self._audio_writer(
+                    request.original_audio,
+                    request.wav_output,
+                    request.config.pcm_bits,
+                )
+                progress.log(f"Source WAV: {request.wav_output}")
+                progress.update(98, "Exporting extended WAV")
                 self._audio_writer(
                     request.edited_audio, request.output, request.config.pcm_bits
                 )
@@ -112,7 +146,7 @@ class ExportService:
                     request.edited_audio.duration,
                 )
                 cue_sheet_path = (
-                    request.output.parent / "cue_sheets" /
+                    self.artifact_root(request.output) / "cue_sheets" /
                     f"{request.output.stem}.json"
                 )
                 self._cue_writer(

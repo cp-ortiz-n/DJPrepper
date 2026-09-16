@@ -12,6 +12,8 @@ from helpers.audio_loader import load_audio
 from helpers.cache import AnalysisCache
 from helpers.candidate_validator import CandidateValidator
 from helpers.config import EditConfig
+from helpers.dj_readiness import detect_dj_readiness
+from helpers.exceptions import StemSeparationError
 from helpers.export_service import ExportRequest, ExportService
 from helpers.extended_edit import (
     adaptive_crossfade_ms,
@@ -23,6 +25,11 @@ from helpers.interfaces import ProgressReporter
 from helpers.models import FileResult
 from helpers.presets import PRESETS
 from helpers.progress import ProgressBar
+from helpers.redrum import (
+    create_redrum_intro,
+    redrum_added_seconds,
+    select_redrum_candidate,
+)
 from helpers.section_selector import SectionCandidate
 from helpers.selection_coordinator import (
     SelectionCoordinator,
@@ -30,7 +37,12 @@ from helpers.selection_coordinator import (
 )
 from helpers.stem_provider import StemProvider
 from helpers.style_detector import detect_editing_style
-from settings import DEFAULT_CANDIDATE_COUNT
+from settings import (
+    DEFAULT_CANDIDATE_COUNT,
+    DJ_READY_MINIMUM_BARS,
+    MINIMUM_REDRUM_STEM_RELIABILITY,
+    WAV_OUTPUT_FOLDER_NAME,
+)
 
 
 def _format_time(seconds: float) -> str:
@@ -236,6 +248,7 @@ class TrackProcessor:
             )
             vocal_energy = stem_analysis.vocal_energy
             instrumental_audio = stem_analysis.instrumental_audio
+            drums_audio = stem_analysis.drums_audio
             stem_reliability = stem_analysis.reliability
             vocal_cache_hit = stem_analysis.cache_hit
             automatic_intro_boundary = False
@@ -273,10 +286,40 @@ class TrackProcessor:
                     f"Automatic style: {decision.style}; selected {decision.preset} "
                     f"({decision.reason})"
                 )
+
+            readiness = detect_dj_readiness(analysis)
+            intro_already_ready = (
+                not config.intro_bars_locked
+                and config.intro_bars > 0
+                and readiness.intro.mixable_bars
+                >= max(DJ_READY_MINIMUM_BARS, config.intro_bars)
+            )
+            outro_already_ready = (
+                not config.outro_bars_locked
+                and config.outro_bars > 0
+                and readiness.outro.mixable_bars
+                >= max(DJ_READY_MINIMUM_BARS, config.outro_bars)
+            )
+            intro_preservation_reason = None
+            outro_preservation_reason = None
+            if intro_already_ready:
+                intro_preservation_reason = (
+                    f"already DJ-ready with {readiness.intro.mixable_bars} "
+                    "consecutive mixable opening bars"
+                )
+                progress.log(f"Intro preserved: {intro_preservation_reason}")
+                config = replace(config, intro_bars=0)
+            if outro_already_ready:
+                outro_preservation_reason = (
+                    f"already DJ-ready with {readiness.outro.mixable_bars} "
+                    "consecutive mixable closing bars"
+                )
+                progress.log(f"Outro preserved: {outro_preservation_reason}")
+                config = replace(config, outro_bars=0)
     
             progress.update(80, "Scoring intro phrases")
-            intro_rejection_reason = None
-            outro_rejection_reason = None
+            intro_rejection_reason = intro_preservation_reason
+            outro_rejection_reason = outro_preservation_reason
     
             coordinator = self.selection_coordinator
             exporter = self.export_service
@@ -418,6 +461,7 @@ class TrackProcessor:
                 instrumental_audio,
                 stem_reliability,
                 vocal_energy is not None,
+                position="intro",
             )
             outro_validation = self.candidate_validator.validate(
                 outro,
@@ -425,11 +469,93 @@ class TrackProcessor:
                 instrumental_audio,
                 stem_reliability,
                 vocal_energy is not None,
+                position="outro",
             )
             intro = intro_validation.candidate
             outro = outro_validation.candidate
-            intro_rejection_reason = intro_validation.rejection_reason
-            outro_rejection_reason = outro_validation.rejection_reason
+            intro_rejection_reason = (
+                intro_validation.rejection_reason or intro_preservation_reason
+            )
+            outro_rejection_reason = (
+                outro_validation.rejection_reason or outro_preservation_reason
+            )
+            redrum_intro = False
+            high_quality_drums = None
+            if (
+                intro is None
+                and config.intro_bars > 0
+                and (
+                    (
+                        intro_rejection_reason is not None
+                        and "exposed melodic phrase" in intro_rejection_reason
+                    )
+                    or not intro_selection.options
+                )
+            ):
+                redrum_candidate = select_redrum_candidate(
+                    analysis, config.intro_bars, audio.duration
+                )
+                if redrum_candidate is not None:
+                    intro = redrum_candidate
+                    reason = intro_rejection_reason or intro_selection.fallback or "no safe full-mix phrase"
+                    intro_fallback = f"rejected {reason}; automatic percussion redrum"
+                    intro_rejection_reason = None
+                    redrum_intro = True
+                    progress.log(
+                        "Intro fallback: exposed melody protected; creating a "
+                        f"{config.intro_bars}-bar percussion redrum from "
+                        f"{_format_time(intro.start)}–{_format_time(intro.end)}"
+                    )
+            if redrum_intro:
+                # Stem separation is a targeted rescue, not a blanket treatment.
+                # Reuse a prior drum cache even during an ordinary `main.py`
+                # batch; otherwise run Demucs only for this melodic fallback.
+                if drums_audio is None or stem_reliability < MINIMUM_REDRUM_STEM_RELIABILITY:
+                    cached_drums = cache.load_drums(source, config)
+                    cached_instrumental = cache.load_instrumental(source, config)
+                    if cached_drums is not None and cached_instrumental is not None:
+                        drums_audio = cached_drums
+                        stem_reliability = cached_instrumental[1]
+                        progress.log("Loaded cached Demucs drums for melodic intro rescue")
+                if drums_audio is None or stem_reliability < MINIMUM_REDRUM_STEM_RELIABILITY:
+                    progress.log(
+                        "Melodic intro rescue requires clean drums; running Demucs only "
+                        "for this track"
+                    )
+                    try:
+                        rescue = self.stem_provider.analyze(
+                            source,
+                            audio,
+                            analysis,
+                            replace(config, use_stems=True, refresh_cache=False),
+                            cache,
+                            progress,
+                        )
+                    except StemSeparationError as error:
+                        intro = None
+                        redrum_intro = False
+                        intro_rejection_reason = (
+                            f"melodic intro needs a clean drum stem; Demucs unavailable: {error}"
+                        )
+                    else:
+                        drums_audio = rescue.drums_audio
+                        instrumental_audio = rescue.instrumental_audio
+                        stem_reliability = rescue.reliability
+                        vocal_cache_hit = rescue.cache_hit
+                if (
+                    redrum_intro
+                    and drums_audio is not None
+                    and stem_reliability >= MINIMUM_REDRUM_STEM_RELIABILITY
+                ):
+                    high_quality_drums = drums_audio
+                elif redrum_intro:
+                    intro = None
+                    redrum_intro = False
+                    intro_rejection_reason = (
+                        "melodic intro needs a reliable Demucs drum stem "
+                        f"({stem_reliability:.0%} below "
+                        f"{MINIMUM_REDRUM_STEM_RELIABILITY:.0%})"
+                    )
             if intro_rejection_reason:
                 progress.log(f"Intro disabled: {intro_rejection_reason}")
             elif intro_validation.shortened:
@@ -443,7 +569,7 @@ class TrackProcessor:
                     f"Outro shortened to {config.maximum_repetitions} repeats by preset"
                 )
             progress.update(90, "Assembling extended edit")
-            intro_uses_stems = should_use_instrumental(
+            intro_uses_stems = not redrum_intro and should_use_instrumental(
                 intro, instrumental_audio, stem_reliability,
                 config.minimum_stem_construction_reliability,
                 config.minimum_vocal_coverage_for_instrumental_edit,
@@ -459,15 +585,33 @@ class TrackProcessor:
                     f"outro {'instrumental stems' if outro_uses_stems else 'full mix'}"
                 )
             edited = create_extended_edit(
-                audio, intro, outro, config.crossfade_ms, instrumental_audio,
+                audio, None if redrum_intro else intro, outro, config.crossfade_ms, instrumental_audio,
                 stem_reliability, config.minimum_stem_construction_reliability,
                 config.minimum_vocal_coverage_for_instrumental_edit,
             )
+            if redrum_intro and intro is not None:
+                assert high_quality_drums is not None
+                edited = create_redrum_intro(
+                    edited,
+                    audio,
+                    intro,
+                    high_quality_drums,
+                    instrumental_audio,
+                )
+                progress.log(
+                    "Redrum source: "
+                    + "Demucs drums stem"
+                )
             export_result = exporter.export(
                 ExportRequest(
                     source=source,
                     output=output,
                     edited_audio=edited,
+                    original_audio=audio,
+                    wav_output=(
+                        output.parent.parent / WAV_OUTPUT_FOLDER_NAME /
+                        f"{source.stem}.wav"
+                    ),
                     analysis=analysis,
                     intro=intro,
                     outro=outro,
@@ -482,9 +626,33 @@ class TrackProcessor:
         except Exception:
             progress.stop()
             raise
+        intro_added = 0.0
+        intro_output_start = None
+        intro_output_end = None
+        if intro is not None:
+            unit = intro.end - intro.start
+            if redrum_intro:
+                intro_added = redrum_added_seconds(intro)
+                intro_output_start = 0.0
+                intro_output_end = intro_added
+            else:
+                fade = adaptive_crossfade_ms(intro, config.crossfade_ms) / 1000.0
+                intro_added = intro.repetitions * max(0.0, unit - fade)
+                intro_output_start = intro.start
+                intro_output_end = intro.start + intro_added
+        outro_output_start = None
+        outro_output_end = None
+        if outro is not None:
+            fade = adaptive_crossfade_ms(outro, config.crossfade_ms) / 1000.0
+            unit = max(0.0, outro.end - outro.start - fade)
+            outro_output_start = outro.end + intro_added - fade
+            outro_output_end = outro_output_start + outro.repetitions * unit
         return FileResult(
             source_name=source.name,
             output=output,
+            wav_output=(
+                output.parent.parent / WAV_OUTPUT_FOLDER_NAME / f"{source.stem}.wav"
+            ),
             elapsed=time.monotonic() - started,
             bpm=analysis.bpm,
             tempo_drift_percent=analysis.tempo_drift_percent,
@@ -501,17 +669,25 @@ class TrackProcessor:
             outro=outro,
             # The extra intro is inserted at intro.start. The original outro shifts
             # later by the duration added at the intro loop seam.
-            mix_in=intro.start if intro is not None else None,
+            mix_in=0.0 if redrum_intro else (intro.start if intro is not None else None),
             mix_out=(
                 outro.start
-                + intro.repetitions
-                * (
-                    (intro.end - intro.start)
-                    - adaptive_crossfade_ms(intro, config.crossfade_ms) / 1000.0
+                + (
+                    redrum_added_seconds(intro)
+                    if redrum_intro
+                    else intro.repetitions
+                    * (
+                        (intro.end - intro.start)
+                        - adaptive_crossfade_ms(intro, config.crossfade_ms) / 1000.0
+                    )
                 )
             ) if intro is not None and outro is not None else (
                 outro.start if outro is not None else None
             ),
+            intro_output_start=intro_output_start,
+            intro_output_end=intro_output_end,
+            outro_output_start=outro_output_start,
+            outro_output_end=outro_output_end,
             intro_before=intro_before,
             outro_after=outro_after,
             outro_before=outro_before,
@@ -520,6 +696,10 @@ class TrackProcessor:
             preset_name=config.preset_name,
             detected_style=detected_style,
             preset_reason=preset_reason,
+            intro_existing_mix_bars=readiness.intro.mixable_bars,
+            outro_existing_mix_bars=readiness.outro.mixable_bars,
+            intro_already_dj_ready=intro_already_ready,
+            outro_already_dj_ready=outro_already_ready,
             analysis_cache_hit=analysis_cache_hit,
             vocal_cache_hit=vocal_cache_hit,
             intro_preview=intro_preview_path,
@@ -537,8 +717,11 @@ class TrackProcessor:
             outro_rejection_reason=outro_rejection_reason,
             intro_fallback=intro_fallback,
             outro_fallback=outro_fallback,
-            stem_reliability=(stem_reliability if config.use_stems else None),
-            intro_construction=("instrumental stems" if intro_uses_stems else "full mix"),
+            stem_reliability=(stem_reliability if config.use_stems or redrum_intro else None),
+            intro_construction=(
+                "progressive Demucs redrum" if redrum_intro
+                else "instrumental stems" if intro_uses_stems else "full mix"
+            ),
             outro_construction=("instrumental stems" if outro_uses_stems else "full mix"),
             output_duration=edited.duration,
             cue_points=cue_points,

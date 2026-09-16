@@ -36,10 +36,18 @@ def build_cue_points(
     """Map analysis and inserted phrases onto the completed WAV timeline."""
     intro_added = 0.0
     if intro is not None:
-        intro_fade = adaptive_crossfade_ms(intro, crossfade_ms) / 1000.0
-        intro_added = intro.repetitions * max(0.0, intro.end - intro.start - intro_fade)
+        if intro.splice_mode == "redrum":
+            intro_fade = 0.0
+            intro_added = intro.repetitions * max(0.0, intro.end - intro.start)
+        else:
+            intro_fade = adaptive_crossfade_ms(intro, crossfade_ms) / 1000.0
+            intro_added = intro.repetitions * max(
+                0.0, intro.end - intro.start - intro_fade
+            )
 
     def original_to_output(source_time: float) -> float:
+        if intro is not None and intro.splice_mode == "redrum":
+            return source_time + intro_added
         if intro is None or source_time < intro.start:
             return source_time
         # The first inserted copy occupies the source phrase's original clock
@@ -62,16 +70,28 @@ def build_cue_points(
 
     if intro is not None:
         unit = intro.end - intro.start
-        cues.extend((
-            CuePoint("Mix In", intro.start, purpose="Suggested DJ mix-in point",
-                     confidence=intro.boundary_grid_confidence),
-            CuePoint("Extended Intro", intro.start, intro.start + unit - intro_fade,
-                     kind="loop", purpose="Saved loop for the selected intro unit",
-                     confidence=intro.loop_quality / 100.0),
-            CuePoint("Original Song Starts", intro.start + intro_added,
-                     purpose="Added intro ends and untouched source resumes",
-                     confidence=intro.energy_context_match),
-        ))
+        if intro.splice_mode == "redrum":
+            cues.extend((
+                CuePoint("Mix In", 0.0, purpose="Suggested DJ mix-in point",
+                         confidence=intro.boundary_grid_confidence),
+                CuePoint("Extended Intro", 0.0, intro_added,
+                         kind="loop", purpose="Generated progressive redrum intro",
+                         confidence=intro.loop_quality / 100.0),
+                CuePoint("Original Song Starts", intro_added,
+                         purpose="Original source begins fading into the redrum",
+                         confidence=intro.energy_context_match),
+            ))
+        else:
+            cues.extend((
+                CuePoint("Mix In", intro.start, purpose="Suggested DJ mix-in point",
+                         confidence=intro.boundary_grid_confidence),
+                CuePoint("Extended Intro", intro.start, intro.start + intro_added,
+                         kind="loop", purpose="Added intro material",
+                         confidence=intro.loop_quality / 100.0),
+                CuePoint("Original Song Starts", intro.start + intro_added,
+                         purpose="Added intro ends and untouched source resumes",
+                         confidence=intro.energy_context_match),
+            ))
 
     if outro is not None:
         fade = adaptive_crossfade_ms(outro, crossfade_ms) / 1000.0

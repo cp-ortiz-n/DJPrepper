@@ -27,6 +27,8 @@ class CliHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = _output_path(Path("My Song.flac"), Path(temporary))
             self.assertEqual(output.name, "My Song (Extended Edit).wav")
+            self.assertEqual(output.parent.name, "extended")
+            self.assertTrue((Path(temporary) / "wav").is_dir())
 
     def test_timestamp_parsing(self) -> None:
         self.assertEqual(_parse_timestamp("1:15.5"), 75.5)

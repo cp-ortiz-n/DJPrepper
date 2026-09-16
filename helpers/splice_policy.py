@@ -10,6 +10,8 @@ from helpers.section_selector import SectionCandidate
 from settings import (
     BASS_PRESERVING_RISK_THRESHOLD,
     HARMONIC_TAIL_COMPATIBILITY_THRESHOLD,
+    LOW_GRID_BOUNDARY_THRESHOLD,
+    LOW_GRID_MAXIMUM_CROSSFADE_MS,
     PERCUSSION_PRIORITY_THRESHOLD,
 )
 
@@ -50,6 +52,17 @@ def crossfade_duration_ms(candidate: SectionCandidate, minimum_ms: float) -> flo
         100.0 * candidate.bass_compatibility,
     )
     fade_ms = 10.0 + 20.0 * float(np.clip((80.0 - effective_quality) / 50.0, 0, 1))
+    maximum_ms = 30.0
+    if (
+        candidate.boundary_grid_confidence < LOW_GRID_BOUNDARY_THRESHOLD
+        and candidate.rhythmic_strength < PERCUSSION_PRIORITY_THRESHOLD
+    ):
+        # Loose/acoustic openings need enough overlap to carry sustained notes
+        # and room tone across an imperfect inferred downbeat.  Keep this away
+        # from drum-forward material, where a long fade would soften attacks.
+        uncertainty = 1.0 - candidate.boundary_grid_confidence
+        fade_ms = max(fade_ms, 30.0 + 70.0 * uncertainty)
+        maximum_ms = LOW_GRID_MAXIMUM_CROSSFADE_MS
     if candidate.splice_mode == "percussion-priority":
         fade_ms = min(fade_ms, 14.0)
     elif candidate.splice_mode == "bass-preserving":
@@ -58,7 +71,7 @@ def crossfade_duration_ms(candidate: SectionCandidate, minimum_ms: float) -> flo
         fade_ms = max(fade_ms, 18.0)
     elif candidate.splice_mode == "zero-crossing":
         fade_ms = 10.0
-    return max(minimum_ms, min(30.0, fade_ms))
+    return max(minimum_ms, min(maximum_ms, fade_ms))
 
 
 def tail_duration_ms(candidate: SectionCandidate) -> float:
@@ -72,6 +85,12 @@ def tail_duration_ms(candidate: SectionCandidate) -> float:
         duration_ms = max(duration_ms, 750.0)
     elif candidate.splice_mode == "zero-crossing":
         duration_ms = min(duration_ms, 350.0)
+    if candidate.boundary_grid_confidence < LOW_GRID_BOUNDARY_THRESHOLD:
+        duration_ms = max(
+            duration_ms,
+            750.0 + 750.0 * (LOW_GRID_BOUNDARY_THRESHOLD - candidate.boundary_grid_confidence)
+            / LOW_GRID_BOUNDARY_THRESHOLD,
+        )
     return duration_ms
 
 

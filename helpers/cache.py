@@ -180,6 +180,38 @@ class AnalysisCache:
             reliability=np.asarray(reliability),
         )
 
+    def load_drums(self, source: Path, config: EditConfig) -> AudioData | None:
+        if not self.enabled or self.refresh:
+            return None
+        path = self._path(source, config, "drums").with_suffix(".drums.wav")
+        if not path.exists():
+            return None
+        try:
+            samples, sample_rate = sf.read(path, always_2d=True, dtype="float32")
+            return AudioData(np.ascontiguousarray(samples), int(sample_rate))
+        except (OSError, ValueError, EOFError, sf.LibsndfileError):
+            return None
+
+    def save_drums(
+        self, source: Path, config: EditConfig, drums: AudioData
+    ) -> None:
+        if not self.enabled:
+            return
+        path = self._path(source, config, "drums").with_suffix(".drums.wav")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{path.stem}-", suffix=".wav", dir=path.parent
+        )
+        os.close(descriptor)
+        try:
+            sf.write(
+                temporary_name, drums.samples, drums.sample_rate,
+                format="WAV", subtype="FLOAT",
+            )
+            os.replace(temporary_name, path)
+        finally:
+            if os.path.exists(temporary_name):
+                os.unlink(temporary_name)
+
 
 def clear_cache(directory: Path) -> int:
     """Delete only AudioExtender analysis/stem cache entries and return their count."""
@@ -187,7 +219,7 @@ def clear_cache(directory: Path) -> int:
     if not directory.exists():
         return 0
     removed = 0
-    for pattern in ("*.npz", "*.instrumental.wav"):
+    for pattern in ("*.npz", "*.instrumental.wav", "*.drums.wav"):
         for path in directory.glob(pattern):
             if path.is_file():
                 path.unlink()

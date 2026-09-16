@@ -33,6 +33,8 @@ class ExportServiceTests(unittest.TestCase):
             source=directory / "Song.mp3",
             output=directory / "Song (Extended Edit).wav",
             edited_audio=self.audio,
+            original_audio=self.audio,
+            wav_output=directory / "wav" / "Song.wav",
             analysis=self.analysis,
             intro=None,
             outro=None,
@@ -50,7 +52,9 @@ class ExportServiceTests(unittest.TestCase):
                 Path(temporary), EditConfig(export_cues=True, preview_only=False)
             )
             result = service.export(request, NullProgressReporter())
-        writer.assert_called_once_with(self.audio, request.output, 24)
+        self.assertEqual(writer.call_count, 2)
+        writer.assert_any_call(self.audio, request.wav_output, 24)
+        writer.assert_any_call(self.audio, request.output, 24)
         cue_builder.assert_called_once()
         cue_writer.assert_called_once()
         self.assertTrue(result.full_exported)
@@ -91,6 +95,26 @@ class ExportServiceTests(unittest.TestCase):
             )
             self.assertEqual(directory, root / "previews" / "Song")
             self.assertTrue(directory.is_dir())
+
+    def test_disabled_side_removes_stale_generated_previews(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = ExportService.preview_directory(
+                root / "Song.mp3", root / "Song (Extended Edit).wav"
+            )
+            stale = [
+                directory / "Intro Preview.wav",
+                directory / "Intro Candidate 1.wav",
+                directory / "Outro Preview.wav",
+            ]
+            for path in stale:
+                path.touch()
+            service = ExportService(audio_writer=Mock())
+            service.export(
+                self.request(root, EditConfig(create_previews=True)),
+                NullProgressReporter(),
+            )
+            self.assertTrue(all(not path.exists() for path in stale))
 
 
 if __name__ == "__main__":

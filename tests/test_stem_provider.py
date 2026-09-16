@@ -39,6 +39,7 @@ class StemProviderTests(unittest.TestCase):
         cache = Mock()
         cache.load_vocals.return_value = vocals
         cache.load_instrumental.return_value = (instrumental, 0.82)
+        cache.load_drums.return_value = instrumental
         separator = Mock()
         detector = Mock(return_value=(3.0, 8.0))
         result = StemProvider(separator, detector).analyze(
@@ -60,12 +61,14 @@ class StemProviderTests(unittest.TestCase):
         separated = Mock(
             vocal_energy=vocals,
             instrumental_audio=instrumental,
+            drums_audio=instrumental,
             separation_reliability=0.91,
         )
         separator = Mock(return_value=separated)
         cache = Mock()
         cache.load_vocals.return_value = None
         cache.load_instrumental.return_value = None
+        cache.load_drums.return_value = None
         result = StemProvider(separator, Mock(return_value=(None, None))).analyze(
             self.source,
             self.audio,
@@ -78,17 +81,20 @@ class StemProviderTests(unittest.TestCase):
         self.assertEqual(result.reliability, 0.91)
         cache.save_vocals.assert_called_once()
         cache.save_instrumental.assert_called_once()
+        cache.save_drums.assert_called_once()
         separated.close.assert_called_once()
 
     def test_wrong_length_vocal_cache_forces_fresh_separation(self) -> None:
         separated = Mock(
             vocal_energy=np.zeros(10),
             instrumental_audio=self.audio,
+            drums_audio=self.audio,
             separation_reliability=0.7,
         )
         cache = Mock()
         cache.load_vocals.return_value = np.zeros(5)
         cache.load_instrumental.return_value = (self.audio, 0.8)
+        cache.load_drums.return_value = self.audio
         separator = Mock(return_value=separated)
         StemProvider(separator, Mock(return_value=(None, None))).analyze(
             self.source,

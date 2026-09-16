@@ -8,6 +8,10 @@ from helpers.audio_loader import AudioData
 from helpers.config import EditConfig
 from helpers.extended_edit import should_use_instrumental
 from helpers.section_selector import SectionCandidate
+from settings import (
+    MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO,
+    MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH,
+)
 
 
 @dataclass(frozen=True)
@@ -28,6 +32,7 @@ class CandidateValidator:
         instrumental_audio: AudioData | None,
         stem_reliability: float,
         vocal_analysis_available: bool,
+        position: str | None = None,
     ) -> ValidationResult:
         if candidate is None:
             return ValidationResult(None, None, False)
@@ -64,16 +69,36 @@ class CandidateValidator:
                 f"{candidate.arrangement_fit:+.0%}",
                 uses_instrumental,
             )
+        if (
+            position == "intro"
+            and not uses_instrumental
+            and candidate.rhythmic_strength
+            < MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH
+            and candidate.instrumentalness
+            < MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO
+        ):
+            return ValidationResult(
+                None,
+                "exposed melodic phrase without a stable rhythmic bed "
+                f"(rhythm {candidate.rhythmic_strength:.0%})",
+                False,
+            )
 
         quality = (
             candidate.instrumental_loop_quality
             if uses_instrumental else candidate.loop_quality
         )
-        if quality < config.minimum_loop_quality:
+        quality_floor = max(
+            config.minimum_loop_quality,
+            config.minimum_intro_loop_quality
+            if position == "intro"
+            else config.minimum_outro_loop_quality,
+        )
+        if round(quality) < quality_floor:
             return ValidationResult(
                 None,
                 f"quality {quality:.0f}% below "
-                f"{config.minimum_loop_quality:.0f}%",
+                f"{quality_floor:.0f}%",
                 uses_instrumental,
             )
 

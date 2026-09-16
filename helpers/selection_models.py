@@ -47,6 +47,7 @@ class SectionCandidate:
     arrangement_fit: float = 0.0
     local_grid_confidence: float = 0.0
     boundary_grid_confidence: float = 0.0
+    duration_adjustment_ms: float = 0.0
 
     @property
     def loop_quality(self) -> float:

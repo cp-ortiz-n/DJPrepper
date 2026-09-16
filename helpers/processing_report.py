@@ -20,12 +20,20 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _candidate(candidate: Any, construction: str, automatic: bool) -> dict[str, Any] | None:
+def _candidate(
+    candidate: Any,
+    construction: str,
+    automatic: bool,
+    output_start: float | None,
+    output_end: float | None,
+) -> dict[str, Any] | None:
     if candidate is None:
         return None
     return {
         "source_start": candidate.start,
         "source_end": candidate.end,
+        "output_start": output_start,
+        "output_end": output_end,
         "loop_quality": candidate.loop_quality,
         "instrumental_construction_quality": (
             candidate.instrumental_loop_quality
@@ -59,6 +67,8 @@ def _result_record(result: Any) -> dict[str, Any]:
         "source_name": result.source_name,
         "output_name": result.output.name,
         "output_path": str(result.output.resolve()),
+        "wav_name": result.wav_output.name if result.wav_output else None,
+        "wav_path": str(result.wav_output.resolve()) if result.wav_output else None,
         "status": "updated",
         "updated_at": _now(),
         "processing_seconds": result.elapsed,
@@ -76,18 +86,26 @@ def _result_record(result: Any) -> dict[str, Any]:
         "preset": result.preset_name,
         "detected_style": result.detected_style,
         "preset_reason": result.preset_reason,
+        "dj_readiness": {
+            "intro_mixable_bars": result.intro_existing_mix_bars,
+            "outro_mixable_bars": result.outro_existing_mix_bars,
+            "intro_preserved": result.intro_already_dj_ready,
+            "outro_preserved": result.outro_already_dj_ready,
+        },
         "stem_reliability": result.stem_reliability,
         "cache": {
             "track_analysis": result.analysis_cache_hit,
             "vocal_analysis": result.vocal_cache_hit,
         },
         "intro": _candidate(
-            result.intro, result.intro_construction, result.automatic_intro_length
+            result.intro, result.intro_construction, result.automatic_intro_length,
+            result.intro_output_start, result.intro_output_end,
         ),
         "intro_disabled_reason": result.intro_rejection_reason,
         "intro_fallback": result.intro_fallback,
         "outro": _candidate(
-            result.outro, result.outro_construction, result.automatic_outro_length
+            result.outro, result.outro_construction, result.automatic_outro_length,
+            result.outro_output_start, result.outro_output_end,
         ),
         "outro_disabled_reason": result.outro_rejection_reason,
         "outro_fallback": result.outro_fallback,
@@ -128,7 +146,7 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
     if data is None:
         lines = [f"### {label}", "", "Disabled."]
         if reason:
-            lines.append(f" Safety reason: {reason}.")
+            lines.append(f" Reason: {reason}.")
         return lines + [""]
     quality = (
         data["instrumental_construction_quality"]
@@ -138,6 +156,7 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
     return [
         f"### {label}", "",
         f"- Source: {_clock(data['source_start'])}–{_clock(data['source_end'])}",
+        f"- Extended WAV placement: {_clock(data.get('output_start'))}–{_clock(data.get('output_end'))}",
         f"- Quality: {quality:.0f}% · Construction: {data['construction']} · Splice: {data['splice_mode']}",
         f"- Material: {data['unit_bars']} unique bars · {data['extension_bars']} added bars · {data['copies']} copies",
         f"- Section: {data['section']} ({_percent(data['section_confidence'])}) · Arrangement fit: {data['arrangement_fit']:+.0%}",
@@ -174,10 +193,12 @@ def _render_markdown(document: dict[str, Any]) -> str:
             lines.extend(["> Skipped in the latest run; the analysis below is from the last successful update.", ""])
         lines.extend([
             f"- Output: `{record['output_name']}`",
+            f"- Source WAV: `{record.get('wav_name') or '—'}`",
             f"- Last processed: {record.get('updated_at', 'unknown')} · Processing time: {_clock(record.get('processing_seconds'))}",
             f"- BPM: {record.get('bpm', 0):.1f} · Key: {record.get('key') or '—'} ({_percent(record.get('key_confidence'))})",
             f"- Beat grid: {_percent(record.get('beat_grid_confidence'))} · Tempo drift: {_percent(record.get('tempo_drift'))} · Downbeat continuity: {_percent(record.get('downbeat_continuity'))}",
             f"- Groove: {record.get('groove') or '—'} · Timing: {record.get('timing') or '—'} · Preset: {record.get('preset') or 'default'}",
+            f"- Existing mixing room: intro {record.get('dj_readiness', {}).get('intro_mixable_bars', 0)} bars · outro {record.get('dj_readiness', {}).get('outro_mixable_bars', 0)} bars",
             f"- Suggested cues: mix in {_clock(record.get('mix_in'))} · mix out {_clock(record.get('mix_out'))}",
             "",
         ])

@@ -25,6 +25,7 @@ from helpers.exceptions import StemSeparationError
 class StemResult:
     vocal_energy: np.ndarray
     instrumental_audio: AudioData
+    drums_audio: AudioData
     separation_reliability: float
     temporary_directory: tempfile.TemporaryDirectory[str]
 
@@ -202,14 +203,16 @@ def analyze_vocal_stem(
     vocals_path = stem_paths["vocals"]
     assert vocals_path is not None
     vocals = aligned_stem(vocals_path)
-    instrumental_stems = []
+    instrumental_stems: dict[str, AudioData] = {}
     for name in ("drums", "bass", "other"):
         path = stem_paths[name]
         assert path is not None
-        instrumental_stems.append(aligned_stem(path))
-    common_length = min(len(stem.samples) for stem in (vocals, *instrumental_stems))
+        instrumental_stems[name] = aligned_stem(path)
+    common_length = min(
+        len(stem.samples) for stem in (vocals, *instrumental_stems.values())
+    )
     instrumental_samples = np.sum(
-        [stem.samples[:common_length] for stem in instrumental_stems], axis=0
+        [stem.samples[:common_length] for stem in instrumental_stems.values()], axis=0
     ).astype(np.float32)
     # Demucs stems should approximately reconstruct the source. Measure this
     # before trusting them for audible construction rather than analysis alone.
@@ -246,6 +249,8 @@ def analyze_vocal_stem(
 
     aligned_vocals = align_samples(raw_vocals)
     aligned_instrumental = align_samples(raw_instrumental)
+    raw_drums = instrumental_stems["drums"].samples[:compare_length]
+    aligned_drums = align_samples(raw_drums)
     vocals = AudioData(aligned_vocals, source_sample_rate)
     instrumental = AudioData(aligned_instrumental, source_sample_rate)
 
@@ -275,5 +280,6 @@ def analyze_vocal_stem(
         1.0,
     ))
     return StemResult(
-        np.clip(aligned, 0.0, 1.5), instrumental, reliability, temporary
+        np.clip(aligned, 0.0, 1.5), instrumental,
+        AudioData(aligned_drums, source_sample_rate), reliability, temporary
     )

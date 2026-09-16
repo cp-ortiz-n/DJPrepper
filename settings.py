@@ -16,6 +16,26 @@ DEFAULT_OUTRO_BARS = 8
 DEFAULT_AUTO_BAR_SELECTION = True
 AUTO_BAR_MAXIMUM_QUALITY_LOSS = 4.0
 
+# Universal safety floors. Presets may raise these values but cannot lower them.
+# Listening tests showed that the 60–64% range can still expose choppy resets.
+DEFAULT_MINIMUM_INTRO_LOOP_QUALITY = 65.0
+DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY = 65.0
+
+# Ranking target rather than a hard rejection line. When a candidate at or above
+# 70% is musically competitive with the numerical winner, prefer it. A proven
+# 65–69% edit can still be kept when no honest 70% alternative exists.
+PREFERRED_LOOP_QUALITY_TARGET = 70.0
+PREFERRED_QUALITY_SCORE_TOLERANCE = 0.12
+
+# Existing DJ-readiness detection. When at least this many consecutive bars at
+# an edge already provide a strong, reliable beat, automatic extension of that
+# side is skipped. Explicit --intro-bars/--outro-bars still overrides this.
+DJ_READY_MINIMUM_BARS = 8
+DJ_READY_GRID_THRESHOLD = 0.65
+DJ_READY_MINIMUM_LOUDNESS = 0.08
+DJ_READY_MINIMUM_PERCUSSION = 0.18
+DJ_READY_MINIMUM_PERCUSSIVE_RATIO = 0.35
+
 # Output format. Valid PCM depths are 16 and 24; 24 preserves more editing
 # headroom and is the recommended Rekordbox default.
 SUPPORTED_PCM_BITS = (16, 24)
@@ -24,6 +44,8 @@ DEFAULT_PCM_BITS = 24
 # Folder names are relative to the AudioExtender project directory.
 INPUT_FOLDER_NAME = "input"
 OUTPUT_FOLDER_NAME = "output"
+WAV_OUTPUT_FOLDER_NAME = "wav"
+EXTENDED_OUTPUT_FOLDER_NAME = "extended"
 TRACK_OVERRIDES_FILENAME = "track_overrides.json"
 CACHE_FOLDER_NAME = "cache"
 DEFAULT_CACHE_ENABLED = True
@@ -60,6 +82,27 @@ ANALYSIS_HOP_LENGTH = 512
 # Minimum splice fade. The editor can automatically increase this up to 30 ms
 # for difficult seams. Very large values can soften drum transients.
 MINIMUM_CROSSFADE_MS = 10.0
+
+# Human performances and acoustic intros do not always land perfectly on the
+# inferred grid.  A very short DJ-style fade is still used for confident,
+# percussive boundaries; uncertain or sustained opening material may use a
+# longer transparent blend so a guitar, pad, or room tail does not get chopped.
+LOW_GRID_BOUNDARY_THRESHOLD = 0.60
+LOW_GRID_MAXIMUM_CROSSFADE_MS = 80.0
+
+# Intro selection is intentionally anchored to the real opening arrangement.
+# If a usable candidate exists in the first four bars, a later verse groove is
+# not allowed to win merely because it has a cleaner numerical loop score.
+INTRO_IDENTITY_BARS = 4
+MINIMUM_OPENING_IDENTITY_QUALITY = 35.0
+OPENING_IDENTITY_SCORE_TOLERANCE = 0.25
+
+# A short exposed melody is recognizable when repeated even if the waveform
+# splice itself is clean.  Intro candidates below both thresholds are rejected
+# unless instrumental stems are used, preventing acoustic riffs and sparse vocal
+# pickups from being mechanically duplicated merely to force an extension.
+MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH = 0.10
+MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO = 0.40
 
 # Automatic splice-mode thresholds. These select how the editor treats the
 # exact join without changing the chosen bars. Lowering a threshold makes that
@@ -101,6 +144,21 @@ DEFAULT_USE_STEMS = False
 # and the selected phrase contains enough vocal material to benefit from removal.
 MINIMUM_STEM_CONSTRUCTION_RELIABILITY = 0.65
 MINIMUM_VOCAL_COVERAGE_FOR_INSTRUMENTAL_EDIT = 0.08
+
+# Drum-only redrum overlays tolerate lower whole-mix reconstruction scores than
+# full instrumental rebuilds: they are quiet supporting layers, not substitutes
+# for the master. Demucs still must clear this floor before its drum stem is used.
+MINIMUM_REDRUM_STEM_RELIABILITY = 0.50
+
+# Redrum arrangement: the isolated beat continues underneath the source while
+# the original opening rises gradually. Two bars is long enough to avoid a
+# sudden entrance without hiding the identity of the song for the whole intro.
+REDRUM_ORIGINAL_FADE_IN_BARS = 2.0
+REDRUM_KICK_CUTOFF_HZ = 180.0
+REDRUM_BASS_CUTOFF_HZ = 260.0
+REDRUM_KICK_GAIN = 0.82
+REDRUM_DRUM_GAIN = 0.72
+REDRUM_BASS_GAIN = 0.45
 
 # Existing output files are normally skipped. Set True to rebuild them on every
 # run; --overwrite can enable rebuilding for an individual run.

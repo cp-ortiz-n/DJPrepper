@@ -12,6 +12,8 @@ from settings import (
     DEFAULT_CANDIDATE_COUNT,
     DEFAULT_EXPORT_CUES,
     DEFAULT_INTRO_BARS,
+    DEFAULT_MINIMUM_INTRO_LOOP_QUALITY,
+    DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY,
     DEFAULT_OUTRO_BARS,
     DEFAULT_PCM_BITS,
     DEFAULT_USE_STEMS,
@@ -46,6 +48,8 @@ class EditConfig:
     crossfade_ms: float = MINIMUM_CROSSFADE_MS
     analysis_hop_length: int = ANALYSIS_HOP_LENGTH
     minimum_loop_quality: float = 0.0
+    minimum_intro_loop_quality: float = DEFAULT_MINIMUM_INTRO_LOOP_QUALITY
+    minimum_outro_loop_quality: float = DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY
     maximum_repetitions: int = 8
     preset_name: str | None = None
     intro_bars_locked: bool = False

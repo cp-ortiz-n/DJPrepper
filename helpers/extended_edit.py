@@ -35,13 +35,15 @@ def _smooth_join(left: np.ndarray, right: np.ndarray, fade_frames: int) -> np.nd
 
 
 def optimize_candidate_boundaries(
-    audio: AudioData, candidate: SectionCandidate, search_ms: float = 20.0
+    audio: AudioData, candidate: SectionCandidate, search_ms: float = 40.0
 ) -> SectionCandidate:
-    """Move both boundaries equally to find a cleaner waveform loop point.
+    """Micro-adjust both boundaries to find a cleaner waveform loop point.
 
-    Applying the same small offset to start and end preserves the detected phrase
-    duration and tempo grid. The search favors matching waveform value and slope,
-    near-zero crossings, and therefore reduces the discontinuity before fading.
+    Confident grids keep the phrase duration exact.  On uncertain grids the end
+    may move independently by at most 8 ms: small enough to be inaudible as a
+    tempo change, but enough to avoid cutting a loose performance between its
+    true pulses.  The search favors matching waveform value and slope, near-zero
+    crossings, and minimal deviation from the analyzed grid.
     """
     candidate = replace(candidate, splice_mode=choose_splice_mode(candidate))
     sample_rate = audio.sample_rate
@@ -54,22 +56,57 @@ def optimize_candidate_boundaries(
         return candidate
 
     mono = np.mean(audio.samples, axis=1)
-    offsets = np.arange(low, high + 1, dtype=int)
-    starts = nominal_start + offsets
-    ends = nominal_end + offsets
-    value_jump = np.abs(mono[ends - 1] - mono[starts])
-    left_slope = mono[ends - 1] - mono[ends - 2]
-    right_slope = mono[starts + 1] - mono[starts]
-    slope_jump = np.abs(left_slope - right_slope)
-    zero_proximity = np.abs(mono[ends - 1]) + np.abs(mono[starts])
-    score = value_jump + 0.45 * slope_jump + 0.15 * zero_proximity
-    best_offset = int(offsets[int(np.argmin(score))])
-    seconds = best_offset / sample_rate
+    # Evaluate roughly 0.25 ms increments rather than every sample.  The final
+    # crossfade handles sub-sample-scale differences and this keeps batch work
+    # inexpensive even at 96 kHz.
+    step = max(1, round(sample_rate * 0.00025))
+    offsets = np.arange(low, high + 1, step, dtype=int)
+    duration_radius = (
+        round(sample_rate * 0.008)
+        if candidate.boundary_grid_confidence < 0.60
+        else 0
+    )
+    duration_offsets = np.arange(-duration_radius, duration_radius + 1, step, dtype=int)
+    best_score = float("inf")
+    best_start_offset = 0
+    best_duration_offset = 0
+    amplitude_scale = max(float(np.percentile(np.abs(mono), 75)), 1e-3)
+    for duration_offset in duration_offsets:
+        starts = nominal_start + offsets
+        ends = nominal_end + offsets + duration_offset
+        valid = (starts >= 2) & (ends < len(mono) - 2)
+        if not np.any(valid):
+            continue
+        valid_offsets = offsets[valid]
+        starts = starts[valid]
+        ends = ends[valid]
+        value_jump = np.abs(mono[ends - 1] - mono[starts])
+        left_slope = mono[ends - 1] - mono[ends - 2]
+        right_slope = mono[starts + 1] - mono[starts]
+        slope_jump = np.abs(left_slope - right_slope)
+        zero_proximity = np.abs(mono[ends - 1]) + np.abs(mono[starts])
+        grid_cost = 0.025 * np.abs(valid_offsets) / max(radius, 1)
+        duration_cost = 0.04 * abs(duration_offset) / max(duration_radius, 1)
+        score = (
+            value_jump / amplitude_scale
+            + 0.45 * slope_jump / amplitude_scale
+            + 0.15 * zero_proximity / amplitude_scale
+            + grid_cost
+            + duration_cost
+        )
+        index = int(np.argmin(score))
+        if float(score[index]) < best_score:
+            best_score = float(score[index])
+            best_start_offset = int(valid_offsets[index])
+            best_duration_offset = int(duration_offset)
+    start_seconds = best_start_offset / sample_rate
+    duration_seconds = best_duration_offset / sample_rate
     return replace(
         candidate,
-        start=candidate.start + seconds,
-        end=candidate.end + seconds,
-        boundary_adjustment_ms=1000.0 * seconds,
+        start=candidate.start + start_seconds,
+        end=candidate.end + start_seconds + duration_seconds,
+        boundary_adjustment_ms=1000.0 * start_seconds,
+        duration_adjustment_ms=1000.0 * duration_seconds,
     )
 
 
@@ -249,21 +286,28 @@ def create_splice_previews(
     intro_added = 0.0
     intro_preview = None
     if intro is not None:
-        fade = adaptive_crossfade_ms(intro, crossfade_ms) / 1000.0
-        unit = intro.end - intro.start
-        intro_added = intro.repetitions * max(0.0, unit - fade)
-        # Audition the complete edit in context: original lead-in (when the
-        # insertion is not at zero), every added intro copy, then the original
-        # song continuing after the loop returns to its source phrase.
-        seam = intro.start + intro_added
-        intro_preview = AudioData(
-            _slice(
-                edited,
-                intro.start - context_seconds,
-                seam + context_seconds,
-            ),
-            edited.sample_rate,
-        )
+        if intro.splice_mode == "redrum":
+            added = intro.repetitions * (intro.end - intro.start)
+            intro_preview = AudioData(
+                _slice(edited, 0.0, added + context_seconds), edited.sample_rate
+            )
+            intro_added = added
+        else:
+            fade = adaptive_crossfade_ms(intro, crossfade_ms) / 1000.0
+            unit = intro.end - intro.start
+            intro_added = intro.repetitions * max(0.0, unit - fade)
+            # Audition the complete edit in context: original lead-in (when the
+            # insertion is not at zero), every added intro copy, then the original
+            # song continuing after the loop returns to its source phrase.
+            seam = intro.start + intro_added
+            intro_preview = AudioData(
+                _slice(
+                    edited,
+                    intro.start - context_seconds,
+                    seam + context_seconds,
+                ),
+                edited.sample_rate,
+            )
 
     outro_preview = None
     if outro is not None:

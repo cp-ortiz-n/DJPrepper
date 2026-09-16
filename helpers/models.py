@@ -31,6 +31,10 @@ class FileResult:
     outro: SectionCandidate | None
     mix_in: float | None
     mix_out: float | None
+    intro_output_start: float | None = None
+    intro_output_end: float | None = None
+    outro_output_start: float | None = None
+    outro_output_end: float | None = None
     intro_before: float | None = None
     outro_after: float | None = None
     outro_before: float | None = None
@@ -39,6 +43,10 @@ class FileResult:
     preset_name: str | None = None
     detected_style: str | None = None
     preset_reason: str | None = None
+    intro_existing_mix_bars: int = 0
+    outro_existing_mix_bars: int = 0
+    intro_already_dj_ready: bool = False
+    outro_already_dj_ready: bool = False
     analysis_cache_hit: bool = False
     vocal_cache_hit: bool = False
     intro_preview: Path | None = None
@@ -58,3 +66,4 @@ class FileResult:
     output_duration: float = 0.0
     cue_points: tuple[CuePoint, ...] = ()
     cue_sheet: Path | None = None
+    wav_output: Path | None = None

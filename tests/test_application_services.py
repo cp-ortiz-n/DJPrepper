@@ -16,6 +16,61 @@ from tests.factories import candidate
 
 
 class CandidateValidatorTests(unittest.TestCase):
+    def test_default_intro_floor_rejects_weak_loop(self) -> None:
+        result = CandidateValidator().validate(
+            candidate(
+                seam_compatibility=0.4,
+                timbre_compatibility=0.4,
+                bass_compatibility=0.4,
+            ),
+            EditConfig(),
+            None,
+            0.0,
+            False,
+            position="intro",
+        )
+        self.assertIsNone(result.candidate)
+        self.assertIn("below 65%", result.rejection_reason or "")
+
+    def test_default_outro_floor_also_rejects_weak_loop(self) -> None:
+        result = CandidateValidator().validate(
+            candidate(
+                seam_compatibility=0.4,
+                timbre_compatibility=0.4,
+                bass_compatibility=0.4,
+            ),
+            EditConfig(),
+            None,
+            0.0,
+            False,
+            position="outro",
+        )
+        self.assertIsNone(result.candidate)
+        self.assertIn("below 65%", result.rejection_reason or "")
+
+    def test_exposed_melodic_intro_is_rejected_automatically(self) -> None:
+        result = CandidateValidator().validate(
+            candidate(rhythmic_strength=0.04, instrumentalness=0.25),
+            EditConfig(),
+            None,
+            0.0,
+            False,
+            position="intro",
+        )
+        self.assertIsNone(result.candidate)
+        self.assertIn("exposed melodic phrase", result.rejection_reason or "")
+
+    def test_same_sparse_material_is_not_blanket_rejected_as_an_outro(self) -> None:
+        result = CandidateValidator().validate(
+            candidate(rhythmic_strength=0.04, instrumentalness=0.25),
+            EditConfig(),
+            None,
+            0.0,
+            False,
+            position="outro",
+        )
+        self.assertIsNotNone(result.candidate)
+
     def test_same_validator_rejects_buildup_for_either_side(self) -> None:
         result = CandidateValidator().validate(
             candidate(buildup_risk=0.9), EditConfig(), None, 0.0, False

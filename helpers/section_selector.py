@@ -18,8 +18,13 @@ from helpers.selection_metrics import (
 )
 from helpers.selection_models import SectionCandidate
 from settings import (
+    INTRO_IDENTITY_BARS,
+    MINIMUM_OPENING_IDENTITY_QUALITY,
     MINIMUM_UNIQUE_STRUCTURE_MATCH,
+    OPENING_IDENTITY_SCORE_TOLERANCE,
     PREFER_UNIQUE_MATERIAL,
+    PREFERRED_LOOP_QUALITY_TARGET,
+    PREFERRED_QUALITY_SCORE_TOLERANCE,
     UNIQUE_MATERIAL_QUALITY_TOLERANCE,
     UNIQUE_MATERIAL_SCORE_TOLERANCE,
 )
@@ -681,6 +686,32 @@ def rank_sections(
         )
     if not options:
         raise RuntimeError(f"No loopable phrase can supply a {bars}-bar {position}")
+
+    if position == "intro":
+        # An extended mix should sound like a longer version of *this song's
+        # opening*, not like a clean verse loop pasted in front.  Prefer material
+        # rooted in the first few bars whenever it clears a modest safety floor.
+        identity_boundary = float(
+            analysis.bar_boundaries[
+                min(INTRO_IDENTITY_BARS, len(analysis.bar_boundaries) - 1)
+            ]
+        )
+        global_best = max(
+            options,
+            key=lambda candidate: candidate.score + 0.004 * candidate.loop_quality,
+        )
+        opening_options = [
+            candidate
+            for candidate in options
+            if candidate.start < identity_boundary
+            and candidate.section_label == "intro"
+            and candidate.loop_quality >= MINIMUM_OPENING_IDENTITY_QUALITY
+            and candidate.score >= global_best.score - OPENING_IDENTITY_SCORE_TOLERANCE
+        ]
+        if opening_options:
+            # Once a credible true-opening phrase exists, later material is not
+            # silently substituted. Alternatives remain different opening units.
+            options = opening_options
     # Two bars are useful only when the protected pre-vocal opening physically
     # cannot hold four complete bars. Repeating such a short motif many times can
     # sound mechanical even when its splice metrics are excellent.
@@ -692,6 +723,22 @@ def rank_sections(
     # order. Prefer it over A+A when it is close enough to the numerical winner,
     # has compatible halves, and does not introduce a materially worse seam.
     first = _choose_with_unique_material(options)
+    if first.loop_quality < PREFERRED_LOOP_QUALITY_TARGET:
+        target_options = [
+            candidate
+            for candidate in options
+            if candidate.loop_quality >= PREFERRED_LOOP_QUALITY_TARGET
+            and candidate.score >= first.score - PREFERRED_QUALITY_SCORE_TOLERANCE
+            and candidate.arrangement_fit >= first.arrangement_fit - 0.15
+        ]
+        if target_options:
+            first = max(
+                target_options,
+                key=lambda candidate: (
+                    candidate.score + 0.004 * candidate.loop_quality,
+                    candidate.unit_bars,
+                ),
+            )
     ranked = [first]
     remaining = sorted(
         (candidate for candidate in options if candidate is not first),

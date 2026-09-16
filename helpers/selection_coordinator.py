@@ -16,7 +16,11 @@ from helpers.candidate_selection import (
 from helpers.config import EditConfig
 from helpers.interfaces import ProgressReporter
 from helpers.section_selector import SectionCandidate
-from settings import SUPPORTED_BAR_COUNTS
+from settings import (
+    MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO,
+    MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH,
+    SUPPORTED_BAR_COUNTS,
+)
 
 CandidateChooser = Callable[
     [list[SectionCandidate], Position, int],
@@ -50,7 +54,9 @@ class SideSelectionResult:
 
 
 def candidate_safety_issue(
-    candidate: SectionCandidate, config: EditConfig
+    candidate: SectionCandidate,
+    config: EditConfig,
+    position: Position | None = None,
 ) -> str | None:
     if candidate.vocal_energy is not None and (
         candidate.vocal_coverage > config.maximum_vocal_coverage
@@ -66,10 +72,27 @@ def candidate_safety_issue(
         return f"bass-reset risk {candidate.bass_reset_risk:.0%}"
     if candidate.arrangement_fit < config.minimum_arrangement_fit:
         return f"section {candidate.section_label}, fit {candidate.arrangement_fit:+.0%}"
-    if candidate.loop_quality < config.minimum_loop_quality:
+    if (
+        position == "intro"
+        and candidate.rhythmic_strength
+        < MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH
+        and candidate.instrumentalness
+        < MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO
+    ):
+        return (
+            "exposed melodic phrase without a stable rhythmic bed "
+            f"(rhythm {candidate.rhythmic_strength:.0%})"
+        )
+    quality_floor = max(
+        config.minimum_loop_quality,
+        config.minimum_intro_loop_quality
+        if position == "intro"
+        else config.minimum_outro_loop_quality,
+    )
+    if round(candidate.loop_quality) < quality_floor:
         return (
             f"quality {candidate.loop_quality:.0f}% below "
-            f"{config.minimum_loop_quality:.0f}%"
+            f"{quality_floor:.0f}%"
         )
     return None
 
@@ -108,6 +131,16 @@ class SelectionCoordinator:
             )
         except RuntimeError:
             if not automatic_boundary:
+                if request.position == "intro" and maximum_end is not None:
+                    progress.log(
+                        "Protected opening contains no complete full-mix phrase; "
+                        "leaving intro selection available for percussion fallback"
+                    )
+                    return SideSelectionResult(
+                        None, None, (), maximum_end, minimum_start,
+                        False, automatic_length,
+                        "no complete full-mix phrase before protected boundary",
+                    )
                 raise
             boundary_name = "vocal entrance" if request.position == "intro" else "vocal release"
             progress.log(
@@ -137,7 +170,11 @@ class SelectionCoordinator:
             chosen is not None
             and not config.choose_candidates
             and request.requested_rank == 1
-            and (issue := candidate_safety_issue(chosen, config)) is not None
+            and (
+                issue := candidate_safety_issue(
+                    chosen, config, request.position
+                )
+            ) is not None
         ):
             fallback = self._safe_fallback(
                 chosen, options, analysis, duration, vocal_energy, config,
@@ -213,7 +250,7 @@ class SelectionCoordinator:
     ) -> tuple[SectionCandidate, int | None, str] | None:
         def safe(candidate: SectionCandidate) -> bool:
             return (
-                candidate_safety_issue(candidate, config) is None
+                candidate_safety_issue(candidate, config, request.position) is None
                 and candidate.loop_quality >= config.minimum_fallback_loop_quality
             )
 

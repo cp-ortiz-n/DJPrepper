@@ -27,6 +27,7 @@ from settings import (
     DEFAULT_PRESET,
     DEFAULT_PREVIEW_SECONDS,
     DEFAULT_WORKERS,
+    EXTENDED_OUTPUT_FOLDER_NAME,
     INPUT_FOLDER_NAME,
     OUTPUT_FOLDER_NAME,
     REKORDBOX_XML_FILENAME,
@@ -34,6 +35,7 @@ from settings import (
     SUPPORTED_PCM_BITS,
     SUPPORTED_WORKER_CHOICES,
     TRACK_OVERRIDES_FILENAME,
+    WAV_OUTPUT_FOLDER_NAME,
 )
 
 PROJECT_DIRECTORY = Path(__file__).resolve().parent
@@ -186,8 +188,14 @@ def _discover_inputs(paths: list[Path], input_directory: Path) -> list[Path]:
 
 def _output_path(source: Path, output_directory: Path) -> Path:
     output_directory = output_directory.expanduser().resolve()
-    output_directory.mkdir(parents=True, exist_ok=True)
-    return output_directory / f"{source.stem} (Extended Edit).wav"
+    extended_directory = output_directory / EXTENDED_OUTPUT_FOLDER_NAME
+    extended_directory.mkdir(parents=True, exist_ok=True)
+    (output_directory / WAV_OUTPUT_FOLDER_NAME).mkdir(parents=True, exist_ok=True)
+    return extended_directory / f"{source.stem} (Extended Edit).wav"
+
+
+def _wav_path(source: Path, output_directory: Path) -> Path:
+    return output_directory.expanduser().resolve() / WAV_OUTPUT_FOLDER_NAME / f"{source.stem}.wav"
 
 
 def _format_time(seconds: float) -> str:
@@ -240,7 +248,7 @@ def _print_compact_results(results: list[FileResult], total_elapsed: float) -> N
         if result.outro_rejection_reason:
             warnings.append(f"outro: {result.outro_rejection_reason}")
         if warnings:
-            print(f"  Safety: {'; '.join(warnings)}")
+            print(f"  Decision: {'; '.join(warnings)}")
         cues = []
         if result.mix_in is not None:
             cues.append(f"mix in {_format_time(result.mix_in)}")
@@ -295,8 +303,15 @@ def run(args: argparse.Namespace) -> int:
     jobs: list[TrackJob] = []
     for source in sources:
         output = _output_path(source, args.output_dir)
-        if output.exists() and not args.overwrite and not args.preview_only:
-            print(f"Skipping existing output: {output.name} (use --overwrite to replace it)")
+        wav_output = _wav_path(source, args.output_dir)
+        if (
+            output.exists() and wav_output.exists()
+            and not args.overwrite and not args.preview_only
+        ):
+            print(
+                f"Skipping existing outputs: {source.stem} "
+                "(use --overwrite to replace them)"
+            )
             skipped += 1
             skipped_items.append((source, output))
             continue

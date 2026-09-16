@@ -42,7 +42,9 @@ AudioExtender/
 ├── helpers/             # Audio loading, analysis, selection, editing, stems
 ├── tests/               # Fast unit tests and synthetic test fixtures
 ├── input/               # Drop source songs here
-├── output/              # Completed extended edits appear here
+├── output/
+│   ├── wav/             # Straight PCM WAV conversions of the source files
+│   └── extended/        # DJ edits named "(Extended Edit).wav"
 ├── cache/               # Reusable analysis data; safe to clear
 ├── track_overrides.json # Optional per-song musical boundaries
 ├── requirements.txt
@@ -106,6 +108,9 @@ for an individual run, while per-song musical timestamps remain in
 | `AUTO_BAR_MAXIMUM_QUALITY_LOSS` | `4.0` | Maximum loop-quality points a longer automatic choice may lose before receiving an extra penalty. |
 | `DEFAULT_INTRO_BARS` | `8` | Intro length used when `--intro-bars` is omitted. Try `4` for less repetition. |
 | `DEFAULT_OUTRO_BARS` | `8` | Outro length used when `--outro-bars` is omitted. Set `0` to preserve original endings by default. |
+| `DEFAULT_MINIMUM_INTRO_LOOP_QUALITY` | `65.0` | Hard intro quality floor. Candidates below this percentage are not exported. |
+| `DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY` | `65.0` | Hard outro quality floor. Candidates below this percentage are not exported. |
+| `PREFERRED_LOOP_QUALITY_TARGET` | `70.0` | Ranking target. A musically competitive 70%+ candidate is preferred over a lower-scoring option. |
 | `SUPPORTED_PCM_BITS` | `(16, 24)` | Values accepted by `--bit-depth`. WAV export currently supports these PCM depths. |
 | `DEFAULT_PCM_BITS` | `24` | Normal output depth. `24` is recommended for editing quality; `16` produces smaller files. |
 | `INPUT_FOLDER_NAME` | `"input"` | Batch folder relative to the project. CLI `--input-dir` overrides it. |
@@ -183,11 +188,16 @@ python3 main.py
 ```
 
 Every MP3, WAV, FLAC, AIF, and AIFF file directly inside `input/` is processed.
-Completed 24-bit WAV files are saved in `output/`:
+Every completed track produces two 24-bit WAV files:
 
 ```text
-output/Song Name (Extended Edit).wav
+output/wav/Song Name.wav
+output/extended/Song Name (Extended Edit).wav
 ```
+
+The file under `wav/` is a format conversion only: stereo, source sample rate,
+and no arrangement edits or normalization beyond emergency clipping protection.
+The file under `extended/` contains the generated DJ intro/outro.
 
 ### Command reference
 

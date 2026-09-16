@@ -5,12 +5,14 @@ import unittest
 import numpy as np
 
 from helpers.audio_loader import AudioData
+from helpers.cue_export import build_cue_points
 from helpers.extended_edit import (
     _smooth_join,
     adaptive_crossfade_ms,
     create_extended_edit,
     optimize_candidate_boundaries,
 )
+from helpers.redrum import create_redrum_intro, redrum_added_seconds
 from tests.factories import candidate
 
 
@@ -38,6 +40,23 @@ class CandidateScoringTests(unittest.TestCase):
 
 
 class SpliceTests(unittest.TestCase):
+    def test_redrum_cues_use_generated_output_timeline(self) -> None:
+        analysis = type("Analysis", (), {
+            "bar_grid_confidence": np.asarray([], dtype=float),
+            "bar_boundaries": np.asarray([], dtype=float),
+        })()
+        redrum = candidate(
+            start=57.0,
+            end=65.0,
+            repetitions=2,
+            splice_mode="redrum",
+        )
+        cues = build_cue_points(analysis, redrum, None, 10.0, 250.0)
+        extended = next(cue for cue in cues if cue.name == "Extended Intro")
+        original = next(cue for cue in cues if cue.name == "Original Song Starts")
+        self.assertEqual((extended.start, extended.end), (0.0, 16.0))
+        self.assertEqual(original.start, 16.0)
+
     def test_smooth_join_has_expected_length_and_no_gain_bump(self) -> None:
         left = np.ones((100, 2), dtype=np.float32)
         right = np.ones((100, 2), dtype=np.float32)
@@ -52,12 +71,64 @@ class SpliceTests(unittest.TestCase):
         self.assertTrue(np.array_equal(result.samples, source.samples))
         self.assertIsNot(result.samples, source.samples)
 
-    def test_boundary_optimization_preserves_phrase_duration(self) -> None:
+    def test_boundary_optimization_only_micro_adjusts_phrase_duration(self) -> None:
         time = np.linspace(0, 12, 1200, endpoint=False)
         samples = np.column_stack((np.sin(2 * np.pi * time), np.sin(2 * np.pi * time))).astype(np.float32)
         optimized = optimize_candidate_boundaries(AudioData(samples, 100), candidate())
-        self.assertAlmostEqual(optimized.end - optimized.start, 4.0, places=8)
-        self.assertLessEqual(abs(optimized.boundary_adjustment_ms), 20.0)
+        self.assertLessEqual(abs((optimized.end - optimized.start) - 4.0), 0.0081)
+        self.assertLessEqual(abs(optimized.boundary_adjustment_ms), 40.0)
+        self.assertLessEqual(abs(optimized.duration_adjustment_ms), 8.1)
+
+    def test_low_grid_sustained_material_gets_a_longer_fade(self) -> None:
+        uncertain = candidate(
+            boundary_grid_confidence=0.4,
+            rhythmic_strength=0.3,
+            splice_mode="adaptive",
+        )
+        self.assertGreater(adaptive_crossfade_ms(uncertain, 10.0), 30.0)
+        self.assertLessEqual(adaptive_crossfade_ms(uncertain, 10.0), 80.0)
+
+    def test_redrum_prepends_requested_phrase_without_repeating_melody(self) -> None:
+        samples = np.zeros((1200, 2), dtype=np.float32)
+        samples[400:800:25] = 0.5
+        audio = AudioData(samples, 100)
+        redrum = candidate(
+            start=4.0,
+            end=8.0,
+            repetitions=2,
+            splice_mode="redrum",
+        )
+        drums = AudioData(np.zeros_like(samples), 100)
+        edited = create_redrum_intro(audio, audio, redrum, drums)
+        self.assertEqual(len(edited.samples), len(samples) + 800)
+        self.assertEqual(redrum_added_seconds(redrum), 8.0)
+        self.assertTrue(np.array_equal(edited.samples[-400:], samples[-400:]))
+
+    def test_redrum_fades_the_original_opening_in_beneath_the_drums(self) -> None:
+        samples = np.full((1200, 2), 0.25, dtype=np.float32)
+        samples[400:800:25] += 0.25
+        audio = AudioData(samples, 100)
+        redrum = candidate(
+            start=4.0,
+            end=8.0,
+            unit_bars=4,
+            repetitions=1,
+            splice_mode="redrum",
+        )
+        drums = AudioData(np.zeros_like(samples), 100)
+        edited = create_redrum_intro(audio, audio, redrum, drums)
+        original_entry = 400
+        # The master begins silent beneath the continuing drum bed, then reaches
+        # its untouched level after the configured two-bar fade.
+        self.assertLess(
+            float(np.mean(np.abs(edited.samples[original_entry]))),
+            float(np.mean(np.abs(samples[0]))),
+        )
+        self.assertAlmostEqual(
+            float(np.mean(edited.samples[original_entry + 250])),
+            float(np.mean(samples[250])),
+            delta=0.12,
+        )
 
 
 if __name__ == "__main__":
