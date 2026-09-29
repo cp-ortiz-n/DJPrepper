@@ -21,6 +21,7 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -39,6 +40,7 @@ from starlette.background import BackgroundTask
 from starlette.middleware.gzip import GZipMiddleware
 
 from helpers.audio_loader import SUPPORTED_EXTENSIONS
+from helpers.audio_quality import analyze_audio_quality
 from helpers.cache import AnalysisCache
 from helpers.feedback_report import append_web_feedback
 from helpers.library_backup import LibraryBackupService
@@ -121,6 +123,8 @@ integrity_scan_batches: dict[str, dict] = {}
 integrity_scan_batch_lock = threading.Lock()
 catalog_reconcile_batches: dict[str, dict] = {}
 catalog_reconcile_batch_lock = threading.Lock()
+audio_quality_batches: dict[str, dict] = {}
+audio_quality_batch_lock = threading.Lock()
 local_import_batches: dict[str, dict] = {}
 local_import_batch_lock = threading.Lock()
 downloaded_catalog_migration_lock = threading.Lock()
@@ -463,6 +467,7 @@ class DownloadedAnalysisFilterRequest(BaseModel):
     detailed_genre: str = Field(default="all", max_length=120)
     playlist: str = Field(default="all", max_length=200)
     analysis: str = Field(default="all", max_length=30)
+    quality: str = Field(default="all", max_length=30)
     sort: str = Field(default="newest", max_length=30)
 
 
@@ -744,6 +749,7 @@ def music_library_status() -> dict:
             "song_bytes": song_bytes, "supporting_bytes": max(0, total_bytes - song_bytes),
             "total_bytes": total_bytes, "file_count": file_count,
             "free_bytes": free_bytes, "capacity_bytes": capacity_bytes,
+            "audio_quality": repository.audio_quality_summary(),
         }
         library_status_cache.update(payload=payload, expires_at=now + 60.0)
         return payload
@@ -2751,7 +2757,7 @@ def _downloaded_track_payload(track: dict) -> dict:
     current_genre = _normalize_genre_category(
         str(track.get("genre_category") or "Other")
     )
-    return {
+    payload = {
         key: value
         for key, value in track.items()
         if key not in {"file_path", "artwork_path"}
@@ -2764,6 +2770,83 @@ def _downloaded_track_payload(track: dict) -> dict:
         "suggested_genre": suggested_genre,
         "needs_genre": current_genre in {"Other", "Latin / Other"},
     }
+
+
+def _run_audio_quality_batch(batch_id: str) -> None:
+    tracks = repository.list_downloaded_tracks()
+
+    def inspect(track: dict) -> tuple[dict, Path, dict | None, str]:
+        path = Path(str(track.get("file_path") or ""))
+        try:
+            if not path.is_file():
+                raise FileNotFoundError("Audio file is unavailable")
+            result = analyze_audio_quality(
+                path,
+                window_seconds=.5,
+                source_is_transcoded_lossy=bool(
+                    track.get("youtube_id") or track.get("youtube_url")
+                ),
+            ).to_dict()
+            return track, path, result, ""
+        except (OSError, RuntimeError, ValueError) as exc:
+            return track, path, None, str(exc)
+
+    # Audio decoding and FFT work release the GIL. A small worker pool makes a
+    # full external-drive scan practical without saturating the disk.
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix="audio-quality") as executor:
+        futures = [executor.submit(inspect, track) for track in tracks]
+        for index, future in enumerate(as_completed(futures), start=1):
+            track, path, result, error = future.result()
+            if result is not None:
+                repository.update_audio_quality(int(track["id"]), result)
+            with audio_quality_batch_lock:
+                batch = audio_quality_batches[batch_id]
+                batch["processed"] = index
+                batch["failed"] += int(bool(error))
+                batch["current"] = str(track.get("filename") or track.get("title") or "")
+                if error and len(batch["errors"]) < 30:
+                    batch["errors"].append({"id": track.get("id"), "filename": path.name, "error": error})
+    summary = repository.audio_quality_summary()
+    with audio_quality_batch_lock:
+        audio_quality_batches[batch_id].update(status="complete", stage="Quality scan complete", summary=summary)
+    with library_status_cache_lock:
+        library_status_cache.update(payload=None, expires_at=0.0)
+
+
+@app.post("/api/downloaded-library/audio-quality")
+def start_audio_quality_scan() -> dict:
+    with audio_quality_batch_lock:
+        active = next(({"batch_id": key, **value} for key, value in audio_quality_batches.items()
+                       if value["status"] == "processing"), None)
+        if active:
+            return active
+        total = len(repository.list_downloaded_tracks())
+        batch_id = uuid.uuid4().hex
+        audio_quality_batches[batch_id] = {
+            "status": "processing", "stage": "Analyzing audio quality", "total": total,
+            "processed": 0, "failed": 0, "current": "", "errors": [],
+        }
+    threading.Thread(target=_run_audio_quality_batch, args=(batch_id,), daemon=True,
+                     name=f"audio-quality-{batch_id[:8]}").start()
+    return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
+
+
+@app.get("/api/downloaded-library/audio-quality-latest")
+def latest_audio_quality_scan() -> dict:
+    with audio_quality_batch_lock:
+        if not audio_quality_batches:
+            return {"status": "none", "summary": repository.audio_quality_summary()}
+        batch_id = next(reversed(audio_quality_batches))
+        return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
+
+
+@app.get("/api/downloaded-library/audio-quality/{batch_id}")
+def audio_quality_scan_status(batch_id: str) -> dict:
+    with audio_quality_batch_lock:
+        batch = audio_quality_batches.get(batch_id)
+        if batch is None:
+            raise HTTPException(404, "Audio-quality scan not found")
+        return {"batch_id": batch_id, **batch}
 
 
 def _cached_artwork_thumbnail(source: Path, size: int = 96) -> Path:
@@ -2830,6 +2913,7 @@ def downloaded_library(
     playlist: str = Query(default="all", max_length=200),
     analysis: str = Query(default="all", max_length=30),
     artwork: str = Query(default="all", pattern="^(all|missing|available)$"),
+    quality: str = Query(default="all", pattern="^(all|excellent|good|review|poor|below-target|unanalyzed)$"),
     sort: str = Query(default="newest", max_length=30),
 ) -> dict:
     _ensure_downloaded_catalog_migrated()
@@ -2838,7 +2922,7 @@ def downloaded_library(
         tracks, filtered_total = repository.page_downloaded_tracks(
             page=page, page_size=page_size, search=search, genre=genre,
             detailed_genre=detailed_genre, playlist=playlist, analysis=analysis,
-            artwork=artwork, sort=sort,
+            artwork=artwork, quality=quality, sort=sort,
         )
         if analysis in {"complete", "active", "attention", "missing_title", "missing_artist", "missing_genre", "missing_artwork", "unmapped_genre", "broad_genre"}:
             analyzable_total = 0
@@ -2846,7 +2930,7 @@ def downloaded_library(
             _, analyzable_total = repository.page_downloaded_tracks(
                 page=1, page_size=1, search=search, genre=genre,
                 detailed_genre=detailed_genre, playlist=playlist, artwork=artwork,
-                analysis=("failed" if analysis == "failed" else "needs"), sort=sort,
+                quality=quality, analysis=("failed" if analysis == "failed" else "needs"), sort=sort,
             )
         total_pages = max(1, (filtered_total + page_size - 1) // page_size)
         if page > total_pages:
@@ -2854,7 +2938,7 @@ def downloaded_library(
             tracks, filtered_total = repository.page_downloaded_tracks(
                 page=page, page_size=page_size, search=search, genre=genre,
                 detailed_genre=detailed_genre, playlist=playlist,
-                analysis=analysis, artwork=artwork, sort=sort,
+                analysis=analysis, artwork=artwork, quality=quality, sort=sort,
             )
         genres: dict[str, int] = {}
         for raw_genre, count in facets["genres"].items():
@@ -3179,7 +3263,8 @@ def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest)
     tracks, _ = repository.page_downloaded_tracks(
         page=1, page_size=10_000_000, search=request.search, genre=request.genre,
         detailed_genre=request.detailed_genre, playlist=request.playlist,
-        analysis=("failed" if request.analysis == "failed" else "needs"), sort=request.sort,
+        analysis=("failed" if request.analysis == "failed" else "needs"),
+        quality=request.quality, sort=request.sort,
     )
     result = _queue_downloaded_analysis(tracks)
     return {**result, "matched": len(tracks)}
@@ -3190,7 +3275,7 @@ def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterReques
     tracks, _ = repository.page_downloaded_tracks(
         page=1, page_size=10_000_000, search=request.search, genre=request.genre,
         detailed_genre=request.detailed_genre, playlist=request.playlist,
-        analysis=request.analysis, sort=request.sort,
+        analysis=request.analysis, quality=request.quality, sort=request.sort,
     )
     result = _queue_downloaded_analysis(tracks, force=True)
     return {**result, "matched": len(tracks)}
@@ -5146,6 +5231,7 @@ def library_catalog(
     search: str = "", role: str = "all", category: str = "all", detailed_genre: str = "all", preset: str = "all",
     result: str = "all", bpm_min: float | None = None, bpm_max: float | None = None,
     key: str = "all", energy: str = "all", vocals: str = "all", timing: str = "all",
+    quality: str = Query(default="all", pattern="^(all|excellent|good|review|poor|below-target|unanalyzed)$"),
     sort: str = "newest",
 ) -> dict:
     """Compact Library index; expensive generation history stays lazy."""
@@ -5153,7 +5239,7 @@ def library_catalog(
     rows, filtered_total = repository.page_library_tracks(
         page=page, page_size=page_size, search=search, role=role, category=category,
         detail_genre=detailed_genre,
-        preset=preset, result=result, bpm_min=bpm_min, bpm_max=bpm_max,
+        preset=preset, result=result, quality=quality, bpm_min=bpm_min, bpm_max=bpm_max,
         musical_key=key, energy=energy, vocals=vocals, timing=timing, sort=sort,
     )
     with library_catalog_cache_lock:
@@ -5177,7 +5263,7 @@ def library_catalog(
         rows, filtered_total = repository.page_library_tracks(
             page=page, page_size=page_size, search=search, role=role, category=category,
             detail_genre=detailed_genre,
-            preset=preset, result=result, bpm_min=bpm_min, bpm_max=bpm_max,
+            preset=preset, result=result, quality=quality, bpm_min=bpm_min, bpm_max=bpm_max,
             musical_key=key, energy=energy, vocals=vocals, timing=timing, sort=sort,
         )
     tracks = []
@@ -5194,6 +5280,10 @@ def library_catalog(
         }
         downloaded = None
         if row.get("downloaded_id"):
+            try:
+                quality_details = json.loads(str(row.get("audio_quality_json") or "{}"))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                quality_details = {}
             downloaded = {
                 "id": row["downloaded_id"], "title": row["library_title"], "artist": row["library_artist"],
                 "genre": row.get("genre") or "", "genre_category": row["library_category"],
@@ -5201,6 +5291,9 @@ def library_catalog(
                 "version_code": row.get("version_code") or "",
                 "identity_confidence": row.get("identity_confidence") or "",
                 "identity_reason": row.get("identity_reason") or "",
+                "audio_quality_score": row.get("audio_quality_score"),
+                "audio_quality_label": row.get("audio_quality_label") or "",
+                "audio_quality": quality_details,
                 "suggested_genre": _generalized_genre(str(row.get("genre") or "")),
                 "completed_library_job_id": row["job_id"],
                 "artwork_available": bool(row.get("artwork_path")) and Path(str(row["artwork_path"])).is_file(),

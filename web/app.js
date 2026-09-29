@@ -183,7 +183,7 @@ let setCompactMode = localStorage.getItem('set-builder-compact') === 'true';
 let setTransitionSettings = {};
 let transitionEditorSurfaces = [];
 const transitionWaveCache = new Map();
-const downloadedUiState = {search:'', genre:'all', detailedGenre:'all', playlist:'all', analysis:'all', artwork:'all', sort:'newest', page:1, pageSize:Number(localStorage.getItem('music-files-page-size') || 50)};
+const downloadedUiState = {search:'', genre:'all', detailedGenre:'all', playlist:'all', analysis:'all', artwork:'all', quality:'all', sort:'newest', page:1, pageSize:Number(localStorage.getItem('music-files-page-size') || 50)};
 const downloadedSelection = new Map();
 let downloadedLoadSequence = 0;
 let downloadedSearchTimer = null;
@@ -191,7 +191,7 @@ let downloadedRequestController = null;
 let downloadedLoadedAt = 0;
 let libraryLoadedAt = 0;
 let librarySearchTimer = null;
-const libraryUiState = {search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1,pageSize:Number(localStorage.getItem('dj-library-page-size') || 50)};
+const libraryUiState = {search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1,pageSize:Number(localStorage.getItem('dj-library-page-size') || 50)};
 let libraryLoadSequence = 0;
 let libraryRequestController = null;
 let pendingMetadataReview = null;
@@ -1897,7 +1897,7 @@ async function loadDownloadedLibrary() {
   downloadedRequestController = new AbortController();
   const view = $('#downloads-view');
   view.classList.add('view-refreshing');
-  const parameters = new URLSearchParams({paged:'true',page:String(downloadedUiState.page),page_size:String(downloadedUiState.pageSize),search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,artwork:downloadedUiState.artwork,sort:downloadedUiState.sort});
+  const parameters = new URLSearchParams({paged:'true',page:String(downloadedUiState.page),page_size:String(downloadedUiState.pageSize),search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,artwork:downloadedUiState.artwork,quality:downloadedUiState.quality,sort:downloadedUiState.sort});
   let payload;
   try {
     const response = await fetch(`/api/downloaded-library?${parameters}`, {cache:'no-store',signal:downloadedRequestController.signal});
@@ -2007,13 +2007,14 @@ async function loadDownloadedLibrary() {
   let pageSize = downloadedUiState.pageSize;
   pageSizeSelect.value = String(pageSize);
   let currentPage = paginationData.page;
-  const search = $('#downloaded-search'); const analysisSelect = $('#downloaded-analysis'); const artworkSelect = $('#downloaded-artwork'); const sort = $('#downloaded-sort');
+  const search = $('#downloaded-search'); const analysisSelect = $('#downloaded-analysis'); const artworkSelect = $('#downloaded-artwork'); const qualitySelect=$('#downloaded-quality'); const sort = $('#downloaded-sort');
   search.value = downloadedUiState.search;
   genreSelect.value = [...genreSelect.options].some(item => item.value === downloadedUiState.genre) ? downloadedUiState.genre : 'all';
   detailedGenreSelect.value=[...detailedGenreSelect.options].some(item=>item.value===downloadedUiState.detailedGenre)?downloadedUiState.detailedGenre:'all';
   playlistSelect.value = [...playlistSelect.options].some(item => item.value === downloadedUiState.playlist) ? downloadedUiState.playlist : 'all';
   analysisSelect.value = downloadedUiState.analysis;
   artworkSelect.value = downloadedUiState.artwork;
+  qualitySelect.value = downloadedUiState.quality;
   sort.value = downloadedUiState.sort;
   const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const retagSelected = $('#downloaded-retag-selected');
   const rescanGenres = $('#downloaded-rescan-genres');
@@ -2215,6 +2216,10 @@ async function loadDownloadedLibrary() {
       const tags=String(track.genre||'').split(',').map(tag=>tag.trim().toLowerCase());
       if(!tags.includes(downloadedUiState.detailedGenre.toLowerCase()))return false;
     }
+    if(downloadedUiState.quality!=='all'){
+      const quality=String(track.audio_quality_label||'unanalyzed');
+      if(downloadedUiState.quality==='below-target'?!['review','poor'].includes(quality):quality!==downloadedUiState.quality)return false;
+    }
     const title=String(track.title||'').trim().toLowerCase(),artist=String(track.artist||'').trim().toLowerCase(),genre=String(track.genre||'').trim();
     const reviewFlags={missing_title:!title||['unknown title','untitled'].includes(title),missing_artist:!artist||['unknown artist','unknown','unavailable'].includes(artist),missing_genre:!genre,missing_artwork:!track.artwork_available,unmapped_genre:Boolean(genre)&&category==='Other',broad_genre:category.endsWith(' / General')||category.endsWith(' / Other')};
     const analysis=downloadedUiState.analysis,status=String(track.analysis_status||'not_analyzed');
@@ -2250,10 +2255,10 @@ async function loadDownloadedLibrary() {
     libraryLoadedAt=0;refreshSelection();return true;
   };
   const requestPage = (page = 1) => { downloadedUiState.page = page; loadDownloadedLibrary(); };
-  const syncFilters = () => { downloadedUiState.search=search.value.trim();downloadedUiState.genre=genreSelect.value;downloadedUiState.detailedGenre=detailedGenreSelect.value;downloadedUiState.playlist=playlistSelect.value; downloadedUiState.analysis=analysisSelect.value; downloadedUiState.artwork=artworkSelect.value; downloadedUiState.sort=sort.value; requestPage(1); };
+  const syncFilters = () => { downloadedUiState.search=search.value.trim();downloadedUiState.genre=genreSelect.value;downloadedUiState.detailedGenre=detailedGenreSelect.value;downloadedUiState.playlist=playlistSelect.value; downloadedUiState.analysis=analysisSelect.value; downloadedUiState.artwork=artworkSelect.value; downloadedUiState.quality=qualitySelect.value; downloadedUiState.sort=sort.value; requestPage(1); };
   clearTimeout(downloadedSearchTimer);
   search.oninput = () => { clearTimeout(downloadedSearchTimer); downloadedSearchTimer=setTimeout(syncFilters,220); };
-  genreSelect.onchange = () => {downloadedUiState.detailedGenre='all';detailedGenreSelect.value='all';syncFilters();}; detailedGenreSelect.onchange=syncFilters; playlistSelect.onchange = syncFilters; analysisSelect.onchange = syncFilters; artworkSelect.onchange = syncFilters; sort.onchange = syncFilters;
+  genreSelect.onchange = () => {downloadedUiState.detailedGenre='all';detailedGenreSelect.value='all';syncFilters();}; detailedGenreSelect.onchange=syncFilters; playlistSelect.onchange = syncFilters; analysisSelect.onchange = syncFilters; artworkSelect.onchange = syncFilters; qualitySelect.onchange=syncFilters; sort.onchange = syncFilters;
   pageSizeSelect.onchange = () => { pageSize=Number(pageSizeSelect.value); downloadedUiState.pageSize=pageSize; localStorage.setItem('music-files-page-size',String(pageSize)); requestPage(1); };
   cards.forEach((card,index) => card.querySelector('input').onchange = event => { const track=tracks[index]; if (event.currentTarget.checked) downloadedSelection.set(Number(track.id),track); else downloadedSelection.delete(Number(track.id)); refreshSelection(); });
   cards.forEach(card => card.onclick = event => {
@@ -2334,7 +2339,7 @@ async function loadDownloadedLibrary() {
     if (!analyzableTotal || !confirm(`Add all ${analyzableTotal} matching track${analyzableTotal===1?'':'s'} that still need analysis to the processing queue? Analysis will run with safe automatic concurrency.`)) return;
     analyzeMatching.disabled=true; analyzeMatching.textContent='Adding all to queue…';
     try {
-      const response=await fetch('/api/downloaded-library/analyze-matching',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,sort:downloadedUiState.sort})});
+      const response=await fetch('/api/downloaded-library/analyze-matching',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,quality:downloadedUiState.quality,sort:downloadedUiState.sort})});
       const result=await response.json();
       if(!response.ok)throw new Error(result.detail||'Could not queue matching tracks.');
       downloadedSelection.clear();
@@ -2354,7 +2359,7 @@ async function loadDownloadedLibrary() {
     finally { button.textContent=original; }
   };
   reanalyzeSelected.onclick=()=>{const ids=[...downloadedSelection.values()].filter(track=>track.available).map(track=>Number(track.id));queueReanalysis('/api/downloaded-library/reanalyze',{track_ids:ids},reanalyzeSelected,ids.length);};
-  reanalyzeMatching.onclick=()=>queueReanalysis('/api/downloaded-library/reanalyze-matching',{search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,sort:downloadedUiState.sort},reanalyzeMatching,paginationData.filtered_total);
+  reanalyzeMatching.onclick=()=>queueReanalysis('/api/downloaded-library/reanalyze-matching',{search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,quality:downloadedUiState.quality,sort:downloadedUiState.sort},reanalyzeMatching,paginationData.filtered_total);
   removeSelected.onclick = async () => {
     const trackIds = [...downloadedSelection.keys()];
     if (!trackIds.length || !confirm(`Remove ${trackIds.length} selected track${trackIds.length === 1 ? '' : 's'} from the catalog? WAV files that still exist will remain on disk.`)) return;
@@ -2882,7 +2887,7 @@ async function loadLibrary() {
   libraryRequestController?.abort();
   libraryRequestController = new AbortController();
   try {
-    const parameters = new URLSearchParams({page:String(libraryUiState.page),page_size:String(libraryUiState.pageSize),search:libraryUiState.search,role:libraryUiState.role,category:libraryUiState.category,detailed_genre:libraryUiState.detailedGenre,preset:libraryUiState.preset,sort:libraryUiState.sort,result:libraryUiState.result,key:libraryUiState.key,energy:libraryUiState.energy,vocals:libraryUiState.vocals,timing:libraryUiState.timing});
+    const parameters = new URLSearchParams({page:String(libraryUiState.page),page_size:String(libraryUiState.pageSize),search:libraryUiState.search,role:libraryUiState.role,category:libraryUiState.category,detailed_genre:libraryUiState.detailedGenre,preset:libraryUiState.preset,sort:libraryUiState.sort,result:libraryUiState.result,quality:libraryUiState.quality,key:libraryUiState.key,energy:libraryUiState.energy,vocals:libraryUiState.vocals,timing:libraryUiState.timing});
     if(libraryUiState.bpmMin)parameters.set('bpm_min',libraryUiState.bpmMin);
     if(libraryUiState.bpmMax)parameters.set('bpm_max',libraryUiState.bpmMax);
     const response = await fetch(`/api/library/catalog?${parameters}`, {cache:'no-store',signal:libraryRequestController.signal});
@@ -2965,6 +2970,7 @@ async function loadLibrary() {
     card.dataset.timing = timingProfile(analysis);
     card.dataset.updated = Date.parse(latest.updated_at || 0);
     card.dataset.result = latest.review_status === 'pending' ? 'review' : ((latest.intro_quality != null || latest.outro_quality != null) ? 'extended' : 'preserved');
+    card.dataset.quality = downloadedTrack?.audio_quality_label || 'unanalyzed';
     const description = card.querySelector('.library-head>div>span');
     const presetLabel = card.dataset.requestedPreset === 'auto' ? `auto → ${resolvedPreset}` : resolvedPreset;
     description.textContent = `${category}${downloadedTrack ? ' · library genre' : ' · detected category'} · ${presetLabel} · ${description.textContent}`;
@@ -2989,7 +2995,11 @@ async function loadLibrary() {
     [...card.children].forEach(child => body.append(child));
     card.append(body);
     const identity=downloadedTrack?.recording_code?`${downloadedTrack.recording_code}-${downloadedTrack.version_code||'ORG'}`:'';
-    card.insertAdjacentHTML('afterbegin', `<div class="library-compact-row" role="button" tabindex="0" aria-expanded="false" aria-label="Show DJ details for ${escapeHtml(trackTitle)}"><label class="library-track-select"><input type="checkbox" value="${card.dataset.jobId}" aria-label="Select ${escapeHtml(trackTitle)}"><span></span></label><div class="library-row-icon">${trackArtwork}</div><div class="library-row-title"><h3>${escapeHtml(trackTitle)}</h3><span class="library-row-artist">${escapeHtml(trackArtist)}</span><small>${escapeHtml(category)}${identity?` · ${escapeHtml(identity)}`:''}</small></div><div class="library-row-metric"><b>${Number(analysis.bpm || latest.bpm || 0).toFixed(1)}</b><span>BPM</span></div><div class="library-row-metric"><b>${escapeHtml(formatLibraryKey(analysis.key))}</b><span>Key / Camelot</span></div><div class="library-row-metric"><b>${escapeHtml(energyBand(energy))}</b><span>Energy</span></div><div class="library-row-role">${roles.slice(0,2).map(role => `<span>${escapeHtml(LIBRARY_ROLE_INFO[role]?.[0] || role)}</span>`).join('')}</div><span class="library-result" data-result="${card.dataset.result}">${resultLabel}</span>${compactAudioMarkup(`/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}`,latest.duration_seconds||analysis.duration_seconds||0)}<details class="library-row-actions"><summary aria-label="Library track actions">•••</summary><div><button type="button" class="compact-remove danger-text">Remove from Library</button></div></details></div>`);
+    const qualityScore=downloadedTrack?.audio_quality_score;
+    const qualityTarget=downloadedTrack?.audio_quality?.target_status;
+    const qualitySuffix=qualityTarget==='meets_target'?' · Target met':qualityTarget==='below_target'?' · Below target':qualityTarget==='unverified'?' · Unverified':'';
+    const qualityText=qualityScore==null?'Quality pending':`Quality ${Math.round(Number(qualityScore))}${qualitySuffix}`;
+    card.insertAdjacentHTML('afterbegin', `<div class="library-compact-row" role="button" tabindex="0" aria-expanded="false" aria-label="Show DJ details for ${escapeHtml(trackTitle)}"><label class="library-track-select"><input type="checkbox" value="${card.dataset.jobId}" aria-label="Select ${escapeHtml(trackTitle)}"><span></span></label><div class="library-row-icon">${trackArtwork}</div><div class="library-row-title"><h3>${escapeHtml(trackTitle)}</h3><span class="library-row-artist">${escapeHtml(trackArtist)}</span><small>${escapeHtml(category)}${identity?` · ${escapeHtml(identity)}`:''}</small></div><div class="library-row-metric"><b>${Number(analysis.bpm || latest.bpm || 0).toFixed(1)}</b><span>BPM</span></div><div class="library-row-metric"><b>${escapeHtml(formatLibraryKey(analysis.key))}</b><span>Key / Camelot</span></div><div class="library-row-metric"><b>${escapeHtml(energyBand(energy))}</b><span>Energy</span></div><div class="library-row-role">${roles.slice(0,2).map(role => `<span>${escapeHtml(LIBRARY_ROLE_INFO[role]?.[0] || role)}</span>`).join('')}</div><span class="library-result" data-result="${card.dataset.result}">${resultLabel}<small>${escapeHtml(qualityText)}</small></span>${compactAudioMarkup(`/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}`,latest.duration_seconds||analysis.duration_seconds||0)}<details class="library-row-actions"><summary aria-label="Library track actions">•••</summary><div><button type="button" class="compact-remove danger-text">Remove from Library</button></div></details></div>`);
   });
   bindLazyAudio(root);
   bindCompactAudio(root);
@@ -3135,7 +3145,7 @@ async function loadLibrary() {
 }
 
 function bindLibraryFilters(catalog) {
-  const controls={search:$('#library-search'),role:$('#library-role'),category:$('#library-category'),detailedGenre:$('#library-detailed-genre'),preset:$('#library-preset'),sort:$('#library-sort'),result:$('#library-result'),bpmMin:$('#library-bpm-min'),bpmMax:$('#library-bpm-max'),key:$('#library-key'),energy:$('#library-energy'),vocals:$('#library-vocals'),timing:$('#library-timing')};
+  const controls={search:$('#library-search'),role:$('#library-role'),category:$('#library-category'),detailedGenre:$('#library-detailed-genre'),preset:$('#library-preset'),sort:$('#library-sort'),result:$('#library-result'),quality:$('#library-quality'),bpmMin:$('#library-bpm-min'),bpmMax:$('#library-bpm-max'),key:$('#library-key'),energy:$('#library-energy'),vocals:$('#library-vocals'),timing:$('#library-timing')};
   const fill=(select,values,label)=>{const current=libraryUiState[select===controls.category?'category':select===controls.preset?'preset':'key'];select.replaceChildren(option('all',label),...[...new Set(values.filter(Boolean))].sort().map(value=>option(value,value==='unclassified'?'Unclassified':value)));select.value=[...select.options].some(item=>item.value===current)?current:'all';};
   controls.role.replaceChildren(option('all','All roles'),...Object.keys(LIBRARY_ROLE_INFO).map(value=>option(value,LIBRARY_ROLE_INFO[value][0]))); controls.role.value=libraryUiState.role;
   const categories=Object.keys(catalog.facets?.categories||{}).flatMap(name=>{const parts=name.split(' / ');return parts.map((_,index)=>parts.slice(0,index+1).join(' / ').toLowerCase());});
@@ -3155,14 +3165,14 @@ function bindLibraryFilters(catalog) {
   [controls.bpmMin,controls.bpmMax].forEach(input=>input.oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>{libraryUiState.bpmMin=controls.bpmMin.value;libraryUiState.bpmMax=controls.bpmMax.value;request(1);},240);});
   $('#library-page-size').onchange=event=>{libraryUiState.pageSize=Number(event.target.value);localStorage.setItem('dj-library-page-size',String(libraryUiState.pageSize));request(1);};
   $('#library-key-display').onchange=event=>{localStorage.setItem('audioextender-key-view',event.target.value);document.querySelectorAll('.library-key-value').forEach(node=>node.textContent=formatLibraryKey(node.dataset.standard,event.target.value));};
-  $('#library-reset-filters').onclick=()=>{Object.assign(libraryUiState,{search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1});loadLibrary();};
+  $('#library-reset-filters').onclick=()=>{Object.assign(libraryUiState,{search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1});loadLibrary();};
   const changePage=page=>{libraryUiState.page=page;loadLibrary();document.querySelector('.library-toolbar').scrollIntoView({behavior:'smooth',block:'start'});};
   renderTrackPagination($('#library-pagination'),catalog.page,catalog.total_pages,catalog.filtered_total,changePage);
   renderTrackPagination($('#library-pagination-top'),catalog.page,catalog.total_pages,catalog.filtered_total,changePage);
   $('#library-filter-count').textContent=`${catalog.filtered_total} of ${catalog.total} tracks${catalog.total_pages>1?` · page ${catalog.page}/${catalog.total_pages}`:''}`;
-  const active=[libraryUiState.search,libraryUiState.role!=='all',libraryUiState.category!=='all',libraryUiState.detailedGenre!=='all',libraryUiState.preset!=='all',libraryUiState.result!=='all',libraryUiState.bpmMin,libraryUiState.bpmMax,libraryUiState.key!=='all',libraryUiState.energy!=='all',libraryUiState.vocals!=='all',libraryUiState.timing!=='all'].filter(Boolean).length;
+  const active=[libraryUiState.search,libraryUiState.role!=='all',libraryUiState.category!=='all',libraryUiState.detailedGenre!=='all',libraryUiState.preset!=='all',libraryUiState.result!=='all',libraryUiState.quality!=='all',libraryUiState.bpmMin,libraryUiState.bpmMax,libraryUiState.key!=='all',libraryUiState.energy!=='all',libraryUiState.vocals!=='all',libraryUiState.timing!=='all'].filter(Boolean).length;
   $('#library-active-filter-count').textContent=active?`${active} active`:'';
-  $('#library-filter-chips').innerHTML=[libraryUiState.role!=='all'&&`Role: ${LIBRARY_ROLE_INFO[libraryUiState.role]?.[0]||libraryUiState.role}`,libraryUiState.category!=='all'&&`Parent: ${libraryUiState.category}`,libraryUiState.detailedGenre!=='all'&&`Detailed: ${libraryUiState.detailedGenre}`,libraryUiState.preset!=='all'&&`Preset: ${libraryUiState.preset}`,libraryUiState.key!=='all'&&`Key: ${formatLibraryKey(libraryUiState.key)}`].filter(Boolean).map(label=>`<span>${escapeHtml(label)}</span>`).join('');
+  $('#library-filter-chips').innerHTML=[libraryUiState.role!=='all'&&`Role: ${LIBRARY_ROLE_INFO[libraryUiState.role]?.[0]||libraryUiState.role}`,libraryUiState.category!=='all'&&`Parent: ${libraryUiState.category}`,libraryUiState.detailedGenre!=='all'&&`Detailed: ${libraryUiState.detailedGenre}`,libraryUiState.preset!=='all'&&`Preset: ${libraryUiState.preset}`,libraryUiState.quality!=='all'&&`Quality: ${controls.quality.options[controls.quality.selectedIndex]?.text||libraryUiState.quality}`,libraryUiState.key!=='all'&&`Key: ${formatLibraryKey(libraryUiState.key)}`].filter(Boolean).map(label=>`<span>${escapeHtml(label)}</span>`).join('');
   const sidebar=$('#library-sidebar');sidebar.querySelector('.library-side-all')?.classList.toggle('active',libraryUiState.role==='all'&&libraryUiState.category==='all');sidebar.querySelectorAll('.library-side-role').forEach(button=>button.classList.toggle('active',libraryUiState.role===button.dataset.value));sidebar.querySelectorAll('.library-side-category').forEach(button=>button.classList.toggle('active',libraryUiState.category===button.dataset.value));
 }
 
@@ -3497,6 +3507,14 @@ $('#reset-settings').addEventListener('click', async () => {
 let relocationPollTimer = null;
 let libraryStatusRequest = null;
 const formatBytes = value => { const units=['B','KB','MB','GB','TB']; let amount=Number(value||0),index=0; while(amount>=1024&&index<units.length-1){amount/=1024;index++;} return `${amount.toFixed(index?1:0)} ${units[index]}`; };
+function renderAudioQualitySummary(summary={}) {
+  const analyzed=Number(summary.analyzed||0),total=Number(summary.total||0),average=Number(summary.average_score||0);
+  $('#quality-average').textContent=analyzed?`${Math.round(average)}/100`:'—';
+  $('#quality-coverage').textContent=`${analyzed} of ${total} tracks analyzed`;
+  $('#quality-excellent').textContent=Number(summary.excellent||0);
+  $('#quality-good').textContent=Number(summary.good||0);
+  $('#quality-review').textContent=Number(summary.review||0)+Number(summary.poor||0);
+}
 async function loadLibraryStatus() {
   if(libraryStatusRequest)return libraryStatusRequest;
   libraryStatusRequest=(async()=>{
@@ -3511,6 +3529,7 @@ async function loadLibraryStatus() {
     $('#library-total-storage-detail').textContent=`${status.file_count||0} managed file${status.file_count===1?'':'s'}`;
     $('#library-free-storage').textContent=formatBytes(status.free_bytes);
     $('#library-free-storage-detail').textContent=status.capacity_bytes?`of ${formatBytes(status.capacity_bytes)} drive capacity`:'Drive capacity unavailable';
+    renderAudioQualitySummary(status.audio_quality);
     const badge=$('#library-online-state');badge.textContent=status.online?'Library online':'Library offline';badge.className=`library-state ${status.online?'online':'offline'}`;
     $('#library-offline-banner').hidden=status.online;document.body.classList.toggle('library-is-offline',!status.online);
   } catch { $('#library-online-state').textContent='Status unavailable'; }
@@ -3518,6 +3537,18 @@ async function loadLibraryStatus() {
   })();
   return libraryStatusRequest;
 }
+let qualityScanTimer=null;
+async function pollAudioQualityScan(batchId){
+  const batch=await fetch(`/api/downloaded-library/audio-quality/${batchId}`,{cache:'no-store'}).then(response=>response.json());
+  const panel=$('#quality-scan-progress'),total=Math.max(1,Number(batch.total||0));panel.hidden=false;
+  $('#quality-scan-bar').value=100*Number(batch.processed||0)/total;
+  $('#quality-scan-message').textContent=batch.status==='complete'?`Complete · ${batch.processed} analyzed${batch.failed?` · ${batch.failed} unavailable`:''}`:`${batch.processed} of ${batch.total} · ${batch.current||'Preparing…'}`;
+  $('#scan-audio-quality').disabled=batch.status==='processing';$('#scan-audio-quality').textContent=batch.status==='processing'?'Analyzing…':'Analyze audio quality';
+  if(batch.summary)renderAudioQualitySummary(batch.summary);
+  if(batch.status==='processing'){clearTimeout(qualityScanTimer);qualityScanTimer=setTimeout(()=>pollAudioQualityScan(batchId),900);}else{downloadedLoadedAt=0;await loadLibraryStatus();}
+}
+$('#scan-audio-quality').addEventListener('click',async()=>{const button=$('#scan-audio-quality');button.disabled=true;button.textContent='Starting…';const response=await fetch('/api/downloaded-library/audio-quality',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent='Analyze audio quality';$('#quality-scan-message').textContent=batch.detail||'Could not start quality analysis.';return;}pollAudioQualityScan(batch.batch_id);});
+fetch('/api/downloaded-library/audio-quality-latest',{cache:'no-store'}).then(response=>response.json()).then(batch=>{if(batch.summary)renderAudioQualitySummary(batch.summary);if(batch.status==='processing')pollAudioQualityScan(batch.batch_id);}).catch(()=>{});
 function renderRelocationState(state) {
   if(!state?.status)return;
   const panel=$('#relocation-progress');panel.hidden=false;panel.classList.toggle('complete',state.status==='complete');panel.classList.toggle('failed',['failed','canceled'].includes(state.status));

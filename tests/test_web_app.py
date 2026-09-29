@@ -441,6 +441,35 @@ class JobRepositoryTests(unittest.TestCase):
             )
             self.assertEqual(total, 2)
 
+    def test_downloaded_catalog_filters_saved_audio_quality(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = JobRepository(root / "jobs.sqlite3")
+            for title, score, label in (
+                ("Excellent", 94, "excellent"),
+                ("Good", 81, "good"),
+                ("Review", 63, "review"),
+                ("Poor", 42, "poor"),
+            ):
+                path = root / f"{title}.wav"
+                path.touch()
+                track_id = repository.upsert_downloaded_track(
+                    title=title, artist="Artist", file_path=path,
+                    genre_category="House",
+                )
+                repository.update_audio_quality(track_id, {"score": score, "label": label})
+
+            tracks, total = repository.page_downloaded_tracks(
+                page=1, page_size=10, quality="good",
+            )
+            self.assertEqual(total, 1)
+            self.assertEqual(tracks[0]["title"], "Good")
+            tracks, total = repository.page_downloaded_tracks(
+                page=1, page_size=10, quality="below-target",
+            )
+            self.assertEqual(total, 2)
+            self.assertEqual({track["title"] for track in tracks}, {"Review", "Poor"})
+
     def test_downloaded_catalog_exposes_and_filters_exact_detailed_genres(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
