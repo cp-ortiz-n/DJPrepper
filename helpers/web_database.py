@@ -231,6 +231,17 @@ class JobRepository:
                         connection.execute(
                             f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}"
                         )
+                quality_columns = {
+                    "audio_quality_score": "REAL",
+                    "audio_quality_label": "TEXT NOT NULL DEFAULT ''",
+                    "audio_quality_json": "TEXT NOT NULL DEFAULT '{}'",
+                    "audio_quality_analyzed_at": "TEXT NOT NULL DEFAULT ''",
+                }
+                for column, definition in quality_columns.items():
+                    if column not in downloaded_columns:
+                        connection.execute(
+                            f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}"
+                        )
                 self._ensure_recording_identities(connection)
                 connection.execute(
                     """
@@ -683,6 +694,7 @@ class JobRepository:
     def page_library_tracks(
         self, *, page: int, page_size: int, search: str = "", role: str = "all",
         category: str = "all", detail_genre: str = "all", preset: str = "all", result: str = "all",
+        quality: str = "all",
         bpm_min: float | None = None, bpm_max: float | None = None,
         musical_key: str = "all", energy: str = "all", vocals: str = "all",
         timing: str = "all", sort: str = "newest",
@@ -722,6 +734,16 @@ class JobRepository:
         if bpm_max is not None:
             conditions.append("idx.bpm <= ?")
             parameters.append(bpm_max)
+        quality_conditions = {
+            "excellent": "tracks.audio_quality_label = 'excellent'",
+            "good": "tracks.audio_quality_label = 'good'",
+            "review": "tracks.audio_quality_label = 'review'",
+            "poor": "tracks.audio_quality_label = 'poor'",
+            "below-target": "tracks.audio_quality_label IN ('review','poor')",
+            "unanalyzed": "tracks.audio_quality_score IS NULL",
+        }
+        if quality in quality_conditions:
+            conditions.append(quality_conditions[quality])
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         order = {
             "title": "idx.title COLLATE NOCASE, idx.job_id",
@@ -732,7 +754,11 @@ class JobRepository:
         }.get(sort, "idx.updated_at DESC, idx.job_id DESC")
         with closing(self._connect()) as connection:
             total = int(connection.execute(
-                f"SELECT COUNT(*) FROM library_search_index idx {where}", parameters
+                f"""SELECT COUNT(*)
+                FROM library_search_index idx
+                LEFT JOIN downloaded_tracks tracks ON tracks.id = idx.downloaded_id
+                {where}""",
+                parameters,
             ).fetchone()[0])
             rows = connection.execute(
                 f"""SELECT jobs.id, jobs.source_name, jobs.source_path, jobs.status,
@@ -753,6 +779,8 @@ class JobRepository:
                  AS generation_count,
                 tracks.genre, tracks.genre_category, tracks.recording_code,
                 tracks.version_code, tracks.identity_confidence, tracks.identity_reason,
+                tracks.audio_quality_score, tracks.audio_quality_label,
+                tracks.audio_quality_json, tracks.audio_quality_analyzed_at,
                 tracks.artwork_path, tracks.file_path AS downloaded_file_path
                 FROM library_search_index idx JOIN jobs ON jobs.id = idx.job_id
                 LEFT JOIN downloaded_tracks tracks ON tracks.id = idx.downloaded_id
@@ -1435,7 +1463,7 @@ class JobRepository:
         self, *, page: int, page_size: int, search: str = "",
         genre: str = "all", playlist: str = "all",
         detailed_genre: str = "all", analysis: str = "all",
-        artwork: str = "all", sort: str = "newest",
+        artwork: str = "all", quality: str = "all", sort: str = "newest",
     ) -> tuple[list[dict[str, Any]], int]:
         """Filter, sort, and page the downloaded catalog entirely in SQLite."""
         conditions: list[str] = []
@@ -1503,6 +1531,16 @@ class JobRepository:
             conditions.append("TRIM(COALESCE(tracks.artwork_path, '')) = ''")
         elif artwork == "available":
             conditions.append("TRIM(COALESCE(tracks.artwork_path, '')) != ''")
+        quality_conditions = {
+            "excellent": "tracks.audio_quality_label = 'excellent'",
+            "good": "tracks.audio_quality_label = 'good'",
+            "review": "tracks.audio_quality_label = 'review'",
+            "poor": "tracks.audio_quality_label = 'poor'",
+            "below-target": "tracks.audio_quality_label IN ('review','poor')",
+            "unanalyzed": "tracks.audio_quality_score IS NULL",
+        }
+        if quality in quality_conditions:
+            conditions.append(quality_conditions[quality])
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         order = {
             "newest": "tracks.imported_at DESC, tracks.id DESC",
@@ -1530,6 +1568,8 @@ class JobRepository:
                 tracks.filename, tracks.genre, tracks.genre_category,
                 tracks.recording_code, tracks.version_code,
                 tracks.identity_confidence, tracks.identity_reason,
+                tracks.audio_quality_score, tracks.audio_quality_label,
+                tracks.audio_quality_json, tracks.audio_quality_analyzed_at,
                 tracks.artwork_url, tracks.artwork_path, tracks.file_path,
                 tracks.duration_seconds, tracks.imported_at,
                 (SELECT GROUP_CONCAT(p.playlist_name, '||')
@@ -1548,6 +1588,33 @@ class JobRepository:
             ]
             results.append(item)
         return results, total
+
+    def update_audio_quality(self, track_id: int, result: dict[str, Any]) -> None:
+        """Persist one quality assessment without changing music metadata."""
+        now = _now()
+        with self._lock, closing(self._connect()) as connection, connection:
+            connection.execute(
+                """UPDATE downloaded_tracks SET audio_quality_score=?,
+                audio_quality_label=?,audio_quality_json=?,audio_quality_analyzed_at=?,
+                updated_at=? WHERE id=?""",
+                (float(result["score"]), str(result["label"]),
+                 json.dumps(result, sort_keys=True), now, now, track_id),
+            )
+
+    def audio_quality_summary(self) -> dict[str, Any]:
+        """Return lightweight library-wide quality statistics for Settings."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT COUNT(*) AS total,
+                COUNT(audio_quality_score) AS analyzed,
+                AVG(audio_quality_score) AS average_score,
+                SUM(CASE WHEN audio_quality_label='excellent' THEN 1 ELSE 0 END) AS excellent,
+                SUM(CASE WHEN audio_quality_label='good' THEN 1 ELSE 0 END) AS good,
+                SUM(CASE WHEN audio_quality_label='review' THEN 1 ELSE 0 END) AS review,
+                SUM(CASE WHEN audio_quality_label='poor' THEN 1 ELSE 0 END) AS poor
+                FROM downloaded_tracks"""
+            ).fetchone()
+        return {key: (0 if value is None else value) for key, value in dict(row).items()}
 
     def downloaded_catalog_facets(self) -> dict[str, Any]:
         with closing(self._connect()) as connection:

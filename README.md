@@ -91,6 +91,14 @@ visual comparison: gray is unplayed audio, lime is played audio, and orange is a
 cue. The colored timeline bands distinguish detected musical labels rather than
 quality; hovering one shows its name, timestamps, and confidence.
 
+Settings includes a resumable **Audio Quality** scan for the complete music
+library. It samples representative regions of each saved file and records an
+explainable 0–100 estimate using sample rate, bit depth, spectral bandwidth,
+clipping, and possible silence/dropouts. The score intentionally does not treat
+a WAV container's high PCM bitrate as proof that its original download was
+lossless. Music Files shows the stored score on each track, while Settings shows
+coverage, the library average, and the Excellent, Good, Review, and Poor counts.
+
 Candidate auditions are opt-in because rendering six contextual audio files for
 every song adds processing time and visual clutter. Enable **Review candidates**
 before adding files, or click **Create review** on a completed track. The new
