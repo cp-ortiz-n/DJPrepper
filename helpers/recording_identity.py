@@ -50,8 +50,22 @@ def identity_key(artist: str, title: str) -> str:
     return f"{normalize_identity_text(artist)}|{base_title(title)}"
 
 
-def format_family_code(number: int) -> str:
-    return f"AE-{number:04d}"
+def genre_family_code(genre_category: str) -> str:
+    """Return a stable, readable three-letter code for a parent genre."""
+    value = normalize_identity_text(genre_category)
+    rules = (
+        ("drum bass", "DNB"), ("hip hop", "HIP"), ("r b", "RNB"),
+        ("disco", "DSC"), ("house", "HOU"), ("funk", "DSC"), ("latin", "LAT"),
+        ("reggae", "REG"), ("dancehall", "REG"), ("ambient", "AMB"),
+        ("chill", "AMB"), ("techno", "TEC"),
+        ("electronic", "ELC"), ("pop", "POP"), ("rock", "RCK"),
+        ("alternative", "RCK"),
+    )
+    return next((code for phrase, code in rules if phrase in value), "OTH")
+
+
+def format_family_code(number: int, genre_category: str = "Other") -> str:
+    return f"{genre_family_code(genre_category)}-{number:06d}"
 
 
 def next_version_code(kind: str, existing: set[str]) -> str:

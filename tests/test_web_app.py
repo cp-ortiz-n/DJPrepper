@@ -21,15 +21,30 @@ from web_app import (
     AuthorizedImportRequest,
     BatchDownloadRequest,
     _best_youtube_match,
+    _downloaded_track_payload,
+    _authorized_source_provider,
     _catalog_genre_category,
     _generalized_genre,
     _genre_path_parts,
     _playlist_csv_tracks,
+    _scdl_download_command,
     app,
 )
 
 
 class JobRepositoryTests(unittest.TestCase):
+    def test_downloaded_track_payload_includes_absolute_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "Track.wav"
+            path.touch()
+            payload = _downloaded_track_payload({
+                "id": 1, "title": "Track", "artist": "Artist",
+                "file_path": str(path), "artwork_path": "", "genre": "house",
+                "genre_category": "Electronic / House / House",
+            })
+            self.assertEqual(payload["absolute_path"], str(path.resolve()))
+            self.assertNotIn("file_path", payload)
+
     def test_report_audio_jobs_include_old_completed_tracks(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
@@ -111,6 +126,18 @@ class JobRepositoryTests(unittest.TestCase):
                 title="Opening Track", artist="Test Artist", file_path=organized_path,
             )
             catalog.replace_library_search_index(entries)
+            identity = catalog.list_downloaded_tracks()[0]
+            full_track_id = f"{identity['recording_code']}-{identity['version_code']}"
+            tracks, total = catalog.page_library_tracks(
+                page=1, page_size=10, search=full_track_id,
+            )
+            self.assertEqual(total, 1)
+            self.assertEqual(tracks[0]["library_title"], "Opening Track")
+            downloaded, total = catalog.page_downloaded_tracks(
+                page=1, page_size=10, search=identity["recording_code"].split("-")[-1],
+            )
+            self.assertEqual(total, 1)
+            self.assertEqual(downloaded[0]["title"], "Opening Track")
             tracks, total = catalog.page_library_tracks(
                 page=1, page_size=10, category="electronic", role="peak-time",
             )
@@ -1019,7 +1046,7 @@ class WebApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 422)
 
-    def test_authorized_import_rejects_non_youtube_sources(self) -> None:
+    def test_authorized_import_rejects_unsupported_sources(self) -> None:
         response = self.client.post(
             "/api/imports/authorized",
             json={
@@ -1029,6 +1056,29 @@ class WebApiTests(unittest.TestCase):
             },
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_authorized_import_accepts_soundcloud_tracks(self) -> None:
+        worker = Mock()
+        with patch.object(web_module.threading, "Thread", return_value=worker):
+            response = self.client.post(
+                "/api/imports/authorized",
+                json={
+                    "url": "https://soundcloud.com/example/authorized-mix",
+                    "rights_basis": "creative-commons",
+                    "confirmation": True,
+                },
+            )
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(_authorized_source_provider("https://on.soundcloud.com/abc"), "soundcloud")
+        worker.start.assert_called_once()
+
+    def test_soundcloud_download_uses_scdl_and_blocks_playlists(self) -> None:
+        command = _scdl_download_command(
+            "https://soundcloud.com/example/authorized-mix", Path("/tmp/soundcloud-test")
+        )
+        self.assertTrue(command[0].endswith("scdl"))
+        self.assertIn("--no-playlist", command)
+        self.assertIn("--original-art", command)
 
     def test_authorized_import_requires_rights_confirmation(self) -> None:
         response = self.client.post(

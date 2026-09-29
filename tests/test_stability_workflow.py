@@ -98,7 +98,7 @@ class StabilityWorkflowTests(unittest.TestCase):
             self.assertTrue(relocated_artwork.is_file())
             self.assertEqual(track["genre"], "deep house")
             self.assertEqual(track["genre_category"], "Electronic / House / Deep House")
-            self.assertRegex(track["recording_code"], r"^AE-\d{4,}$")
+            self.assertRegex(track["recording_code"], r"^HOU-\d{6,}$")
             self.assertEqual(track["version_code"], "ORG")
             self.assertEqual(set(track["playlists"]), {"House Night", "Favorites"})
             self.assertEqual(
