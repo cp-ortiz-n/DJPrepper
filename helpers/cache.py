@@ -17,7 +17,8 @@ from helpers.audio_loader import AudioData
 from helpers.config import EditConfig
 
 # Increment this whenever cached feature meanings or algorithms change.
-CACHE_VERSION = 5
+CACHE_VERSION = 10
+WAVEFORM_CACHE_VERSION = 2
 _ARRAY_FIELDS = (
     "beat_times", "downbeat_indices", "bar_boundaries", "frame_times", "rms",
     "onset", "percussion_rms", "harmonic_rms", "bass_rms",
@@ -51,6 +52,32 @@ class AnalysisCache:
     def _path(self, source: Path, config: EditConfig, suffix: str) -> Path:
         return self.directory / f"{self._key(source, config)}.{suffix}.npz"
 
+    def _waveform_path(self, source: Path, target_points: int) -> Path:
+        stat = source.stat()
+        identity = {
+            "version": WAVEFORM_CACHE_VERSION,
+            "path": str(source.resolve()),
+            "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
+            "target_points": target_points,
+        }
+        encoded = json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+        return self.directory / f"{hashlib.sha256(encoded).hexdigest()}.waveform.npz"
+
+    def processing_paths(self, source: Path, config: EditConfig) -> set[Path]:
+        """Return every managed cache path associated with a source revision."""
+        return {
+            self._path(source, config, "analysis"),
+            self._path(source, config, "vocals"),
+            self._path(source, config, "instrumental").with_suffix(".instrumental.wav"),
+            self._path(source, config, "stemmeta"),
+            self._path(source, config, "drums").with_suffix(".drums.wav"),
+        }
+
+    def waveform_path(self, source: Path, target_points: int = 1100) -> Path:
+        """Return the managed waveform cache path for a source revision."""
+        return self._waveform_path(source, target_points)
+
     @staticmethod
     def _atomic_save(path: Path, **values: Any) -> None:
         descriptor, temporary_name = tempfile.mkstemp(
@@ -81,6 +108,7 @@ class AnalysisCache:
                     key_confidence=float(data["key_confidence"]),
                     key_root=int(data["key_root"]),
                     key_mode=str(data["key_mode"]),
+                    key_candidates=tuple(json.loads(str(data["key_candidates_json"]))),
                     groove_label=str(data["groove_label"]),
                     swing_ratio=float(data["swing_ratio"]),
                     timing_label=str(data["timing_label"]),
@@ -106,6 +134,7 @@ class AnalysisCache:
             key_confidence=np.asarray(analysis.key_confidence),
             key_root=np.asarray(analysis.key_root),
             key_mode=np.asarray(analysis.key_mode),
+            key_candidates_json=np.asarray(json.dumps(analysis.key_candidates)),
             groove_label=np.asarray(analysis.groove_label),
             swing_ratio=np.asarray(analysis.swing_ratio),
             timing_label=np.asarray(analysis.timing_label),
@@ -134,6 +163,34 @@ class AnalysisCache:
                 self._path(source, config, "vocals"),
                 vocal_energy=np.asarray(vocal_energy, dtype=np.float32),
             )
+
+    def load_waveform(
+        self, source: Path, target_points: int = 1100
+    ) -> tuple[float, np.ndarray] | None:
+        """Load display peaks keyed to the exact audio file revision."""
+        if not self.enabled or self.refresh:
+            return None
+        path = self._waveform_path(source, target_points)
+        if not path.exists():
+            return None
+        try:
+            with np.load(path, allow_pickle=False) as data:
+                return float(data["duration"]), np.asarray(data["peaks"], dtype=np.float32)
+        except (OSError, ValueError, KeyError, EOFError):
+            return None
+
+    def save_waveform(
+        self, source: Path, duration: float, peaks: np.ndarray,
+        target_points: int = 1100,
+    ) -> None:
+        """Persist compact display peaks for reuse across server restarts."""
+        if not self.enabled:
+            return
+        self._atomic_save(
+            self._waveform_path(source, target_points),
+            duration=np.asarray(duration, dtype=np.float64),
+            peaks=np.asarray(peaks, dtype=np.float32),
+        )
 
     def load_instrumental(
         self, source: Path, config: EditConfig

@@ -9,7 +9,7 @@ ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.13"
-files = ["main.py", "helpers", "tests"]
+files = ["main.py", "web_app.py", "helpers", "tests"]
 exclude = "(^|/)([.]venv|[.]venv-intel-backup|input|output|cache)/"
 ignore_missing_imports = true
 check_untyped_defs = true
@@ -18,7 +18,7 @@ warn_redundant_casts = true
 no_implicit_optional = true
 
 [tool.coverage.run]
-source = ["helpers", "main"]
+source = ["helpers", "main", "web_app"]
 branch = true
 omit = ["tests/*", ".venv/*", ".venv-intel-backup/*"]
 

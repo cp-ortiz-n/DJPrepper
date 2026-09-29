@@ -8,6 +8,11 @@ from typing import Literal
 import numpy as np
 
 from helpers.analysis import TrackAnalysis
+from helpers.section_context import (
+    behavior_compatibility,
+    broad_section_bounds,
+    classify_interval,
+)
 from helpers.selection_metrics import (
     _chord_transition_score,
     _coefficient_of_variation,
@@ -75,6 +80,11 @@ def _rank_fixed_sections(
     boundaries = analysis.bar_boundaries
     if len(boundaries) <= bars:
         raise RuntimeError(f"Track is too short to find a complete {bars}-bar section")
+    broad_regions = broad_section_bounds(analysis)
+    target_region = broad_regions[0] if position == "intro" else broad_regions[-1]
+    target_behavior = classify_interval(
+        analysis, target_region[1], target_region[2], vocal_energy
+    )
 
     if position == "intro":
         # Define opening/closing zones in musical bars, not percentages of clock
@@ -161,6 +171,35 @@ def _rank_fixed_sections(
             float(min(grid_values[0], grid_values[-1])) if len(grid_values) else 0.0
         )
         candidate_boundaries = boundaries[index:index + bars + 1]
+        regional_beat_duration = (end - start) / max(bars * 4, 1)
+        candidate_behavior = classify_interval(analysis, start, end, vocal_energy)
+        regional_compatibility = (
+            behavior_compatibility(candidate_behavior, target_behavior)
+            if candidate_behavior is not None and target_behavior is not None else 0.5
+        )
+        crossed_region_boundary = any(
+            start < boundary < end
+            for boundary in (broad_regions[0][2], broad_regions[-1][1])
+        )
+        context_start = (
+            end if position == "intro" else max(0.0, start - 4 * regional_beat_duration)
+        )
+        context_end = (
+            min(duration, end + 4 * regional_beat_duration) if position == "intro" else start
+        )
+        context_behavior = classify_interval(
+            analysis, context_start, context_end, vocal_energy
+        )
+        local_behavior_match = (
+            behavior_compatibility(candidate_behavior, context_behavior)
+            if candidate_behavior is not None and context_behavior is not None else 0.65
+        )
+        regional_boundary_risk = float(np.clip(
+            0.65 * (1.0 if crossed_region_boundary else 0.0)
+            + 0.35 * (1.0 - local_behavior_match),
+            0.0,
+            1.0,
+        ))
         bar_rms = _means_by_bar(analysis.rms, analysis.frame_times, candidate_boundaries)
         bar_centroid = _means_by_bar(
             analysis.spectral_centroid, analysis.frame_times, candidate_boundaries
@@ -558,6 +597,7 @@ def _rank_fixed_sections(
             + 0.20 * arrangement_fit
             + 0.10 * local_grid_confidence
             + 0.12 * boundary_grid_confidence
+            + 0.18 * regional_compatibility
         )
         score -= (
             0.30 * transition
@@ -574,6 +614,7 @@ def _rank_fixed_sections(
             + 0.22 * (1.0 - energy_context_match)
             + 0.22 * (1.0 - chord_return_compatibility)
             + 0.38 * harmonic_resolution_risk
+            + 0.34 * regional_boundary_risk
         )
         if vocal is not None:
             score -= (
@@ -620,6 +661,9 @@ def _rank_fixed_sections(
                 arrangement_fit=arrangement_fit,
                 local_grid_confidence=local_grid_confidence,
                 boundary_grid_confidence=boundary_grid_confidence,
+                regional_style=(candidate_behavior.style if candidate_behavior else "unknown"),
+                regional_compatibility=regional_compatibility,
+                regional_boundary_risk=regional_boundary_risk,
             )
         )
 

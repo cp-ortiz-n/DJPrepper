@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.cache import clear_cache
+import numpy as np
+
+from helpers.cache import AnalysisCache, clear_cache
 from helpers.processing_report import update_processing_report
 
 
@@ -45,6 +47,24 @@ class ProcessingReportTests(unittest.TestCase):
 
 
 class CacheCleanupTests(unittest.TestCase):
+    def test_waveform_cache_persists_and_invalidates_with_audio_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "track.wav"
+            source.write_bytes(b"first revision")
+            cache = AnalysisCache(root / "cache")
+            peaks = np.asarray([0.1, 0.5, 1.0], dtype=np.float32)
+
+            cache.save_waveform(source, 12.5, peaks)
+            loaded = cache.load_waveform(source)
+            self.assertIsNotNone(loaded)
+            assert loaded is not None
+            self.assertEqual(loaded[0], 12.5)
+            np.testing.assert_allclose(loaded[1], peaks)
+
+            source.write_bytes(b"second revision with a different size")
+            self.assertIsNone(cache.load_waveform(source))
+
     def test_clear_cache_only_removes_owned_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

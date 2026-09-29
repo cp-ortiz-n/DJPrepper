@@ -89,6 +89,24 @@ class CandidateValidatorTests(unittest.TestCase):
         self.assertEqual(result.candidate.repetitions, 2)
         self.assertTrue(result.shortened)
 
+    def test_explicit_review_choice_bypasses_automatic_quality_rejection(self) -> None:
+        chosen = candidate(
+            seam_compatibility=0.2,
+            timbre_compatibility=0.2,
+            bass_compatibility=0.2,
+            arrangement_fit=-0.8,
+        )
+        result = CandidateValidator().validate(
+            chosen,
+            EditConfig(manual_candidate_selection=True),
+            None,
+            0.0,
+            False,
+            position="intro",
+        )
+        self.assertEqual(result.candidate, chosen)
+        self.assertIsNone(result.rejection_reason)
+
 
 class ConfigFactoryTests(unittest.TestCase):
     def test_cli_value_overrides_preset_value(self) -> None:

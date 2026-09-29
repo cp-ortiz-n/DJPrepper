@@ -49,7 +49,7 @@ class ConfigFactory:
             cache_enabled=(DEFAULT_CACHE_ENABLED and not args.no_cache)
             or args.refresh_cache,
             refresh_cache=args.refresh_cache,
-            create_previews=args.previews or args.preview_only,
+            create_previews=args.previews or args.preview_only or args.review,
             preview_only=args.preview_only,
             preview_seconds=args.preview_seconds,
             candidate_count=(
@@ -58,7 +58,8 @@ class ConfigFactory:
             ),
             intro_candidate=args.intro_candidate,
             outro_candidate=args.outro_candidate,
-            choose_candidates=args.choose_candidates,
+            choose_candidates=args.choose_candidates or args.review,
+            review_mode=args.review,
             auto_select_bar_lengths=args.auto_bars,
             export_cues=args.cues,
         )

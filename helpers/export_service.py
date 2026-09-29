@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from helpers.analysis import TrackAnalysis
@@ -97,17 +97,9 @@ class ExportService:
                 # the preview folder cannot advertise a splice the current WAV
                 # and report no longer contain.
                 if intro_audio is None:
-                    for path in (
-                        directory / "Intro Preview.wav",
-                        *directory.glob("Intro Candidate *.wav"),
-                    ):
-                        path.unlink(missing_ok=True)
+                    (directory / "Intro Preview.wav").unlink(missing_ok=True)
                 if outro_audio is None:
-                    for path in (
-                        directory / "Outro Preview.wav",
-                        *directory.glob("Outro Candidate *.wav"),
-                    ):
-                        path.unlink(missing_ok=True)
+                    (directory / "Outro Preview.wav").unlink(missing_ok=True)
                 if intro_audio is not None:
                     intro_preview_path = directory / "Intro Preview.wav"
                     self._audio_writer(
@@ -145,6 +137,36 @@ class ExportService:
                     request.config.crossfade_ms,
                     request.edited_audio.duration,
                 )
+                if request.config.insert_source_start is not None:
+                    assert request.config.insert_source_end is not None
+                    assert request.config.insert_destination is not None
+                    raw_added = (
+                        request.config.insert_source_end
+                        - request.config.insert_source_start
+                    ) * request.config.insert_copies
+                    fade = max(request.config.crossfade_ms, 10.0) / 1000.0
+                    joins = request.config.insert_copies + 1
+                    added = max(0.0, raw_added - joins * fade)
+                    destination = request.config.insert_destination
+                    shifted = tuple(
+                        replace(
+                            cue,
+                            start=cue.start + added,
+                            end=cue.end + added if cue.end is not None else None,
+                        )
+                        if cue.start >= destination else cue
+                        for cue in cue_points
+                    )
+                    cue_points = tuple(sorted(
+                        (*shifted, CuePoint(
+                            "Inserted Section",
+                            destination,
+                            destination + added,
+                            kind="loop",
+                            purpose="Custom arrangement insertion",
+                        )),
+                        key=lambda cue: cue.start,
+                    ))
                 cue_sheet_path = (
                     self.artifact_root(request.output) / "cue_sheets" /
                     f"{request.output.stem}.json"
@@ -217,11 +239,15 @@ class ExportService:
     @staticmethod
     def _metadata(request: ExportRequest) -> dict[str, object]:
         analysis = request.analysis
+        key_candidates = getattr(analysis, "key_candidates", ())
+        if not isinstance(key_candidates, (list, tuple)):
+            key_candidates = ()
         return {
             "duration_seconds": request.edited_audio.duration,
             "bpm": analysis.bpm,
             "key": analysis.key_label,
             "key_confidence": analysis.key_confidence / 100.0,
+            "key_candidates": list(key_candidates),
             "beat_grid_confidence": analysis.beat_grid_confidence / 100.0,
             "downbeat_continuity": analysis.downbeat_continuity / 100.0,
             "groove": analysis.groove_label,

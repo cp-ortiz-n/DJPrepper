@@ -34,6 +34,33 @@ def _smooth_join(left: np.ndarray, right: np.ndarray, fade_frames: int) -> np.nd
     return np.concatenate((left[:-length], mixed, right[length:]), axis=0)
 
 
+def insert_audio_region(
+    edited: AudioData,
+    source: AudioData,
+    source_start: float,
+    source_end: float,
+    destination: float,
+    copies: int = 1,
+    crossfade_ms: float = 15.0,
+) -> AudioData:
+    """Insert source material into an assembled edit using click-safe joins."""
+    if source_end <= source_start or copies < 1:
+        raise ValueError("Inserted region must have positive duration and copies")
+    if destination < 0 or destination > edited.duration:
+        raise ValueError("Insertion destination is outside the extended edit")
+    region = _slice(source, source_start, source_end)
+    if len(region) == 0:
+        raise ValueError("Inserted source region is empty")
+    fade_frames = max(1, round(crossfade_ms * edited.sample_rate / 1000.0))
+    inserted = region
+    for _ in range(1, copies):
+        inserted = _smooth_join(inserted, region, fade_frames)
+    at = min(len(edited.samples), round(destination * edited.sample_rate))
+    assembled = _smooth_join(edited.samples[:at], inserted, fade_frames)
+    assembled = _smooth_join(assembled, edited.samples[at:], fade_frames)
+    return AudioData(np.asarray(assembled, dtype=np.float32), edited.sample_rate)
+
+
 def optimize_candidate_boundaries(
     audio: AudioData, candidate: SectionCandidate, search_ms: float = 40.0
 ) -> SectionCandidate:

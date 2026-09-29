@@ -65,16 +65,30 @@ class EditConfig:
     cache_enabled: bool = True
     refresh_cache: bool = False
     create_previews: bool = False
+    create_candidate_auditions: bool = False
     preview_only: bool = False
     preview_seconds: float = 8.0
     candidate_count: int = DEFAULT_CANDIDATE_COUNT
     intro_candidate: int = 1
     outro_candidate: int = 1
     choose_candidates: bool = False
+    review_mode: bool = False
+    manual_candidate_selection: bool = False
+    custom_intro_start: float | None = None
+    custom_intro_end: float | None = None
+    custom_intro_copies: int = 1
+    custom_outro_start: float | None = None
+    custom_outro_end: float | None = None
+    custom_outro_copies: int = 1
+    insert_source_start: float | None = None
+    insert_source_end: float | None = None
+    insert_destination: float | None = None
+    insert_copies: int = 1
     auto_select_bar_lengths: bool = DEFAULT_AUTO_BAR_SELECTION
     minimum_stem_construction_reliability: float = MINIMUM_STEM_CONSTRUCTION_RELIABILITY
     minimum_vocal_coverage_for_instrumental_edit: float = MINIMUM_VOCAL_COVERAGE_FOR_INSTRUMENTAL_EDIT
     export_cues: bool = DEFAULT_EXPORT_CUES
+    analysis_only: bool = False
 
     def validate(self) -> None:
         if self.intro_bars not in SUPPORTED_BAR_COUNTS:
@@ -87,3 +101,36 @@ class EditConfig:
             raise ConfigurationError("preview seconds must be greater than zero")
         if self.candidate_count < 1:
             raise ConfigurationError("candidate count must be at least one")
+        if not 1 <= self.maximum_repetitions <= 8:
+            raise ConfigurationError("maximum repetitions must be between 1 and 8")
+        if not 1 <= self.crossfade_ms <= 100:
+            raise ConfigurationError("crossfade must be between 1 and 100 ms")
+        for position in ("intro", "outro"):
+            start = getattr(self, f"custom_{position}_start")
+            end = getattr(self, f"custom_{position}_end")
+            copies = getattr(self, f"custom_{position}_copies")
+            if (start is None) != (end is None):
+                raise ConfigurationError(f"custom {position} requires both start and end")
+            if start is not None and (start < 0 or end <= start):
+                raise ConfigurationError(f"custom {position} must have start < end")
+            if not 1 <= copies <= 8:
+                raise ConfigurationError(f"custom {position} copies must be between 1 and 8")
+        insert_values = (
+            self.insert_source_start,
+            self.insert_source_end,
+            self.insert_destination,
+        )
+        if any(value is not None for value in insert_values):
+            if any(value is None for value in insert_values):
+                raise ConfigurationError(
+                    "section insertion requires source start, source end, and destination"
+                )
+            assert self.insert_source_start is not None
+            assert self.insert_source_end is not None
+            assert self.insert_destination is not None
+            if self.insert_source_start < 0 or self.insert_source_end <= self.insert_source_start:
+                raise ConfigurationError("insert source must have start < end")
+            if self.insert_destination < 0:
+                raise ConfigurationError("insert destination cannot be negative")
+        if not 1 <= self.insert_copies <= 8:
+            raise ConfigurationError("insert copies must be between 1 and 8")

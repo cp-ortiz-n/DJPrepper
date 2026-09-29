@@ -7,9 +7,11 @@ from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from helpers.analysis import analyze_track
+from helpers.analysis import TrackAnalysis, analyze_track
 from helpers.audio_loader import load_audio
 from helpers.cache import AnalysisCache
+from helpers.candidate_reranker import assess_candidate
+from helpers.candidate_selection import Position
 from helpers.candidate_validator import CandidateValidator
 from helpers.config import EditConfig
 from helpers.dj_readiness import detect_dj_readiness
@@ -18,11 +20,12 @@ from helpers.export_service import ExportRequest, ExportService
 from helpers.extended_edit import (
     adaptive_crossfade_ms,
     create_extended_edit,
+    insert_audio_region,
     optimize_candidate_boundaries,
     should_use_instrumental,
 )
 from helpers.interfaces import ProgressReporter
-from helpers.models import FileResult
+from helpers.models import FileResult, TrackArrangementSection
 from helpers.presets import PRESETS
 from helpers.progress import ProgressBar
 from helpers.redrum import (
@@ -36,7 +39,7 @@ from helpers.selection_coordinator import (
     SideSelectionRequest,
 )
 from helpers.stem_provider import StemProvider
-from helpers.style_detector import detect_editing_style
+from helpers.style_detector import classify_track_sections, detect_editing_style
 from settings import (
     DEFAULT_CANDIDATE_COUNT,
     DJ_READY_MINIMUM_BARS,
@@ -56,6 +59,29 @@ def _format_duration(seconds: float) -> str:
     return f"{hours:d}:{minutes:02d}:{remainder:02d}" if hours else f"{minutes:02d}:{remainder:02d}"
 
 
+def _arrangement_sections(analysis: TrackAnalysis) -> tuple[TrackArrangementSection, ...]:
+    """Merge adjacent bar labels into readable timeline regions."""
+    labels = analysis.bar_section_labels
+    confidence = analysis.bar_section_confidence
+    boundaries = analysis.bar_boundaries
+    usable = min(len(labels), len(confidence), max(0, len(boundaries) - 1))
+    if usable == 0:
+        return ()
+    sections: list[TrackArrangementSection] = []
+    first = 0
+    for index in range(1, usable + 1):
+        if index < usable and labels[index] == labels[first]:
+            continue
+        sections.append(TrackArrangementSection(
+            float(boundaries[first]),
+            float(boundaries[index]),
+            str(labels[first]),
+            sum(float(value) for value in confidence[first:index]) / (index - first),
+        ))
+        first = index
+    return tuple(sections)
+
+
 def _print_candidate(label: str, candidate: SectionCandidate) -> None:
     extra = f", vocal={candidate.vocal_energy:.2f}" if candidate.vocal_energy is not None else ""
     print(
@@ -66,7 +92,7 @@ def _print_candidate(label: str, candidate: SectionCandidate) -> None:
 
 def _pick_ranked_candidate(
     candidates: list[SectionCandidate],
-    position: str,
+    position: Position,
     requested_rank: int,
     interactive: bool,
     progress: ProgressReporter,
@@ -96,9 +122,11 @@ def _pick_ranked_candidate(
         pause()
         print(f"{position.title()} candidates:")
         for local_rank, candidate in enumerate(page, start=1):
+            assessment = assess_candidate(candidate, position, None)
             print(
                 f"  {local_rank}. {_format_time(candidate.start)}–{_format_time(candidate.end)}  "
-                f"quality {candidate.loop_quality:.0f}%  ·  energy {candidate.energy_shape}  ·  "
+                f"phrase {assessment.phrase:.0f}%  ·  loop {assessment.loop:.0f}%  ·  "
+                f"transition {assessment.transition:.0f}%  ·  "
                 f"section {candidate.section_label}  ·  "
                 f"buildup {candidate.buildup_risk:.0%}  ·  bass reset "
                 f"{candidate.bass_reset_risk:.0%}  ·  unique {candidate.unit_bars} bars"
@@ -206,10 +234,13 @@ class TrackProcessor:
             raise ValueError("Output path must differ from input path")
     
         started = time.monotonic()
+        stage_timings: list[tuple[str, float]] = []
         progress = progress or ProgressBar(show_logs=config.choose_candidates)
         progress.update(0, "Loading audio")
         try:
+            stage_started = time.monotonic()
             audio = load_audio(source)
+            stage_timings.append(("Loading audio", time.monotonic() - stage_started))
             progress.update(8, "Starting audio analysis")
             cache = AnalysisCache(
                 Path(config.cache_directory), config.cache_enabled, config.refresh_cache
@@ -217,10 +248,25 @@ class TrackProcessor:
             analysis = cache.load_analysis(source, config)
             analysis_cache_hit = analysis is not None
             if analysis is None:
+                analysis_stage_started = time.monotonic()
+                analysis_stage_label = "Starting audio analysis"
+                def report_analysis(fraction: float, label: str) -> None:
+                    nonlocal analysis_stage_started, analysis_stage_label
+                    now = time.monotonic()
+                    if label != analysis_stage_label:
+                        stage_timings.append(
+                            (analysis_stage_label, now - analysis_stage_started)
+                        )
+                        analysis_stage_started = now
+                        analysis_stage_label = label
+                    progress.update(8 + 62 * fraction, label)
                 analysis = analyze_track(
                     audio,
                     config,
-                    lambda fraction, label: progress.update(8 + 62 * fraction, label),
+                    report_analysis,
+                )
+                stage_timings.append(
+                    (analysis_stage_label, time.monotonic() - analysis_stage_started)
                 )
                 cache.save_analysis(source, config, analysis)
                 if config.cache_enabled:
@@ -243,9 +289,11 @@ class TrackProcessor:
                 f"({len(analysis.downbeat_indices)} inferred bars)"
             )
     
+            stem_started = time.monotonic()
             stem_analysis = self.stem_provider.analyze(
                 source, audio, analysis, config, cache, progress
             )
+            stage_timings.append(("Vocal and stem analysis", time.monotonic() - stem_started))
             vocal_energy = stem_analysis.vocal_energy
             instrumental_audio = stem_analysis.instrumental_audio
             drums_audio = stem_analysis.drums_audio
@@ -262,6 +310,14 @@ class TrackProcessor:
     
             detected_style = None
             preset_reason = None
+            section_profiles = classify_track_sections(analysis, vocal_energy)
+            progress.log(
+                "Section styles: "
+                + "; ".join(
+                    f"{profile.name.lower()} {profile.style} ({profile.confidence:.0%})"
+                    for profile in section_profiles
+                )
+            )
             if config.preset_name == "auto":
                 decision = detect_editing_style(analysis, vocal_energy)
                 selected = PRESETS[decision.preset]
@@ -288,6 +344,50 @@ class TrackProcessor:
                 )
 
             readiness = detect_dj_readiness(analysis)
+            if config.analysis_only:
+                progress.update(100, "Analysis complete")
+                elapsed = time.monotonic() - started
+                stage_timings.append(("Total", elapsed))
+                return FileResult(
+                    source_name=source.name,
+                    output=source,
+                    wav_output=source,
+                    elapsed=elapsed,
+                    bpm=analysis.bpm,
+                    tempo_drift_percent=analysis.tempo_drift_percent,
+                    beat_grid_confidence=analysis.beat_grid_confidence,
+                    key_label=analysis.key_label,
+                    key_confidence=analysis.key_confidence,
+                    key_candidates=analysis.key_candidates,
+                    groove_label=analysis.groove_label,
+                    swing_ratio=analysis.swing_ratio,
+                    timing_label=analysis.timing_label,
+                    downbeat_continuity=analysis.downbeat_continuity,
+                    beats=len(analysis.beat_times),
+                    bars=len(analysis.downbeat_indices),
+                    intro=None,
+                    outro=None,
+                    mix_in=None,
+                    mix_out=None,
+                    intro_existing_mix_bars=readiness.intro.mixable_bars,
+                    outro_existing_mix_bars=readiness.outro.mixable_bars,
+                    intro_already_dj_ready=(
+                        readiness.intro.mixable_bars >= DJ_READY_MINIMUM_BARS
+                    ),
+                    outro_already_dj_ready=(
+                        readiness.outro.mixable_bars >= DJ_READY_MINIMUM_BARS
+                    ),
+                    analysis_cache_hit=analysis_cache_hit,
+                    vocal_cache_hit=vocal_cache_hit,
+                    preset_name=config.preset_name,
+                    detected_style=detected_style,
+                    preset_reason=preset_reason,
+                    stem_reliability=(stem_reliability if config.use_stems else None),
+                    output_duration=audio.duration,
+                    section_profiles=section_profiles,
+                    arrangement_sections=_arrangement_sections(analysis),
+                    stage_timings=tuple(stage_timings),
+                )
             intro_already_ready = (
                 not config.intro_bars_locked
                 and config.intro_bars > 0
@@ -323,11 +423,12 @@ class TrackProcessor:
     
             coordinator = self.selection_coordinator
             exporter = self.export_service
+            reviews: dict[str, tuple[str | None, str | None]] = {}
     
             def choose_side(
-                options: list[SectionCandidate], position: str, requested_rank: int
+                options: list[SectionCandidate], position: Position, requested_rank: int
             ) -> tuple[SectionCandidate | None, int | None]:
-                return _pick_ranked_candidate(
+                chosen, rank = _pick_ranked_candidate(
                     options,
                     position,
                     requested_rank,
@@ -345,6 +446,22 @@ class TrackProcessor:
                         stem_reliability,
                     ),
                 )
+                if config.review_mode:
+                    pause = getattr(progress, "pause_for_input", lambda: None)
+                    resume = getattr(progress, "resume_after_input", lambda: None)
+                    pause()
+                    print(
+                        "Feedback tags: good, chopped, wrong phrase, vocals, "
+                        "buildup, bass reset, too repetitive, other"
+                    )
+                    reason = input(
+                        f"Why did you choose this {position} option? "
+                        "(comma-separated, optional): "
+                    ).strip() or None
+                    notes = input("Notes (optional): ").strip() or None
+                    reviews[position] = (reason, notes)
+                    resume()
+                return chosen, rank
     
             if config.intro_bars == 0:
                 progress.log("Extended intro disabled")
@@ -439,6 +556,83 @@ class TrackProcessor:
             outro_after = outro_selection.minimum_start
             automatic_outro_boundary = outro_selection.automatic_boundary
             outro_fallback = outro_selection.fallback
+
+            def custom_candidate(
+                position: Position,
+                start: float | None,
+                end: float | None,
+                copies: int,
+                options: tuple[SectionCandidate, ...],
+            ) -> SectionCandidate | None:
+                if start is None or end is None:
+                    return None
+                if end > audio.duration:
+                    raise ValueError(
+                        f"Custom {position} ends after the source track"
+                    )
+                if options:
+                    base = min(
+                        options,
+                        key=lambda item: abs(item.start - start) + abs(item.end - end),
+                    )
+                else:
+                    base = SectionCandidate(start, end, 0.0, 0.5, 0.5, 0.5)
+                beat_seconds = 60.0 / max(analysis.bpm, 1.0)
+                bars = max(
+                    1,
+                    round((end - start) / (beat_seconds * config.beats_per_bar)),
+                )
+                progress.log(
+                    f"Custom {position}: {_format_time(start)} - {_format_time(end)} "
+                    f"({bars}-bar estimate ×{copies})"
+                )
+                return replace(
+                    base,
+                    start=start,
+                    end=end,
+                    unit_bars=bars,
+                    repetitions=copies,
+                    section_label="custom selection",
+                )
+
+            if config.custom_intro_start is not None:
+                intro = custom_candidate(
+                    "intro",
+                    config.custom_intro_start,
+                    config.custom_intro_end,
+                    config.custom_intro_copies,
+                    intro_selection.options,
+                )
+                intro_candidate_rank = None
+                intro_rejection_reason = None
+            if config.custom_outro_start is not None:
+                outro = custom_candidate(
+                    "outro",
+                    config.custom_outro_start,
+                    config.custom_outro_end,
+                    config.custom_outro_copies,
+                    outro_selection.options,
+                )
+                outro_candidate_rank = None
+                outro_rejection_reason = None
+
+            if config.create_candidate_auditions:
+                for position, options in (
+                    ("intro", intro_selection.options),
+                    ("outro", outro_selection.options),
+                ):
+                    if options:
+                        exporter.export_candidate_auditions(
+                            audio,
+                            list(options[: config.candidate_count]),
+                            position,
+                            source,
+                            output,
+                            config,
+                            progress,
+                            instrumental_audio,
+                            stem_reliability,
+                        )
     
             progress.update(88, "Optimizing loop boundaries")
             if intro is not None:
@@ -589,6 +783,25 @@ class TrackProcessor:
                 stem_reliability, config.minimum_stem_construction_reliability,
                 config.minimum_vocal_coverage_for_instrumental_edit,
             )
+            if config.insert_source_start is not None:
+                assert config.insert_source_end is not None
+                assert config.insert_destination is not None
+                edited = insert_audio_region(
+                    edited,
+                    audio,
+                    config.insert_source_start,
+                    config.insert_source_end,
+                    config.insert_destination,
+                    config.insert_copies,
+                    max(config.crossfade_ms, 10.0),
+                )
+                progress.log(
+                    "Inserted custom source "
+                    f"{_format_time(config.insert_source_start)}–"
+                    f"{_format_time(config.insert_source_end)} at "
+                    f"{_format_time(config.insert_destination)} "
+                    f"×{config.insert_copies}"
+                )
             if redrum_intro and intro is not None:
                 assert high_quality_drums is not None
                 edited = create_redrum_intro(
@@ -653,12 +866,19 @@ class TrackProcessor:
             wav_output=(
                 output.parent.parent / WAV_OUTPUT_FOLDER_NAME / f"{source.stem}.wav"
             ),
+            intro_candidates=intro_selection.options,
+            outro_candidates=outro_selection.options,
+            intro_review_reason=reviews.get("intro", (None, None))[0],
+            intro_review_notes=reviews.get("intro", (None, None))[1],
+            outro_review_reason=reviews.get("outro", (None, None))[0],
+            outro_review_notes=reviews.get("outro", (None, None))[1],
             elapsed=time.monotonic() - started,
             bpm=analysis.bpm,
             tempo_drift_percent=analysis.tempo_drift_percent,
             beat_grid_confidence=analysis.beat_grid_confidence,
             key_label=analysis.key_label,
             key_confidence=analysis.key_confidence,
+            key_candidates=analysis.key_candidates,
             groove_label=analysis.groove_label,
             swing_ratio=analysis.swing_ratio,
             timing_label=analysis.timing_label,
@@ -726,6 +946,9 @@ class TrackProcessor:
             output_duration=edited.duration,
             cue_points=cue_points,
             cue_sheet=cue_sheet_path,
+            section_profiles=section_profiles,
+            arrangement_sections=_arrangement_sections(analysis),
+            stage_timings=tuple(stage_timings + [("Total", time.monotonic() - started)]),
         )
     
     

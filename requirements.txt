@@ -3,3 +3,8 @@ numpy>=1.24,<3
 scipy>=1.10,<2
 soundfile>=0.12.1,<1
 certifi>=2024.2.2
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+python-multipart>=0.0.12,<1
+yt-dlp
+mutagen>=1.47,<2

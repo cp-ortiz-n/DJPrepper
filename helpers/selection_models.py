@@ -48,6 +48,9 @@ class SectionCandidate:
     local_grid_confidence: float = 0.0
     boundary_grid_confidence: float = 0.0
     duration_adjustment_ms: float = 0.0
+    regional_style: str = "unknown"
+    regional_compatibility: float = 0.0
+    regional_boundary_risk: float = 0.0
 
     @property
     def loop_quality(self) -> float:
@@ -98,3 +101,40 @@ class SectionCandidate:
             * (1.0 - 0.45 * np.clip(self.vocal_boundary_risk, 0.0, 1.0))
         )
         return float(np.clip(self.loop_quality / max(float(vocal_factor), 0.10), 0.0, 100.0))
+
+    @property
+    def phrase_suitability(self) -> float:
+        """0–100 estimate that the material belongs in a DJ intro/outro."""
+        vocal_safety = 1.0 - max(self.vocal_coverage, self.vocal_phrase_penalty)
+        value = 100.0 * (
+            0.22 * np.clip((self.arrangement_fit + 1.0) / 2.0, 0.0, 1.0)
+            + 0.18 * np.clip(self.stability, 0.0, 1.0)
+            + 0.14 * np.clip(self.structure_consistency, 0.0, 1.0)
+            + 0.12 * np.clip(self.rhythmic_strength, 0.0, 1.0)
+            + 0.10 * np.clip(self.instrumentalness, 0.0, 1.0)
+            + 0.10 * np.clip(vocal_safety, 0.0, 1.0)
+            + 0.08 * (1.0 - np.clip(self.buildup_risk, 0.0, 1.0))
+            + 0.06 * (1.0 - np.clip(self.fill_penalty, 0.0, 1.0))
+        )
+        value *= 0.92 + 0.08 * np.clip(self.regional_compatibility, 0.0, 1.0)
+        value *= 1.0 - 0.30 * np.clip(self.regional_boundary_risk, 0.0, 1.0)
+        return float(np.clip(value, 0.0, 100.0))
+
+    @property
+    def transition_quality(self) -> float:
+        """0–100 estimate of candidate-to-song continuity around the join."""
+        value = 100.0 * (
+            0.18 * np.clip(self.energy_context_match, 0.0, 1.0)
+            + 0.16 * np.clip(self.context_compatibility, 0.0, 1.0)
+            + 0.15 * np.clip(self.tail_release_compatibility, 0.0, 1.0)
+            + 0.14 * np.clip(self.bass_compatibility, 0.0, 1.0)
+            + 0.12 * np.clip(self.chord_return_compatibility, 0.0, 1.0)
+            + 0.10 * np.clip(self.boundary_grid_confidence, 0.0, 1.0)
+            + 0.08 * (1.0 - np.clip(self.boundary_transition_penalty, 0.0, 1.0))
+            + 0.07 * (1.0 - np.clip(self.harmonic_resolution_risk, 0.0, 1.0))
+        )
+        value *= 0.92 + 0.08 * np.clip(self.regional_compatibility, 0.0, 1.0)
+        value *= 1.0 - 0.30 * np.clip(self.bass_reset_risk, 0.0, 1.0)
+        value *= 1.0 - 0.25 * np.clip(self.pickup_penalty, 0.0, 1.0)
+        value *= 1.0 - 0.35 * np.clip(self.regional_boundary_risk, 0.0, 1.0)
+        return float(np.clip(value, 0.0, 100.0))

@@ -12,6 +12,7 @@ from helpers.batch_runner import BatchRunner, TrackJob
 from helpers.cache import clear_cache
 from helpers.config_factory import ConfigFactory
 from helpers.cue_export import write_rekordbox_xml
+from helpers.feedback_report import append_candidate_feedback
 from helpers.models import FileResult
 from helpers.presets import PRESETS
 from helpers.processing_report import update_processing_report
@@ -164,6 +165,13 @@ def _parser() -> argparse.ArgumentParser:
         "--choose-candidates", action="store_true",
         help="Show ranked choices and ask which intro/outro to use",
     )
+    parser.add_argument(
+        "--review", action="store_true",
+        help=(
+            "Audition candidates, choose interactively, and capture listening "
+            "reasons/notes in the persistent feedback document"
+        ),
+    )
     return parser
 
 
@@ -279,7 +287,7 @@ def run(args: argparse.Namespace) -> int:
     workers, estimates, physical_memory = choose_worker_count(
         sources, args.workers, config.use_stems
     )
-    if args.choose_candidates:
+    if config.choose_candidates:
         workers = 1
     largest_gib = max((estimate.working_bytes for estimate in estimates), default=0) / GIB
     mode = "automatic" if args.workers == "auto" else "manual"
@@ -295,8 +303,9 @@ def run(args: argparse.Namespace) -> int:
         )
     if config.use_stems and args.workers == "auto":
         print("Demucs enabled: limiting automatic processing to 1 worker")
-    if args.choose_candidates:
-        print("Interactive candidate selection: using 1 worker")
+    if config.choose_candidates:
+        mode_label = "Listening review" if config.review_mode else "Interactive candidate selection"
+        print(f"{mode_label}: using 1 worker")
 
     skipped = 0
     skipped_items: list[tuple[Path, Path]] = []
@@ -338,12 +347,14 @@ def run(args: argparse.Namespace) -> int:
     report_markdown, report_json = update_processing_report(
         args.output_dir, results, skipped_items
     )
+    feedback_path = append_candidate_feedback(args.output_dir, results)
     _print_compact_results(results, total_elapsed)
     print("\nBatch complete")
     print(f"Created: {len(results)} | Skipped: {skipped} | Failed: {len(failures)}")
     print(f"Output folder: {args.output_dir.expanduser().resolve()}")
     print(f"Detailed report: {report_markdown}")
     print(f"Report data: {report_json}")
+    print(f"Candidate feedback: {feedback_path}")
     if rekordbox_xml_path is not None:
         print(f"Rekordbox XML: {rekordbox_xml_path}")
     if failures:

@@ -96,7 +96,7 @@ class ExportServiceTests(unittest.TestCase):
             self.assertEqual(directory, root / "previews" / "Song")
             self.assertTrue(directory.is_dir())
 
-    def test_disabled_side_removes_stale_generated_previews(self) -> None:
+    def test_disabled_side_removes_splice_preview_but_keeps_candidate_audition(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             directory = ExportService.preview_directory(
@@ -114,7 +114,9 @@ class ExportServiceTests(unittest.TestCase):
                 self.request(root, EditConfig(create_previews=True)),
                 NullProgressReporter(),
             )
-            self.assertTrue(all(not path.exists() for path in stale))
+            self.assertFalse(stale[0].exists())
+            self.assertTrue(stale[1].exists())
+            self.assertFalse(stale[2].exists())
 
 
 if __name__ == "__main__":

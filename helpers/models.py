@@ -10,6 +10,28 @@ from helpers.section_selector import SectionCandidate
 
 
 @dataclass(frozen=True)
+class TrackSectionProfile:
+    """Musical behavior summarized for one broad arrangement region."""
+
+    name: str
+    start: float
+    end: float
+    style: str
+    confidence: float
+    reason: str
+
+
+@dataclass(frozen=True)
+class TrackArrangementSection:
+    """Contiguous bar-aligned arrangement label for timeline display."""
+
+    start: float
+    end: float
+    label: str
+    confidence: float
+
+
+@dataclass(frozen=True)
 class FileResult:
     """Complete processing outcome consumed by reports and CLI presenters."""
 
@@ -67,3 +89,17 @@ class FileResult:
     cue_points: tuple[CuePoint, ...] = ()
     cue_sheet: Path | None = None
     wav_output: Path | None = None
+    intro_candidates: tuple[SectionCandidate, ...] = ()
+    outro_candidates: tuple[SectionCandidate, ...] = ()
+    intro_review_reason: str | None = None
+    intro_review_notes: str | None = None
+    outro_review_reason: str | None = None
+    outro_review_notes: str | None = None
+    section_profiles: tuple[TrackSectionProfile, ...] = ()
+    arrangement_sections: tuple[TrackArrangementSection, ...] = ()
+    title: str = ""
+    artist: str = ""
+    genre: str = ""
+    album: str = ""
+    stage_timings: tuple[tuple[str, float], ...] = ()
+    key_candidates: tuple[dict[str, float | str], ...] = ()

@@ -44,6 +44,18 @@ class CandidateValidator:
             config.minimum_stem_construction_reliability,
             config.minimum_vocal_coverage_for_instrumental_edit,
         )
+        if config.manual_candidate_selection:
+            selected = (
+                replace(candidate, repetitions=config.maximum_repetitions)
+                if candidate.repetitions > config.maximum_repetitions
+                else candidate
+            )
+            return ValidationResult(
+                selected,
+                None,
+                uses_instrumental,
+                candidate.repetitions > config.maximum_repetitions,
+            )
         if vocal_analysis_available and not uses_instrumental and (
             candidate.vocal_coverage > config.maximum_vocal_coverage
             or candidate.vocal_boundary_risk > config.maximum_vocal_boundary_risk

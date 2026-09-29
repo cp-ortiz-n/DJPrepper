@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 from collections.abc import Iterable
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from typing import Any
 REPORT_DIRECTORY_NAME = "reports"
 REPORT_JSON_NAME = "processing_report.json"
 REPORT_MARKDOWN_NAME = "Processing Report.md"
+_REPORT_LOCK = threading.RLock()
 
 
 def _now() -> str:
@@ -35,6 +37,8 @@ def _candidate(
         "output_start": output_start,
         "output_end": output_end,
         "loop_quality": candidate.loop_quality,
+        "phrase_suitability": candidate.phrase_suitability,
+        "transition_quality": candidate.transition_quality,
         "instrumental_construction_quality": (
             candidate.instrumental_loop_quality
             if construction == "instrumental stems" else None
@@ -55,6 +59,9 @@ def _candidate(
         "arrangement_fit": candidate.arrangement_fit,
         "local_grid": candidate.local_grid_confidence,
         "boundary_grid": candidate.boundary_grid_confidence,
+        "regional_style": candidate.regional_style,
+        "regional_compatibility": candidate.regional_compatibility,
+        "regional_boundary_risk": candidate.regional_boundary_risk,
         "vocal_coverage": candidate.vocal_coverage,
         "vocal_boundary_risk": candidate.vocal_boundary_risk,
         "splice_mode": candidate.splice_mode,
@@ -72,10 +79,12 @@ def _result_record(result: Any) -> dict[str, Any]:
         "status": "updated",
         "updated_at": _now(),
         "processing_seconds": result.elapsed,
+        "stage_timings": dict(getattr(result, "stage_timings", ())),
         "duration_seconds": result.output_duration,
         "bpm": result.bpm,
         "key": result.key_label,
         "key_confidence": result.key_confidence / 100.0,
+        "key_candidates": list(getattr(result, "key_candidates", ())),
         "beats": result.beats,
         "bars": result.bars,
         "beat_grid_confidence": result.beat_grid_confidence / 100.0,
@@ -86,6 +95,12 @@ def _result_record(result: Any) -> dict[str, Any]:
         "preset": result.preset_name,
         "detected_style": result.detected_style,
         "preset_reason": result.preset_reason,
+        "section_profiles": [
+            asdict(profile) for profile in getattr(result, "section_profiles", ())
+        ],
+        "arrangement_sections": [
+            asdict(section) for section in getattr(result, "arrangement_sections", ())
+        ],
         "dj_readiness": {
             "intro_mixable_bars": result.intro_existing_mix_bars,
             "outro_mixable_bars": result.outro_existing_mix_bars,
@@ -102,12 +117,14 @@ def _result_record(result: Any) -> dict[str, Any]:
             result.intro_output_start, result.intro_output_end,
         ),
         "intro_disabled_reason": result.intro_rejection_reason,
+        "intro_candidate_rank": result.intro_candidate_rank,
         "intro_fallback": result.intro_fallback,
         "outro": _candidate(
             result.outro, result.outro_construction, result.automatic_outro_length,
             result.outro_output_start, result.outro_output_end,
         ),
         "outro_disabled_reason": result.outro_rejection_reason,
+        "outro_candidate_rank": result.outro_candidate_rank,
         "outro_fallback": result.outro_fallback,
         "mix_in": result.mix_in,
         "mix_out": result.mix_out,
@@ -157,12 +174,16 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
         f"### {label}", "",
         f"- Source: {_clock(data['source_start'])}–{_clock(data['source_end'])}",
         f"- Extended WAV placement: {_clock(data.get('output_start'))}–{_clock(data.get('output_end'))}",
-        f"- Quality: {quality:.0f}% · Construction: {data['construction']} · Splice: {data['splice_mode']}",
+        f"- Phrase: {data.get('phrase_suitability', 0):.0f}% · "
+        f"Loop: {quality:.0f}% · Transition: "
+        f"{data.get('transition_quality', 0):.0f}%",
+        f"- Construction: {data['construction']} · Splice: {data['splice_mode']}",
         f"- Material: {data['unit_bars']} unique bars · {data['extension_bars']} added bars · {data['copies']} copies",
         f"- Section: {data['section']} ({_percent(data['section_confidence'])}) · Arrangement fit: {data['arrangement_fit']:+.0%}",
         f"- Energy: {data['energy']} · Buildup: {_percent(data['buildup_risk'])} · Bass reset: {_percent(data['bass_reset_risk'])} · Context: {_percent(data['context_match'])}",
         f"- Harmony: chord return {_percent(data['chord_return'])} · Resolution risk {_percent(data['resolution_risk'])}",
         f"- Grid: local {_percent(data['local_grid'])} · Boundary {_percent(data['boundary_grid'])}",
+        f"- Regional context: {data.get('regional_style', 'unknown')} · Compatibility {_percent(data.get('regional_compatibility'))} · Boundary risk {_percent(data.get('regional_boundary_risk'))}",
         f"- Vocals: coverage {_percent(data['vocal_coverage'])} · Boundary risk {_percent(data['vocal_boundary_risk'])}",
         "",
     ]
@@ -170,7 +191,7 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
 
 def _render_markdown(document: dict[str, Any]) -> str:
     lines = [
-        "# AudioExtender Processing Report", "",
+        "# DJ Library Studio Processing Report", "",
         f"Last report update: {document['updated_at']}", "",
         "This report is persistent: skipped songs retain their last analysis, while rebuilt songs replace their previous record.", "",
         "| Song | Status | BPM | Key | Intro | Outro | Mix cues |",
@@ -198,6 +219,10 @@ def _render_markdown(document: dict[str, Any]) -> str:
             f"- BPM: {record.get('bpm', 0):.1f} · Key: {record.get('key') or '—'} ({_percent(record.get('key_confidence'))})",
             f"- Beat grid: {_percent(record.get('beat_grid_confidence'))} · Tempo drift: {_percent(record.get('tempo_drift'))} · Downbeat continuity: {_percent(record.get('downbeat_continuity'))}",
             f"- Groove: {record.get('groove') or '—'} · Timing: {record.get('timing') or '—'} · Preset: {record.get('preset') or 'default'}",
+            "- Section behavior: " + " · ".join(
+                f"{profile['name']} {profile['style']} ({_percent(profile['confidence'])})"
+                for profile in record.get("section_profiles", [])
+            ) if record.get("section_profiles") else "- Section behavior: unavailable for this older analysis",
             f"- Existing mixing room: intro {record.get('dj_readiness', {}).get('intro_mixable_bars', 0)} bars · outro {record.get('dj_readiness', {}).get('outro_mixable_bars', 0)} bars",
             f"- Suggested cues: mix in {_clock(record.get('mix_in'))} · mix out {_clock(record.get('mix_out'))}",
             "",
@@ -208,6 +233,15 @@ def _render_markdown(document: dict[str, Any]) -> str:
 
 
 def update_processing_report(
+    output_directory: Path,
+    results: Iterable[Any],
+    skipped: Iterable[tuple[Path, Path]],
+) -> tuple[Path, Path]:
+    with _REPORT_LOCK:
+        return _update_processing_report_locked(output_directory, results, skipped)
+
+
+def _update_processing_report_locked(
     output_directory: Path,
     results: Iterable[Any],
     skipped: Iterable[tuple[Path, Path]],

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from helpers.analysis import TrackAnalysis
+from helpers.candidate_reranker import rerank_candidates
 from helpers.candidate_selection import (
     CandidateSelectionService,
     Position,
@@ -163,12 +164,14 @@ class SelectionCoordinator:
                 f"({ranked.reason})"
             )
         options = self._prefer_instrumental(list(ranked.candidates), prefer_instrumental)
+        options = rerank_candidates(options, request.position, config.preset_name)
         chosen, rank = chooser(options, request.position, request.requested_rank)
         fallback_description = None
 
         if (
             chosen is not None
             and not config.choose_candidates
+            and not config.manual_candidate_selection
             and request.requested_rank == 1
             and (
                 issue := candidate_safety_issue(

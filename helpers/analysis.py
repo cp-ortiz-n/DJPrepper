@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import gcd
 
 import librosa
 import numpy as np
+from scipy.signal import resample_poly
 
 from helpers.audio_loader import AudioData
 from helpers.config import EditConfig
+
+
+ANALYSIS_SAMPLE_RATE = 22_050
 
 
 @dataclass
@@ -41,6 +46,7 @@ class TrackAnalysis:
     spectral_flux: np.ndarray
     chroma: np.ndarray
     spectral_profile: np.ndarray
+    key_candidates: tuple[dict[str, float | str], ...] = ()
 
 
 def _normalize(values: np.ndarray) -> np.ndarray:
@@ -116,6 +122,58 @@ def _estimate_key(chroma: np.ndarray) -> tuple[str, float, int, str]:
     confidence = 100.0 * np.clip(0.65 * best[0] + 0.35 * separation / 0.08, 0.0, 1.0)
     label = f"{names[best[1]]} {best[2]}"
     return label, float(confidence), best[1], best[2]
+
+
+def _ensemble_key_estimate(
+    primary_chroma: np.ndarray,
+    harmonic_chroma: np.ndarray,
+    cqt_chroma: np.ndarray | None = None,
+) -> tuple[str, float, int, str, tuple[dict[str, float | str], ...]]:
+    """Keep the proven estimate unless two independent detectors agree otherwise."""
+    primary = _estimate_key(primary_chroma)
+    harmonic = _estimate_key(harmonic_chroma)
+    cqt = _estimate_key(cqt_chroma) if cqt_chroma is not None else None
+    selected = primary
+    reason = "primary"
+    if harmonic[0] != primary[0] and cqt is not None and harmonic[0] == cqt[0]:
+        selected = harmonic
+        reason = "harmonic+CQT consensus"
+
+    available = tuple(result for result in (primary, harmonic, cqt) if result is not None)
+    supporters = tuple(result for result in available if result[0] == selected[0])
+    confidence = float(np.mean([result[1] for result in supporters]))
+    distinct = len({result[0] for result in available})
+    if len(supporters) == 1 and distinct > 1:
+        confidence *= 0.88
+    elif len(supporters) == 2 and distinct > 1:
+        confidence *= 0.95
+
+    named_results = tuple(
+        (name, result) for name, result in (
+            ("primary", primary), ("harmonic", harmonic), ("CQT", cqt)
+        ) if result is not None
+    )
+    by_label: dict[str, float] = {}
+    for _name, result in named_results:
+        by_label[result[0]] = max(by_label.get(result[0], 0.0), result[1])
+    ordered = [selected[0]] + [
+        label for label, _score in sorted(
+            by_label.items(), key=lambda item: item[1], reverse=True
+        ) if label != selected[0]
+    ]
+    candidates = tuple(
+        {
+            "key": label,
+            "confidence": float(confidence if label == selected[0] else by_label[label]),
+            "selected": 1.0 if label == selected[0] else 0.0,
+            "reason": reason if label == selected[0] else "alternate detector",
+            "detectors": ", ".join(
+                name for name, result in named_results if result[0] == label
+            ),
+        }
+        for label in ordered[:3]
+    )
+    return selected[0], float(np.clip(confidence, 0.0, 100.0)), selected[2], selected[3], candidates
 
 
 def _classify_bar_sections(
@@ -277,18 +335,34 @@ def analyze_track(
     # Analysis is mono only; the untouched stereo samples are used for editing.
     report(0.02, "Preparing analysis audio")
     mono = librosa.to_mono(audio.samples.T)
+    sample_rate = audio.sample_rate
+    if sample_rate > ANALYSIS_SAMPLE_RATE:
+        report(0.05, "Preparing efficient analysis signal")
+        divisor = gcd(sample_rate, ANALYSIS_SAMPLE_RATE)
+        mono = resample_poly(
+            mono,
+            ANALYSIS_SAMPLE_RATE // divisor,
+            sample_rate // divisor,
+        ).astype(np.float32, copy=False)
+        sample_rate = ANALYSIS_SAMPLE_RATE
     hop = config.analysis_hop_length
     report(0.10, "Separating percussion")
-    harmonic, percussive = librosa.effects.hpss(mono)
+    magnitude = np.abs(librosa.stft(mono, hop_length=hop))
+    harmonic_spectrum, percussive_spectrum = librosa.decompose.hpss(magnitude)
     report(0.36, "Measuring onset activity")
-    onset = librosa.onset.onset_strength(y=percussive, sr=audio.sample_rate, hop_length=hop)
+    percussion_db = librosa.amplitude_to_db(
+        percussive_spectrum, ref=np.max
+    )
+    onset = librosa.onset.onset_strength(
+        S=percussion_db, sr=sample_rate, hop_length=hop
+    )
     report(0.45, "Detecting beats and BPM")
     tempo, beat_frames = librosa.beat.beat_track(
-        onset_envelope=onset, sr=audio.sample_rate, hop_length=hop, units="frames"
+        onset_envelope=onset, sr=sample_rate, hop_length=hop, units="frames"
     )
     bpm = float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else 0.0
     beat_frames = np.asarray(beat_frames, dtype=int)
-    beat_times = librosa.frames_to_time(beat_frames, sr=audio.sample_rate, hop_length=hop)
+    beat_times = librosa.frames_to_time(beat_frames, sr=sample_rate, hop_length=hop)
     if len(beat_times) < 8 or bpm <= 0:
         raise RuntimeError("Could not find a reliable beat grid (fewer than 8 beats detected)")
     intervals = np.diff(beat_times)
@@ -327,27 +401,40 @@ def analyze_track(
             bar_boundaries = np.append(bar_boundaries, min(projected, audio.duration))
 
     report(0.64, "Measuring loudness")
-    rms = librosa.feature.rms(y=mono, hop_length=hop)[0]
+    rms = librosa.feature.rms(S=magnitude)[0]
     report(0.70, "Measuring drum strength")
-    percussion_rms = librosa.feature.rms(y=percussive, hop_length=hop)[0]
-    harmonic_rms = librosa.feature.rms(y=harmonic, hop_length=hop)[0]
+    percussion_rms = librosa.feature.rms(S=percussive_spectrum)[0]
+    harmonic_rms = librosa.feature.rms(S=harmonic_spectrum)[0]
     report(0.77, "Measuring spectral stability")
-    centroid = librosa.feature.spectral_centroid(y=mono, sr=audio.sample_rate, hop_length=hop)[0]
+    centroid = librosa.feature.spectral_centroid(
+        S=magnitude, sr=sample_rate
+    )[0]
     report(0.86, "Finding transitions and fills")
-    magnitude = np.abs(librosa.stft(mono, hop_length=hop))
     flux = np.concatenate(([0.0], np.mean(np.maximum(np.diff(magnitude, axis=1), 0), axis=0)))
-    frequencies = librosa.fft_frequencies(sr=audio.sample_rate, n_fft=(magnitude.shape[0] - 1) * 2)
+    frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=(magnitude.shape[0] - 1) * 2)
     bass_bins = (frequencies >= 35.0) & (frequencies <= 220.0)
     bass_rms = np.sqrt(np.mean(magnitude[bass_bins] ** 2, axis=0))
     report(0.93, "Comparing harmonic content")
-    chroma = librosa.feature.chroma_stft(S=magnitude ** 2, sr=audio.sample_rate)
-    key_label, key_confidence, key_root, key_mode = _estimate_key(chroma)
+    chroma = librosa.feature.chroma_stft(S=magnitude ** 2, sr=sample_rate)
+    harmonic_chroma = librosa.feature.chroma_stft(
+        S=harmonic_spectrum ** 2, sr=sample_rate
+    )
+    primary_key = _estimate_key(chroma)
+    harmonic_key = _estimate_key(harmonic_chroma)
+    cqt_chroma = None
+    if primary_key[0] != harmonic_key[0]:
+        cqt_chroma = librosa.feature.chroma_cqt(
+            y=mono, sr=sample_rate, hop_length=hop
+        )
+    key_label, key_confidence, key_root, key_mode, key_candidates = (
+        _ensemble_key_estimate(chroma, harmonic_chroma, cqt_chroma)
+    )
     mel_energy = librosa.feature.melspectrogram(
         S=magnitude ** 2,
-        sr=audio.sample_rate,
+        sr=sample_rate,
         n_mels=32,
         fmin=30.0,
-        fmax=min(16000.0, audio.sample_rate / 2.0),
+        fmax=min(16000.0, sample_rate / 2.0),
     )
     spectral_profile = librosa.power_to_db(mel_energy, ref=np.max)
     spectral_profile = np.clip((spectral_profile + 80.0) / 80.0, 0.0, 1.0)
@@ -355,7 +442,7 @@ def analyze_track(
         len(rms), len(onset), len(percussion_rms), len(harmonic_rms), len(bass_rms),
         len(centroid), len(flux), chroma.shape[1], spectral_profile.shape[1],
     )
-    frame_times = librosa.frames_to_time(np.arange(feature_length), sr=audio.sample_rate, hop_length=hop)
+    frame_times = librosa.frames_to_time(np.arange(feature_length), sr=sample_rate, hop_length=hop)
     normalized_rms = _normalize(rms[:feature_length])
     normalized_onset = _normalize(onset[:feature_length])
     normalized_percussion = _normalize(percussion_rms[:feature_length])
@@ -403,6 +490,7 @@ def analyze_track(
         spectral_flux=_normalize(flux[:feature_length]),
         chroma=np.nan_to_num(chroma[:, :feature_length]),
         spectral_profile=np.nan_to_num(spectral_profile[:, :feature_length]),
+        key_candidates=key_candidates,
     )
     report(1.0, "Audio analysis complete")
     return result

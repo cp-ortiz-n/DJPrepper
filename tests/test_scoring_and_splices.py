@@ -10,6 +10,7 @@ from helpers.extended_edit import (
     _smooth_join,
     adaptive_crossfade_ms,
     create_extended_edit,
+    insert_audio_region,
     optimize_candidate_boundaries,
 )
 from helpers.redrum import create_redrum_intro, redrum_added_seconds
@@ -30,6 +31,12 @@ class CandidateScoringTests(unittest.TestCase):
     def test_instrumental_quality_removes_vocal_only_penalty(self) -> None:
         vocal = candidate(vocal_phrase_penalty=0.8, vocal_boundary_risk=0.7)
         self.assertGreater(vocal.instrumental_loop_quality, vocal.loop_quality)
+
+    def test_regional_boundary_risk_reduces_musical_scores(self) -> None:
+        compatible = candidate(regional_compatibility=0.95, regional_boundary_risk=0.0)
+        conflicting = candidate(regional_compatibility=0.25, regional_boundary_risk=0.8)
+        self.assertGreater(compatible.phrase_suitability, conflicting.phrase_suitability)
+        self.assertGreater(compatible.transition_quality, conflicting.transition_quality)
 
     def test_crossfade_is_bounded_and_adapts_to_bass_risk(self) -> None:
         clean = candidate(splice_mode="zero-crossing")
@@ -70,6 +77,20 @@ class SpliceTests(unittest.TestCase):
         result = create_extended_edit(source, None, None, 10.0)
         self.assertTrue(np.array_equal(result.samples, source.samples))
         self.assertIsNot(result.samples, source.samples)
+
+    def test_audio_region_can_be_inserted_at_an_arrangement_destination(self) -> None:
+        sample_rate = 1000
+        time = np.arange(10 * sample_rate, dtype=np.float32) / sample_rate
+        samples = np.column_stack((np.sin(2 * np.pi * time), np.sin(2 * np.pi * time))).astype(np.float32)
+        audio = AudioData(samples, sample_rate)
+        result = insert_audio_region(
+            audio, audio, source_start=2.0, source_end=4.0,
+            destination=7.0, copies=2, crossfade_ms=10.0,
+        )
+        self.assertEqual(result.samples.shape[1], 2)
+        self.assertGreater(result.duration, 13.9)
+        self.assertLess(result.duration, 14.0)
+        self.assertLessEqual(float(np.max(np.abs(result.samples))), 1.000001)
 
     def test_boundary_optimization_only_micro_adjusts_phrase_duration(self) -> None:
         time = np.linspace(0, 12, 1200, endpoint=False)

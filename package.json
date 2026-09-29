@@ -1,0 +1,24 @@
+{
+  "name": "audioextender",
+  "version": "1.0.0",
+  "description": "A local macOS command-line tool that analyzes an existing track, selects strong beat-aligned phrases near the beginning and end, and exports a stereo WAV with a DJ-friendly intro and outro. The full original track remains present between the added sections.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check web/app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cp-ortiz-n/AudioExtender.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/cp-ortiz-n/AudioExtender/issues"
+  },
+  "homepage": "https://github.com/cp-ortiz-n/AudioExtender#readme",
+  "dependencies": {
+    "wavesurfer.js": "^7.12.12"
+  }
+}

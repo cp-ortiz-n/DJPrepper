@@ -1,9 +1,9 @@
-# DJ Audio Extender
+# DJ Library Studio
 
-A local macOS command-line tool that analyzes an existing track, selects strong
-beat-aligned phrases near the beginning and end, and exports a stereo WAV with a
-DJ-friendly intro and outro. The full original track remains present between the
-added sections.
+A local macOS DJ-library workspace for importing and organizing music, analyzing
+BPM, beat grids, key, structure, energy, timing, cues, and track compatibility,
+and optionally creating stereo WAV extended edits with DJ-friendly intros and
+outros. The original AudioExtender command-line workflow remains fully supported.
 
 The selector does **not** blindly copy the opening bars. It evaluates 8-, 16-, or
 32-bar candidates on an inferred 4/4 grid using percussion strength, onset
@@ -31,7 +31,223 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+npm install
 ```
+
+## Local web application
+
+The AudioExtender CLI remains fully supported. DJ Library Studio is the broader
+local interface over the same tested processing engine; it does not upload audio
+to an external analysis service.
+
+Start it from the project folder:
+
+```bash
+python3 web_app.py
+```
+
+Then open [http://localhost:8765](http://localhost:8765). The dashboard supports
+multi-file drag and drop, edit settings, a persistent processing queue, live
+stage progress, recent analysis results, full-length source and extended audio
+players, contextual intro/outro preview players, and downloads for both WAV
+versions. Web jobs run one at a time by design so Demucs and audio analysis remain
+safe on a 16 GB Mac. The active track is pinned above pending tracks. It can be
+paused and resumed at safe progress checkpoints; a long Demucs or analysis call
+may briefly show **Pause requested** until that operation returns. Cancel applies
+to queued jobs, and a canceled entry can be reprocessed without uploading the
+song again. Closing the browser does not cancel a running job; closing the Python
+server does.
+
+The **Import** tab can convert an individually confirmed, authorized YouTube
+source to WAV. It can also read a Spotify playlist CSV and suggest a likely
+YouTube URL for every track without Spotify credentials. The importer directly
+recognizes exports with `Track Name`, `Artist Name(s)`, `Duration (ms)`,
+`Genres`, and `Tempo`; only the track and artist columns are required.
+
+Spotify matching does not extract audio from Spotify or automatically download
+a playlist. Review each suggested title and duration; only pass a match to the
+authorized importer when you own it, its license permits copying, it is public
+domain, or you have direct permission.
+
+The playlist results also provide **Download verified Creative Commons**. This
+batch operation checks the license reported by each YouTube result, downloads
+only recordings explicitly labeled Creative Commons, converts them to WAV
+without running the extender, skips existing WAVs, and produces a ZIP plus a
+JSON report of downloaded, existing, non-CC, and failed tracks.
+
+The **Workspace** is an active-processing surface: it shows queued, running,
+failed, or canceled jobs and moves successful results into Library. The
+**Library** owns playback, downloads, latest full details, and version history.
+Completed jobs that requested candidate auditions remain as compact
+**Awaiting review** checkpoints in Workspace until their review is submitted or
+dismissed, so the listening decision is not lost when processing reaches 100%.
+Expand **Show full details** on a library track for synchronized source/extended
+players, loudness-envelope waveforms, musical-feel and song-section timelines,
+cue positions, boundary overrides, and every download. The waveform's beat-grid
+anchor is a point marker derived from an
+observed downbeat; loop regions remain visibly shaded, while point cues do not
+cover the audio display. Original and extended waveforms are stacked for direct
+visual comparison: gray is unplayed audio, lime is played audio, and orange is a
+cue. The colored timeline bands distinguish detected musical labels rather than
+quality; hovering one shows its name, timestamps, and confidence.
+
+Candidate auditions are opt-in because rendering six contextual audio files for
+every song adds processing time and visual clutter. Enable **Review candidates**
+before adding files, or click **Create review** on a completed track. The new
+generation appears in the separate **Review** inbox with playable source,
+selected edit, and ranked intro/outro candidates plus listening notes. A
+normal job still evaluates and automatically selects its ranked candidates; it
+simply does not export or display all of the audition files.
+
+Every Music Files recording has a permanent readable identity such as
+`AE-0184-ORG`. Related versions share the `AE-0184` family while suffixes identify
+the original, extended edit, remix, radio edit, live recording, remaster,
+instrumental, or acapella. These IDs survive renames, genre moves, reanalysis,
+and library relocation. **Collection integrity** presents conservative duplicate
+matches for review; merging combines catalog references while deliberately
+leaving the unused WAV on disk, and **Keep as separate recording** assigns a new
+family when two similar tracks are genuinely different.
+The Review page presents one **Accept option** button per candidate and permits
+one selected intro plus one selected outro; choosing another option replaces the
+earlier selection for that side. After both
+sides are selected, **Reprocess with selected candidates** rebuilds the track and
+removes that decision from Review. **Dismiss review** rejects an accidental or
+unwanted review request without deleting the processed track from Library. If an
+older review predates the audition-file behavior, use
+**Regenerate auditions** once.
+
+If none of the ranked options works, open **Build my own** beside the intro or
+outro candidates. Enter a source start/end, optionally snap the region to an
+approximate 4/4 bar grid from the detected BPM, choose 1–8 copies, and audition
+that region through the source player. **Use custom candidate** makes the region
+part of the combined reprocess decision; the normal boundary optimizer still
+micro-adjusts the rendered splice. **Preserve original** disables extension for
+that side, so a custom intro can be paired with an untouched outro or vice versa.
+The approximate-bar field is editable in both directions: changing timestamps
+recalculates bars, while changing bars resizes the selection end, waveform
+region, duration, and added-audio estimate from the detected BPM.
+
+The custom editor also supports one **Insert this section elsewhere** block per
+generation. Its second waveform represents the current extended arrangement:
+click or drag its orange destination marker, optionally snap that timestamp to
+the detected bar grid, choose the number of source copies, and decide whether
+the source region should also remain the custom intro/outro. The rendered
+insertion uses short click-safe joins, shifts later exported cues, and adds an
+`Inserted Section` loop marker to the cue sheet and Rekordbox XML.
+Use **Preview placement** before reprocessing to hear destination context, every
+selected copy of the inserted phrase, and the music that follows it.
+The custom destination editor also calculates a cached **transition preflight**
+score. Its grid, harmony, energy, bass, rhythm, and optional vocal checks cover
+the entry into the inserted phrase, joins between copies, and the return to the
+destination context. Treat the percentage as a warning aid and confirm the edit
+with the placement preview before rendering.
+
+The upload form also offers **Auto (recommended)** independently for intro and
+outro length. Auto starts from the configured bar count but unlocks that side so
+the musical analysis may shorten it to a safer supported length. Selecting a
+number keeps that exact bar count locked; selecting **None** disables that side.
+
+The **Model Insights** workspace separates **Diagnostics** from **Feedback**. It
+renders persistent technical analysis as a searchable, filterable dashboard
+with summary counts and expandable intro/outro scores, safeguards,
+classifications, plus listening decisions and feedback trends. It deliberately does not
+own versions or downloads; those remain in Library.
+The JSON endpoint remains available at `/api/report` for integrations, but it is
+not the primary user interface.
+
+The **Downloads** workspace is the intake layer for the DJ library. Select any
+available WAVs and choose **Analyze selected** to create analysis-only jobs in
+Workspace. These jobs calculate BPM, beat grid, key, Camelot-compatible key
+data, energy, timing, structure, cues, and compatibility signals, then add the
+tracks to Library without generating extended WAVs. From Library, choose
+**Extend track** later to configure an intro/outro generation using the cached
+analysis.
+
+The **Settings** workspace manages defaults for new web jobs, including preset,
+bar counts, stems, automatic length selection, intro/outro quality floors, bit
+depth, preview context, cue export, and the **Music Library Location** used by
+newly downloaded WAV files. The default is
+`~/Music/AudioExtender Library`; every imported master is organized below its
+genre. Latin music uses a two-level hierarchy such as `Latin/Reggaeton`,
+`Latin/Salsa`, `Latin/Cumbia`, `Latin/Merengue`, `Latin/Zapateado`,
+`Latin/Corridos`, `Latin/Regional Mexican`, `Latin/Bachata`, `Latin/Dembow`,
+`Latin/Latin House`, `Latin/Latin Jazz`, `Latin/Bolero`, `Latin/Vallenato`, and
+`Latin/Brazilian`. Unresolved Latin tags use `Latin/Other`. Playlist
+membership remains searchable metadata in the
+app instead of creating duplicate playlist folders. Re-importing the same
+YouTube recording reuses its existing WAV and adds the new playlist membership.
+Single imports without genre metadata use `Other`. Changing
+the location affects future imports and does not move existing files. Enter an
+absolute path (a leading `~` is supported). Only values that differ from the Python
+application defaults are saved. **Reset to application defaults** deletes those
+web overrides, so removing a customization always falls back to the maintained
+values in `settings.py`. Individual choices on the upload form still apply only
+to that submitted batch.
+
+Settings also includes **Backup & restore**. A recovery archive protects the
+SQLite catalog and job history, settings, verified keys, feedback, recording
+identities, processing report, presets, track overrides, library identity,
+source sidecars, and saved playlists. Song WAVs are intentionally not copied;
+their durable catalog paths allow the app to reconnect them after restoration
+or library relocation. The rebuildable analysis cache can be included when a
+larger, faster-to-resume backup is worth the extra space. Every archive contains
+a SHA-256 manifest and is validated before it is offered for restore. Restoring
+requires an explicit confirmation and first creates a new pre-restore backup,
+so the operation always has a rollback point. Automatic retention can keep the
+newest 3, 5, 10, or 25 archives under `output/backups`.
+
+Import source metadata is kept under the hidden
+`<Music Library Location>/.audioextender/sources` directory. Genre folders
+therefore contain only playable WAV files; the hidden metadata remains available
+for duplicate detection and catalog recovery.
+
+Completed web jobs additionally provide:
+
+- full source/extended playback with synchronized A/B switching;
+- an RMS loudness-envelope waveform with generated cue markers and musical
+  arrangement lanes;
+- opt-in three-candidate intro/outro reviews with independent phrase, loop, and
+  transition scores in the separate Review workspace;
+- single-choice candidate feedback, tags, and notes, persisted in SQLite and appended to
+  `Candidate Feedback.md`;
+- combined candidate reprocessing and per-track generation history;
+- retry, cancel, queue reordering, safe removal, estimated queue time, and a
+  long-running-analysis notice;
+- visual intro/outro boundary overrides backed by `track_overrides.json`;
+- feedback acceptance analytics and common rejection tags; and
+- downloadable cue sheets and per-generation Rekordbox XML files.
+
+The web queue is stored locally in `output/reports/audioextender.sqlite3`. Audio
+continues to use the existing `input/`, `output/wav/`, and `output/extended/`
+folders, so web and CLI results stay compatible.
+
+The processing queue shows active, queued, failed, and canceled jobs. The
+separate **Library** workspace is the download archive: it
+groups generations by track, plays the newest edit, shows whether its candidates
+were automatic or manually chosen, exposes its latest scores and timestamp, and
+keeps older generations inside a version-history disclosure. Select any number
+of newest edits—or select all—then choose Extended WAV, Source WAV, cue sheet,
+Rekordbox XML, previews, and/or a JSON analysis report. The selected files are
+grouped by type in one ZIP archive with an export summary listing unavailable
+files that were skipped.
+
+Library filters support title search, detected editing category, preset, and
+edit result. Categories such as `rhythm-forward`, `slow/dynamic`, or
+`live/acoustic` are DJ Library Studio analysis classifications—not authoritative
+commercial genre tags—so they remain useful even when a source file has no
+embedded genre metadata.
+
+New web generations are immutable under
+`output/versions/<track>/job-<id>/`; the familiar file under `output/extended/`
+remains the convenient latest-result alias. This prevents a later reprocess from
+changing the audio served by an older generation. Jobs created before versioned
+storage are labeled **Legacy shared output** because their historical bytes were
+already overwritten and cannot be reconstructed without reprocessing.
+
+An explicit candidate choice in Review is authoritative: automatic quality and
+arrangement thresholds remain visible as warnings and scores, but no longer
+discard the user's chosen option. Automatic processing continues to enforce all
+safety thresholds normally.
 
 ## Project layout
 
@@ -199,6 +415,38 @@ The file under `wav/` is a format conversion only: stereo, source sample rate,
 and no arrangement edits or normalization beyond emergency clipping protection.
 The file under `extended/` contains the generated DJ intro/outro.
 
+### Candidate listening feedback
+
+Run a focused listening review with:
+
+```bash
+python3 main.py "input/Song.mp3" --review --overwrite
+```
+
+This generates contextual previews, asks which intro and outro candidate to use,
+and captures optional reason tags and notes. Results are appended to
+`output/reports/Candidate Feedback.md`.
+
+The feedback file is append-only: DJ Library Studio never regenerates or rewrites an
+existing section, so selections, checkboxes, and notes you edit by hand remain
+intact. An unchanged candidate set is not duplicated. If an override or scoring
+improvement produces different candidates, a new timestamped generation is
+appended beneath the earlier review.
+
+| Candidate measurement | Interpretation |
+|---|---|
+| Phrase suitability | Whether the material belongs in an intro/outro based on arrangement role, vocals, stability, and buildup behavior. |
+| Loop compatibility | Whether the candidate's end can repeat into its beginning without an obvious seam. |
+| Transition quality | Whether it flows into the surrounding original song without a bass, chord, energy, or beat-grid discontinuity. |
+
+The `Checks` column explains risks such as an interrupted buildup, bass reset,
+vocal pickup, harmonic resolution, or uncertain beat boundary. A style-aware
+second-stage reranker uses these independent measurements: slow, vocal, and
+subtle tracks emphasize phrase and transition quality, while club tracks give
+more weight to rhythmic loop reliability. This reranker remains deterministic
+and explainable; accumulated feedback can train a personalized statistical
+reranker later.
+
 ### Command reference
 
 All options can be combined in one command. Boundary timestamps are source-song
@@ -232,6 +480,7 @@ times expressed in seconds; decimals are accepted, such as `12.5`.
 | `--intro-candidate` | `0`, `1`, `2`, or `3` | `1` | Uses a ranked intro alternative; `0` rejects every intro candidate. |
 | `--outro-candidate` | `0`, `1`, `2`, or `3` | `1` | Uses a ranked outro alternative; `0` rejects every outro candidate. |
 | `--choose-candidates` | Flag; no value | Off | Displays three ranked options at a time. Choose `1–3`, `0` for none, `R` for the next page, or `C` for a custom source-time range. Forces one worker. |
+| `--review` | Flag; no value | Off | Auditions candidates interactively, records reason tags and notes, and appends the generation to `output/reports/Candidate Feedback.md`. Forces one worker. |
 | `--cues` / `--no-cues` | Flag; no value | On | Enables companion JSON cue sheets and Rekordbox XML, or disables both. |
 | `--help` or `-h` | — | — | Displays the built-in command help. |
 
@@ -276,11 +525,16 @@ times expressed in seconds; decimals are accepted, such as `12.5`.
 
 | Preset | Intro/outro | Demucs | Quality floor | Intended use |
 |---|---:|---:|---:|---|
-| `auto` | Detected | Optional | From selected profile | Classifies the track after analysis and chooses `club`, `subtle`, `slow-song`, or—with stems—`vocal-safe`. |
+| `auto` | Detected | Optional | From selected profile | Chooses a profile from rhythmic, dynamic, harmonic, timing, and optional vocal analysis. |
 | `club` | 16 / 16 bars | No | 45% | Longer, conventional DJ phrasing for rhythm-forward tracks. |
 | `subtle` | 4 / 4 bars | No | 58% | Short additions with no repeated loop unit. |
 | `slow-song` | 4 / 0 bars | No | 62% | Conservative intro-only treatment for slower or less electronic music. |
 | `vocal-safe` | 8 / 0 bars | Yes | 60% | Demucs-aware intro with the original ending preserved. |
+| `melodic` | 4 / 4 bars | No | 68% | Harmonic, steady material where short, non-repeating additions are safer. |
+| `breakbeat` | 8 / 8 bars | No | 67% | Syncopated or broken-beat tracks that need shorter repetition than four-on-the-floor club music. |
+| `peak-time` | 16 / 16 bars | No | 65% | Fast, high-percussion, stable-grid tracks suited to conventional long DJ phrasing. |
+| `live-acoustic` | 2 / 0 bars | No | 72% | Tempo-variable or live-feeling material; preserves the ending and permits only a very short intro. |
+| `ambient` | 2 / 0 bars | No | 72% | Sparse, low-percussion material where repetition is especially exposed. |
 | `intro-only` | 8 / 0 bars | No | 50% | General intro extension without altering the ending. |
 | `outro-only` | 0 / 8 bars | No | 50% | General outro extension without altering the opening. |
 
@@ -293,14 +547,36 @@ rest of a preset, for example:
 python3 main.py "input/Song.mp3" --preset slow-song --intro-bars 2
 ```
 
-Automatic mode evaluates BPM, normalized percussion strength, beat-grid
-confidence, onset consistency, and whole-track dynamic range. When Demucs is
-explicitly enabled, it also measures vocal density and can select `vocal-safe`:
+Automatic mode evaluates BPM, normalized percussion and harmonic strength,
+beat-grid confidence, tempo drift, groove, onset activity and consistency, and
+whole-track dynamic range. It can classify tracks as `peak-energy`,
+`rhythm-forward`, `breakbeat/syncopated`, `melodic-steady`, `ambient/sparse`,
+`live/acoustic`, `slow/dynamic`, or `mixed/subtle`. When Demucs is explicitly
+enabled, vocal density can take priority and select `vocal-forward` / `vocal-safe`:
 
 ```bash
 python3 main.py --preset auto
 python3 main.py --preset auto --use-stems
 ```
+
+Each new analysis also classifies three broad arrangement regions: **Opening**,
+**Main body**, and **Ending**. Their boundaries are aligned to the inferred bar
+grid, and each region is labeled from its local energy, percussion, harmonic,
+onset, and optional vocal-stem measurements. These section profiles appear in
+the processing report with timestamps and confidence scores. Older report
+entries gain them the next time the track is reprocessed.
+
+Candidate ranking uses the same regional measurements. Intro material is
+compared with the detected Opening behavior and outro material with the Ending.
+Candidates lose ranking weight when their energy, percussion, harmony, onset,
+or vocals conflict with the target region, or when the candidate crosses a
+broad musical boundary. The report exposes **regional compatibility** and
+**regional boundary risk** so this decision remains explainable.
+
+The web workspace displays these measurements as an arrangement timeline below
+the interactive waveform. Separate color lanes show broad musical behavior,
+bar-level structure, and generated intro/outro spans. Hover for timestamps and
+confidence; click any segment to seek the shared audio player to its start.
 
 The result report shows the detected style, chosen preset, and the measurements
 that drove the decision. `--preset auto --intro-bars 4` still chooses the other
@@ -348,7 +624,7 @@ disable that side of the extension.
 
 ### Analysis cache
 
-AudioExtender caches expensive feature analysis in `cache/`. The first run still
+DJ Library Studio caches expensive feature analysis in `cache/`. The first run still
 performs normal analysis; later runs of the same unchanged source can reuse it and
 proceed quickly to phrase selection and export. Demucs-derived vocal measurements
 are cached separately, so they can also be reused without repeating stem
@@ -407,7 +683,7 @@ does not replace or write the full extended WAV.
 
 ### Ranked candidate choices
 
-For every enabled intro and outro, AudioExtender ranks three musically distinct
+For every enabled intro and outro, DJ Library Studio ranks three musically distinct
 locations by default. Normal runs automatically use candidate 1. Interactive
 runs keep a larger pool available in pages of three. Overlapping
 versions of the same location are filtered so alternatives represent genuinely
@@ -420,7 +696,7 @@ python3 main.py "input/Song.mp3" --choose-candidates
 ```
 
 Each option shows its source timestamps, loop quality, energy shape, buildup
-risk, bass-reset risk, and unique bar count. Before each prompt, AudioExtender
+risk, bass-reset risk, and unique bar count. Before each prompt, DJ Library Studio
 writes `Intro Candidate 1.wav` through candidate 3 inside
 `output/previews/Song/`. Outro candidates use the same folder. Listen to them
 while the prompt is waiting. Press Enter for the best option on the current page,
@@ -579,7 +855,7 @@ arrangement.
 ### Automatic fallback behavior
 
 When automatically selected candidate 1 violates a vocal, buildup, bass-reset,
-arrangement, or preset-quality safety rule, AudioExtender first checks the other
+arrangement, or preset-quality safety rule, DJ Library Studio first checks the other
 ranked locations at the same extension length. If the length was also selected
 automatically, it then tries progressively shorter bar counts. Every replacement
 must pass the normal safety rules and `MINIMUM_FALLBACK_LOOP_QUALITY`.
@@ -650,7 +926,7 @@ output/
 ```
 
 The JSON file records exact seconds, purpose, confidence, BPM, key, groove, and
-grid statistics. The Rekordbox XML contains an `AudioExtender Edits` playlist,
+grid statistics. The Rekordbox XML contains a `DJ Library Studio Edits` playlist,
 one basic 4/4 tempo-grid anchor per track, memory cues, and saved intro/outro
 loops. Suggested points include the first reliable downbeat, mix in, return to
 the original song, mix out, start of the added outro, and return to the natural
@@ -661,7 +937,7 @@ a later run replaces it rather than merging with an older XML collection.
 
 To import it in Rekordbox, open Preferences and select the generated XML under
 the Bridge/Imported Library setting. Open `rekordbox xml` in the browser tree,
-open Playlists, and drag `AudioExtender Edits` into the normal Playlists area.
+open Playlists, and drag `DJ Library Studio Edits` into the normal Playlists area.
 The XML uses documented memory cues (`Num=-1`) rather than Hot Cues, so it does
 not assign Hot Cue A–H for you. Rekordbox should still analyze each WAV normally;
 verify the imported grid and cues before performing. Disable companion exports
@@ -810,7 +1086,7 @@ the added outro. Because the edit adds audio before the source, previously saved
 cue timestamps from the original file will not match the new file.
 ## Automated tests
 
-AudioExtender includes fast unit tests built on Python's standard `unittest`
+DJ Library Studio includes fast unit tests built on Python's standard `unittest`
 library, so running the normal suite does not require another test framework:
 
 ```bash
@@ -822,6 +1098,19 @@ does not run Demucs or process the songs in `input`, keeping feedback fast and
 repeatable. It covers configuration validation, overrides, CLI helpers,
 candidate-quality calibration, adaptive splices, progress/slow-task reporting,
 memory-aware worker selection, persistent reports, and safe cache cleanup.
+
+Run the focused stability gate when changing imports, catalog persistence,
+reanalysis, relocation, or Set Builder exports:
+
+```bash
+./scripts/run_stability_gate.sh
+```
+
+This creates a temporary library containing a real small WAV and verifies that
+playlist membership, artwork, genre metadata, completed analysis history,
+manual key verification, listening feedback, relocated paths, and playlist
+exports survive reimport, application restart, and reanalysis. It never reads
+or modifies the user's music library.
 
 Optional coverage reporting is available with the development requirements:
 

@@ -166,7 +166,8 @@ DEFAULT_OVERWRITE = False
 
 # Optional named strategy used when --preset is omitted. Use None for the normal
 # settings above, "auto", or one of: "club", "subtle", "slow-song",
-# "vocal-safe", "intro-only", "outro-only".
+# "vocal-safe", "melodic", "breakbeat", "peak-time", "live-acoustic",
+# "ambient", "intro-only", or "outro-only".
 DEFAULT_PRESET = None
 
 # Preset definitions. You may edit these values, add a new named preset, or
@@ -206,6 +207,41 @@ PRESET_DEFINITIONS = {
         "use_stems": True,
         "minimum_loop_quality": 60.0,
         "maximum_repetitions": 2,
+    },
+    "melodic": {
+        "intro_bars": 4,
+        "outro_bars": 4,
+        "use_stems": False,
+        "minimum_loop_quality": 68.0,
+        "maximum_repetitions": 1,
+    },
+    "breakbeat": {
+        "intro_bars": 8,
+        "outro_bars": 8,
+        "use_stems": False,
+        "minimum_loop_quality": 67.0,
+        "maximum_repetitions": 2,
+    },
+    "peak-time": {
+        "intro_bars": 16,
+        "outro_bars": 16,
+        "use_stems": False,
+        "minimum_loop_quality": 65.0,
+        "maximum_repetitions": 4,
+    },
+    "live-acoustic": {
+        "intro_bars": 2,
+        "outro_bars": 0,
+        "use_stems": False,
+        "minimum_loop_quality": 72.0,
+        "maximum_repetitions": 1,
+    },
+    "ambient": {
+        "intro_bars": 2,
+        "outro_bars": 0,
+        "use_stems": False,
+        "minimum_loop_quality": 72.0,
+        "maximum_repetitions": 1,
     },
     "intro-only": {
         "intro_bars": 8,
