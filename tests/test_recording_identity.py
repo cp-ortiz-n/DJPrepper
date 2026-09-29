@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.recording_identity import base_title, version_kind
+from helpers.recording_identity import base_title, genre_family_code, version_kind
 from helpers.web_database import JobRepository
 
 
@@ -31,7 +31,7 @@ class RecordingIdentityTests(unittest.TestCase):
             self.assertEqual(original_track["recording_code"], remix_track["recording_code"])
             self.assertEqual(original_track["version_code"], "ORG")
             self.assertEqual(remix_track["version_code"], "RMX01")
-            self.assertRegex(original_track["recording_code"], r"^AE-\d{4,}$")
+            self.assertRegex(original_track["recording_code"], r"^OTH-\d{6,}$")
             page, total = repository.page_downloaded_tracks(page=1, page_size=10)
             self.assertEqual(total, 2)
             self.assertTrue(all(track["recording_code"] for track in page))
@@ -119,6 +119,46 @@ class RecordingIdentityTests(unittest.TestCase):
         self.assertEqual(base_title("Song (Extended Mix)"), "song")
         self.assertEqual(version_kind("Song (Live at Home)"), "LIVE")
         self.assertEqual(version_kind("Song - Radio Edit"), "RADIO")
+
+    def test_parent_genres_receive_readable_three_letter_codes(self) -> None:
+        self.assertEqual(genre_family_code("Electronic / House / Afro House"), "HOU")
+        self.assertEqual(genre_family_code("Hip-Hop & Rap / Arabic Hip-Hop"), "HIP")
+        self.assertEqual(genre_family_code("Latin / Reggaeton"), "LAT")
+        self.assertEqual(genre_family_code("Unmapped"), "OTH")
+
+    def test_manual_version_link_and_unlink_preserve_both_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = JobRepository(root / "catalog.sqlite3")
+            original = root / "Original.wav"
+            remix = root / "Remix.wav"
+            original.write_bytes(b"RIFF-original")
+            remix.write_bytes(b"RIFF-remix")
+            original_id = repository.upsert_downloaded_track(
+                title="Atrevete", artist="Calle 13", file_path=original,
+                duration_seconds=240,
+            )
+            remix_id = repository.upsert_downloaded_track(
+                title="Calle 13 - Atrevete (Kevin Brand Remix)",
+                artist="Kevin Brand", file_path=remix, duration_seconds=270,
+            )
+            self.assertNotEqual(
+                repository.get_downloaded_track(original_id)["recording_code"],
+                repository.get_downloaded_track(remix_id)["recording_code"],
+            )
+
+            linked = repository.link_recording_version(remix_id, original_id, "RMX")
+            self.assertEqual(
+                linked["recording_code"],
+                repository.get_downloaded_track(original_id)["recording_code"],
+            )
+            self.assertEqual(linked["version_code"], "RMX01")
+            self.assertEqual(len(repository.recording_family(original_id)), 2)
+            self.assertTrue(original.is_file() and remix.is_file())
+
+            unlinked = repository.separate_recording(remix_id)
+            self.assertNotEqual(unlinked["recording_code"], linked["recording_code"])
+            self.assertEqual(len(repository.list_downloaded_tracks()), 2)
 
 
 if __name__ == "__main__":

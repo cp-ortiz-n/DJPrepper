@@ -903,6 +903,7 @@ function sourceUrlType(value) {
     const host = new URL(value).hostname.toLowerCase();
     if (host === 'open.spotify.com' || host.endsWith('.spotify.com')) return 'spotify';
     if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com')) return 'youtube';
+    if (host === 'soundcloud.com' || host.endsWith('.soundcloud.com')) return 'soundcloud';
   } catch (_) {}
   return 'unknown';
 }
@@ -933,30 +934,87 @@ async function matchSpotifySource(url) {
     result.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
   }
 }
+async function inspectSoundCloudSource(url) {
+  const result=$('#source-match-result');
+  currentSourceMetadata=null;
+  result.hidden=false;
+  result.innerHTML='<p>Reading SoundCloud track or mix metadata…</p>';
+  try {
+    const response=await fetch('/api/imports/source-match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const payload=await response.json();
+    if(!response.ok)throw new Error(payload.detail||'The SoundCloud source could not be inspected.');
+    currentSourceMetadata=payload;
+    result.innerHTML=`${payload.thumbnail_url?`<img src="${escapeHtml(payload.thumbnail_url)}" alt="" loading="lazy">`:'<span class="source-match-art">♫</span>'}<div class="source-match-copy"><span class="source-match-label">SoundCloud ${Number(payload.duration||0)>1200?'mix':'track'}</span><strong>${escapeHtml(payload.title||'Untitled')}</strong><p>${escapeHtml(payload.artist||'Uploader unavailable')}</p><small>${payload.duration?clock(payload.duration):'Duration unavailable'} · authorization required</small></div>`;
+  } catch(error) {
+    result.innerHTML=`<p>${escapeHtml(error.message)}</p>`;
+  }
+}
+function authorizedSourceUrls(value=$('#authorized-url').value) {
+  return [...new Set(String(value||'').split(/\r?\n/).map(url=>url.trim()).filter(Boolean))];
+}
 $('#authorized-url').addEventListener('input', event => {
   clearTimeout(sourceMatchTimer);
-  const type = sourceUrlType(event.target.value.trim());
+  const urls=authorizedSourceUrls(event.target.value);
+  const type = urls.length===1?sourceUrlType(urls[0]):'bulk';
   const guidance = $('#source-url-guidance');
+  if(urls.length>1){currentSourceMetadata=null;$('#source-match-result').hidden=true;const supported=urls.filter(url=>['youtube','soundcloud'].includes(sourceUrlType(url))).length;guidance.textContent=`${urls.length} unique URLs queued · ${supported} downloadable sources recognized.`;return;}
   if (type === 'spotify') {
     guidance.textContent = 'Spotify source detected. Looking up its metadata and searching for a matching YouTube recording…';
-    sourceMatchTimer = setTimeout(() => matchSpotifySource(event.target.value.trim()), 500);
+    sourceMatchTimer = setTimeout(() => matchSpotifySource(urls[0]), 500);
   }
   else if (type === 'youtube') guidance.textContent = 'YouTube source detected. The recording can be imported after you confirm its download authorization.';
-  else guidance.textContent = 'Paste a Spotify track link or an authorized YouTube recording.';
+  else if (type === 'soundcloud') {
+    guidance.textContent = 'SoundCloud source detected. Reading its track or mix metadata…';
+    sourceMatchTimer = setTimeout(() => inspectSoundCloudSource(urls[0]), 500);
+  }
+  else guidance.textContent = 'Paste a Spotify link or an authorized YouTube or SoundCloud recording.';
 });
+async function waitForAuthorizedImport(importId,url,onProgress){
+  while(true){
+    const response=await fetch(`/api/imports/${importId}`,{cache:'no-store'}),state=await response.json();
+    if(!response.ok)throw new Error(state.detail||'Import status could not be loaded.');
+    onProgress(Number(state.progress||0),state.stage||'Importing');
+    if(state.status!=='processing')return {url,importId,...state};
+    await new Promise(resolve=>setTimeout(resolve,900));
+  }
+}
+let authorizedImportQueue=null;
+function renderAuthorizedImportQueue(){
+  const queue=authorizedImportQueue;if(!queue)return;
+  const panel=$('#authorized-import-queue'),list=$('#authorized-import-queue-list'),progress=$('#authorized-import-progress');panel.hidden=false;progress.hidden=false;
+  const terminal=queue.items.filter(item=>['complete','failed','canceled'].includes(item.status)),percent=queue.items.reduce((sum,item)=>sum+Number(item.progress||0),0)/Math.max(1,queue.items.length);
+  progress.querySelector('span').style.width=`${Math.max(2,percent)}%`;progress.querySelector('small').textContent=`${terminal.length} of ${queue.items.length} finished · ${queue.paused?'Queue paused':queue.active+' active'} · ${Math.round(percent)}%`;
+  $('#authorized-import-queue-summary').textContent=`${queue.items.filter(item=>item.status==='waiting').length} waiting · ${queue.active} active`;
+  $('#authorized-import-pause').textContent=queue.paused?'Resume queue':'Pause queue';
+  $('#authorized-import-retry').disabled=!queue.items.some(item=>['failed','canceled'].includes(item.status));
+  list.innerHTML=queue.items.map((item,index)=>`<article class="authorized-import-queue-item" data-index="${index}" data-status="${item.status}"><div><strong>${escapeHtml(item.url)}</strong><small>${escapeHtml(item.stage||item.status)}${item.error?` · ${escapeHtml(item.error)}`:''}</small></div><div class="authorized-import-queue-actions">${item.status==='waiting'?`<button type="button" data-action="up" aria-label="Move up" ${index===0?'disabled':''}>↑</button><button type="button" data-action="down" aria-label="Move down" ${index===queue.items.length-1?'disabled':''}>↓</button>`:''}${['waiting','processing'].includes(item.status)?'<button type="button" data-action="cancel">Cancel</button>':''}${['failed','canceled'].includes(item.status)?'<button type="button" data-action="retry">Retry</button>':''}</div></article>`).join('');
+  list.querySelectorAll('button').forEach(button=>button.onclick=async()=>{const index=Number(button.closest('article').dataset.index),item=queue.items[index],action=button.dataset.action;if(action==='up'&&index>0)[queue.items[index-1],queue.items[index]]=[item,queue.items[index-1]];if(action==='down'&&index<queue.items.length-1)[queue.items[index+1],queue.items[index]]=[item,queue.items[index+1]];if(action==='cancel'){if(item.importId)await fetch(`/api/imports/${item.importId}/cancel`,{method:'POST'});else{item.status='canceled';item.stage='Canceled before download';item.progress=100;}}if(action==='retry'){Object.assign(item,{status:'waiting',stage:'Waiting to retry',progress:0,error:'',importId:null});}renderAuthorizedImportQueue();queue.schedule();});
+}
+async function importAuthorizedSources(urls,basePayload){
+  const metadata=urls.length===1?{title:currentSourceMetadata?.title||'',artist:currentSourceMetadata?.artist||'',spotify_uri:currentSourceMetadata?.spotify_uri||'',artwork_url:currentSourceMetadata?.thumbnail_url||''}:{title:'',artist:'',spotify_uri:'',artwork_url:''};
+  const queue={items:urls.map(url=>({url,status:'waiting',stage:'Waiting',progress:0,error:'',importId:null})),active:0,paused:false,finished:false,schedule:null};authorizedImportQueue=queue;
+  const done=new Promise(resolve=>queue.resolve=resolve);
+  const run=async item=>{queue.active++;item.status='processing';item.stage='Preparing';item.progress=1;renderAuthorizedImportQueue();try{const response=await fetch('/api/imports/authorized',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...basePayload,url:item.url,...metadata})}),payload=await response.json();if(!response.ok)throw new Error(payload.detail||'Could not start import.');item.importId=payload.import_id;const result=await waitForAuthorizedImport(payload.import_id,item.url,(value,stage)=>{item.progress=value;item.stage=stage;renderAuthorizedImportQueue();});Object.assign(item,{...result,status:result.status,progress:100,stage:result.status==='complete'?'Complete':result.status==='canceled'?'Canceled':'Failed',error:result.error||''});}catch(error){Object.assign(item,{status:'failed',stage:'Failed',progress:100,error:error.message});}finally{queue.active--;renderAuthorizedImportQueue();queue.schedule();}};
+  queue.schedule=()=>{if(queue.finished)return;while(!queue.paused&&queue.active<2){const next=queue.items.find(item=>item.status==='waiting');if(!next)break;run(next);}const pending=queue.items.some(item=>['waiting','processing'].includes(item.status));if(!pending&&queue.active===0){queue.finished=true;queue.resolve();}};
+  renderAuthorizedImportQueue();queue.schedule();await done;
+  const completed=queue.items.filter(item=>item.status==='complete'),failed=queue.items.filter(item=>item.status!=='complete'),message=$('#authorized-import-message');message.innerHTML=`<strong>${completed.length} of ${queue.items.length} sources imported.</strong>${failed.length?`<span>${failed.length} failed or canceled. Use Retry in the queue when ready.</span>`:''}${completed.length===1?` <a href="/api/imports/${completed[0].importId}/download">Download WAV</a>`:''}`;$('#authorized-import-submit').disabled=false;if(!failed.length)$('#authorized-import-form').reset();await loadJobs();
+}
+$('#authorized-import-pause').onclick=()=>{if(!authorizedImportQueue)return;authorizedImportQueue.paused=!authorizedImportQueue.paused;renderAuthorizedImportQueue();authorizedImportQueue.schedule();};
+$('#authorized-import-retry').onclick=()=>{if(!authorizedImportQueue)return;authorizedImportQueue.finished=false;authorizedImportQueue.items.filter(item=>['failed','canceled'].includes(item.status)).forEach(item=>Object.assign(item,{status:'waiting',stage:'Waiting to retry',progress:0,error:'',importId:null}));renderAuthorizedImportQueue();authorizedImportQueue.schedule();};
 $('#authorized-import-form').addEventListener('submit', async event => {
   event.preventDefault();
-  if (sourceUrlType($('#authorized-url').value.trim()) === 'spotify') {
-    $('#authorized-import-message').textContent = 'Spotify supplies metadata only. Add an authorized YouTube recording or local audio file for the WAV itself.';
+  const urls=authorizedSourceUrls();
+  if(!urls.length)return;
+  if(urls.length>100){$('#authorized-import-message').textContent='Import at most 100 URLs in one batch.';return;}
+  const unsupported=urls.filter(url=>!['youtube','soundcloud'].includes(sourceUrlType(url)));
+  if (unsupported.length) {
+    $('#authorized-import-message').textContent = `${unsupported.length} URL${unsupported.length===1?' is':'s are'} unsupported. Spotify supplies metadata only; bulk imports require direct YouTube or SoundCloud URLs.`;
     return;
   }
   stopBackgroundTask('authorized-import');
   const button = $('#authorized-import-submit'); button.disabled = true;
-  $('#authorized-import-message').textContent = 'Preparing the authorized import…';
-  const response = await fetch('/api/imports/authorized', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url:$('#authorized-url').value.trim(), rights_basis:$('#rights-basis').value, confirmation:$('#rights-confirmation').checked, process_with_extender:$('#process-import-with-extender').checked, title:currentSourceMetadata?.title || '', artist:currentSourceMetadata?.artist || '', spotify_uri:currentSourceMetadata?.spotify_uri || '', artwork_url:currentSourceMetadata?.thumbnail_url || ''})});
-  const payload = await response.json();
-  if (!response.ok) { button.disabled = false; $('#authorized-import-message').textContent = payload.detail || 'Could not start the import.'; return; }
-  pollAuthorizedImport(payload.import_id);
+  $('#authorized-import-message').textContent = `Preparing ${urls.length} authorized source${urls.length===1?'':'s'}…`;
+  await importAuthorizedSources(urls,{rights_basis:$('#rights-basis').value,confirmation:$('#rights-confirmation').checked,process_with_extender:$('#process-import-with-extender').checked});
 });
 
 let localAudioFiles = [];
@@ -1920,7 +1978,7 @@ async function loadDownloadedLibrary() {
       const genre = track.genre_category || 'Other';
       const artwork = track.artwork_available ? `<img src="/api/downloaded-library/tracks/${track.id}/artwork?thumbnail=true" alt="" loading="lazy" decoding="async">` : '♫';
       const detailed = detailedGenreSummary(track.genre);
-      const identity = `${track.recording_code || 'AE-PENDING'}-${track.version_code || 'ORG'}`;
+      const identity = `${track.recording_code || 'OTH-PENDING'}-${track.version_code || 'ORG'}`;
       return `<article class="panel downloaded-card" data-id="${track.id}" data-available="${track.available ? 'true' : 'false'}" data-analysis-status="${escapeHtml(state)}" data-title="${escapeHtml(String(track.title || '').toLowerCase())}" data-artist="${escapeHtml(String(track.artist || '').toLowerCase())}" data-genre="${escapeHtml(genre)}" data-needs-genre="${track.needs_genre ? 'true' : 'false'}" data-playlists="${escapeHtml((track.playlists || []).join('|'))}" data-imported="${escapeHtml(track.imported_at || '')}"><label class="downloaded-check"><input type="checkbox" value="${track.id}" aria-label="Select ${escapeHtml(track.title || track.filename)}"${downloadedSelection.has(Number(track.id)) ? ' checked' : ''}><span></span></label><div class="downloaded-row-icon">${artwork}</div><div class="downloaded-copy"><h3>${escapeHtml(track.title || track.filename)}</h3><p>${escapeHtml(track.artist || 'Unknown artist')}</p><small class="track-identity" title="Permanent recording identity">${escapeHtml(identity)}</small></div><div class="downloaded-genre-cell"><button type="button" class="downloaded-genre edit-downloaded-genre" title="Change primary genre">${escapeHtml(genre)}</button><button type="button" class="downloaded-detailed-genre${detailed.empty?' empty':''}" title="${escapeHtml(detailed.title)}"${detailed.empty?' disabled':''}>${escapeHtml(detailed.label)}</button></div><span class="downloaded-analysis-status" data-status="${escapeHtml(state)}">${escapeHtml(label)}</span>${compactAudioMarkup(`/api/downloaded-library/tracks/${track.id}/audio`,track.duration_seconds)}<details class="downloaded-actions"><summary aria-label="Track actions">•••</summary><div><button type="button" class="inspect-downloaded">Quick view</button><button type="button" class="edit-track-metadata">Edit metadata</button>${state === 'complete' ? '<button type="button" class="view-downloaded-library">View in DJ Library</button>' : ''}${track.available ? `<a href="/api/downloaded-library/tracks/${track.id}/download">Download WAV</a>` : '<span>File unavailable</span>'}<button type="button" class="edit-downloaded-genre">Change genre</button><button type="button" class="remove-downloaded danger-text">Remove from catalog</button></div></details>${genreEditorMarkup(genre, track.suggested_genre)}${metadataEditorMarkup(track)}</article>`;
     }).join('');
   }
@@ -2359,12 +2417,19 @@ async function loadDownloadedLibrary() {
     const inspector = $('#downloaded-inspector');
     inspector.hidden = false; inspector.dataset.returnId=card.dataset.id;
     const preview = track.available ? `<audio controls preload="metadata" src="/api/downloaded-library/tracks/${track.id}/audio"></audio>` : '<div class="inspector-unavailable">The catalog entry remains available, but its WAV file is missing from disk.</div>';
-    const identity=`${track.recording_code || 'AE-PENDING'}-${track.version_code || 'ORG'}`;
-    inspector.innerHTML = `<div class="inspector-head"><div><p class="eyebrow">QUICK VIEW · ${escapeHtml(identity)}</p><h2>${escapeHtml(track.title || track.filename)}</h2><span>${escapeHtml(track.artist || 'Unknown artist')}</span></div><button type="button" class="close-inspector" aria-label="Close inspector">×</button></div>${preview}<div class="inspector-metrics"><p><b>${escapeHtml(track.genre_category || 'Other')}</b><span>Genre</span></p><p><b>${clock(track.duration_seconds)}</b><span>Length</span></p><p><b>${escapeHtml((track.analysis_status || 'not_analyzed').replaceAll('_',' '))}</b><span>Analysis</span></p></div><details class="inspector-metadata"><summary>File & source details</summary><dl><dt>Recording ID</dt><dd>${escapeHtml(identity)}</dd><dt>Identity basis</dt><dd>${escapeHtml(track.identity_reason || 'Catalog assignment')}</dd><dt>Detailed tags</dt><dd>${escapeHtml(track.genre || 'No metadata')}</dd><dt>Source playlist</dt><dd>${escapeHtml((track.playlists || []).join(', ') || 'Imported Singles')}</dd><dt>File</dt><dd>${escapeHtml(track.filename || '')}</dd></dl></details><div class="inspector-actions">${track.completed_library_job_id ? '<button type="button" class="button secondary inspector-library">View in DJ Library</button>' : ''}<button type="button" class="button secondary inspector-edit-metadata">Edit metadata</button><button type="button" class="button secondary inspector-edit-genre">Change genre only</button>${track.available ? `<a class="button secondary" href="/api/downloaded-library/tracks/${track.id}/download">Download WAV</a>` : ''}</div>`;
+    const identity=`${track.recording_code || 'OTH-PENDING'}-${track.version_code || 'ORG'}`;
+    inspector.innerHTML = `<div class="inspector-head"><div><p class="eyebrow">QUICK VIEW · ${escapeHtml(identity)}</p><h2>${escapeHtml(track.title || track.filename)}</h2><span>${escapeHtml(track.artist || 'Unknown artist')}</span></div><button type="button" class="close-inspector" aria-label="Close inspector">×</button></div>${preview}<div class="inspector-metrics"><p><b>${escapeHtml(track.genre_category || 'Other')}</b><span>Genre</span></p><p><b>${clock(track.duration_seconds)}</b><span>Length</span></p><p><b>${escapeHtml((track.analysis_status || 'not_analyzed').replaceAll('_',' '))}</b><span>Analysis</span></p></div><section class="inspector-family"><div class="inspector-family-heading"><div><b>Recording family</b><span>Originals, remixes, edits, and alternate versions</span></div><button type="button" class="button secondary inspector-family-toggle">Link as version of…</button></div><div class="inspector-family-content"><p>Loading related versions…</p></div><form class="inspector-family-link" hidden><label>Target track ID<input name="target" placeholder="HOU-002386-ORG"></label><label>Relationship<select name="relationship"><option value="RMX">Remix</option><option value="EXT">Extended mix</option><option value="RADIO">Radio edit</option><option value="LIVE">Live version</option><option value="INST">Instrumental</option><option value="ACAP">Acapella</option><option value="REM">Remaster</option><option value="ORG">Original / alternate original</option></select></label><button type="submit">Link version</button><small>Choose a suggestion below or enter the visible genre-based track ID.</small></form><div class="inspector-family-suggestions"></div></section><details class="inspector-metadata"><summary>File & source details</summary><dl><dt>Recording ID</dt><dd>${escapeHtml(identity)}</dd><dt>Identity basis</dt><dd>${escapeHtml(track.identity_reason || 'Catalog assignment')}</dd><dt>Detailed tags</dt><dd>${escapeHtml(track.genre || 'No metadata')}</dd><dt>Source playlist</dt><dd>${escapeHtml((track.playlists || []).join(', ') || 'Imported Singles')}</dd><dt>Filename</dt><dd>${escapeHtml(track.filename || '')}</dd><dt>Absolute path</dt><dd class="inspector-path">${escapeHtml(track.absolute_path || 'Path unavailable')}</dd></dl></details><div class="inspector-actions">${track.completed_library_job_id ? '<button type="button" class="button secondary inspector-library">View in DJ Library</button>' : ''}<button type="button" class="button secondary inspector-edit-metadata">Edit metadata</button><button type="button" class="button secondary inspector-edit-genre">Change genre only</button>${track.available ? `<button type="button" class="button secondary inspector-copy-path">Copy path</button><button type="button" class="button secondary inspector-reveal">Reveal in Finder</button><a class="button secondary" href="/api/downloaded-library/tracks/${track.id}/download">Download WAV</a>` : ''}</div>`;
     inspector.querySelector('.close-inspector').onclick = () => closeDownloadedInspector({restoreFocus:true});
     inspector.querySelector('.inspector-edit-metadata').onclick = () => { const editor=card.querySelector('.track-metadata-editor'); closeDownloadedInspector(); editor.hidden=false; card.scrollIntoView({behavior:'smooth',block:'center'}); editor.elements.title.focus(); };
     inspector.querySelector('.inspector-edit-genre').onclick = () => { closeDownloadedInspector(); card.querySelector('.inline-genre-editor').hidden = false; card.scrollIntoView({behavior:'smooth',block:'center'}); };
     inspector.querySelector('.inspector-library')?.addEventListener('click', () => { closeDownloadedInspector(); showView('library-view'); });
+    inspector.querySelector('.inspector-copy-path')?.addEventListener('click', async event => {try{await navigator.clipboard.writeText(track.absolute_path||'');event.currentTarget.textContent='Path copied';}catch(_){event.currentTarget.textContent='Copy failed';}});
+    inspector.querySelector('.inspector-reveal')?.addEventListener('click', async event => {const response=await fetch(`/api/downloaded-library/tracks/${track.id}/reveal`,{method:'POST'}),payload=await response.json();event.currentTarget.textContent=response.ok?'Revealed in Finder':payload.detail||'Could not reveal';});
+    const familyForm=inspector.querySelector('.inspector-family-link'),familyContent=inspector.querySelector('.inspector-family-content'),familySuggestions=inspector.querySelector('.inspector-family-suggestions');
+    inspector.querySelector('.inspector-family-toggle').onclick=()=>{familyForm.hidden=!familyForm.hidden;if(!familyForm.hidden)familyForm.elements.target.focus();};
+    const loadFamily=async()=>{const response=await fetch(`/api/downloaded-library/tracks/${track.id}/family`),payload=await response.json();if(!response.ok){familyContent.innerHTML=`<p>${escapeHtml(payload.detail||'Related versions could not be loaded.')}</p>`;return;}familyContent.innerHTML=payload.family.map(member=>`<article><div><b>${escapeHtml(member.title||member.filename)}</b><span>${escapeHtml(member.artist||'Unknown artist')} · ${escapeHtml(member.recording_code)}-${escapeHtml(member.version_code||'ORG')}</span></div>${Number(member.id)===Number(track.id)?'<em>Current</em>':`<button type="button" data-family-target="${member.id}">View</button>`}</article>`).join('');if(payload.family.length>1)familyContent.insertAdjacentHTML('beforeend','<button type="button" class="button secondary inspector-family-unlink">Unlink current track</button>');familySuggestions.innerHTML=payload.suggestions.length?`<b>Suggested families</b>${payload.suggestions.map(item=>`<button type="button" data-suggestion-id="${escapeHtml(item.track.recording_code)}-${escapeHtml(item.track.version_code||'ORG')}"><span>${escapeHtml(item.track.title||item.track.filename)} · ${escapeHtml(item.track.artist||'Unknown artist')}</span><small>${item.score}% · ${escapeHtml(item.reasons.join(', '))}</small></button>`).join('')}`:'<small>No strong automatic suggestions. Enter a target track ID to link manually.</small>';familySuggestions.querySelectorAll('[data-suggestion-id]').forEach(option=>option.onclick=()=>{familyForm.hidden=false;familyForm.elements.target.value=option.dataset.suggestionId;familyForm.elements.relationship.focus();});familyContent.querySelector('.inspector-family-unlink')?.addEventListener('click',async()=>{if(!confirm('Unlink this version into its own recording family? You can link it again later.'))return;const result=await fetch(`/api/downloaded-library/tracks/${track.id}/unlink-version`,{method:'POST'});if(result.ok){await loadDownloadedLibrary();closeDownloadedInspector();}});};
+    familyForm.onsubmit=async event=>{event.preventDefault();const target=familyForm.elements.target.value.trim();if(!target){familyForm.querySelector('small').textContent='Enter a valid AE track ID.';return;}const response=await fetch(`/api/downloaded-library/tracks/${track.id}/link-version`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_identity:target,relationship:familyForm.elements.relationship.value})}),payload=await response.json();if(!response.ok){familyForm.querySelector('small').textContent=payload.detail||'Could not link this version.';return;}await loadDownloadedLibrary();closeDownloadedInspector();};
+    loadFamily();
   });
   summary.querySelectorAll('.filter-downloaded-genre').forEach(button => button.onclick = () => { downloadedUiState.genre=button.dataset.value;downloadedUiState.detailedGenre='all'; requestPage(1); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth'}); });
   summary.querySelectorAll('.filter-detailed-genre').forEach(button => button.onclick = () => { downloadedUiState.genre='all';downloadedUiState.detailedGenre=button.dataset.value; requestPage(1); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth'}); });

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260928-175">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260929-180">
 </head>
 <body>
   <header class="topbar">
@@ -140,18 +140,22 @@
           <section class="playlist-matcher import-method-body"><div class="playlist-matcher-head"><div><p class="eyebrow">BATCH IMPORT</p><h2>Match a playlist CSV</h2><p>Upload the export, review the ranked YouTube matches, then download validated WAV files.</p></div></div><form id="playlist-csv-form" class="playlist-match-form playlist-file-form"><label>Spotify playlist CSV<input id="playlist-csv-file" type="file" required accept=".csv,text/csv"></label><button id="playlist-csv-submit" type="submit">Upload CSV and match</button></form><p class="playlist-format-note">Recognizes Track Name, Artist Name(s), Duration, Genres, and Tempo automatically. Detailed genres are grouped into broad DJ folders, while the original genre remains in the import report.</p><p id="spotify-playlist-message" class="form-message" role="status"></p><div id="spotify-playlist-progress" class="import-progress" hidden><span></span><small></small></div><div id="spotify-match-toolbar" class="spotify-match-toolbar" hidden><label><input id="spotify-select-all" type="checkbox"> Select all visible matches</label><label>Bulk permission<select id="spotify-bulk-permission"><option value="unverified">Unverified</option><option value="own-upload">I own this recording</option><option value="creative-commons">Creative Commons</option><option value="public-domain">Public domain</option><option value="permission">Direct permission</option></select></label><button id="spotify-apply-permission" type="button" class="button secondary">Apply to selected</button><button id="download-creative-commons" type="button">Download validated songs</button><span id="spotify-selected-count">0 selected</span></div><div id="creative-commons-result" class="creative-commons-result" hidden></div><div id="spotify-match-results" class="spotify-match-results" hidden></div></section>
         </details>
         <details class="panel import-method">
-          <summary><span class="import-step">3</span><span><strong>Import a source</strong><small>Paste a Spotify link for metadata or an authorized YouTube recording</small></span><span class="import-chevron">⌄</span></summary>
+          <summary><span class="import-step">3</span><span><strong>Import a source</strong><small>Use Spotify metadata or import an authorized YouTube or SoundCloud recording</small></span><span class="import-chevron">⌄</span></summary>
         <form id="authorized-import-form" class="authorized-import-form import-method-body">
           <div class="import-mark">↓</div>
-          <div><p class="eyebrow">SINGLE TRACK</p><h2>Import a source</h2><p>Spotify links identify the release and provide metadata. Authorized YouTube links can supply the recording that is converted to WAV.</p></div>
-          <label>Spotify or YouTube URL<input id="authorized-url" type="url" required placeholder="Paste a Spotify or YouTube track link"></label>
+          <div><p class="eyebrow">TRACK OR MIX</p><h2>Import a source</h2><p>Spotify links provide metadata. Authorized YouTube and SoundCloud tracks or mixes can be converted to WAV.</p></div>
+          <label>Spotify, YouTube, or SoundCloud URLs<textarea id="authorized-url" required rows="5" placeholder="Paste one track or mix URL per line"></textarea><small>One URL per line. Blank lines and duplicate URLs are ignored.</small></label>
           <p id="source-url-guidance" class="form-message">Paste a source link to see how it will be handled.</p>
           <div id="source-match-result" class="source-match-result" hidden></div>
           <label>Audio authorization<select id="rights-basis" required><option value="own-upload">I own/uploaded this recording</option><option value="creative-commons">Creative Commons</option><option value="public-domain">Public domain</option><option value="permission">Direct permission</option></select></label>
           <div class="import-options"><label class="import-confirm"><input id="rights-confirmation" type="checkbox" required> I confirm I may download this recording.</label><label class="import-confirm"><input id="process-import-with-extender" type="checkbox"> Create an extended edit after conversion.</label></div>
-          <button id="authorized-import-submit" type="submit">Import as WAV</button>
+          <button id="authorized-import-submit" type="submit">Import URL queue as WAV</button>
           <p id="authorized-import-message" class="form-message" role="status"></p>
           <div id="authorized-import-progress" class="import-progress" hidden><span></span><small></small></div>
+          <section id="authorized-import-queue" class="authorized-import-queue" hidden>
+            <div class="authorized-import-queue-toolbar"><div><strong>Import queue</strong><small id="authorized-import-queue-summary"></small></div><div><button id="authorized-import-pause" type="button" class="button secondary">Pause queue</button><button id="authorized-import-retry" type="button" class="button secondary">Retry failed</button></div></div>
+            <div id="authorized-import-queue-list" class="authorized-import-queue-list"></div>
+          </section>
         </form>
         </details>
       </div>
@@ -171,7 +175,7 @@
       <main class="downloads-main">
       <section class="panel downloaded-toolbar">
         <div class="downloaded-filters">
-          <label>Find a track<input id="downloaded-search" type="search" placeholder="Search title, artist, genre, or playlist"></label>
+          <label>Find a track<input id="downloaded-search" type="search" placeholder="Search title, artist, track ID, genre, or playlist"></label>
           <label>Genre<select id="downloaded-genre"><option value="all">All genres</option></select></label>
           <label>Detailed genre<select id="downloaded-detailed-genre-filter"><option value="all">All detailed genres</option></select></label>
           <label>Playlist<select id="downloaded-playlist"><option value="all">All playlists</option></select></label>
@@ -225,7 +229,7 @@
       <main class="library-main">
       <section class="panel library-toolbar">
         <div class="library-filters">
-          <label>Find a track<input id="library-search" type="search" placeholder="Search title, role, key, category, or preset"></label>
+          <label>Find a track<input id="library-search" type="search" placeholder="Search title, artist, track ID, role, key, or genre"></label>
           <label>Parent genre<select id="library-category"><option value="all">All parent genres</option></select></label>
           <label>Detailed genre<select id="library-detailed-genre"><option value="all">All detailed genres</option></select></label>
           <label>Set role<select id="library-role"><option value="all">All roles</option></select></label>
@@ -555,6 +559,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20260928-175" type="module"></script>
+  <script src="/assets/app.js?v=20260929-180" type="module"></script>
 </body>
 </html>
