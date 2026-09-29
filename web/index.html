@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260928-175">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260929-177">
 </head>
 <body>
   <header class="topbar">
@@ -177,6 +177,7 @@
           <label>Playlist<select id="downloaded-playlist"><option value="all">All playlists</option></select></label>
           <label>Analysis<select id="downloaded-analysis"><option value="all">All tracks</option><optgroup label="Track analysis"><option value="needs">Needs audio analysis</option><option value="complete">Analyzed</option><option value="active">Queued or analyzing</option><option value="failed">Analysis failed or canceled</option></optgroup><optgroup label="Needs attention"><option value="attention">All needing attention</option><option value="missing_title">Missing title</option><option value="missing_artist">Missing artist</option><option value="missing_genre">Missing genre tags</option><option value="missing_artwork">Missing artwork</option><option value="unmapped_genre">Unrecognized genre</option><option value="broad_genre">Needs a specific genre</option></optgroup></select></label>
           <label>Artwork<select id="downloaded-artwork"><option value="all">All artwork</option><option value="missing">Needs artwork</option><option value="available">Has artwork</option></select></label>
+          <label>Audio quality<select id="downloaded-quality"><option value="all">All quality levels</option><option value="excellent">Excellent · 90–100</option><option value="good">Good · 75–89</option><option value="below-target">Needs review · below 75</option><option value="review">Review · 55–74</option><option value="poor">Poor · below 55</option><option value="unanalyzed">Not quality analyzed</option></select></label>
           <label>Sort<select id="downloaded-sort"><option value="newest">Newest imported</option><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option><option value="genre">Genre</option></select></label>
         </div>
         <div class="downloaded-filter-summary"><div><small>Showing</small><strong id="downloaded-filter-count">0 tracks</strong></div><div class="downloaded-matching-actions"><button id="downloaded-review-matching" type="button" class="button secondary" hidden>Review metadata</button><button id="downloaded-analyze-matching" type="button" class="button secondary" disabled>Analyze matching</button><button id="downloaded-reanalyze-matching" type="button" class="button secondary">Reanalyze matching</button></div></div>
@@ -241,6 +242,7 @@
           <label>Vocal profile<select id="library-vocals"><option value="all">All vocal profiles</option><option value="vocal-safe">Vocal-safe</option><option value="mixed">Mixed</option><option value="vocal-forward">Vocal-forward</option></select></label>
           <label>Timing<select id="library-timing"><option value="all">All timing behavior</option><option value="steady">Steady / griddable</option><option value="variable">Variable / live</option></select></label>
           <label>Edit result<select id="library-result"><option value="all">All results</option><option value="extended">Has an extension</option><option value="preserved">Original preserved</option><option value="review">Awaiting review</option></select></label>
+          <label>Audio quality<select id="library-quality"><option value="all">All quality levels</option><option value="excellent">Excellent · 90–100</option><option value="good">Good · 75–89</option><option value="below-target">Needs review · below 75</option><option value="review">Review · 55–74</option><option value="poor">Poor · below 55</option><option value="unanalyzed">Not quality analyzed</option></select></label>
           <label>Key display<select id="library-key-display"><option value="both">Musical + Camelot</option><option value="standard">Musical only</option><option value="camelot">Camelot only</option></select></label>
           <button id="library-reset-filters" type="button" class="button secondary">Reset filters</button>
         </div></details>
@@ -410,6 +412,11 @@
           <div><span>Total library</span><strong id="library-total-storage">—</strong><small id="library-total-storage-detail">Managed files</small></div>
           <div><span>Drive available</span><strong id="library-free-storage">—</strong><small id="library-free-storage-detail">Remaining capacity</small></div>
         </div>
+        <section class="library-quality-summary" aria-labelledby="library-quality-title">
+          <div class="library-quality-head"><div><span class="eyebrow">AUDIO QUALITY</span><h3 id="library-quality-title">Library sound health</h3><p>Signal-based estimates from the saved audio—not the inflated bitrate of converted WAV containers.</p></div><button id="scan-audio-quality" class="button secondary" type="button">Analyze audio quality</button></div>
+          <div class="library-quality-stats"><div><span>Average score</span><strong id="quality-average">—</strong><small id="quality-coverage">Not analyzed</small></div><div><span>Excellent</span><strong id="quality-excellent">—</strong><small>90–100</small></div><div><span>Good</span><strong id="quality-good">—</strong><small>75–89</small></div><div><span>Needs review</span><strong id="quality-review">—</strong><small>Below 75</small></div></div>
+          <div id="quality-scan-progress" class="quality-scan-progress" hidden><progress id="quality-scan-bar" max="100" value="0"></progress><span id="quality-scan-message"></span></div>
+        </section>
         <form id="library-relocation-form" class="relocation-form">
           <label>Action<select id="relocation-mode"><option value="copy">Copy as a backup</option><option value="move">Move and use the new location</option><option value="relink">Relink a folder already moved</option></select></label>
           <label class="relocation-destination">Destination library folder<input id="relocation-destination" type="text" autocomplete="off" spellcheck="false" placeholder="/Volumes/My Drive/AudioExtender Library" required></label>
@@ -555,6 +562,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20260928-175" type="module"></script>
+  <script src="/assets/app.js?v=20260929-177" type="module"></script>
 </body>
 </html>
