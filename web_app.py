@@ -42,7 +42,9 @@ from starlette.middleware.gzip import GZipMiddleware
 from helpers.analysis import analyze_key
 from helpers.audio_loader import SUPPORTED_EXTENSIONS, load_audio
 from helpers.audio_quality import analyze_audio_quality
+from helpers.background_tasks import BackgroundTaskRegistry
 from helpers.cache import AnalysisCache
+from helpers.creative_commons_import_service import CreativeCommonsImportService
 from helpers.feedback_report import append_web_feedback
 from helpers.import_routes import AuthorizedImportRequest, create_import_router
 from helpers.import_service import (
@@ -113,8 +115,11 @@ library_relocation = LibraryRelocationCoordinator(
 pending_backup_restores: dict[str, Path] = {}
 repository.recover_interrupted()
 service = WebJobService(PROJECT, repository)
-creative_commons_batches: dict[str, dict] = {}
-creative_commons_batch_lock = threading.Lock()
+creative_commons_registry = BackgroundTaskRegistry(
+    OUTPUT / "reports" / "tasks" / "creative-commons.json"
+)
+creative_commons_batches = creative_commons_registry
+creative_commons_batch_lock = creative_commons_registry.lock
 wav_tag_batches: dict[str, dict] = {}
 wav_tag_batch_lock = threading.Lock()
 wav_tag_audit_refresh_lock = threading.Lock()
@@ -1146,10 +1151,7 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
         import_service.has_active_imports()
         or local_import_service.has_active_imports()
         or playlist_match_service.has_active_imports()
-        or any(
-        state.get("status") == "processing"
-        for state in creative_commons_batches.values()
-        )
+        or creative_commons_service.has_active_imports()
     )
     if active_jobs or active_imports:
         raise HTTPException(
@@ -1206,8 +1208,7 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
     import_service.clear()
     local_import_service.clear()
     playlist_match_service.clear()
-    with creative_commons_batch_lock:
-        creative_commons_batches.clear()
+    creative_commons_service.clear()
     return {"reset": True, "removed_files": removed}
 
 
@@ -2069,38 +2070,18 @@ def _creative_commons_worker(
 
 @app.post("/api/imports/creative-commons", status_code=202)
 def create_creative_commons_batch(request: CreativeCommonsBatchRequest) -> dict:
-    allowed_hosts = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
-    if any(
-        (urlparse(track.url).hostname or "").casefold() not in allowed_hosts
-        for track in request.tracks
-    ):
-        raise HTTPException(400, "Every batch item must use a YouTube URL")
-    _require_music_library_online()
-    batch_id = uuid.uuid4().hex
-    with creative_commons_batch_lock:
-        creative_commons_batches[batch_id] = {
-            "id": batch_id,
-            "status": "processing",
-            "stage": "Preparing Creative Commons verification",
-            "progress": 0,
-            "counts": {},
-            "playlist_name": request.playlist_name,
-        }
-    threading.Thread(
-        target=_creative_commons_worker,
-        args=(batch_id, request.tracks, request.playlist_name),
-        daemon=True,
-    ).start()
-    return {"batch_id": batch_id}
+    try:
+        return creative_commons_service.start(request.tracks, request.playlist_name)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
 
 
 @app.get("/api/imports/creative-commons/{batch_id}")
 def creative_commons_batch_status(batch_id: str) -> dict:
-    with creative_commons_batch_lock:
-        state = creative_commons_batches.get(batch_id)
-        if state is None:
-            raise HTTPException(404, "Creative Commons import not found")
-        return {key: value for key, value in state.items() if not key.endswith("_path")}
+    try:
+        return creative_commons_service.status(batch_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
 
 
 @app.get("/api/imports/creative-commons/{batch_id}/download")
@@ -2298,7 +2279,6 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
 
 @app.post("/api/imports/failures/retry", status_code=202)
 def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
-    _require_music_library_online()
     wanted = set(request.failure_ids)
     failures = [
         item for item in repository.list_import_failures()
@@ -2306,17 +2286,7 @@ def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
     ]
     if len(failures) != len(wanted):
         raise HTTPException(404, "One or more import issues are no longer available")
-    batch_id = uuid.uuid4().hex
-    with creative_commons_batch_lock:
-        creative_commons_batches[batch_id] = {
-            "id": batch_id, "status": "processing", "stage": "Preparing retries",
-            "progress": 0, "counts": {}, "playlist_name": "Retry imports",
-        }
-    threading.Thread(
-        target=_retry_import_failures_worker, args=(batch_id, failures),
-        daemon=True, name=f"import-retry-{batch_id[:8]}",
-    ).start()
-    return {"batch_id": batch_id, "retry_count": len(failures)}
+    return creative_commons_service.start_retry(failures)
 
 
 @app.delete("/api/imports/failures/{failure_id}")
@@ -5074,6 +5044,13 @@ local_import_service = LocalAudioImportService(
 )
 playlist_match_service = PlaylistMatchService(
     _match_tracks_to_youtube,
+    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+)
+creative_commons_service = CreativeCommonsImportService(
+    creative_commons_registry,
+    require_library_online=_require_music_library_online,
+    worker=_creative_commons_worker,
+    retry_worker=_retry_import_failures_worker,
     thread_factory=lambda **kwargs: threading.Thread(**kwargs),
 )
 app.include_router(

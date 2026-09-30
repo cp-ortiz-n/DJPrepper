@@ -852,8 +852,8 @@ class WebApiTests(unittest.TestCase):
         }
         with (
             patch.object(web_module.repository, "list_import_failures", return_value=[failure]),
-            patch.object(web_module, "_require_music_library_online"),
-            patch.object(web_module.threading, "Thread") as thread,
+            patch.object(web_module.creative_commons_service, "_require_library_online"),
+            patch.object(web_module.creative_commons_service, "_thread_factory") as thread,
         ):
             response = self.client.post(
                 "/api/imports/failures/retry", json={"failure_ids": [91]}
