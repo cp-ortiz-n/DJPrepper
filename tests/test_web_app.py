@@ -1023,6 +1023,15 @@ class WebApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["effective"]["intro_bars"], 4)
                 self.assertEqual(response.json()["effective"]["music_library_path"], library_path)
+
+            # A newly constructed repository represents a full application restart.
+            restarted_catalog = JobRepository(Path(temporary) / "settings.sqlite3")
+            with patch.object(web_module, "repository", restarted_catalog):
+                restarted = self.client.get("/api/config")
+                self.assertEqual(restarted.status_code, 200)
+                self.assertEqual(
+                    restarted.json()["effective"]["music_library_path"], library_path
+                )
                 reset = self.client.delete("/api/settings")
                 self.assertEqual(reset.status_code, 200)
                 self.assertEqual(reset.json()["overrides"], {})
@@ -1031,6 +1040,30 @@ class WebApiTests(unittest.TestCase):
                     reset.json()["effective"]["intro_bars"],
                     reset.json()["defaults"]["intro_bars"],
                 )
+
+    def test_wav_tag_audit_clears_missing_error_after_drive_reconnect(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog = JobRepository(root / "catalog.sqlite3")
+            track = root / "External Library" / "Electronic" / "Track.wav"
+            catalog.upsert_downloaded_track(
+                title="Track",
+                artist="Artist",
+                file_path=track,
+                genre="techno",
+                genre_category="Electronic / Techno / Techno",
+            )
+            with patch.object(web_module, "repository", catalog):
+                offline = web_module._refresh_wav_tag_audit()
+                self.assertEqual(offline["failed"], 1)
+                self.assertEqual(offline["errors"][0]["path"], str(track.resolve()))
+
+                track.parent.mkdir(parents=True)
+                track.write_bytes(b"RIFF-reconnected")
+                online = web_module._refresh_wav_tag_audit()
+                self.assertEqual(online["failed"], 0)
+                self.assertEqual(online["skipped"], 1)
+                self.assertEqual(online["errors"], [])
 
     def test_analytics_endpoint_has_feedback_fields(self) -> None:
         response = self.client.get("/api/analytics")

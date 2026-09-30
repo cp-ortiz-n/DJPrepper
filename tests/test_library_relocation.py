@@ -66,6 +66,15 @@ class LibraryRelocationTests(unittest.TestCase):
                 Path(relocated_job["intro_preview_path"]).resolve(),
                 (destination / "previews" / "intro.wav").resolve(),
             )
+            self.assertEqual(
+                repository.get_system_state("music_library_path"),
+                str(destination.resolve()),
+            )
+            restarted = JobRepository(base / "catalog.sqlite3")
+            self.assertEqual(
+                restarted.get_system_state("music_library_path"),
+                str(destination.resolve()),
+            )
             self.assertTrue(coordinator.status()["database_backup"])
             rolled_back = coordinator.rollback()
             self.assertEqual(rolled_back["status"], "rolled_back")
