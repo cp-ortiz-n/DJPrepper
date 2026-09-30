@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.recording_identity import base_title, genre_family_code, version_kind
-from helpers.web_database import JobRepository
+from audioextender.library.recording_identity import base_title, genre_family_code, version_kind
+from audioextender.repositories.facade import JobRepository
 
 
 class RecordingIdentityTests(unittest.TestCase):

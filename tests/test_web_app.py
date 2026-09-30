@@ -13,11 +13,11 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 import web_app as web_module
-from helpers.config import EditConfig
-from helpers.exceptions import ConfigurationError
-from helpers.import_service import LibraryOfflineError
-from helpers.web_database import JobRepository
-from helpers.web_jobs import DatabaseProgress, WebJobService
+from audioextender.core.config import EditConfig
+from audioextender.core.exceptions import ConfigurationError
+from audioextender.imports.service import LibraryOfflineError
+from audioextender.repositories.facade import JobRepository
+from audioextender.processing.web_jobs import DatabaseProgress, WebJobService
 from web_app import (
     AuthorizedImportRequest,
     BatchDownloadRequest,
@@ -1309,7 +1309,7 @@ class QueueControlTests(unittest.TestCase):
                     {"analysis_only": True},
                 ))
             try:
-                with patch("helpers.web_jobs.choose_worker_count", return_value=(3, [], 16 * 1024**3)):
+                with patch("audioextender.processing.web_jobs.choose_worker_count", return_value=(3, [], 16 * 1024**3)):
                     service.enqueue_many(job_ids)
                     deadline = time.time() + 1
                     while len(service.snapshot()["active_ids"]) < 3 and time.time() < deadline:

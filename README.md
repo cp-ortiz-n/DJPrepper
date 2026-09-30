@@ -263,7 +263,16 @@ safety thresholds normally.
 AudioExtender/
 ├── main.py              # CLI and batch runner
 ├── settings.py          # User-editable application defaults
-├── helpers/             # Audio loading, analysis, selection, editing, stems
+├── audioextender/       # Application package, organized by domain
+│   ├── analysis/        # Key analysis, selection, validation, and scoring
+│   ├── audio/           # Loading, quality, WAV metadata, and stems
+│   ├── core/            # Configuration, models, interfaces, and presets
+│   ├── imports/         # Source import workflows and route handlers
+│   ├── infrastructure/  # Background tasks, caching, and progress
+│   ├── library/         # Library identity, relocation, backup, and export
+│   ├── processing/      # Track, batch, and web-job orchestration
+│   ├── reporting/       # Feedback and processing reports
+│   └── repositories/    # Focused persistence repositories
 ├── tests/               # Fast unit tests and synthetic test fixtures
 ├── input/               # Drop source songs here
 ├── output/
@@ -278,6 +287,8 @@ AudioExtender/
 
 The contents of `input/` and `output/` are ignored by Git, while the directories
 themselves remain part of the project.
+
+See [`docs/architecture.md`](docs/architecture.md) for package ownership and dependency rules.
 
 ### Architecture boundaries
 
@@ -381,7 +392,7 @@ DEFAULT_INTRO_BARS = 4
 DEFAULT_OUTRO_BARS = 0
 ```
 
-Avoid changing scoring formulas inside `helpers/` unless you are intentionally
+Avoid changing scoring formulas inside `audioextender/analysis/` unless you are intentionally
 tuning the audio-selection algorithm. The settings above are the supported
 high-level controls.
 

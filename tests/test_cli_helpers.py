@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.track_processor import _parse_timestamp
+from audioextender.processing.track_processor import _parse_timestamp
 from main import _discover_inputs, _format_duration, _output_path
 
 

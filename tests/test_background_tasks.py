@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.background_tasks import BackgroundTaskRegistry
+from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
 
 
 class BackgroundTaskRegistryTests(unittest.TestCase):

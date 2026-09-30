@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from helpers.analysis import _ensemble_key_estimate, _estimate_key
+from audioextender.analysis.key_detection import _ensemble_key_estimate, _estimate_key
 
 
 MAJOR_PROFILE = np.asarray(

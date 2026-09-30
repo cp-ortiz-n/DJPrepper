@@ -6,8 +6,8 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from helpers.library_backup import LibraryBackupService
-from helpers.web_database import JobRepository
+from audioextender.library.backup import LibraryBackupService
+from audioextender.repositories.facade import JobRepository
 
 
 class LibraryBackupServiceTests(unittest.TestCase):

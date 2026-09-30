@@ -4,8 +4,8 @@ import unittest
 
 import numpy as np
 
-from helpers.analysis import TrackAnalysis
-from helpers.transition_scorer import assess_custom_insertion
+from audioextender.analysis.key_detection import TrackAnalysis
+from audioextender.analysis.transition_scorer import assess_custom_insertion
 
 
 def analysis_fixture() -> TrackAnalysis:

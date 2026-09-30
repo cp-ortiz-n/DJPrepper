@@ -4,9 +4,9 @@ import unittest
 
 import numpy as np
 
-from helpers.analysis import TrackAnalysis
-from helpers.style_detector import classify_track_sections, detect_editing_style
-from helpers.track_processor import _arrangement_sections
+from audioextender.analysis.key_detection import TrackAnalysis
+from audioextender.analysis.style_detector import classify_track_sections, detect_editing_style
+from audioextender.processing.track_processor import _arrangement_sections
 
 
 def analysis(

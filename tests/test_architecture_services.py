@@ -4,16 +4,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from helpers.candidate_selection import (
+from audioextender.analysis.candidate_selection import (
     CandidateSelectionService,
     RankedSelection,
     SelectionRequest,
 )
-from helpers.config import EditConfig
-from helpers.interfaces import NullProgressReporter, ProgressReporter
-from helpers.selection_coordinator import SelectionCoordinator, SideSelectionRequest
-from helpers.splice_policy import build_splice_plan
-from helpers.track_processor import TrackProcessor
+from audioextender.core.config import EditConfig
+from audioextender.core.interfaces import NullProgressReporter, ProgressReporter
+from audioextender.analysis.selection_coordinator import SelectionCoordinator, SideSelectionRequest
+from audioextender.analysis.splice_policy import build_splice_plan
+from audioextender.processing.track_processor import TrackProcessor
 from tests.factories import candidate
 
 

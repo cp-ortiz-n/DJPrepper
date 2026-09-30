@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from helpers.section_selector import SectionCandidate
+from audioextender.analysis.section_selector import SectionCandidate
 
 
 def candidate(**changes: Any) -> SectionCandidate:

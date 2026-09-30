@@ -39,35 +39,35 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.middleware.gzip import GZipMiddleware
 
-from helpers.analysis import analyze_key
-from helpers.audio_loader import SUPPORTED_EXTENSIONS, load_audio
-from helpers.audio_quality import analyze_audio_quality
-from helpers.background_tasks import BackgroundTaskRegistry
-from helpers.cache import AnalysisCache
-from helpers.creative_commons_import_service import CreativeCommonsImportService
-from helpers.feedback_report import append_web_feedback
-from helpers.import_routes import AuthorizedImportRequest, create_import_router
-from helpers.import_service import (
+from audioextender.analysis.key_detection import analyze_key
+from audioextender.audio.loading import SUPPORTED_EXTENSIONS, load_audio
+from audioextender.audio.quality import analyze_audio_quality
+from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
+from audioextender.infrastructure.cache import AnalysisCache
+from audioextender.imports.creative_commons import CreativeCommonsImportService
+from audioextender.reporting.feedback import append_web_feedback
+from audioextender.imports.routes import AuthorizedImportRequest, create_import_router
+from audioextender.imports.service import (
     ImportService,
     authorized_source_provider,
     scdl_download_command,
 )
-from helpers.library_backup import LibraryBackupService
-from helpers.library_relocation import LibraryRelocationCoordinator
-from helpers.local_import_service import LocalAudioImportService
-from helpers.playlist_match_service import PlaylistMatchService
-from helpers.presets import PRESETS, EditPreset
-from helpers.track_overrides import load_track_overrides
-from helpers.transition_scorer import assess_custom_insertion
-from helpers.wav_metadata import (
+from audioextender.library.backup import LibraryBackupService
+from audioextender.library.relocation import LibraryRelocationCoordinator
+from audioextender.imports.local import LocalAudioImportService
+from audioextender.imports.playlist_match import PlaylistMatchService
+from audioextender.core.presets import PRESETS, EditPreset
+from audioextender.library.track_overrides import load_track_overrides
+from audioextender.analysis.transition_scorer import assess_custom_insertion
+from audioextender.audio.wav_metadata import (
     embed_wav_artwork,
     read_wav_artwork,
     read_wav_metadata,
     sync_wav_metadata,
     write_wav_metadata,
 )
-from helpers.web_database import JobRepository
-from helpers.web_jobs import WebJobService
+from audioextender.repositories.facade import JobRepository
+from audioextender.processing.web_jobs import WebJobService
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,

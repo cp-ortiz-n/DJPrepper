@@ -4,16 +4,16 @@ import unittest
 
 import numpy as np
 
-from helpers.audio_loader import AudioData
-from helpers.cue_export import build_cue_points
-from helpers.extended_edit import (
+from audioextender.audio.loading import AudioData
+from audioextender.library.cue_export import build_cue_points
+from audioextender.processing.extended_edit import (
     _smooth_join,
     adaptive_crossfade_ms,
     create_extended_edit,
     insert_audio_region,
     optimize_candidate_boundaries,
 )
-from helpers.redrum import create_redrum_intro, redrum_added_seconds
+from audioextender.audio.redrum import create_redrum_intro, redrum_added_seconds
 from tests.factories import candidate
 
 

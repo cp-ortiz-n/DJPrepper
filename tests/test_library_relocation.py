@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.library_relocation import LibraryRelocationCoordinator
-from helpers.web_database import JobRepository
+from audioextender.library.relocation import LibraryRelocationCoordinator
+from audioextender.repositories.facade import JobRepository
 
 
 class LibraryRelocationTests(unittest.TestCase):

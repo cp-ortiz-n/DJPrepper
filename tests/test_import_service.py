@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import Mock
 
-from helpers.import_service import ImportNotFoundError, ImportService, LibraryOfflineError
+from audioextender.imports.service import ImportNotFoundError, ImportService, LibraryOfflineError
 
 
 @dataclass

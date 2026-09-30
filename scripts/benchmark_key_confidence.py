@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from helpers.analysis import analyze_track
-from helpers.audio_loader import load_audio
-from helpers.config import EditConfig
+from audioextender.analysis.key_detection import analyze_track
+from audioextender.audio.loading import load_audio
+from audioextender.core.config import EditConfig
 
 
 def _analyze(row: tuple[int, str, str, str, float]) -> dict[str, object]:

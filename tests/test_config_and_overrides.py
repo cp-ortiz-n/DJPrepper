@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from helpers.config import EditConfig
-from helpers.track_overrides import load_track_overrides
+from audioextender.core.config import EditConfig
+from audioextender.library.track_overrides import load_track_overrides
 
 
 class EditConfigTests(unittest.TestCase):

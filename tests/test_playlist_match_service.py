@@ -4,7 +4,7 @@ import unittest
 from collections.abc import Callable
 from unittest.mock import Mock
 
-from helpers.playlist_match_service import PlaylistMatchNotFoundError, PlaylistMatchService
+from audioextender.imports.playlist_match import PlaylistMatchNotFoundError, PlaylistMatchService
 
 
 class PlaylistMatchServiceTests(unittest.TestCase):
