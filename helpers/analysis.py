@@ -49,6 +49,15 @@ class TrackAnalysis:
     key_candidates: tuple[dict[str, float | str], ...] = ()
 
 
+@dataclass(frozen=True)
+class KeyAnalysis:
+    """The independently computed tonal result for one audio file."""
+
+    key_label: str
+    confidence: float
+    candidates: tuple[dict[str, float | str], ...]
+
+
 def _normalize(values: np.ndarray) -> np.ndarray:
     values = np.nan_to_num(np.asarray(values, dtype=float))
     high = np.percentile(values, 95) if values.size else 0.0
@@ -174,6 +183,37 @@ def _ensemble_key_estimate(
         for label in ordered[:3]
     )
     return selected[0], float(np.clip(confidence, 0.0, 100.0)), selected[2], selected[3], candidates
+
+
+def analyze_key(audio: AudioData, hop_length: int = 512) -> KeyAnalysis:
+    """Analyze only musical key, leaving every other saved track metric untouched."""
+    mono = librosa.to_mono(audio.samples.T)
+    sample_rate = audio.sample_rate
+    if sample_rate > ANALYSIS_SAMPLE_RATE:
+        divisor = gcd(sample_rate, ANALYSIS_SAMPLE_RATE)
+        mono = resample_poly(
+            mono, ANALYSIS_SAMPLE_RATE // divisor, sample_rate // divisor
+        ).astype(np.float32, copy=False)
+        sample_rate = ANALYSIS_SAMPLE_RATE
+    magnitude = np.abs(librosa.stft(mono, hop_length=hop_length))
+    harmonic_spectrum, _ = librosa.decompose.hpss(magnitude)
+    primary_chroma = librosa.feature.chroma_stft(
+        S=magnitude ** 2, sr=sample_rate
+    )
+    harmonic_chroma = librosa.feature.chroma_stft(
+        S=harmonic_spectrum ** 2, sr=sample_rate
+    )
+    primary = _estimate_key(primary_chroma)
+    harmonic = _estimate_key(harmonic_chroma)
+    cqt_chroma = None
+    if primary[0] != harmonic[0]:
+        cqt_chroma = librosa.feature.chroma_cqt(
+            y=mono, sr=sample_rate, hop_length=hop_length
+        )
+    label, confidence, _root, _mode, candidates = _ensemble_key_estimate(
+        primary_chroma, harmonic_chroma, cqt_chroma
+    )
+    return KeyAnalysis(label, confidence, candidates)
 
 
 def _classify_bar_sections(

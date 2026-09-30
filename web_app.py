@@ -39,7 +39,8 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.middleware.gzip import GZipMiddleware
 
-from helpers.audio_loader import SUPPORTED_EXTENSIONS
+from helpers.audio_loader import SUPPORTED_EXTENSIONS, load_audio
+from helpers.analysis import analyze_key
 from helpers.audio_quality import analyze_audio_quality
 from helpers.cache import AnalysisCache
 from helpers.feedback_report import append_web_feedback
@@ -125,6 +126,10 @@ catalog_reconcile_batches: dict[str, dict] = {}
 catalog_reconcile_batch_lock = threading.Lock()
 audio_quality_batches: dict[str, dict] = {}
 audio_quality_batch_lock = threading.Lock()
+key_analysis_batches: dict[str, dict] = {}
+key_analysis_batch_lock = threading.Lock()
+library_consolidation_batches: dict[str, dict] = {}
+library_consolidation_batch_lock = threading.Lock()
 local_import_batches: dict[str, dict] = {}
 local_import_batch_lock = threading.Lock()
 downloaded_catalog_migration_lock = threading.Lock()
@@ -181,9 +186,14 @@ async def record_api_performance(request: Request, call_next):
         return await call_next(request)
     started = perf_counter()
     status = 500
+    response_bytes = 0
     try:
         response = await call_next(request)
         status = response.status_code
+        try:
+            response_bytes = int(response.headers.get("content-length") or 0)
+        except ValueError:
+            response_bytes = 0
         return response
     finally:
         elapsed_ms = round((perf_counter() - started) * 1000, 1)
@@ -197,6 +207,7 @@ async def record_api_performance(request: Request, call_next):
                     "path": route_path,
                     "status": status,
                     "duration_ms": elapsed_ms,
+                    "response_bytes": response_bytes,
                 }
             )
 
@@ -224,6 +235,7 @@ def performance_diagnostics_report() -> dict:
                 "p95_ms": durations[percentile_index],
                 "maximum_ms": durations[-1],
                 "failures": sum(int(entry["status"]) >= 400 for entry in entries),
+                "average_response_bytes": round(sum(int(entry.get("response_bytes") or 0) for entry in entries) / len(entries)),
             }
         )
     operations.sort(key=lambda item: (-float(item["p95_ms"]), -int(item["count"])))
@@ -599,7 +611,13 @@ class CueEditRequest(BaseModel):
 
 
 def _effective_settings() -> dict:
-    return {**WEB_DEFAULTS, **repository.get_settings()}
+    saved = repository.get_settings()
+    # The library location is infrastructure, not a cosmetic preference. Keep a
+    # durable copy so "restore defaults" cannot redirect later imports to ~/Music.
+    durable_root = repository.get_system_state("music_library_path")
+    if "music_library_path" not in saved and durable_root:
+        saved["music_library_path"] = durable_root
+    return {**WEB_DEFAULTS, **saved}
 
 
 def _music_library_root() -> Path:
@@ -619,6 +637,32 @@ def _require_music_library_online() -> Path:
             "Music library is offline. Connect the configured drive before running file operations.",
         )
     return root
+
+
+def _library_location_summary() -> dict:
+    root = _music_library_root()
+    locations: dict[str, int] = {}
+    outside: list[dict] = []
+    for track in repository.list_downloaded_tracks():
+        path = Path(str(track.get("file_path") or "")).expanduser()
+        try:
+            path.resolve().relative_to(root)
+            label = str(root)
+        except (OSError, ValueError):
+            local_root = Path(DEFAULT_MUSIC_LIBRARY)
+            try:
+                path.resolve().relative_to(local_root)
+                label = str(local_root)
+            except (OSError, ValueError):
+                label = str(path.parent)
+            outside.append({"id": int(track["id"]), "title": track.get("title"), "path": str(path)})
+        locations[label] = locations.get(label, 0) + 1
+    return {
+        "configured_root": str(root), "online": root.is_dir(),
+        "locations": [{"path": path, "tracks": count, "configured": path == str(root)}
+                      for path, count in sorted(locations.items(), key=lambda item: (-item[1], item[0]))],
+        "outside_count": len(outside), "outside_tracks": outside,
+    }
 
 
 def _source_metadata_path(audio_path: Path) -> Path:
@@ -682,29 +726,47 @@ def save_settings(settings: WebSettings) -> dict:
         raise HTTPException(400, "PCM depth must be 16 or 24")
     overrides = {key: value for key, value in values.items() if value != WEB_DEFAULTS[key]}
     repository.replace_settings(overrides)
+    repository.set_system_state("music_library_path", values["music_library_path"])
     return {"defaults": WEB_DEFAULTS, "effective": _effective_settings(), "overrides": overrides}
 
 
 @app.delete("/api/settings")
 def reset_settings() -> dict:
-    repository.replace_settings({})
-    return {"defaults": WEB_DEFAULTS, "effective": WEB_DEFAULTS, "overrides": {}}
+    current_root = str(_music_library_root())
+    repository.replace_settings(
+        {} if current_root == DEFAULT_MUSIC_LIBRARY
+        else {"music_library_path": current_root}
+    )
+    repository.set_system_state("music_library_path", current_root)
+    return {
+        "defaults": WEB_DEFAULTS,
+        "effective": _effective_settings(),
+        "overrides": repository.get_settings(),
+    }
 
 
 @app.get("/api/settings/library-status")
 def music_library_status() -> dict:
     now = perf_counter()
     with library_status_cache_lock:
-        cached = library_status_cache.get("payload")
-        if cached is not None and now < float(library_status_cache["expires_at"]):
-            return dict(cached)
         root = _music_library_root()
+        cached = library_status_cache.get("payload")
+        # Mount state can change without an application event. Never retain an
+        # online/offline result after the external folder's existence flips.
+        mount_state_changed = (
+            cached is not None
+            and bool(cached.get("online")) != root.is_dir()
+        )
+        if (cached is not None and not mount_state_changed
+                and now < float(library_status_cache["expires_at"])):
+            return dict(cached)
         identity = root / ".audioextender" / "library.json"
         library_id = ""
         try:
             library_id = str(json.loads(identity.read_text(encoding="utf-8")).get("library_id") or "")
         except (OSError, ValueError):
             pass
+        storage_scan_started = perf_counter()
         tracks = repository.list_downloaded_tracks()
         available_paths: set[Path] = set()
         song_bytes = 0
@@ -750,6 +812,8 @@ def music_library_status() -> dict:
             "total_bytes": total_bytes, "file_count": file_count,
             "free_bytes": free_bytes, "capacity_bytes": capacity_bytes,
             "audio_quality": repository.audio_quality_summary(),
+            "location_integrity": _library_location_summary(),
+            "storage_scan_ms": round((perf_counter() - storage_scan_started) * 1000, 1),
         }
         library_status_cache.update(payload=payload, expires_at=now + 60.0)
         return payload
@@ -938,6 +1002,14 @@ def start_library_relocation() -> dict:
 @app.get("/api/settings/library-relocation")
 def library_relocation_status() -> dict:
     return library_relocation.status()
+
+
+@app.delete("/api/settings/library-relocation")
+def reset_library_relocation() -> dict:
+    try:
+        return library_relocation.reset()
+    except ValueError as error:
+        raise HTTPException(409, str(error))
 
 
 @app.post("/api/settings/library-relocation/cancel")
@@ -2770,6 +2842,187 @@ def _downloaded_track_payload(track: dict) -> dict:
         "suggested_genre": suggested_genre,
         "needs_genre": current_genre in {"Other", "Latin / Other"},
     }
+    try:
+        payload["key_candidates"] = json.loads(
+            str(track.get("key_candidates_json") or "[]")
+        )
+    except (TypeError, ValueError, json.JSONDecodeError):
+        payload["key_candidates"] = []
+    return payload
+
+
+@app.post("/api/downloaded-library/tracks/{track_id}/analyze-key")
+def analyze_downloaded_track_key(track_id: int) -> dict:
+    """Run tonal analysis only and preserve BPM, grid, edits, cues, and feedback."""
+    track = repository.get_downloaded_track(track_id)
+    if track is None:
+        raise HTTPException(404, "Track not found")
+    path = Path(str(track.get("file_path") or ""))
+    if not path.is_file():
+        raise HTTPException(409, "The track audio is unavailable")
+    try:
+        result = analyze_key(load_audio(path))
+    except (OSError, RuntimeError, ValueError) as error:
+        raise HTTPException(422, f"Key analysis failed: {error}") from error
+    updated = repository.update_downloaded_track_key_analysis(
+        track_id,
+        detected_key=result.key_label,
+        confidence=result.confidence,
+        candidates=list(result.candidates),
+    )
+    return _downloaded_track_payload(updated)
+
+
+def _run_key_analysis_batch(batch_id: str, track_ids: list[int]) -> None:
+    for index, track_id in enumerate(track_ids, 1):
+        error = ""
+        try:
+            analyze_downloaded_track_key(track_id)
+        except HTTPException as exception:
+            error = str(exception.detail)
+        with key_analysis_batch_lock:
+            batch = key_analysis_batches[batch_id]
+            batch["processed"] = index
+            if error:
+                batch["failed"] += 1
+                batch["errors"].append({"id": track_id, "error": error})
+            else:
+                batch["completed"] += 1
+    with key_analysis_batch_lock:
+        key_analysis_batches[batch_id]["status"] = "complete"
+    _refresh_library_search_index()
+
+
+@app.post("/api/downloaded-library/key-analysis", status_code=202)
+def start_key_analysis_batch(request: DownloadedTracksRequest) -> dict:
+    _require_music_library_online()
+    track_ids = list(dict.fromkeys(request.track_ids))
+    if not track_ids:
+        raise HTTPException(400, "Choose at least one track")
+    batch_id = uuid.uuid4().hex
+    state = {"status": "processing", "total": len(track_ids), "processed": 0,
+             "completed": 0, "failed": 0, "errors": []}
+    with key_analysis_batch_lock:
+        key_analysis_batches[batch_id] = state
+    threading.Thread(target=_run_key_analysis_batch, args=(batch_id, track_ids),
+                     daemon=True, name=f"key-analysis-{batch_id[:8]}").start()
+    return {"batch_id": batch_id, **state}
+
+
+@app.get("/api/downloaded-library/key-analysis/{batch_id}")
+def key_analysis_batch_status(batch_id: str) -> dict:
+    with key_analysis_batch_lock:
+        state = key_analysis_batches.get(batch_id)
+        if state is None:
+            raise HTTPException(404, "Key-analysis batch not found")
+        return {"batch_id": batch_id, **state}
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _run_library_consolidation(batch_id: str) -> None:
+    root = _music_library_root()
+    summary = _library_location_summary()
+    moved_any = False
+    for index, item in enumerate(summary["outside_tracks"], 1):
+        track = repository.get_downloaded_track(int(item["id"])) or {}
+        source = Path(str(track.get("file_path") or ""))
+        error = ""
+        try:
+            if not source.is_file():
+                raise FileNotFoundError("Source audio is unavailable")
+            destination_dir = root.joinpath(*_genre_path_parts(str(track.get("genre_category") or "Other")))
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            destination = destination_dir / source.name
+            if destination.exists() and _sha256_file(destination) != _sha256_file(source):
+                destination = destination.with_name(f"{destination.stem} ({track['id']}){destination.suffix}")
+            pending = destination.with_suffix(destination.suffix + ".consolidating")
+            shutil.copy2(source, pending)
+            if pending.stat().st_size != source.stat().st_size or _sha256_file(pending) != _sha256_file(source):
+                pending.unlink(missing_ok=True)
+                raise RuntimeError("Copied audio did not pass checksum verification")
+            pending.replace(destination)
+            repository.relocate_downloaded_tracks([
+                (int(track["id"]), source, destination, str(track.get("genre_category") or "Other"))
+            ])
+            artwork_source = Path(str(track.get("artwork_path") or ""))
+            if artwork_source.is_file():
+                try:
+                    artwork_source.resolve().relative_to(root)
+                except ValueError:
+                    artwork_destination = root / ".artwork" / artwork_source.name
+                    artwork_destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(artwork_source, artwork_destination)
+                    if _sha256_file(artwork_source) != _sha256_file(artwork_destination):
+                        artwork_destination.unlink(missing_ok=True)
+                        raise RuntimeError("Copied artwork did not pass checksum verification")
+                    repository.update_downloaded_track_artwork(
+                        int(track["id"]), artwork_url=str(track.get("artwork_url") or ""),
+                        artwork_path=str(artwork_destination),
+                    )
+                    artwork_source.unlink()
+            _write_source_metadata(destination, {**track, "file_path": str(destination),
+                                                  "playlist_name": (track.get("playlists") or ["Imported Singles"])[0]})
+            legacy_source_record = Path(DEFAULT_MUSIC_LIBRARY) / ".audioextender" / "sources" / (
+                hashlib.sha256(str(source.resolve()).encode("utf-8")).hexdigest() + ".json"
+            )
+            legacy_source_record.unlink(missing_ok=True)
+            source.unlink()
+            moved_any = True
+        except (OSError, RuntimeError, ValueError) as exception:
+            error = str(exception)
+        with library_consolidation_batch_lock:
+            state = library_consolidation_batches[batch_id]
+            state["processed"] = index
+            state["current"] = source.name
+            if error:
+                state["failed"] += 1
+                state["errors"].append({"id": item["id"], "error": error})
+            else:
+                state["moved"] += 1
+    if moved_any:
+        library_relocation.metadata.rebuild(root)
+    with library_consolidation_batch_lock:
+        library_consolidation_batches[batch_id].update(status="complete", summary=_library_location_summary())
+    with library_status_cache_lock:
+        library_status_cache.update(payload=None, expires_at=0.0)
+
+
+@app.get("/api/settings/library-locations")
+def library_locations() -> dict:
+    return _library_location_summary()
+
+
+@app.post("/api/settings/library-locations/consolidate", status_code=202)
+def consolidate_library_locations() -> dict:
+    _require_music_library_online()
+    summary = _library_location_summary()
+    if not summary["outside_count"]:
+        return {"status": "complete", "total": 0, "processed": 0, "moved": 0,
+                "failed": 0, "summary": summary}
+    batch_id = uuid.uuid4().hex
+    state = {"status": "processing", "total": summary["outside_count"], "processed": 0,
+             "moved": 0, "failed": 0, "current": "", "errors": []}
+    with library_consolidation_batch_lock:
+        library_consolidation_batches[batch_id] = state
+    threading.Thread(target=_run_library_consolidation, args=(batch_id,), daemon=True,
+                     name=f"library-consolidation-{batch_id[:8]}").start()
+    return {"batch_id": batch_id, **state}
+
+
+@app.get("/api/settings/library-locations/consolidate/{batch_id}")
+def consolidation_status(batch_id: str) -> dict:
+    with library_consolidation_batch_lock:
+        state = library_consolidation_batches.get(batch_id)
+        if state is None:
+            raise HTTPException(404, "Consolidation job not found")
+        return {"batch_id": batch_id, **state}
 
 
 def _run_audio_quality_batch(batch_id: str) -> None:
@@ -3603,6 +3856,8 @@ def latest_wav_tag_batch_status() -> dict:
                 try:
                     cached = json.loads(cached_audit)
                     generated = datetime.fromisoformat(str(cached.pop("generated_at")))
+                    if cached.get("failed") and _music_library_root().is_dir():
+                        return _refresh_wav_tag_audit()
                     if (datetime.now(timezone.utc) - generated).total_seconds() >= 300:
                         _schedule_wav_tag_audit_refresh()
                     return cached
@@ -4942,6 +5197,10 @@ def report_audio_index() -> list[dict]:
             "status": "complete",
             "wav_available": wav_available,
             "extended_available": extended_available,
+            "downloaded_track_id": job.get("downloaded_track_id"),
+            "detected_key": job.get("latest_detected_key") or "",
+            "key_confidence": job.get("latest_key_confidence"),
+            "key_analyzed_at": job.get("key_analyzed_at") or "",
         })
     return result
 
@@ -5054,6 +5313,9 @@ def _refresh_library_search_index() -> None:
             song["key_confidence"] = 1.0
             song["key_verified"] = True
         downloaded = downloaded_by_job.get(int(job["id"])) or downloaded_by_path.get(str(job.get("source_path") or ""))
+        if downloaded and downloaded.get("key_analyzed_at"):
+            song["key"] = downloaded.get("detected_key") or song.get("key")
+            song["key_confidence"] = float(downloaded.get("key_confidence") or 0) / 100.0
         source_stem = re.sub(r"\.[^.]+$", "", str(job.get("source_name") or ""))
         source_parts = source_stem.split(" - ")
         title = str(downloaded.get("title") or "") if downloaded else ""
