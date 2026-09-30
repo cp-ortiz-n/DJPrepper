@@ -1170,6 +1170,12 @@ class JobRepository:
                 "INSERT INTO web_settings (key, value_json, updated_at) VALUES (?, ?, ?)",
                 [(key, json.dumps(value), _now()) for key, value in settings.items()],
             )
+            connection.execute(
+                """INSERT INTO system_state (key,value,updated_at) VALUES (?,?,?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+                updated_at=excluded.updated_at""",
+                ("music_library_path", str(new_root), _now()),
+            )
         return counts
 
     def upsert_downloaded_track(

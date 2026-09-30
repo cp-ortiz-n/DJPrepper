@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260929-184">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260930-189">
 </head>
 <body>
   <header class="topbar">
@@ -184,7 +184,7 @@
           <label>Audio quality<select id="downloaded-quality"><option value="all">All quality levels</option><option value="excellent">Excellent · 90–100</option><option value="good">Good · 75–89</option><option value="below-target">Needs review · below 75</option><option value="review">Review · 55–74</option><option value="poor">Poor · below 55</option><option value="unanalyzed">Not quality analyzed</option></select></label>
           <label>Sort<select id="downloaded-sort"><option value="newest">Newest imported</option><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option><option value="genre">Genre</option></select></label>
         </div>
-        <div class="downloaded-filter-summary"><div><small>Showing</small><strong id="downloaded-filter-count">0 tracks</strong></div><div class="downloaded-matching-actions"><button id="downloaded-review-matching" type="button" class="button secondary" hidden>Review metadata</button><button id="downloaded-analyze-matching" type="button" class="button secondary" disabled>Analyze matching</button><button id="downloaded-reanalyze-matching" type="button" class="button secondary">Reanalyze matching</button></div></div>
+        <div class="downloaded-filter-summary"><div><small>Showing</small><strong id="downloaded-filter-count">0 tracks</strong></div><div class="downloaded-matching-actions"><button id="downloaded-reset-filters" type="button" class="button tertiary">Reset filters</button><button id="downloaded-review-matching" type="button" class="button secondary" hidden>Review metadata</button><button id="downloaded-analyze-matching" type="button" class="button secondary" disabled>Analyze matching</button><button id="downloaded-reanalyze-matching" type="button" class="button secondary">Reanalyze matching</button></div></div>
         <div class="downloaded-selection-anchor">
           <label><input id="downloaded-select-all" type="checkbox"> Select all visible</label>
           <div class="downloaded-maintenance-actions"><span>Library tools</span><button id="downloaded-rescan-genres" type="button" class="button secondary">Rescan genres</button><button id="downloaded-reconcile-files" type="button" class="button secondary">Reconcile files</button><button id="downloaded-retag-all" type="button" class="button secondary">Sync WAV tags</button><button id="downloaded-sync-artwork" type="button" class="button secondary">Sync artwork</button></div>
@@ -237,7 +237,7 @@
           <label>Set role<select id="library-role"><option value="all">All roles</option></select></label>
           <label>Effective preset<select id="library-preset"><option value="all">All effective presets</option></select></label>
           <label>Sort<select id="library-sort"><option value="newest">Newest processed</option><option value="title">Title A–Z</option><option value="bpm-up">BPM low–high</option><option value="bpm-down">BPM high–low</option><option value="energy-down">Energy high–low</option></select></label>
-          <span id="library-filter-count"></span>
+          <div class="library-filter-summary"><span id="library-filter-count"></span><button id="library-reset-filters-top" type="button" class="button tertiary filter-reset">Reset filters</button></div>
         </div>
         <details class="library-advanced-filters"><summary>More DJ filters <span id="library-active-filter-count"></span></summary><div>
           <label>Minimum BPM<input id="library-bpm-min" type="number" min="0" step="1" placeholder="Any"></label>
@@ -299,7 +299,7 @@
         <aside class="panel saved-sets-panel">
           <p class="eyebrow">SAVED SETS</p><h2>Your plans</h2>
           <select id="saved-set-select"><option value="">No saved set selected</option></select>
-          <div class="saved-set-actions"><button id="load-set" type="button" class="button secondary">Load</button><button id="duplicate-set" type="button" class="button secondary">Duplicate</button><button id="delete-set" type="button" class="button secondary danger-text">Delete</button></div>
+          <div class="saved-set-actions"><button id="load-set" type="button" class="button primary">Load</button><button id="duplicate-set" type="button" class="button secondary">Duplicate</button><button id="delete-set" type="button" class="button destructive">Delete</button></div>
           <p>Set plans stay on this Mac in your browser. Audio files remain in DJ Library.</p>
         </aside>
       </div>
@@ -505,6 +505,14 @@
     </section>
   </main>
 
+  <section id="app-toast-region" class="toast-region" aria-live="polite" aria-relevant="additions"></section>
+  <dialog id="app-confirm-dialog" class="app-dialog" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-message">
+    <form method="dialog">
+      <header><span class="dialog-icon" aria-hidden="true">!</span><div><strong id="app-confirm-title">Confirm action</strong><p id="app-confirm-message"></p></div></header>
+      <footer><button value="cancel" class="button secondary">Cancel</button><button id="app-confirm-accept" value="confirm">Continue</button></footer>
+    </form>
+  </dialog>
+
   <template id="job-template">
     <article class="job-card">
       <div class="job-top">
@@ -569,6 +577,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20260929-184" type="module"></script>
+  <script src="/assets/app.js?v=20260930-189" type="module"></script>
 </body>
 </html>

@@ -5,19 +5,62 @@ import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const SEARCHABLE_SELECT_IDS = new Set([
-  'downloaded-genre','downloaded-detailed-genre-filter','downloaded-playlist','compatibility-source',
-  'preset','setting-preset','library-category','library-detailed-genre','library-preset','library-key',
-  'set-genre','set-detailed-genres','set-excluded-genres','set-required','set-excluded','saved-set-select',
-]);
+
+function notify(message, tone = 'info', options = {}) {
+  const region = $('#app-toast-region');
+  if (!region || !message) return;
+  const toast = document.createElement('article');
+  toast.className = 'app-toast';
+  toast.dataset.tone = tone;
+  toast.setAttribute('role', tone === 'danger' ? 'alert' : 'status');
+  const text = document.createElement('span');
+  text.textContent = String(message);
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'toast-close';
+  close.setAttribute('aria-label', 'Dismiss notification');
+  close.textContent = '×';
+  close.addEventListener('click', () => toast.remove());
+  toast.append(text, close);
+  region.append(toast);
+  requestAnimationFrame(() => toast.classList.add('visible'));
+  const timeout = Number(options.timeout ?? (tone === 'danger' ? 7000 : 4200));
+  if (timeout > 0) setTimeout(() => { toast.classList.remove('visible'); setTimeout(() => toast.remove(), 180); }, timeout);
+}
+
+function confirmAction(message, options = {}) {
+  const dialog = $('#app-confirm-dialog');
+  if (!dialog?.showModal) return Promise.resolve(window.confirm(message));
+  $('#app-confirm-title').textContent = options.title || 'Confirm action';
+  $('#app-confirm-message').textContent = message;
+  const accept = $('#app-confirm-accept');
+  accept.textContent = options.acceptLabel || 'Continue';
+  accept.dataset.tone = options.danger ? 'danger' : 'success';
+  return new Promise(resolve => {
+    const finish = () => resolve(dialog.returnValue === 'confirm');
+    dialog.addEventListener('close', finish, {once:true});
+    dialog.showModal();
+  });
+}
+
+// Keep legacy call sites non-blocking and visually consistent while workflows migrate
+// to structured inline messages and richer recovery actions.
+window.alert = message => notify(message, 'danger');
 let searchableSelectRefreshQueued = false;
+let generatedSelectId = 0;
 function refreshSearchableSelects() {
-  SEARCHABLE_SELECT_IDS.forEach(id => {
-    const select = document.getElementById(id);
-    if (!select) return;
+  document.querySelectorAll('select').forEach(select => {
+    if (!select.id) select.id = `app-select-${++generatedSelectId}`;
+    const id = select.id;
     let search = document.getElementById(`${id}-search`);
     if (!search) {
-      const container = select.closest('label') || select.parentElement;
+      let container = select.closest('label');
+      if (!container) {
+        container = document.createElement('span');
+        container.className = 'select-combobox-shell';
+        select.before(container);
+        container.append(select);
+      }
       container.classList.add('has-searchable-select');
       search = document.createElement('input');
       search.id = `${id}-search`;
@@ -120,7 +163,7 @@ function refreshSearchableSelects() {
       });
       search.value = selectedLabel();
     }
-    const shouldShow = select.options.length >= 12;
+    const shouldShow = select.options.length > 0;
     search.hidden = !shouldShow;
     select.classList.toggle('searchable-native-select', shouldShow);
     if (shouldShow && document.activeElement !== search) search.value = select.selectedOptions[0]?.textContent || '';
@@ -138,6 +181,7 @@ new MutationObserver(() => {
     refreshSearchableSelects();
   });
 }).observe(document.documentElement, {childList:true, subtree:true});
+refreshSearchableSelects();
 const form = $('#upload-form');
 const fileInput = $('#files');
 const dropZone = $('#drop-zone');
@@ -299,7 +343,7 @@ function metadataEditorMarkup(track, position=1, total=1) {
   const playlist = (track.playlists || [])[0] || 'Imported Singles';
   return `<form class="track-metadata-editor" hidden>
     <header><div><strong>Edit track metadata</strong><span>Updates the WAV, folder, Music Files, and linked Library entry.</span></div><div class="metadata-review-position"><span>${position} of ${total}</span><button type="button" class="button secondary close-metadata-editor" aria-label="Close metadata editor">×</button></div></header>
-    <div class="metadata-fields"><label>Title<input name="title" maxlength="300" required value="${escapeHtml(track.title || '')}"></label><label>Artist<input name="artist" maxlength="300" value="${escapeHtml(track.artist || '')}"></label><label>Category<select name="genre_category">${choices.map(name=>`<option value="${escapeHtml(name)}"${name===current?' selected':''}>${escapeHtml(name)}</option>`).join('')}</select></label><label>Detailed genre tags<input name="genre" maxlength="500" value="${escapeHtml(track.genre || '')}" placeholder="e.g. salsa, merengue"></label><label>Album / source playlist<input name="playlist_name" maxlength="180" required value="${escapeHtml(playlist)}"></label><label>Artwork image URL<input name="artwork_url" type="url" maxlength="1000" value="${escapeHtml(track.artwork_url || '')}" placeholder="Direct Spotify or YouTube cover image URL"></label><label class="metadata-rename"><input name="rename_file" type="checkbox"> Rename WAV to Artist - Title</label></div>
+    <div class="metadata-fields"><label>Title<input name="title" maxlength="300" required value="${escapeHtml(track.title || '')}"></label><label>Artist<input name="artist" maxlength="300" value="${escapeHtml(track.artist || '')}"></label><label>Genre<select name="genre_category">${choices.map(name=>`<option value="${escapeHtml(name)}"${name===current?' selected':''}>${escapeHtml(name)}</option>`).join('')}</select></label><label>Detailed genre tags<input name="genre" maxlength="500" value="${escapeHtml(track.genre || '')}" placeholder="e.g. salsa, merengue"></label><label>Album / source playlist<input name="playlist_name" maxlength="180" required value="${escapeHtml(playlist)}"></label><label>Artwork image URL<input name="artwork_url" type="url" maxlength="1000" value="${escapeHtml(track.artwork_url || '')}" placeholder="Direct Spotify or YouTube cover image URL"></label><label class="metadata-rename"><input name="rename_file" type="checkbox"> Rename WAV to Artist - Title</label></div>
     <p class="metadata-message"></p><div class="metadata-actions"><div class="metadata-navigation"><button type="button" class="button secondary metadata-previous">← Previous</button><button type="button" class="button secondary metadata-next">Next →</button></div><div class="metadata-save-actions"><button type="submit" class="button secondary">Save</button><button type="submit" data-action="next">Save & next →</button></div></div>
   </form>`;
 }
@@ -622,6 +666,7 @@ async function loadConfig() {
     config.bar_counts.forEach(value => select.append(option(value, value === 0 ? 'None' : `${value} bars`)));
   });
   applyEffectiveSettings(config.effective);
+  refreshSearchableSelects();
   ['preset-intro', 'preset-outro'].forEach(id => {
     const select = $('#' + id); select.replaceChildren(...config.bar_counts.map(value => option(value, value === 0 ? 'None' : `${value} bars`)));
   });
@@ -1279,9 +1324,9 @@ async function jobAction(id, action, body = null) {
   if (!response.ok) alert((await response.json()).detail || `Could not ${action} job.`);
   await loadJobs();
 }
-async function removeJob(id) { if (!confirm('Remove this queue entry? Audio files will remain in output.')) return; await fetch(`/api/jobs/${id}`, {method:'DELETE'}); await loadJobs(); }
+async function removeJob(id) { if (!await confirmAction('Remove this queue entry? Audio files will remain in output.', {title:'Remove queue entry', acceptLabel:'Remove', danger:true})) return; await fetch(`/api/jobs/${id}`, {method:'DELETE'}); await loadJobs(); }
 $('#clear-queue').addEventListener('click', async () => {
-  if (!confirm('Clear queued and dismissed entries? A track currently processing will continue, and completed audio remains in Library.')) return;
+  if (!await confirmAction('Clear queued and dismissed entries? A track currently processing will continue, and completed audio remains in Library.', {title:'Clear queue history', acceptLabel:'Clear', danger:true})) return;
   const button = $('#clear-queue'); button.disabled = true; button.textContent = 'Clearing…';
   try {
     const response = await fetch('/api/jobs/clear', {method:'POST'});
@@ -1407,7 +1452,7 @@ async function loadReviews() {
       await loadReviews();
     };
     card.querySelector('.reject-review').onclick = async () => {
-      if (!confirm('Dismiss this candidate review? The processed track remains in Library.')) return;
+      if (!await confirmAction('Dismiss this candidate review? The processed track remains in Library.', {title:'Dismiss candidate review', acceptLabel:'Dismiss'})) return;
       const response = await fetch(`/api/jobs/${job.id}/review/reject`, {method:'POST'});
       if (response.ok) {
         await Promise.all([loadReviews(), loadJobs()]);
@@ -2040,7 +2085,7 @@ async function loadDownloadedLibrary() {
   const integrityRoot=$('#downloaded-integrity'); const integrityButton=$('#downloaded-integrity-scan'); const integrityStatus=$('#downloaded-integrity-status'); const integrityResults=$('#downloaded-integrity-results');
   const integrityGroups={missing_files:['Missing WAV files','remove-missing','Remove catalog entries'],uncataloged_files:['Uncataloged WAV files','catalog-uncataloged','Add to catalog'],duplicate_records:['Possible duplicate records',null,null],stale_sidecars:['Stale metadata records','delete-stale-sidecars','Delete stale records'],broken_analysis_links:['Broken analysis links',null,null],tag_mismatches:['WAV tags differ from catalog','retag-mismatches','Rewrite tags from catalog'],unreadable_tags:['Unreadable WAV metadata',null,null]};
   const runIntegrityRepair=async(action,items,label)=>{
-    if(!items.length||!confirm(`${label} for ${items.length} item${items.length===1?'':'s'}? Only this listed issue group will be changed.`))return;
+    if(!items.length||!await confirmAction(`${label} for ${items.length} item${items.length===1?'':'s'}? Only this listed issue group will be changed.`, {title:'Apply integrity repair', acceptLabel:label}))return;
     const response=await fetch('/api/downloaded-library/integrity-repair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,item_ids:items.map(item=>item.id)})}); const payload=await response.json();
     if(!response.ok){integrityStatus.textContent=payload.detail||'The repair could not be completed.';return;}
     integrityStatus.textContent=`Repair complete · ${payload.updated||0} item${payload.updated===1?'':'s'} updated. Run the scan again to verify.`; await loadDownloadedLibrary(); integrityRoot.open=true;
@@ -2054,7 +2099,7 @@ async function loadDownloadedLibrary() {
     integrityStatus.textContent=groups.length?`${groups.reduce((sum,[key])=>sum+(findings[key]||[]).length,0)} findings across ${groups.length} categories. Review each group before applying a repair.`:'No catalog, file, path, or WAV-tag integrity issues were found.';
     integrityResults.innerHTML=groups.map(([key,[label,action,actionLabel]])=>{const items=findings[key]||[];const rows=key==='duplicate_records'?items.slice(0,25).map(duplicateFindingMarkup).join(''):items.slice(0,25).map(item=>`<li><strong>${escapeHtml(item.title||'Unknown item')}</strong><span>${escapeHtml((item.fields||[]).join(', ')||item.error||item.status||'')}</span><small>${escapeHtml(item.path||'')}</small></li>`).join('');return `<details class="integrity-group" data-key="${key}"><summary><span>${escapeHtml(label)}</span><b>${items.length}</b></summary><ul>${rows}</ul>${items.length>25?`<p>+ ${items.length-25} more findings</p>`:''}${action?`<button type="button" class="button secondary integrity-repair">${escapeHtml(actionLabel)}</button>`:key==='duplicate_records'?'<p>Select the file to retain in the catalog. Merging keeps the other WAV on disk.</p>':'<p>Review manually; no automatic repair is applied for this group.</p>'}</details>`;}).join('');
     integrityResults.querySelectorAll('.integrity-repair').forEach(button=>{const group=button.closest('.integrity-group');const [label,action,actionLabel]=integrityGroups[group.dataset.key];button.onclick=()=>runIntegrityRepair(action,findings[group.dataset.key]||[],actionLabel||label);});
-    integrityResults.querySelectorAll('.merge-duplicate').forEach(button=>button.onclick=async()=>{const ids=button.dataset.ids.split(',').map(Number);const survivor=Number(button.closest('li').querySelector('input:checked')?.value||ids[0]);const duplicate=ids.find(id=>id!==survivor);if(!duplicate||!confirm('Merge these catalog records? Analysis, playlists, feedback, and verified keys will follow the selected recording. The other WAV will remain on disk.'))return;button.disabled=true;const response=await fetch('/api/downloaded-library/merge-duplicate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({survivor_id:survivor,duplicate_id:duplicate})});const result=await response.json();if(!response.ok){button.disabled=false;alert(result.detail||'Could not merge the duplicate.');return;}await loadDownloadedLibrary();integrityButton.click();});
+    integrityResults.querySelectorAll('.merge-duplicate').forEach(button=>button.onclick=async()=>{const ids=button.dataset.ids.split(',').map(Number);const survivor=Number(button.closest('li').querySelector('input:checked')?.value||ids[0]);const duplicate=ids.find(id=>id!==survivor);if(!duplicate||!await confirmAction('Merge these catalog records? Analysis, playlists, feedback, and verified keys will follow the selected recording. The other WAV will remain on disk.', {title:'Merge duplicate records', acceptLabel:'Merge records'}))return;button.disabled=true;const response=await fetch('/api/downloaded-library/merge-duplicate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({survivor_id:survivor,duplicate_id:duplicate})});const result=await response.json();if(!response.ok){button.disabled=false;alert(result.detail||'Could not merge the duplicate.');return;}await loadDownloadedLibrary();integrityButton.click();});
     integrityResults.querySelectorAll('.keep-duplicate-separate').forEach(button=>button.onclick=async()=>{const id=Number(button.dataset.id);if(!id)return;button.disabled=true;const response=await fetch(`/api/downloaded-library/tracks/${id}/keep-separate`,{method:'POST'});const result=await response.json();if(!response.ok){button.disabled=false;alert(result.detail||'Could not separate the recording.');return;}await loadDownloadedLibrary();integrityButton.click();});
   };
   const watchIntegrityScan=batchId=>runBackgroundTask({key:'integrity-scan',url:`/api/downloaded-library/integrity-scan/${batchId}`,interval:700,update:batch=>{integrityRoot.open=true;integrityButton.disabled=true;integrityButton.textContent='Scanning…';integrityStatus.textContent=`${batch.stage} · ${Math.round(batch.progress||0)}%`;},complete:batch=>{integrityButton.disabled=false;integrityButton.textContent='Scan collection';renderIntegrityResults(batch);},fail:error=>{integrityButton.disabled=false;integrityButton.textContent='Scan collection';integrityStatus.textContent=error.message;}});
@@ -2073,7 +2118,7 @@ async function loadDownloadedLibrary() {
   });
   rescanGenres.onclick = async () => {
     if (!paginationData.catalog_total) return;
-    if (!confirm(`Rescan ${paginationData.catalog_total} downloaded track${paginationData.catalog_total === 1 ? '' : 's'} and move WAVs into their detected genre folders? Tracks without detailed genre metadata will stay where they are.`)) return;
+    if (!await confirmAction(`Rescan ${paginationData.catalog_total} downloaded track${paginationData.catalog_total === 1 ? '' : 's'} and move WAVs into their detected genre folders? Tracks without detailed genre metadata will stay where they are.`, {title:'Rescan genre metadata', acceptLabel:'Start rescan'})) return;
     rescanGenres.disabled = true; retagAll.disabled = true; rescanGenres.textContent = 'Rescanning…';
     renderMaintenanceProgress('Rescanning genre folders', {total:paginationData.catalog_total,processed:0,status:'processing'}, `0 of ${paginationData.catalog_total} checked · preparing library scan`);
     $('#downloaded-rescan-message').textContent = '';
@@ -2109,7 +2154,7 @@ async function loadDownloadedLibrary() {
     const missing = errors.filter(item => String(item.error || '').toLowerCase().includes('missing') || String(item.error || '').includes('No such file'));
     removeFailed.hidden = !missing.length;
     removeFailed.onclick = async () => {
-      if (!missing.length || !confirm(`Remove ${missing.length} missing file entr${missing.length === 1 ? 'y' : 'ies'} from the catalog? This does not delete any files.`)) return;
+      if (!missing.length || !await confirmAction(`Remove ${missing.length} missing file entr${missing.length === 1 ? 'y' : 'ies'} from the catalog? This does not delete any files.`, {title:'Remove missing entries', acceptLabel:'Remove entries', danger:true})) return;
       const response = await fetch('/api/downloaded-library/tracks', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:missing.map(item => item.id)})});
       if (!response.ok) { alert((await response.json()).detail || 'Could not remove missing entries.'); return; }
       await loadDownloadedLibrary();
@@ -2122,7 +2167,7 @@ async function loadDownloadedLibrary() {
     fail:error => { renderProgressError('WAV tag sync stopped',error); retagAll.disabled=false; rescanGenres.disabled=false; retagAll.textContent='Sync all WAV tags'; },
   });
   retagAll.onclick = async () => {
-    if (!paginationData.catalog_total || !confirm(`Synchronize title, artist, genre, and playlist tags across all ${paginationData.catalog_total} catalog tracks? This runs in the background and may take several minutes.`)) return;
+    if (!paginationData.catalog_total || !await confirmAction(`Synchronize title, artist, genre, and playlist tags across all ${paginationData.catalog_total} catalog tracks? This runs in the background and may take several minutes.`, {title:'Synchronize WAV tags', acceptLabel:'Start sync'})) return;
     retagAll.disabled = true; rescanGenres.disabled = true; retagAll.textContent = 'Starting…';
     renderMaintenanceProgress('Synchronizing WAV tags', {total:paginationData.catalog_total,processed:0,status:'processing'}, `0 of ${paginationData.catalog_total} checked · preparing metadata sync`);
     try {
@@ -2148,7 +2193,7 @@ async function loadDownloadedLibrary() {
     const selectedIds=selectedTracks.filter(track=>!track.artwork_available).map(track=>Number(track.id));
     if(selectedTracks.length&&!selectedIds.length){alert('Every selected track already has artwork.');return;}
     const targetCount=selectedIds.length||Number(paginationData.filtered_total||0);
-    if (!targetCount || !confirm(selectedIds.length?`Find and embed artwork for ${selectedIds.length} selected track${selectedIds.length===1?'':'s'} that need it?`:`Find and embed artwork for tracks that still need it? Existing artwork will be skipped.`)) return;
+    if (!targetCount || !await confirmAction(selectedIds.length?`Find and embed artwork for ${selectedIds.length} selected track${selectedIds.length===1?'':'s'} that need it?`:`Find and embed artwork for tracks that still need it? Existing artwork will be skipped.`, {title:'Synchronize artwork', acceptLabel:'Start sync'})) return;
     syncArtwork.disabled=true; rescanGenres.disabled=true; retagAll.disabled=true; syncArtwork.textContent='Starting…';
     renderMaintenanceProgress('Finding and embedding artwork',{total:paginationData.catalog_total,processed:0,status:'processing'},`0 of ${paginationData.catalog_total} checked · preparing artwork sync`);
     try {
@@ -2260,6 +2305,7 @@ async function loadDownloadedLibrary() {
   clearTimeout(downloadedSearchTimer);
   search.oninput = () => { clearTimeout(downloadedSearchTimer); downloadedSearchTimer=setTimeout(syncFilters,220); };
   genreSelect.onchange = () => {downloadedUiState.detailedGenre='all';detailedGenreSelect.value='all';syncFilters();}; detailedGenreSelect.onchange=syncFilters; playlistSelect.onchange = syncFilters; analysisSelect.onchange = syncFilters; artworkSelect.onchange = syncFilters; qualitySelect.onchange=syncFilters; sort.onchange = syncFilters;
+  $('#downloaded-reset-filters').onclick=()=>{Object.assign(downloadedUiState,{search:'',genre:'all',detailedGenre:'all',playlist:'all',analysis:'all',artwork:'all',quality:'all',sort:'newest',page:1});loadDownloadedLibrary();};
   pageSizeSelect.onchange = () => { pageSize=Number(pageSizeSelect.value); downloadedUiState.pageSize=pageSize; localStorage.setItem('music-files-page-size',String(pageSize)); requestPage(1); };
   cards.forEach((card,index) => card.querySelector('input').onchange = event => { const track=tracks[index]; if (event.currentTarget.checked) downloadedSelection.set(Number(track.id),track); else downloadedSelection.delete(Number(track.id)); refreshSelection(); });
   cards.forEach(card => card.onclick = event => {
@@ -2305,7 +2351,7 @@ async function loadDownloadedLibrary() {
   };
   retagSelected.onclick = async () => {
     const trackIds = [...downloadedSelection.values()].filter(track => track.available).map(track => Number(track.id));
-    if (!trackIds.length || !confirm(`Write title, artist, genre, and playlist metadata into ${trackIds.length} selected WAV${trackIds.length === 1 ? '' : 's'}?`)) return;
+    if (!trackIds.length || !await confirmAction(`Write title, artist, genre, and playlist metadata into ${trackIds.length} selected WAV${trackIds.length === 1 ? '' : 's'}?`, {title:'Write WAV metadata', acceptLabel:'Write tags'})) return;
     retagSelected.disabled = true; retagSelected.textContent = 'Syncing tags…';
     try {
       const response = await fetch('/api/downloaded-library/retag', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
@@ -2338,7 +2384,7 @@ async function loadDownloadedLibrary() {
   };
   keyAnalyzeSelected.onclick=()=>{const ids=[...downloadedSelection.values()].filter(track=>track.available).map(track=>Number(track.id));startKeyAnalysis(ids,keyAnalyzeSelected,async()=>{downloadedLoadedAt=0;libraryLoadedAt=0;await loadDownloadedLibrary();});};
   analyzeMatching.onclick = async () => {
-    if (!analyzableTotal || !confirm(`Add all ${analyzableTotal} matching track${analyzableTotal===1?'':'s'} that still need analysis to the processing queue? Analysis will run with safe automatic concurrency.`)) return;
+    if (!analyzableTotal || !await confirmAction(`Add all ${analyzableTotal} matching track${analyzableTotal===1?'':'s'} that still need analysis to the processing queue? Analysis will run with safe automatic concurrency.`, {title:'Analyze matching tracks', acceptLabel:'Add to queue'})) return;
     analyzeMatching.disabled=true; analyzeMatching.textContent='Adding all to queue…';
     try {
       const response=await fetch('/api/downloaded-library/analyze-matching',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,quality:downloadedUiState.quality,sort:downloadedUiState.sort})});
@@ -2350,7 +2396,7 @@ async function loadDownloadedLibrary() {
   };
   const queueReanalysis = async (url, body, button, count) => {
     const estimatedMinutes = Math.max(1, Math.ceil(count * 11 / 2 / 60));
-    if (!count || !confirm(`Reanalyze ${count} track${count===1?'':'s'} without changing the audio files? Estimated analysis time is about ${estimatedMinutes} minute${estimatedMinutes===1?'':'s'}. Existing artwork, genres, metadata, cues, and verified keys will be preserved.`)) return;
+    if (!count || !await confirmAction(`Reanalyze ${count} track${count===1?'':'s'} without changing the audio files? Estimated analysis time is about ${estimatedMinutes} minute${estimatedMinutes===1?'':'s'}. Existing artwork, genres, metadata, cues, and verified keys will be preserved.`, {title:'Reanalyze matching tracks', acceptLabel:'Reanalyze'})) return;
     const original = button.textContent; button.disabled = true; button.textContent = 'Adding to queue…';
     try {
       const response = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const result=await response.json();
@@ -2364,7 +2410,7 @@ async function loadDownloadedLibrary() {
   reanalyzeMatching.onclick=()=>queueReanalysis('/api/downloaded-library/reanalyze-matching',{search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,quality:downloadedUiState.quality,sort:downloadedUiState.sort},reanalyzeMatching,paginationData.filtered_total);
   removeSelected.onclick = async () => {
     const trackIds = [...downloadedSelection.keys()];
-    if (!trackIds.length || !confirm(`Remove ${trackIds.length} selected track${trackIds.length === 1 ? '' : 's'} from the catalog? WAV files that still exist will remain on disk.`)) return;
+    if (!trackIds.length || !await confirmAction(`Remove ${trackIds.length} selected track${trackIds.length === 1 ? '' : 's'} from the catalog? WAV files that still exist will remain on disk.`, {title:'Remove catalog entries', acceptLabel:'Remove', danger:true})) return;
     removeSelected.disabled = true; removeSelected.textContent = 'Removing…';
     try {
       const response = await fetch('/api/downloaded-library/tracks', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
@@ -2375,7 +2421,7 @@ async function loadDownloadedLibrary() {
   };
   root.querySelectorAll('.remove-downloaded').forEach(button => button.onclick = async () => {
     const card = button.closest('.downloaded-card');
-    if (!confirm('Remove this track from the master catalog? The WAV file will remain on disk.')) return;
+    if (!await confirmAction('Remove this track from the master catalog? The WAV file will remain on disk.', {title:'Remove track', acceptLabel:'Remove', danger:true})) return;
     await fetch(`/api/downloaded-library/tracks/${card.dataset.id}`, {method:'DELETE'}); await reloadCollectionViews();
   });
   root.querySelectorAll('.view-downloaded-library').forEach(button => button.onclick = () => showView('library-view'));
@@ -2425,19 +2471,36 @@ async function loadDownloadedLibrary() {
     inspector.hidden = false; inspector.dataset.returnId=card.dataset.id;
     const preview = track.available ? `<audio controls preload="metadata" src="/api/downloaded-library/tracks/${track.id}/audio"></audio>` : '<div class="inspector-unavailable">The catalog entry remains available, but its WAV file is missing from disk.</div>';
     const identity=`${track.recording_code || 'OTH-PENDING'}-${track.version_code || 'ORG'}`;
-    inspector.innerHTML = `<div class="inspector-head"><div><p class="eyebrow">QUICK VIEW · ${escapeHtml(identity)}</p><h2>${escapeHtml(track.title || track.filename)}</h2><span>${escapeHtml(track.artist || 'Unknown artist')}</span></div><button type="button" class="close-inspector" aria-label="Close inspector">×</button></div>${preview}<div class="inspector-metrics"><p><b>${escapeHtml(track.genre_category || 'Other')}</b><span>Genre</span></p><p><b>${clock(track.duration_seconds)}</b><span>Length</span></p><p><b class="inspector-key-value">${escapeHtml(track.detected_key || 'Not analyzed')}</b><span>Key${track.key_confidence==null?'':` · ${Math.round(Number(track.key_confidence))}%`}</span></p></div><p class="key-analysis-result" role="status">${track.key_analyzed_at?`Key analyzed ${escapeHtml(reportDate(track.key_analyzed_at))}`:'Run key-only analysis without changing BPM, grid, cues, or edits.'}</p><details class="inspector-family"><summary><b>Recording family</b><span>Manage originals, remixes, edits, and alternate versions</span></summary><div class="inspector-family-heading"><div><b>Related versions</b><span>Tracks linked to the same recording</span></div><button type="button" class="button secondary inspector-family-toggle">Link as version of…</button></div><div class="inspector-family-content"><p>Loading related versions…</p></div><form class="inspector-family-link" hidden><label>Target track ID<input name="target" placeholder="HOU-002386-ORG"></label><label>Relationship<select name="relationship"><option value="RMX">Remix</option><option value="EXT">Extended mix</option><option value="RADIO">Radio edit</option><option value="LIVE">Live version</option><option value="INST">Instrumental</option><option value="ACAP">Acapella</option><option value="REM">Remaster</option><option value="ORG">Original / alternate original</option></select></label><button type="submit">Link version</button><small>Choose a suggestion below or enter the visible genre-based track ID.</small></form><div class="inspector-family-suggestions"></div></details><details class="inspector-metadata"><summary>File & source details</summary><dl><dt>Recording ID</dt><dd>${escapeHtml(identity)}</dd><dt>Identity basis</dt><dd>${escapeHtml(track.identity_reason || 'Catalog assignment')}</dd><dt>Detailed tags</dt><dd>${escapeHtml(track.genre || 'No metadata')}</dd><dt>Source playlist</dt><dd>${escapeHtml((track.playlists || []).join(', ') || 'Imported Singles')}</dd><dt>Filename</dt><dd>${escapeHtml(track.filename || '')}</dd><dt>Absolute path</dt><dd class="inspector-path">${escapeHtml(track.absolute_path || 'Path unavailable')}</dd></dl></details><div class="inspector-actions">${track.available?'<button type="button" class="button inspector-analyze-key">Analyze key only</button>':''}${track.completed_library_job_id ? '<button type="button" class="button secondary inspector-library">View in DJ Library</button>' : ''}<button type="button" class="button secondary inspector-edit-metadata">Edit metadata</button><button type="button" class="button secondary inspector-edit-genre">Change genre only</button>${track.available ? `<button type="button" class="button secondary inspector-copy-path">Copy path</button><button type="button" class="button secondary inspector-reveal">Reveal in Finder</button><a class="button secondary" href="/api/downloaded-library/tracks/${track.id}/download">Download WAV</a>` : ''}</div>`;
+    inspector.innerHTML = `<div class="inspector-head"><div><p class="eyebrow">QUICK VIEW · ${escapeHtml(identity)}</p><h2>${escapeHtml(track.title || track.filename)}</h2><span>${escapeHtml(track.artist || 'Unknown artist')}</span></div><button type="button" class="close-inspector" aria-label="Close inspector">×</button></div>${preview}<div class="inspector-metrics"><button type="button" class="inspector-genre-trigger" title="Change genre"><b>${escapeHtml(track.genre_category || 'Other')}</b><span>Genre</span></button><p><b>${clock(track.duration_seconds)}</b><span>Length</span></p><p><b>${escapeHtml((track.analysis_status || 'not_analyzed').replaceAll('_',' '))}</b><span>Analysis</span></p></div>${genreEditorMarkup(track.genre_category || 'Other', track.suggested_genre || '', true)}<section class="inspector-family" hidden><div class="inspector-family-heading"><div><b>Recording family</b><span>Originals, remixes, edits, and alternate versions</span></div><div class="inspector-family-heading-actions"><button type="button" class="button secondary inspector-family-toggle">Link as version of…</button><button type="button" class="button secondary inspector-family-close" aria-label="Close recording family">×</button></div></div><div class="inspector-family-content"><p>Loading related versions…</p></div><form class="inspector-family-link" hidden><label>Target track ID<input name="target" placeholder="HOU-002386-ORG"></label><label>Relationship<select name="relationship"><option value="RMX">Remix</option><option value="EXT">Extended mix</option><option value="RADIO">Radio edit</option><option value="LIVE">Live version</option><option value="INST">Instrumental</option><option value="ACAP">Acapella</option><option value="REM">Remaster</option><option value="ORG">Original / alternate original</option></select></label><button type="submit">Link version</button><small>Choose a suggestion below or enter the visible genre-based track ID.</small></form><div class="inspector-family-suggestions"></div></section><details class="inspector-metadata"><summary>File & source details</summary><dl><dt>Recording ID</dt><dd>${escapeHtml(identity)}</dd><dt>Identity basis</dt><dd>${escapeHtml(track.identity_reason || 'Catalog assignment')}</dd><dt>Detailed tags</dt><dd>${escapeHtml(track.genre || 'No metadata')}</dd><dt>Source playlist</dt><dd>${escapeHtml((track.playlists || []).join(', ') || 'Imported Singles')}</dd><dt>Filename</dt><dd>${escapeHtml(track.filename || '')}</dd><dt>Absolute path</dt><dd class="inspector-path">${escapeHtml(track.absolute_path || 'Path unavailable')}</dd></dl></details><div class="inspector-actions">${track.completed_library_job_id ? '<button type="button" class="button secondary inspector-library">View in DJ Library</button>' : ''}<button type="button" class="button secondary inspector-edit-metadata">Edit metadata</button><button type="button" class="button secondary inspector-edit-genre">Change genre only</button><button type="button" class="button secondary inspector-manage-family">Recording family</button>${track.available ? `<button type="button" class="button secondary inspector-copy-path">Copy path</button><button type="button" class="button secondary inspector-reveal">Reveal in Finder</button><a class="button secondary" href="/api/downloaded-library/tracks/${track.id}/download">Download WAV</a>` : ''}</div>`;
     inspector.querySelector('.close-inspector').onclick = () => closeDownloadedInspector({restoreFocus:true});
     inspector.querySelector('.inspector-edit-metadata').onclick = () => { const editor=card.querySelector('.track-metadata-editor'); closeDownloadedInspector(); editor.hidden=false; card.scrollIntoView({behavior:'smooth',block:'center'}); editor.elements.title.focus(); };
-    inspector.querySelector('.inspector-edit-genre').onclick = () => { closeDownloadedInspector(); card.querySelector('.inline-genre-editor').hidden = false; card.scrollIntoView({behavior:'smooth',block:'center'}); };
+    const inspectorGenreEditor=inspector.querySelector('.inline-genre-editor');
+    const openInspectorGenre=()=>{inspectorGenreEditor.hidden=false;refreshSearchableSelects();(inspectorGenreEditor.querySelector('.select-search-input')||inspectorGenreEditor.querySelector('.inline-genre-custom')).focus();};
+    inspector.querySelector('.inspector-genre-trigger').onclick=openInspectorGenre;
+    inspector.querySelector('.inspector-edit-genre').onclick=openInspectorGenre;
+    bindGenreEditor(inspectorGenreEditor,()=>[Number(track.id)],async payload=>{await applyTrackPatch(card,{genre_category:payload.genre_category});inspectorGenreEditor.hidden=true;inspector.querySelector('.inspector-genre-trigger b').textContent=payload.genre_category;});
     inspector.querySelector('.inspector-library')?.addEventListener('click', () => { closeDownloadedInspector(); showView('library-view'); });
     inspector.querySelector('.inspector-copy-path')?.addEventListener('click', async event => {try{await navigator.clipboard.writeText(track.absolute_path||'');event.currentTarget.textContent='Path copied';}catch(_){event.currentTarget.textContent='Copy failed';}});
     inspector.querySelector('.inspector-reveal')?.addEventListener('click', async event => {const response=await fetch(`/api/downloaded-library/tracks/${track.id}/reveal`,{method:'POST'}),payload=await response.json();event.currentTarget.textContent=response.ok?'Revealed in Finder':payload.detail||'Could not reveal';});
     inspector.querySelector('.inspector-analyze-key')?.addEventListener('click',async event=>{const action=event.currentTarget,status=inspector.querySelector('.key-analysis-result');action.disabled=true;action.textContent='Analyzing key…';status.textContent='Comparing tonal estimates; all other analysis remains unchanged.';try{const response=await fetch(`/api/downloaded-library/tracks/${track.id}/analyze-key`,{method:'POST'}),payload=await response.json();if(!response.ok)throw new Error(payload.detail||'Key analysis failed.');track.detected_key=payload.detected_key;track.key_confidence=payload.key_confidence;track.key_analyzed_at=payload.key_analyzed_at;inspector.querySelector('.inspector-key-value').textContent=payload.detected_key||'Unknown';inspector.querySelector('.inspector-key-value').nextElementSibling.textContent=`Key · ${Math.round(Number(payload.key_confidence||0))}%`;status.textContent=`Complete · ${payload.detected_key} is the current estimate.`;action.textContent='Analyze key again';}catch(error){status.textContent=error.message;action.textContent='Try key analysis again';}finally{action.disabled=false;}});
     const familyForm=inspector.querySelector('.inspector-family-link'),familyContent=inspector.querySelector('.inspector-family-content'),familySuggestions=inspector.querySelector('.inspector-family-suggestions');
-    inspector.querySelector('.inspector-family-toggle').onclick=event=>{familyForm.hidden=!familyForm.hidden;event.currentTarget.textContent=familyForm.hidden?'Link as version of…':'Cancel linking';if(!familyForm.hidden)familyForm.elements.target.focus();};
-    const loadFamily=async()=>{const response=await fetch(`/api/downloaded-library/tracks/${track.id}/family`),payload=await response.json();if(!response.ok){familyContent.innerHTML=`<p>${escapeHtml(payload.detail||'Related versions could not be loaded.')}</p>`;return;}familyContent.innerHTML=payload.family.map(member=>`<article><div><b>${escapeHtml(member.title||member.filename)}</b><span>${escapeHtml(member.artist||'Unknown artist')} · ${escapeHtml(member.recording_code)}-${escapeHtml(member.version_code||'ORG')}</span></div>${Number(member.id)===Number(track.id)?'<em>Current</em>':`<button type="button" data-family-target="${member.id}">View</button>`}</article>`).join('');if(payload.family.length>1)familyContent.insertAdjacentHTML('beforeend','<button type="button" class="button secondary inspector-family-unlink">Unlink current track</button>');familySuggestions.innerHTML=payload.suggestions.length?`<b>Suggested families</b>${payload.suggestions.slice(0,6).map(item=>`<button type="button" data-suggestion-id="${escapeHtml(item.track.recording_code)}-${escapeHtml(item.track.version_code||'ORG')}"><span>${escapeHtml(item.track.title||item.track.filename)} · ${escapeHtml(item.track.artist||'Unknown artist')}</span><small>${item.score}%<br>${escapeHtml(item.reasons.slice(0,2).join(' · '))}</small></button>`).join('')}`:'<small>No strong automatic suggestions. Use “Link as version of…” to enter a track ID.</small>';familySuggestions.querySelectorAll('[data-suggestion-id]').forEach(option=>option.onclick=()=>{familyForm.hidden=false;inspector.querySelector('.inspector-family-toggle').textContent='Cancel linking';familyForm.elements.target.value=option.dataset.suggestionId;familyForm.elements.relationship.focus();});familyContent.querySelector('.inspector-family-unlink')?.addEventListener('click',async()=>{if(!confirm('Unlink this version into its own recording family? You can link it again later.'))return;const result=await fetch(`/api/downloaded-library/tracks/${track.id}/unlink-version`,{method:'POST'});if(result.ok){await loadDownloadedLibrary();closeDownloadedInspector();}});};
-    familyForm.onsubmit=async event=>{event.preventDefault();const target=familyForm.elements.target.value.trim();if(!target){familyForm.querySelector('small').textContent='Enter a valid AE track ID.';return;}const response=await fetch(`/api/downloaded-library/tracks/${track.id}/link-version`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_identity:target,relationship:familyForm.elements.relationship.value})}),payload=await response.json();if(!response.ok){familyForm.querySelector('small').textContent=payload.detail||'Could not link this version.';return;}await loadDownloadedLibrary();closeDownloadedInspector();};
-    let familyLoaded=false;inspector.querySelector('.inspector-family').addEventListener('toggle',event=>{if(event.currentTarget.open&&!familyLoaded){familyLoaded=true;loadFamily();}});
+    const familySection=inspector.querySelector('.inspector-family');
+    familySection.classList.add('is-collapsed');
+    let familyLoaded=false;
+    inspector.querySelector('.inspector-manage-family').onclick=()=>{familySection.hidden=false;familySection.classList.remove('is-collapsed');if(!familyLoaded){familyLoaded=true;loadFamily();}familySection.scrollIntoView({behavior:'smooth',block:'nearest'});};
+    inspector.querySelector('.inspector-family-close').onclick=()=>{familySection.hidden=true;familySection.classList.add('is-collapsed');familyForm.hidden=true;inspector.querySelector('.inspector-family-toggle').textContent='Link as version of…';};
+    inspector.querySelector('.inspector-family-toggle').onclick=event=>{
+      if(familyForm.hidden){
+        familyForm.hidden=false;
+        event.currentTarget.textContent='Close version tools';
+      }else{
+        familyForm.hidden=true;
+        event.currentTarget.textContent='Link as version of…';
+      }
+      if(!familyForm.hidden)familyForm.elements.target.focus();
+    };
+    const loadFamily=async()=>{const response=await fetch(`/api/downloaded-library/tracks/${track.id}/family`),payload=await response.json();if(!response.ok){familyContent.innerHTML=`<p>${escapeHtml(payload.detail||'Related versions could not be loaded.')}</p>`;return;}familyContent.innerHTML=payload.family.map(member=>`<article><div><b>${escapeHtml(member.title||member.filename)}</b><span>${escapeHtml(member.artist||'Unknown artist')} · ${escapeHtml(member.recording_code)}-${escapeHtml(member.version_code||'ORG')}</span></div>${Number(member.id)===Number(track.id)?'<em>Current</em>':`<button type="button" data-family-target="${member.id}">View</button>`}</article>`).join('');if(payload.family.length>1)familyContent.insertAdjacentHTML('beforeend','<button type="button" class="button secondary inspector-family-unlink">Unlink current track</button>');familySuggestions.innerHTML=payload.suggestions.length?`<b>Suggested families</b>${payload.suggestions.map(item=>`<button type="button" data-suggestion-id="${escapeHtml(item.track.recording_code)}-${escapeHtml(item.track.version_code||'ORG')}"><span>${escapeHtml(item.track.title||item.track.filename)} · ${escapeHtml(item.track.artist||'Unknown artist')}</span><small>${item.score}% · ${escapeHtml(item.reasons.join(', '))}</small></button>`).join('')}`:'<small>No strong automatic suggestions. Enter a target track ID to link manually.</small>';familySuggestions.querySelectorAll('[data-suggestion-id]').forEach(option=>option.onclick=()=>{familyForm.hidden=false;familyForm.elements.target.value=option.dataset.suggestionId;familyForm.elements.relationship.focus();});familyContent.querySelector('.inspector-family-unlink')?.addEventListener('click',async()=>{if(!await confirmAction('Unlink this version into its own recording family? You can link it again later.', {title:'Unlink recording version', acceptLabel:'Unlink'}))return;const result=await fetch(`/api/downloaded-library/tracks/${track.id}/unlink-version`,{method:'POST'});if(result.ok){await loadDownloadedLibrary();closeDownloadedInspector();}});};
+    familyForm.onsubmit=async event=>{event.preventDefault();const target=familyForm.elements.target.value.trim();if(!target){familyForm.querySelector('small').textContent='Enter a valid track ID.';return;}const response=await fetch(`/api/downloaded-library/tracks/${track.id}/link-version`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_identity:target,relationship:familyForm.elements.relationship.value})}),payload=await response.json();if(!response.ok){familyForm.querySelector('small').textContent=payload.detail||'Could not link this version.';return;}await loadDownloadedLibrary();closeDownloadedInspector();};
   });
   summary.querySelectorAll('.filter-downloaded-genre').forEach(button => button.onclick = () => { downloadedUiState.genre=button.dataset.value;downloadedUiState.detailedGenre='all'; requestPage(1); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth'}); });
   summary.querySelectorAll('.filter-detailed-genre').forEach(button => button.onclick = () => { downloadedUiState.genre='all';downloadedUiState.detailedGenre=button.dataset.value; requestPage(1); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth'}); });
@@ -2856,7 +2919,7 @@ function bindSetBuilder() {
   document.addEventListener('keydown',event=>{if(!$('#set-builder-view').classList.contains('active')||!(event.metaKey||event.ctrlKey)||event.key.toLowerCase()!=='z')return;event.preventDefault();event.shiftKey?redoSetEdit():undoSetEdit();});
   $('#load-set').onclick=()=>loadSavedSet(savedSets().find(set=>set.id===$('#saved-set-select').value));
   $('#duplicate-set').onclick=()=>{const record=savedSets().find(set=>set.id===$('#saved-set-select').value);if(!record)return;const copy={...record,id:String(Date.now()),name:`${record.name} Copy`,brief:{...record.brief,name:`${record.name} Copy`}};storeSavedSets([copy,...savedSets()]);$('#saved-set-select').value=copy.id;loadSavedSet(copy);};
-  $('#delete-set').onclick=()=>{const id=$('#saved-set-select').value;if(!id||!confirm('Delete this saved set plan? Audio and Library tracks will not be removed.'))return;storeSavedSets(savedSets().filter(set=>set.id!==id));};
+  $('#delete-set').onclick=async()=>{const id=$('#saved-set-select').value;if(!id||!await confirmAction('Delete this saved set plan? Audio and Library tracks will not be removed.', {title:'Delete saved set', acceptLabel:'Delete', danger:true}))return;storeSavedSets(savedSets().filter(set=>set.id!==id));};
 }
 
 function renderLibraryIntelligence(songs, latestByName) {
@@ -3139,7 +3202,7 @@ async function loadLibrary() {
   root.querySelectorAll('.remove-library-track').forEach(button => button.onclick = async () => {
     const card = button.closest('.library-card');
     const latest = jobs.find(job => String(job.id) === card.dataset.jobId);
-    if (!confirm(`Remove ${latest.source_name} and all of its generations from the Library? Exported audio files will remain in the output folder.`)) return;
+    if (!await confirmAction(`Remove ${latest.source_name} and all of its generations from the Library? Exported audio files will remain in the output folder.`, {title:'Remove Library track', acceptLabel:'Remove', danger:true})) return;
     button.disabled = true; button.textContent = 'Removing…';
     const response = await fetch(`/api/library/${encodeURIComponent(latest.source_name)}`, {method:'DELETE'});
     if (!response.ok) { alert((await response.json()).detail || 'Could not remove the track.'); button.disabled = false; button.textContent = 'Remove from library'; return; }
@@ -3168,7 +3231,9 @@ function bindLibraryFilters(catalog) {
   [controls.bpmMin,controls.bpmMax].forEach(input=>input.oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>{libraryUiState.bpmMin=controls.bpmMin.value;libraryUiState.bpmMax=controls.bpmMax.value;request(1);},240);});
   $('#library-page-size').onchange=event=>{libraryUiState.pageSize=Number(event.target.value);localStorage.setItem('dj-library-page-size',String(libraryUiState.pageSize));request(1);};
   $('#library-key-display').onchange=event=>{localStorage.setItem('audioextender-key-view',event.target.value);document.querySelectorAll('.library-key-value').forEach(node=>node.textContent=formatLibraryKey(node.dataset.standard,event.target.value));};
-  $('#library-reset-filters').onclick=()=>{Object.assign(libraryUiState,{search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1});loadLibrary();};
+  const resetLibraryFilters=()=>{Object.assign(libraryUiState,{search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1});loadLibrary();};
+  $('#library-reset-filters').onclick=resetLibraryFilters;
+  $('#library-reset-filters-top').onclick=resetLibraryFilters;
   const changePage=page=>{libraryUiState.page=page;loadLibrary();document.querySelector('.library-toolbar').scrollIntoView({behavior:'smooth',block:'start'});};
   renderTrackPagination($('#library-pagination'),catalog.page,catalog.total_pages,catalog.filtered_total,changePage);
   renderTrackPagination($('#library-pagination-top'),catalog.page,catalog.total_pages,catalog.filtered_total,changePage);
@@ -3217,7 +3282,7 @@ function bindLibrarySelection() {
     const trackIds = selectedCards.map(card => Number(card.dataset.downloadedId)).filter(Boolean);
     const genre = genreInput.value.trim();
     if (!trackIds.length || trackIds.length !== selectedCards.length || !genre) return;
-    if (!confirm(`Move ${trackIds.length} selected track${trackIds.length === 1 ? '' : 's'} to the ${genre} genre folder?`)) return;
+    if (!await confirmAction(`Move ${trackIds.length} selected track${trackIds.length === 1 ? '' : 's'} to the ${genre} genre folder?`, {title:'Change track genre', acceptLabel:'Move tracks'})) return;
     genreButton.disabled = true; genreButton.textContent = 'Moving…';
     try {
       const response = await fetch('/api/downloaded-library/genre', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({track_ids:trackIds, genre_category:genre})});
@@ -3230,7 +3295,7 @@ function bindLibrarySelection() {
   };
   removeButton.onclick = async () => {
     const selectedCards = boxes.filter(box => box.checked).map(box => box.closest('.library-card'));
-    if (!selectedCards.length || !confirm(`Remove ${selectedCards.length} selected track${selectedCards.length === 1 ? '' : 's'} and all of their generations from the Library? Exported audio files will remain in the output folder.`)) return;
+    if (!selectedCards.length || !await confirmAction(`Remove ${selectedCards.length} selected track${selectedCards.length === 1 ? '' : 's'} and all of their generations from the Library? Exported audio files will remain in the output folder.`, {title:'Remove selected tracks', acceptLabel:'Remove', danger:true})) return;
     removeButton.disabled = true; removeButton.textContent = 'Removing…';
     try {
       for (const card of selectedCards) {
@@ -3243,7 +3308,7 @@ function bindLibrarySelection() {
   reanalyzeButton.onclick = async () => {
     const selectedCards = boxes.filter(box => box.checked).map(box => box.closest('.library-card'));
     const trackIds = selectedCards.map(card => Number(card.dataset.downloadedId)).filter(Boolean);
-    if (!trackIds.length || trackIds.length !== selectedCards.length || !confirm(`Reanalyze ${trackIds.length} selected track${trackIds.length===1?'':'s'}? Audio files, metadata, artwork, and verified keys will be preserved.`)) return;
+    if (!trackIds.length || trackIds.length !== selectedCards.length || !await confirmAction(`Reanalyze ${trackIds.length} selected track${trackIds.length===1?'':'s'}? Audio files, metadata, artwork, and verified keys will be preserved.`, {title:'Reanalyze selected tracks', acceptLabel:'Reanalyze'})) return;
     reanalyzeButton.disabled=true; reanalyzeButton.textContent='Adding to queue…';
     try { const response=await fetch('/api/downloaded-library/reanalyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});const result=await response.json();if(!response.ok)throw new Error(result.detail||'Could not queue reanalysis.');showView('workspace-view');await loadJobs(); }
     catch(error){alert(error.message);reanalyzeButton.textContent='Reanalyze';refreshSelection();}
@@ -3286,21 +3351,15 @@ async function loadAnalysis(jobs = null) {
 function pct(value) { return value == null ? '—' : `${Math.round(value)}%`; }
 function candidateLabel(candidate) { return candidate ? `${candidate.extension_bars} bars · ${pct(candidate.loop_quality)}` : 'Preserved'; }
 function escapeHtml(value) { const node = document.createElement('span'); node.textContent = String(value ?? ''); return node.innerHTML; }
-async function startKeyAnalysis(trackIds, button, onComplete=async()=>{}) {
-  if(!trackIds.length)return;
-  const original=button.textContent;button.disabled=true;button.textContent='Starting key analysis…';
-  try{
-    const response=await fetch('/api/downloaded-library/key-analysis',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
-    let batch=await response.json();if(!response.ok)throw new Error(batch.detail||'Could not start key analysis.');
-    while(batch.status==='processing'){
-      button.textContent=`Analyzing keys ${batch.processed}/${batch.total}`;
-      await new Promise(resolve=>setTimeout(resolve,700));
-      const status=await fetch(`/api/downloaded-library/key-analysis/${batch.batch_id}`,{cache:'no-store'});batch=await status.json();if(!status.ok)throw new Error(batch.detail||'Key-analysis status was lost.');
-    }
-    button.textContent=batch.failed?`${batch.completed} complete · ${batch.failed} failed`:`${batch.completed} keys analyzed`;
-    await onComplete(batch);
-  }catch(error){button.textContent=error.message||'Key analysis failed';}
-  finally{setTimeout(()=>{button.textContent=original;button.disabled=false;},1600);}
+function apiErrorMessage(payload, fallback = 'The request could not be completed.') {
+  const detail = payload?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) return detail.map(item => {
+    const field = Array.isArray(item?.loc) ? item.loc.filter(value => value !== 'body').join(' → ') : '';
+    return `${field ? `${field}: ` : ''}${item?.msg || 'Invalid value'}`;
+  }).join(' · ');
+  if (detail && typeof detail === 'object') return detail.message || JSON.stringify(detail);
+  return fallback;
 }
 function fraction(value) { return value == null ? '—' : `${Math.round(100 * value)}%`; }
 function reportDate(value) { if (!value) return 'Not processed yet'; return new Date(value).toLocaleString([], {dateStyle:'medium', timeStyle:'short'}); }
@@ -3501,7 +3560,7 @@ $('#settings-form').addEventListener('submit', async event => {
   };
   const response = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(values) });
   const payload = await response.json();
-  if (!response.ok) { $('#settings-message').textContent = payload.detail || 'Could not save settings.'; return; }
+  if (!response.ok) { $('#settings-message').textContent = apiErrorMessage(payload, 'Could not save settings.'); return; }
   const pageSize = $('#setting-page-size').value;
   localStorage.setItem('music-files-page-size', pageSize);
   localStorage.setItem('dj-library-page-size', pageSize);
@@ -3513,7 +3572,18 @@ $('#settings-form').addEventListener('submit', async event => {
   appConfig.effective = payload.effective; appConfig.overrides = payload.overrides;
   applyEffectiveSettings(payload.effective);
   $('#settings-form').classList.remove('is-dirty');
-  $('#settings-message').textContent = Object.keys(payload.overrides).length ? 'Settings saved.' : 'Processing values match the application defaults. Browsing preferences saved.';
+  $('#settings-message').textContent = 'Settings saved · checking the music library…';
+  libraryStatusRequest=null;
+  const status=await loadLibraryStatus();
+  if(status?.online){
+    $('#settings-message').textContent=`Music library connected · ${status.available_tracks} of ${status.cataloged_tracks} tracks available at ${status.path}`;
+    if(!status.offline_tracks){
+      const errors=$('#downloaded-retag-errors');errors.hidden=true;errors.open=false;errors.querySelector('ul')?.replaceChildren();
+      $('#downloaded-rescan-message').textContent='Library location verified · all cataloged tracks are available.';
+    }
+  }else{
+    $('#settings-message').textContent=`Settings saved, but this folder is not currently available: ${payload.effective.music_library_path}`;
+  }
 });
 
 $('#settings-form').addEventListener('input', () => {
@@ -3558,7 +3628,8 @@ async function loadLibraryStatus() {
     const integrity=status.location_integrity||{};const locationPanel=$('#library-location-integrity');const outside=Number(integrity.outside_count||0);locationPanel.hidden=!outside;$('#library-location-message').textContent=outside?`${outside} track${outside===1?' is':'s are'} stored outside ${integrity.configured_root}. Copy, verify, relink, then remove the old files.`:'';
     const badge=$('#library-online-state');badge.textContent=status.online?'Library online':'Library offline';badge.className=`library-state ${status.online?'online':'offline'}`;
     $('#library-offline-banner').hidden=status.online;document.body.classList.toggle('library-is-offline',!status.online);
-  } catch { $('#library-online-state').textContent='Status unavailable'; }
+    return status;
+  } catch { $('#library-online-state').textContent='Status unavailable'; return null; }
   finally { libraryStatusRequest=null; }
   })();
   return libraryStatusRequest;
@@ -3601,7 +3672,7 @@ $('#relocation-start').addEventListener('click',async()=>{
   const response=await fetch('/api/settings/library-relocation/start',{method:'POST'});const state=await response.json();if(!response.ok){renderRelocationState({status:'failed',stage:'Could not start',error:state.detail});return;}renderRelocationState(state);
 });
 $('#relocation-cancel').addEventListener('click',async()=>renderRelocationState(await fetch('/api/settings/library-relocation/cancel',{method:'POST'}).then(response=>response.json())));
-$('#relocation-rollback').addEventListener('click',async()=>{if(!confirm('Restore the catalog and settings to the original library? The copied destination will be kept.'))return;const response=await fetch('/api/settings/library-relocation/rollback',{method:'POST'});const state=await response.json();renderRelocationState(response.ok?state:{status:'failed',stage:'Rollback failed',error:state.detail});await loadLibraryStatus();await loadConfig();});
+$('#relocation-rollback').addEventListener('click',async()=>{if(!await confirmAction('Restore the catalog and settings to the original library? The copied destination will be kept.', {title:'Roll back relocation', acceptLabel:'Restore catalog', danger:true}))return;const response=await fetch('/api/settings/library-relocation/rollback',{method:'POST'});const state=await response.json();renderRelocationState(response.ok?state:{status:'failed',stage:'Rollback failed',error:state.detail});await loadLibraryStatus();await loadConfig();});
 
 let pendingBackupToken='';
 function backupHistoryMarkup(backups){
@@ -3641,7 +3712,7 @@ async function loadStorageManager(){
   return storageManagerRequest;
 }
 async function cleanManagedStorage(target,label){
-  if(!confirm(`Remove ${label}? Your songs, catalog metadata, and current analysis will be preserved.`))return;
+  if(!await confirmAction(`Remove ${label}? Your songs, catalog metadata, and current analysis will be preserved.`, {title:'Clean application storage', acceptLabel:'Remove files', danger:true}))return;
   const button=target==='stale-cache'?$('#clear-stale-cache'):$('#clear-orphaned-output');button.disabled=true;button.textContent='Cleaning…';$('#storage-manager-message').textContent='';
   const response=await fetch('/api/settings/storage/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})});const payload=await response.json();
   if(!response.ok){$('#storage-manager-message').textContent=payload.detail||'Storage cleanup failed.';await loadStorageManager();return;}
@@ -3658,7 +3729,7 @@ cleanupConfirmation.addEventListener('input', () => {
 });
 cleanupButton.addEventListener('click', async () => {
   if (cleanupConfirmation.value !== 'DELETE EVERYTHING') return;
-  if (!confirm('This permanently removes every song, edit, track report, cache entry, and processing-history item managed by DJ Library Studio. Your presets and settings will be kept. Continue?')) return;
+  if (!await confirmAction('This permanently removes every song, edit, track report, cache entry, and processing-history item managed by DJ Library Studio. Your presets and settings will be kept. Continue?', {title:'Remove all managed track data', acceptLabel:'Remove everything', danger:true})) return;
   cleanupButton.disabled = true; cleanupButton.textContent = 'Cleaning up…';
   const response = await fetch('/api/settings/cleanup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirmation:cleanupConfirmation.value})});
   const payload = await response.json();
@@ -3684,13 +3755,13 @@ $('#preset-editor').addEventListener('submit', async event => {
 });
 $('#delete-preset').addEventListener('click', async () => {
   const name = $('#preset-original-name').value;
-  if (!name || name === '__new__' || !confirm(`Remove the ${name} preset? Existing processed generations will keep their saved configuration.`)) return;
+  if (!name || name === '__new__' || !await confirmAction(`Remove the ${name} preset? Existing processed generations will keep their saved configuration.`, {title:'Delete preset', acceptLabel:'Delete preset', danger:true})) return;
   const response = await fetch(`/api/presets/${encodeURIComponent(name)}`, {method:'DELETE'});
   if (!response.ok) { $('#preset-message').textContent = (await response.json()).detail || 'Could not remove preset.'; return; }
   await loadConfig(); await loadPresets(); editPreset(presetLibrary[0] || null);
 });
 $('#restore-presets').addEventListener('click', async () => {
-  if (!confirm('Restore every maintained built-in preset and remove all custom preset definitions?')) return;
+  if (!await confirmAction('Restore every maintained built-in preset and remove all custom preset definitions?', {title:'Restore built-in presets', acceptLabel:'Restore presets', danger:true})) return;
   await fetch('/api/presets/restore', {method:'POST'}); await loadConfig(); await loadPresets(); editPreset(presetLibrary[0] || null);
 });
 
