@@ -134,7 +134,12 @@ class LibraryMetadataRelinker:
         source_root = destination / ".audioextender" / "sources"
         source_root.mkdir(parents=True, exist_ok=True)
         for existing in source_root.glob("*.json"):
-            existing.unlink()
+            try:
+                existing.unlink()
+            except FileNotFoundError:
+                # FAT/exFAT AppleDouble sidecars can vanish alongside their
+                # companion file while the directory is being enumerated.
+                continue
         playlists: dict[str, list[str]] = {}
         for track in self.repository.list_downloaded_tracks():
             path = Path(str(track["file_path"]))
@@ -213,6 +218,18 @@ class LibraryRelocationCoordinator:
     def cancel(self) -> dict:
         self._cancel.set()
         return self.status()
+
+    def reset(self) -> dict:
+        """Discard a terminal plan so Settings returns to a clean form."""
+        with self._lock:
+            if self._state.get("status") == "processing":
+                raise ValueError("Cancel the active relocation before resetting it")
+            self._state = {}
+            try:
+                self.manifest_path.unlink()
+            except FileNotFoundError:
+                pass
+            return {}
 
     def rollback(self) -> dict:
         state = self.status()

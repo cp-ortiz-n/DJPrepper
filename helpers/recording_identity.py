@@ -53,6 +53,8 @@ def identity_key(artist: str, title: str) -> str:
 def genre_family_code(genre_category: str) -> str:
     """Return a stable, readable three-letter code for a parent genre."""
     value = normalize_identity_text(genre_category)
+    if value.startswith("afro") or value.startswith("amapiano"):
+        return "AFR"
     rules = (
         ("drum bass", "DNB"), ("hip hop", "HIP"), ("r b", "RNB"),
         ("disco", "DSC"), ("house", "HOU"), ("funk", "DSC"), ("latin", "LAT"),

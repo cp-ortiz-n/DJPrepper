@@ -245,6 +245,17 @@ class JobRepository:
                         connection.execute(
                             f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}"
                         )
+                key_analysis_columns = {
+                    "detected_key": "TEXT NOT NULL DEFAULT ''",
+                    "key_confidence": "REAL",
+                    "key_candidates_json": "TEXT NOT NULL DEFAULT '[]'",
+                    "key_analyzed_at": "TEXT NOT NULL DEFAULT ''",
+                }
+                for column, definition in key_analysis_columns.items():
+                    if column not in downloaded_columns:
+                        connection.execute(
+                            f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}"
+                        )
                 self._ensure_recording_identities(connection)
                 connection.execute(
                     """
@@ -686,7 +697,19 @@ class JobRepository:
                     SELECT LOWER(source_name) AS source_key, MAX(id) AS job_id
                     FROM jobs WHERE status = 'complete' GROUP BY LOWER(source_name)
                 )
-                SELECT jobs.id, jobs.source_name, jobs.wav_path, jobs.extended_path
+                SELECT jobs.id, jobs.source_name, jobs.wav_path, jobs.extended_path,
+                (SELECT id FROM downloaded_tracks
+                 WHERE file_path=jobs.source_path
+                 ORDER BY id LIMIT 1) AS downloaded_track_id,
+                (SELECT detected_key FROM downloaded_tracks
+                 WHERE file_path=jobs.source_path
+                 ORDER BY id LIMIT 1) AS latest_detected_key,
+                (SELECT key_confidence FROM downloaded_tracks
+                 WHERE file_path=jobs.source_path
+                 ORDER BY id LIMIT 1) AS latest_key_confidence,
+                (SELECT key_analyzed_at FROM downloaded_tracks
+                 WHERE file_path=jobs.source_path
+                 ORDER BY id LIMIT 1) AS key_analyzed_at
                 FROM latest JOIN jobs ON jobs.id = latest.job_id
                 ORDER BY jobs.id DESC"""
             ).fetchall()
@@ -1136,6 +1159,12 @@ class JobRepository:
                 for row in connection.execute("SELECT key, value_json FROM web_settings")
             }
             settings["music_library_path"] = str(new_root)
+            connection.execute(
+                """INSERT INTO system_state (key,value,updated_at) VALUES (?,?,?)
+                ON CONFLICT(key) DO UPDATE SET value=excluded.value,
+                updated_at=excluded.updated_at""",
+                ("music_library_path", str(new_root), _now()),
+            )
             connection.execute("DELETE FROM web_settings")
             connection.executemany(
                 "INSERT INTO web_settings (key, value_json, updated_at) VALUES (?, ?, ?)",
@@ -1855,6 +1884,21 @@ class JobRepository:
                 "WHERE id=?",
                 (artwork_url, artwork_path, _now(), track_id),
             )
+
+    def update_downloaded_track_key_analysis(
+        self, track_id: int, *, detected_key: str, confidence: float,
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Save a key-only result without replacing the track's other analysis."""
+        now = _now()
+        with self._lock, closing(self._connect()) as connection, connection:
+            connection.execute(
+                """UPDATE downloaded_tracks SET detected_key=?, key_confidence=?,
+                key_candidates_json=?, key_analyzed_at=?, updated_at=? WHERE id=?""",
+                (detected_key, confidence,
+                 json.dumps(candidates, separators=(",", ":")), now, now, track_id),
+            )
+        return self.get_downloaded_track(track_id) or {}
 
     def record_import_failure(
         self, *, playlist_name: str, title: str, artist: str = "",

@@ -2061,7 +2061,7 @@ async function loadDownloadedLibrary() {
   artworkSelect.value = downloadedUiState.artwork;
   qualitySelect.value = downloadedUiState.quality;
   sort.value = downloadedUiState.sort;
-  const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const retagSelected = $('#downloaded-retag-selected');
+  const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const keyAnalyzeSelected=$('#downloaded-key-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const retagSelected = $('#downloaded-retag-selected');
   const rescanGenres = $('#downloaded-rescan-genres');
   const reconcileFiles = $('#downloaded-reconcile-files');
   const retagAll = $('#downloaded-retag-all');
@@ -2211,7 +2211,7 @@ async function loadDownloadedLibrary() {
   }).catch(() => {});
   fetch('/api/downloaded-library/retag-all-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
     if (batch.status === 'none') return;
-    renderTagFailures(batch,'artwork');
+    renderTagFailures(batch,'wav-tags');
     if (batch.status === 'processing') {
       retagAll.disabled = true; retagAll.textContent = 'Syncing all…';
       watchTagBatch(batch.batch_id);
@@ -2221,7 +2221,7 @@ async function loadDownloadedLibrary() {
   }).catch(() => {});
   fetch('/api/downloaded-library/artwork-sync-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
     if (batch.status === 'none') return;
-    renderTagFailures(batch);
+    renderTagFailures(batch,'artwork');
     if (batch.status === 'processing') {
       syncArtwork.disabled=true; rescanGenres.disabled=true; retagAll.disabled=true; syncArtwork.textContent='Syncing artwork…';
       watchArtworkBatch(batch.batch_id);
@@ -2235,6 +2235,7 @@ async function loadDownloadedLibrary() {
     $('#downloaded-selection-count').textContent = `${selected.length} selected${selected.length ? ` · ${missingArtwork.length} need artwork` : ''}`;
     downloadSelected.disabled = !downloadable.length;
     analyzeSelected.disabled = !analyzable.length;
+    keyAnalyzeSelected.disabled = !downloadable.length;
     reanalyzeSelected.disabled = !downloadable.length;
     removeSelected.disabled = !selected.length;
     changeGenre.disabled = !selected.length;
@@ -2381,6 +2382,7 @@ async function loadDownloadedLibrary() {
       showView('workspace-view'); await loadJobs();
     } catch (error) { alert(error.message); analyzeSelected.textContent = 'Analyze'; refreshSelection(); }
   };
+  keyAnalyzeSelected.onclick=()=>{const ids=[...downloadedSelection.values()].filter(track=>track.available).map(track=>Number(track.id));startKeyAnalysis(ids,keyAnalyzeSelected,async()=>{downloadedLoadedAt=0;libraryLoadedAt=0;await loadDownloadedLibrary();});};
   analyzeMatching.onclick = async () => {
     if (!analyzableTotal || !await confirmAction(`Add all ${analyzableTotal} matching track${analyzableTotal===1?'':'s'} that still need analysis to the processing queue? Analysis will run with safe automatic concurrency.`, {title:'Analyze matching tracks', acceptLabel:'Add to queue'})) return;
     analyzeMatching.disabled=true; analyzeMatching.textContent='Adding all to queue…';
@@ -2480,6 +2482,7 @@ async function loadDownloadedLibrary() {
     inspector.querySelector('.inspector-library')?.addEventListener('click', () => { closeDownloadedInspector(); showView('library-view'); });
     inspector.querySelector('.inspector-copy-path')?.addEventListener('click', async event => {try{await navigator.clipboard.writeText(track.absolute_path||'');event.currentTarget.textContent='Path copied';}catch(_){event.currentTarget.textContent='Copy failed';}});
     inspector.querySelector('.inspector-reveal')?.addEventListener('click', async event => {const response=await fetch(`/api/downloaded-library/tracks/${track.id}/reveal`,{method:'POST'}),payload=await response.json();event.currentTarget.textContent=response.ok?'Revealed in Finder':payload.detail||'Could not reveal';});
+    inspector.querySelector('.inspector-analyze-key')?.addEventListener('click',async event=>{const action=event.currentTarget,status=inspector.querySelector('.key-analysis-result');action.disabled=true;action.textContent='Analyzing key…';status.textContent='Comparing tonal estimates; all other analysis remains unchanged.';try{const response=await fetch(`/api/downloaded-library/tracks/${track.id}/analyze-key`,{method:'POST'}),payload=await response.json();if(!response.ok)throw new Error(payload.detail||'Key analysis failed.');track.detected_key=payload.detected_key;track.key_confidence=payload.key_confidence;track.key_analyzed_at=payload.key_analyzed_at;inspector.querySelector('.inspector-key-value').textContent=payload.detected_key||'Unknown';inspector.querySelector('.inspector-key-value').nextElementSibling.textContent=`Key · ${Math.round(Number(payload.key_confidence||0))}%`;status.textContent=`Complete · ${payload.detected_key} is the current estimate.`;action.textContent='Analyze key again';}catch(error){status.textContent=error.message;action.textContent='Try key analysis again';}finally{action.disabled=false;}});
     const familyForm=inspector.querySelector('.inspector-family-link'),familyContent=inspector.querySelector('.inspector-family-content'),familySuggestions=inspector.querySelector('.inspector-family-suggestions');
     const familySection=inspector.querySelector('.inspector-family');
     familySection.classList.add('is-collapsed');
@@ -3251,6 +3254,7 @@ function bindLibrarySelection() {
   const genreButton = $('#library-change-genre');
   const removeButton = $('#library-remove-selected');
   const reanalyzeButton = $('#library-reanalyze-selected');
+  const keyAnalyzeButton = $('#library-key-analyze-selected');
   const refreshSelection = () => {
     const selected = boxes.filter(box => box.checked).length;
     const fileTypes = typeBoxes.filter(box => box.checked).length;
@@ -3260,6 +3264,7 @@ function bindLibrarySelection() {
     genreButton.disabled = selected === 0 || catalogSelected !== selected || !genreInput.value.trim();
     removeButton.disabled = selected === 0;
     reanalyzeButton.disabled = selected === 0 || catalogSelected !== selected;
+    keyAnalyzeButton.disabled = selected === 0 || catalogSelected !== selected;
     document.querySelector('.library-selection').classList.toggle('has-selection', selected > 0);
     boxes.forEach(box => box.closest('.library-card').classList.toggle('is-selected', box.checked));
     all.checked = boxes.length > 0 && selected === boxes.length;
@@ -3308,6 +3313,7 @@ function bindLibrarySelection() {
     try { const response=await fetch('/api/downloaded-library/reanalyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});const result=await response.json();if(!response.ok)throw new Error(result.detail||'Could not queue reanalysis.');showView('workspace-view');await loadJobs(); }
     catch(error){alert(error.message);reanalyzeButton.textContent='Reanalyze';refreshSelection();}
   };
+  keyAnalyzeButton.onclick=()=>{const cards=boxes.filter(box=>box.checked).map(box=>box.closest('.library-card'));const ids=cards.map(card=>Number(card.dataset.downloadedId)).filter(Boolean);startKeyAnalysis(ids,keyAnalyzeButton,async()=>{libraryLoadedAt=0;await Promise.all([loadLibrary(),loadReports()]);});};
   button.onclick = async () => {
     const jobIds = boxes.filter(box => box.checked).map(box => Number(box.value));
     const fileTypes = typeBoxes.filter(box => box.checked).map(box => box.value);
@@ -3407,10 +3413,12 @@ function reportKeyReviewPanel(song) {
   const keys = ['C major','C# major','D major','D# major','E major','F major','F# major','G major','G# major','A major','A# major','B major','C minor','C# minor','D minor','D# minor','E minor','F minor','F# minor','G minor','G# minor','A minor','A# minor','B minor'];
   const selected = song.key_verification?.verified_key || song.key || '';
   const candidates = (song.key_candidates || []).map(candidate => `<button type="button" class="key-candidate-choice" data-key="${escapeHtml(candidate.key)}">${escapeHtml(candidate.key)} · ${Math.round(Number(candidate.confidence || 0))}%</button>`).join('');
-  return `<section class="key-review-panel"><div><h3>Verify musical key</h3><p>${song.key_verified ? `Manually verified · analyzer originally selected ${escapeHtml(song.detected_key || '—')}` : 'Confirm or correct the analysis. Verified keys are protected from future reanalysis.'}</p></div><form data-source="${escapeHtml(song.source_name)}" data-detected="${escapeHtml(song.detected_key || song.key || '')}"><div class="key-review-candidates">${candidates}</div><select name="verified_key" aria-label="Verified musical key">${keys.map(key => `<option value="${key}" ${key===selected?'selected':''}>${key}</option>`).join('')}</select><input name="notes" value="${escapeHtml(song.key_verification?.notes || '')}" placeholder="Optional verification notes"><button type="submit">${song.key_verified ? 'Update verified key' : 'Verify key'}</button>${song.key_verified ? '<button type="button" class="secondary clear-key-verification">Remove verification</button>' : ''}<span class="key-review-message"></span></form></section>`;
+  const trackId=reportJob(song)?.downloaded_track_id;
+  return `<section class="key-review-panel"><div><h3>Verify musical key</h3><p>${song.key_verified ? `Manually verified · analyzer originally selected ${escapeHtml(song.detected_key || '—')}` : 'Confirm or correct the analysis. Verified keys are protected from future reanalysis.'}</p></div>${trackId?`<button type="button" class="button secondary report-analyze-key" data-track-id="${trackId}">Analyze key only</button>`:''}<form data-source="${escapeHtml(song.source_name)}" data-detected="${escapeHtml(song.detected_key || song.key || '')}"><div class="key-review-candidates">${candidates}</div><select name="verified_key" aria-label="Verified musical key">${keys.map(key => `<option value="${key}" ${key===selected?'selected':''}>${key}</option>`).join('')}</select><input name="notes" value="${escapeHtml(song.key_verification?.notes || '')}" placeholder="Optional verification notes"><button type="submit">${song.key_verified ? 'Update verified key' : 'Verify key'}</button>${song.key_verified ? '<button type="button" class="secondary clear-key-verification">Remove verification</button>' : ''}<span class="key-review-message"></span></form></section>`;
 }
 
 function bindReportFeedback() {
+  document.querySelectorAll('.report-analyze-key:not([data-bound])').forEach(button=>{button.dataset.bound='true';button.onclick=()=>startKeyAnalysis([Number(button.dataset.trackId)],button,loadReports);});
   document.querySelectorAll('.report-feedback form:not([data-bound])').forEach(form => {
     form.dataset.bound = 'true';
     form.addEventListener('submit', async event => {
@@ -3449,7 +3457,7 @@ function renderReports() {
     const extended = reportHasEdit(song);
     const health = reportHealth(song);
     const keyDisagreement = new Set((song.key_candidates || []).map(candidate => candidate.key)).size > 1;
-    const issueMatches = issue === 'all' || (issue === 'attention' && health.attention) || (issue === 'low-grid' && health.flags.grid) || (issue === 'low-key' && health.flags.key) || (issue === 'key-disagreement' && keyDisagreement && !song.key_verified) || (issue === 'key-verified' && song.key_verified) || (issue === 'key-review' && !song.key_verified && (health.flags.key || keyDisagreement)) || (issue === 'high-risk' && health.flags.risk) || (issue === 'slow' && health.flags.slow) || (issue === 'healthy' && health.healthy) || (issue === 'mix-ready' && health.mixReady);
+    const issueMatches = issue === 'all' || (issue === 'attention' && health.attention) || (issue === 'low-grid' && health.flags.grid) || (issue === 'low-key' && health.flags.key) || (issue === 'key-missing' && !song.key) || (issue === 'key-disagreement' && keyDisagreement && !song.key_verified) || (issue === 'key-verified' && song.key_verified) || (issue === 'key-review' && !song.key_verified && (health.flags.key || keyDisagreement)) || (issue === 'high-risk' && health.flags.risk) || (issue === 'slow' && health.flags.slow) || (issue === 'healthy' && health.healthy) || (issue === 'mix-ready' && health.mixReady);
     return matches && issueMatches && (filter === 'all' || (filter === 'extended' ? extended : !extended));
   });
   const sort = $('#report-sort').value;
@@ -3506,8 +3514,9 @@ async function loadReports() {
   reportSongs = Object.values(report.songs || {}).filter(song => song.status !== 'removed').reverse();
   reportKeyVerificationStats = keyStats;
   const verificationMap = new Map((keyStats.items || []).map(item => [item.source_name.toLowerCase(), item]));
-  reportSongs.forEach(song => { const verification = verificationMap.get(song.source_name.toLowerCase()); song.detected_key = song.key; song.key_verification = verification || null; song.key_verified = Boolean(verification); if (verification) { song.key = verification.verified_key; song.key_confidence = 1; } });
   reportJobs = jobs;
+  const keyRuns=new Map(jobs.filter(job=>job.key_analyzed_at).map(job=>[job.source_name.toLowerCase(),job]));
+  reportSongs.forEach(song => { const run=keyRuns.get(song.source_name.toLowerCase());if(run){song.key=run.detected_key;song.key_confidence=Number(run.key_confidence||0)/100;song.key_analyzed_at=run.key_analyzed_at;}const verification = verificationMap.get(song.source_name.toLowerCase()); song.detected_key = song.key; song.key_verification = verification || null; song.key_verified = Boolean(verification); if (verification) { song.key = verification.verified_key; song.key_confidence = 1; } });
   reportFeedback = feedback;
   const averageFraction = values => values.length ? `${Math.round(100 * values.reduce((a,b) => a + b, 0) / values.length)}%` : '—';
   const gridConfidence = reportSongs.filter(song => song.beat_grid_confidence != null).map(song => Number(song.beat_grid_confidence)).filter(Number.isFinite);
@@ -3616,6 +3625,7 @@ async function loadLibraryStatus() {
     $('#library-free-storage').textContent=formatBytes(status.free_bytes);
     $('#library-free-storage-detail').textContent=status.capacity_bytes?`of ${formatBytes(status.capacity_bytes)} drive capacity`:'Drive capacity unavailable';
     renderAudioQualitySummary(status.audio_quality);
+    const integrity=status.location_integrity||{};const locationPanel=$('#library-location-integrity');const outside=Number(integrity.outside_count||0);locationPanel.hidden=!outside;$('#library-location-message').textContent=outside?`${outside} track${outside===1?' is':'s are'} stored outside ${integrity.configured_root}. Copy, verify, relink, then remove the old files.`:'';
     const badge=$('#library-online-state');badge.textContent=status.online?'Library online':'Library offline';badge.className=`library-state ${status.online?'online':'offline'}`;
     $('#library-offline-banner').hidden=status.online;document.body.classList.toggle('library-is-offline',!status.online);
     return status;
@@ -3624,6 +3634,8 @@ async function loadLibraryStatus() {
   })();
   return libraryStatusRequest;
 }
+async function pollLibraryConsolidation(batchId){const button=$('#library-consolidate');const response=await fetch(`/api/settings/library-locations/consolidate/${batchId}`,{cache:'no-store'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=batch.detail||'Consolidation failed';return;}button.textContent=`Verified ${batch.processed}/${batch.total}`;if(batch.status==='processing'){setTimeout(()=>pollLibraryConsolidation(batchId),800);return;}button.disabled=false;button.textContent=batch.failed?`${batch.moved} moved · ${batch.failed} failed`:'Consolidation complete';downloadedLoadedAt=0;libraryLoadedAt=0;await Promise.all([loadLibraryStatus(),loadDownloadedLibrary(),loadLibrary()]);}
+$('#library-consolidate').addEventListener('click',async()=>{const button=$('#library-consolidate');if(!confirm('Copy every out-of-library track to the configured library, verify its SHA-256 checksum, relink catalog and analysis records, then remove the original file?'))return;button.disabled=true;button.textContent='Preparing…';const response=await fetch('/api/settings/library-locations/consolidate',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=batch.detail||'Could not consolidate';return;}if(batch.batch_id)pollLibraryConsolidation(batch.batch_id);else{button.disabled=false;button.textContent='Nothing to consolidate';await loadLibraryStatus();}});
 let qualityScanTimer=null;
 async function pollAudioQualityScan(batchId){
   const batch=await fetch(`/api/downloaded-library/audio-quality/${batchId}`,{cache:'no-store'}).then(response=>response.json());
@@ -3637,7 +3649,7 @@ async function pollAudioQualityScan(batchId){
 $('#scan-audio-quality').addEventListener('click',async()=>{const button=$('#scan-audio-quality');button.disabled=true;button.textContent='Starting…';const response=await fetch('/api/downloaded-library/audio-quality',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent='Analyze audio quality';$('#quality-scan-message').textContent=batch.detail||'Could not start quality analysis.';return;}pollAudioQualityScan(batch.batch_id);});
 fetch('/api/downloaded-library/audio-quality-latest',{cache:'no-store'}).then(response=>response.json()).then(batch=>{if(batch.summary)renderAudioQualitySummary(batch.summary);if(batch.status==='processing')pollAudioQualityScan(batch.batch_id);}).catch(()=>{});
 function renderRelocationState(state) {
-  if(!state?.status)return;
+  if(!state?.status){resetRelocationUi();return;}
   const panel=$('#relocation-progress');panel.hidden=false;panel.classList.toggle('complete',state.status==='complete');panel.classList.toggle('failed',['failed','canceled'].includes(state.status));
   $('#relocation-stage').textContent=state.stage||state.status;$('#relocation-percent').textContent=`${Math.round(Number(state.progress||0))}%`;$('#relocation-progress-bar').value=Number(state.progress||0);
   $('#relocation-detail').textContent=state.error||`${state.processed||0}${state.total?` of ${state.total}`:''}${state.original_retained?' · Original library retained':''}`;
@@ -3645,7 +3657,8 @@ function renderRelocationState(state) {
   $('#relocation-rollback').hidden=!(state.status==='complete'&&state.database_backup);
   if(state.status==='processing'){clearTimeout(relocationPollTimer);relocationPollTimer=setTimeout(loadRelocationState,750);}else if(state.status==='complete'){loadLibraryStatus();loadConfig();downloadedLoadedAt=0;libraryLoadedAt=0;}
 }
-async function loadRelocationState(){try{const response=await fetch('/api/settings/library-relocation',{cache:'no-store'});if(response.ok)renderRelocationState(await response.json());}catch{} }
+function resetRelocationUi(){clearTimeout(relocationPollTimer);$('#relocation-progress').hidden=true;$('#relocation-plan-summary').hidden=true;$('#relocation-plan-summary').replaceChildren();$('#relocation-stage').textContent='Preparing…';$('#relocation-percent').textContent='0%';$('#relocation-progress-bar').value=0;$('#relocation-detail').textContent='';$('#relocation-start').hidden=false;$('#relocation-cancel').hidden=false;$('#relocation-rollback').hidden=true;}
+async function loadRelocationState(){try{const response=await fetch('/api/settings/library-relocation',{cache:'no-store'});if(!response.ok)return;const state=await response.json();if(state.status==='canceled'){await fetch('/api/settings/library-relocation',{method:'DELETE'});resetRelocationUi();return;}renderRelocationState(state);}catch{} }
 $('#library-relocation-form').addEventListener('submit',async event=>{
   event.preventDefault();const button=$('#relocation-plan');button.disabled=true;button.textContent='Checking…';
   const response=await fetch('/api/settings/library-relocation/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destination:$('#relocation-destination').value.trim(),mode:$('#relocation-mode').value,verification:$('#relocation-verification').value})});

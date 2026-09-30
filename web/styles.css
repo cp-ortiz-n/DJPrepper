@@ -233,6 +233,8 @@ h1 em { color: var(--lime); font-style: normal; }
 .inspector-family-heading-actions .inspector-family-close { width:34px; min-width:34px; padding:0; }
 .inspector-family-content { display:grid; gap:6px; margin-top:12px; }
 .inspector-family-content article { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:9px 10px; border-radius:9px; background:rgba(255,255,255,.025); }
+.inspector-family-content article>div { min-width:0; }
+.inspector-family-content article b { overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; font-size:11px; line-height:1.3; }
 .inspector-family-content article b,.inspector-family-content article span { display:block; }
 .inspector-family-content article span { margin-top:2px; color:var(--muted); font-size:9px; }
 .inspector-family-content article em { color:var(--accent); font-size:9px; font-style:normal; }
