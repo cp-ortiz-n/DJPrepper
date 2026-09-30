@@ -599,7 +599,13 @@ class CueEditRequest(BaseModel):
 
 
 def _effective_settings() -> dict:
-    return {**WEB_DEFAULTS, **repository.get_settings()}
+    overrides = repository.get_settings()
+    durable_library_path = repository.get_system_state("music_library_path")
+    return {
+        **WEB_DEFAULTS,
+        **({"music_library_path": durable_library_path} if durable_library_path else {}),
+        **overrides,
+    }
 
 
 def _music_library_root() -> Path:
@@ -682,13 +688,20 @@ def save_settings(settings: WebSettings) -> dict:
         raise HTTPException(400, "PCM depth must be 16 or 24")
     overrides = {key: value for key, value in values.items() if value != WEB_DEFAULTS[key]}
     repository.replace_settings(overrides)
+    repository.set_system_state("music_library_path", values["music_library_path"])
+    with library_status_cache_lock:
+        library_status_cache.update(payload=None, expires_at=0.0)
+    if Path(values["music_library_path"]).is_dir():
+        _refresh_wav_tag_audit()
     return {"defaults": WEB_DEFAULTS, "effective": _effective_settings(), "overrides": overrides}
 
 
 @app.delete("/api/settings")
 def reset_settings() -> dict:
     repository.replace_settings({})
-    return {"defaults": WEB_DEFAULTS, "effective": WEB_DEFAULTS, "overrides": {}}
+    with library_status_cache_lock:
+        library_status_cache.update(payload=None, expires_at=0.0)
+    return {"defaults": WEB_DEFAULTS, "effective": _effective_settings(), "overrides": {}}
 
 
 @app.get("/api/settings/library-status")
@@ -2529,7 +2542,8 @@ def _authorized_import_worker(import_id: str, request: AuthorizedImportRequest) 
                     )
                 process = subprocess.Popen(
                     _scdl_download_command(request.url, temporary_path),
-                    capture_output=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                     text=True,
                 )
                 while process.poll() is None:
@@ -2770,6 +2784,7 @@ def _downloaded_track_payload(track: dict) -> dict:
         "suggested_genre": suggested_genre,
         "needs_genre": current_genre in {"Other", "Latin / Other"},
     }
+    return payload
 
 
 def _run_audio_quality_batch(batch_id: str) -> None:
