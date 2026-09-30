@@ -56,6 +56,7 @@ from helpers.wav_metadata import (
     write_wav_metadata,
 )
 from helpers.web_database import JobRepository
+from helpers.web_configuration import PresetStore, WebConfigurationService, WebSettings, web_defaults
 from helpers.library_relocation import LibraryRelocationCoordinator
 from helpers.web_jobs import WebJobService
 from settings import (
@@ -290,57 +291,11 @@ def index() -> FileResponse:
     return FileResponse(WEB / "index.html")
 
 
-WEB_DEFAULTS = {
-    "music_library_path": DEFAULT_MUSIC_LIBRARY,
-    "preset": DEFAULT_PRESET or "auto",
-    "intro_bars": DEFAULT_INTRO_BARS,
-    "outro_bars": DEFAULT_OUTRO_BARS,
-    "use_stems": DEFAULT_USE_STEMS,
-    "auto_bars": DEFAULT_AUTO_BAR_SELECTION,
-    "minimum_intro_loop_quality": DEFAULT_MINIMUM_INTRO_LOOP_QUALITY,
-    "minimum_outro_loop_quality": DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY,
-    "pcm_bits": DEFAULT_PCM_BITS,
-    "preview_seconds": DEFAULT_PREVIEW_SECONDS,
-    "export_cues": DEFAULT_EXPORT_CUES,
-    "maximum_repetitions": 8,
-    "crossfade_ms": MINIMUM_CROSSFADE_MS,
-    "candidate_count": DEFAULT_CANDIDATE_COUNT,
-    "intro_search_seconds": INTRO_SEARCH_SECONDS,
-    "outro_search_seconds": OUTRO_SEARCH_SECONDS,
-    "maximum_vocal_coverage_percent": MAXIMUM_VOCAL_COVERAGE * 100,
-    "maximum_vocal_boundary_risk_percent": MAXIMUM_VOCAL_BOUNDARY_RISK * 100,
-    "maximum_buildup_risk_percent": MAXIMUM_BUILDUP_RISK * 100,
-    "maximum_bass_reset_risk_percent": MAXIMUM_BASS_RESET_RISK * 100,
-    "minimum_stem_reliability_percent": MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100,
-}
-
-
-class WebSettings(BaseModel):
-    music_library_path: str = DEFAULT_MUSIC_LIBRARY
-    preset: str = "auto"
-    intro_bars: int = 8
-    outro_bars: int = 8
-    use_stems: bool = False
-    auto_bars: bool = True
-    minimum_intro_loop_quality: float = Field(65.0, ge=0, le=100)
-    minimum_outro_loop_quality: float = Field(65.0, ge=0, le=100)
-    pcm_bits: int = 24
-    preview_seconds: float = Field(8.0, gt=0, le=60)
-    export_cues: bool = True
-    maximum_repetitions: int = Field(8, ge=1, le=8)
-    crossfade_ms: float = Field(MINIMUM_CROSSFADE_MS, ge=1, le=100)
-    candidate_count: int = Field(DEFAULT_CANDIDATE_COUNT, ge=1, le=8)
-    intro_search_seconds: float = Field(INTRO_SEARCH_SECONDS, ge=15, le=600)
-    outro_search_seconds: float = Field(OUTRO_SEARCH_SECONDS, ge=15, le=600)
-    maximum_vocal_coverage_percent: float = Field(MAXIMUM_VOCAL_COVERAGE * 100, ge=0, le=100)
-    maximum_vocal_boundary_risk_percent: float = Field(
-        MAXIMUM_VOCAL_BOUNDARY_RISK * 100, ge=0, le=100
-    )
-    maximum_buildup_risk_percent: float = Field(MAXIMUM_BUILDUP_RISK * 100, ge=0, le=100)
-    maximum_bass_reset_risk_percent: float = Field(MAXIMUM_BASS_RESET_RISK * 100, ge=0, le=100)
-    minimum_stem_reliability_percent: float = Field(
-        MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, ge=0, le=100
-    )
+WEB_DEFAULTS = web_defaults(DEFAULT_MUSIC_LIBRARY)
+preset_store = PresetStore(WEB_PRESETS)
+configuration_service = WebConfigurationService(
+    settings_repository, WEB_DEFAULTS, preset_store
+)
 
 
 class LibraryRelocationRequest(BaseModel):
@@ -369,52 +324,23 @@ class PresetRequest(BaseModel):
 
 
 def _preset_state() -> dict:
-    try:
-        state = json.loads(WEB_PRESETS.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        state = {}
-    return {
-        "definitions": dict(state.get("definitions") or {}),
-        "hidden": list(state.get("hidden") or []),
-    }
+    return preset_store.state()
 
 
 def _save_preset_state(state: dict) -> None:
-    WEB_PRESETS.parent.mkdir(parents=True, exist_ok=True)
-    temporary = WEB_PRESETS.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(WEB_PRESETS)
+    preset_store.save(state)
 
 
 def _available_presets() -> dict[str, EditPreset]:
-    state = _preset_state()
-    available = dict(PRESETS)
-    for name, values in state["definitions"].items():
-        try:
-            available[name] = EditPreset(**values)
-        except (TypeError, ValueError):
-            continue
-    for name in state["hidden"]:
-        available.pop(name, None)
-    return available
+    return preset_store.available()
 
 
 def _preset_payload() -> list[dict]:
-    state = _preset_state()
-    return [
-        {
-            "name": name,
-            **preset.__dict__,
-            "built_in": name in PRESETS,
-            "modified": name in state["definitions"],
-        }
-        for name, preset in _available_presets().items()
-    ]
+    return preset_store.payload()
 
 
 def _preset_snapshot(name: str) -> dict:
-    preset = _available_presets().get(name)
-    return {"preset_definition": preset.__dict__} if preset is not None else {}
+    return preset_store.snapshot(name)
 
 
 class FeedbackRequest(BaseModel):
@@ -633,13 +559,7 @@ class CueEditRequest(BaseModel):
 
 
 def _effective_settings() -> dict:
-    overrides = settings_repository.get_settings()
-    durable_library_path = settings_repository.get_system_state("music_library_path")
-    return {
-        **WEB_DEFAULTS,
-        **({"music_library_path": durable_library_path} if durable_library_path else {}),
-        **overrides,
-    }
+    return configuration_service.effective()
 
 
 def _music_library_root() -> Path:
@@ -731,24 +651,9 @@ def config() -> dict:
 def save_settings(settings: WebSettings) -> dict:
     values = settings.model_dump()
     try:
-        library_root = Path(values["music_library_path"].strip()).expanduser()
-        if not library_root.is_absolute():
-            raise ValueError
-        values["music_library_path"] = str(library_root.resolve())
-    except (OSError, ValueError):
-        raise HTTPException(400, "Music Library Location must be an absolute path")
-    if values["preset"] != "auto" and values["preset"] not in _available_presets():
-        raise HTTPException(400, "Unknown preset")
-    if (
-        values["intro_bars"] not in SUPPORTED_BAR_COUNTS
-        or values["outro_bars"] not in SUPPORTED_BAR_COUNTS
-    ):
-        raise HTTPException(400, "Unsupported bar count")
-    if values["pcm_bits"] not in (16, 24):
-        raise HTTPException(400, "PCM depth must be 16 or 24")
-    overrides = {key: value for key, value in values.items() if value != WEB_DEFAULTS[key]}
-    settings_repository.replace_settings(overrides)
-    settings_repository.set_system_state("music_library_path", values["music_library_path"])
+        overrides = configuration_service.persist(values)
+    except (OSError, ValueError) as error:
+        raise HTTPException(400, str(error)) from error
     with library_status_cache_lock:
         library_status_cache.update(payload=None, expires_at=0.0)
     if Path(values["music_library_path"]).is_dir():
@@ -758,7 +663,7 @@ def save_settings(settings: WebSettings) -> dict:
 
 @app.delete("/api/settings")
 def reset_settings() -> dict:
-    settings_repository.replace_settings({})
+    configuration_service.reset()
     with library_status_cache_lock:
         library_status_cache.update(payload=None, expires_at=0.0)
     return {"defaults": WEB_DEFAULTS, "effective": _effective_settings(), "overrides": {}}
