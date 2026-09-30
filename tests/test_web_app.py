@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import io
+import json
 import tempfile
 import threading
 import time
@@ -12,18 +12,19 @@ from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
+import web_app as web_module
 from helpers.config import EditConfig
 from helpers.exceptions import ConfigurationError
+from helpers.import_service import LibraryOfflineError
 from helpers.web_database import JobRepository
 from helpers.web_jobs import DatabaseProgress, WebJobService
-import web_app as web_module
 from web_app import (
     AuthorizedImportRequest,
     BatchDownloadRequest,
-    _best_youtube_match,
-    _downloaded_track_payload,
     _authorized_source_provider,
+    _best_youtube_match,
     _catalog_genre_category,
+    _downloaded_track_payload,
     _generalized_genre,
     _genre_path_parts,
     _playlist_csv_tracks,
@@ -218,7 +219,8 @@ class JobRepositoryTests(unittest.TestCase):
             tracked = root / "Other" / "Tracked.wav"
             extra = root / "Other" / "Extra.wav"
             tracked.parent.mkdir(parents=True)
-            tracked.touch(); extra.touch()
+            tracked.touch()
+            extra.touch()
             track_id = catalog.upsert_downloaded_track(
                 title="Tracked", artist="Artist", file_path=tracked,
                 genre_category="Other", playlist_name="Inbox",
@@ -1061,7 +1063,14 @@ class WebApiTests(unittest.TestCase):
 
     def test_authorized_import_accepts_soundcloud_tracks(self) -> None:
         worker = Mock()
-        with patch.object(web_module.threading, "Thread", return_value=worker):
+        with (
+            patch.object(web_module.threading, "Thread", return_value=worker),
+            patch.object(
+                web_module.import_service,
+                "require_library_online",
+                return_value=Path("/Volumes/TestLibrary"),
+            ),
+        ):
             response = self.client.post(
                 "/api/imports/authorized",
                 json={
@@ -1073,6 +1082,23 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(_authorized_source_provider("https://on.soundcloud.com/abc"), "soundcloud")
         worker.start.assert_called_once()
+
+    def test_authorized_import_refuses_an_offline_library(self) -> None:
+        with patch.object(
+            web_module.import_service,
+            "require_library_online",
+            side_effect=LibraryOfflineError("Music library is offline"),
+        ):
+            response = self.client.post(
+                "/api/imports/authorized",
+                json={
+                    "url": "https://soundcloud.com/example/authorized-mix",
+                    "rights_basis": "creative-commons",
+                    "confirmation": True,
+                },
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("offline", response.json()["detail"])
 
     def test_soundcloud_download_uses_scdl_and_blocks_playlists(self) -> None:
         command = _scdl_download_command(

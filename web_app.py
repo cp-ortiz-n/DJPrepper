@@ -39,12 +39,19 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.middleware.gzip import GZipMiddleware
 
-from helpers.audio_loader import SUPPORTED_EXTENSIONS, load_audio
 from helpers.analysis import analyze_key
+from helpers.audio_loader import SUPPORTED_EXTENSIONS, load_audio
 from helpers.audio_quality import analyze_audio_quality
 from helpers.cache import AnalysisCache
 from helpers.feedback_report import append_web_feedback
+from helpers.import_routes import AuthorizedImportRequest, create_import_router
+from helpers.import_service import (
+    ImportService,
+    authorized_source_provider,
+    scdl_download_command,
+)
 from helpers.library_backup import LibraryBackupService
+from helpers.library_relocation import LibraryRelocationCoordinator
 from helpers.presets import PRESETS, EditPreset
 from helpers.track_overrides import load_track_overrides
 from helpers.transition_scorer import assess_custom_insertion
@@ -56,9 +63,9 @@ from helpers.wav_metadata import (
     write_wav_metadata,
 )
 from helpers.web_database import JobRepository
-from helpers.library_relocation import LibraryRelocationCoordinator
 from helpers.web_jobs import WebJobService
 from settings import (
+    CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,
     DEFAULT_CANDIDATE_COUNT,
     DEFAULT_EXPORT_CUES,
@@ -70,7 +77,6 @@ from settings import (
     DEFAULT_PRESET,
     DEFAULT_PREVIEW_SECONDS,
     DEFAULT_USE_STEMS,
-    CACHE_FOLDER_NAME,
     INPUT_FOLDER_NAME,
     INTRO_SEARCH_SECONDS,
     MAXIMUM_BASS_RESET_RISK,
@@ -105,9 +111,6 @@ library_relocation = LibraryRelocationCoordinator(
 pending_backup_restores: dict[str, Path] = {}
 repository.recover_interrupted()
 service = WebJobService(PROJECT, repository)
-authorized_imports: dict[str, dict] = {}
-authorized_import_lock = threading.Lock()
-authorized_import_cancel_events: dict[str, threading.Event] = {}
 playlist_matches: dict[str, dict] = {}
 playlist_match_lock = threading.Lock()
 creative_commons_batches: dict[str, dict] = {}
@@ -417,17 +420,6 @@ class KeyVerificationRequest(BaseModel):
     detected_key: str = Field(default="", max_length=20)
     candidates: list[dict] = Field(default_factory=list, max_length=3)
     notes: str = Field(default="", max_length=1000)
-
-
-class AuthorizedImportRequest(BaseModel):
-    url: str = Field(min_length=10, max_length=500)
-    rights_basis: Literal["own-upload", "creative-commons", "public-domain", "permission"]
-    confirmation: bool
-    process_with_extender: bool = False
-    title: str = Field(default="", max_length=300)
-    artist: str = Field(default="", max_length=300)
-    spotify_uri: str = Field(default="", max_length=200)
-    artwork_url: str = Field(default="", max_length=1000)
 
 
 class SourceMatchRequest(BaseModel):
@@ -1152,13 +1144,9 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
         job for job in repository.list_jobs(limit=10_000)
         if job["status"] in {"queued", "processing", "paused"}
     ]
-    active_imports = any(
+    active_imports = import_service.has_active_imports() or any(
         state.get("status") == "processing"
-        for state in [
-            *authorized_imports.values(),
-            *playlist_matches.values(),
-            *creative_commons_batches.values(),
-        ]
+        for state in [*playlist_matches.values(), *creative_commons_batches.values()]
     )
     if active_jobs or active_imports:
         raise HTTPException(
@@ -1212,9 +1200,7 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
     INPUT.mkdir(parents=True, exist_ok=True)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     reports.mkdir(parents=True, exist_ok=True)
-    with authorized_import_lock:
-        authorized_imports.clear()
-        authorized_import_cancel_events.clear()
+    import_service.clear()
     with playlist_match_lock:
         playlist_matches.clear()
     with creative_commons_batch_lock:
@@ -1436,13 +1422,8 @@ def _spotify_source_metadata(url: str) -> dict:
 
 
 def _authorized_source_provider(url: str) -> str | None:
-    """Return a supported downloadable provider for an explicitly authorized URL."""
-    host = (urlparse(url).hostname or "").casefold()
-    if host in {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}:
-        return "youtube"
-    if host in {"soundcloud.com", "www.soundcloud.com", "m.soundcloud.com", "on.soundcloud.com"}:
-        return "soundcloud"
-    return None
+    """Compatibility wrapper for callers that import this legacy helper."""
+    return authorized_source_provider(url)
 
 
 def _soundcloud_source_metadata(url: str) -> dict:
@@ -1899,7 +1880,7 @@ def _cache_track_artwork(artwork_url: str, destination: Path) -> str:
         content_type = response.headers.get("content-type", "image/jpeg").split(";", 1)[0]
         if content_type not in {"image/jpeg", "image/png"} or len(response.content) > 8_000_000:
             return ""
-        artwork_dir = _music_library_root() / ".artwork"
+        artwork_dir = _require_music_library_online() / ".artwork"
         artwork_dir.mkdir(parents=True, exist_ok=True)
         suffix = ".png" if content_type == "image/png" else ".jpg"
         artwork_file = artwork_dir / f"{hashlib.sha256(artwork_url.encode()).hexdigest()[:24]}{suffix}"
@@ -1920,7 +1901,14 @@ def _creative_commons_worker(
         "failed": [],
     }
     safe_playlist = _safe_folder_name(playlist_name)
-    destination_dir = _music_library_root()
+    try:
+        destination_dir = _require_music_library_online()
+    except Exception as error:
+        with creative_commons_batch_lock:
+            creative_commons_batches[batch_id].update(
+                status="failed", stage="Music library disconnected", error=str(error)
+            )
+        return
     report_dir = OUTPUT / "reports" / "imports" / safe_playlist
     destination_dir.mkdir(parents=True, exist_ok=True)
     report_dir.mkdir(parents=True, exist_ok=True)
@@ -2108,6 +2096,7 @@ def create_creative_commons_batch(request: CreativeCommonsBatchRequest) -> dict:
         for track in request.tracks
     ):
         raise HTTPException(400, "Every batch item must use a YouTube URL")
+    _require_music_library_online()
     batch_id = uuid.uuid4().hex
     with creative_commons_batch_lock:
         creative_commons_batches[batch_id] = {
@@ -2416,6 +2405,7 @@ def _local_audio_import_worker(batch_id: str, staged_dir: Path, playlist_name: s
                     results.append({"filename": source.name, "status": "duplicate", **metadata})
                     continue
                 category = _generalized_genre(metadata["genre"])
+                _require_music_library_online()
                 destination_dir = _genre_directory(category)
                 destination_dir.mkdir(parents=True, exist_ok=True)
                 display_name = " - ".join(value for value in (metadata["artist"], metadata["title"]) if value)
@@ -2482,6 +2472,7 @@ async def create_local_audio_import(
     invalid = [file.filename or "unnamed" for file in files if Path(file.filename or "").suffix.casefold() not in supported]
     if invalid:
         raise HTTPException(400, f"Unsupported audio file: {invalid[0]}")
+    _require_music_library_online()
     batch_id = uuid.uuid4().hex
     safe_playlist = _safe_folder_name(playlist_name or "Local Playlist")
     staged_dir = INPUT / "local-imports" / batch_id
@@ -2543,283 +2534,14 @@ async def create_playlist_file_matches(
     return {"match_id": match_id, "track_count": len(tracks), "playlist_name": playlist_name}
 
 
-def _scdl_executable() -> str:
-    """Locate scdl beside the running Python interpreter or on PATH."""
-    adjacent = Path(sys.executable).with_name("scdl")
-    executable = str(adjacent) if adjacent.is_file() else shutil.which("scdl")
-    if not executable:
-        raise RuntimeError("scdl is not installed. Run pip install -r requirements.txt.")
-    return executable
-
-
 def _scdl_download_command(url: str, destination: Path) -> list[str]:
-    """Build the constrained single-track/mix scdl invocation used by imports."""
-    return [
-        _scdl_executable(), "-l", url, "--path", str(destination),
-        "--no-playlist", "--original-art", "--hide-progress", "--overwrite",
-    ]
+    """Compatibility wrapper for callers that import this legacy helper."""
+    return scdl_download_command(url, destination)
 
 
 def _authorized_import_worker(import_id: str, request: AuthorizedImportRequest) -> None:
-    try:
-        cancel_event = authorized_import_cancel_events[import_id]
-        provider = _authorized_source_provider(request.url)
-        if provider is None:
-            raise RuntimeError("Unsupported authorized audio source")
-        if provider == "youtube":
-            try:
-                import yt_dlp
-            except ImportError as error:
-                raise RuntimeError(
-                    "yt-dlp is not installed. Run pip install -r requirements.txt."
-                ) from error
-        INPUT.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="audioextender-import-") as temporary:
-            temporary_path = Path(temporary)
-            template = str(temporary_path / "%(title).180B.%(ext)s")
-
-            def progress(update: dict) -> None:
-                if cancel_event.is_set():
-                    raise RuntimeError("Import canceled")
-                if update.get("status") != "downloading":
-                    return
-                total = update.get("total_bytes") or update.get("total_bytes_estimate")
-                downloaded = update.get("downloaded_bytes") or 0
-                percent = round(100 * downloaded / total, 1) if total else 0
-                with authorized_import_lock:
-                    authorized_imports[import_id].update(
-                        stage="Downloading authorized audio", progress=percent
-                    )
-
-            if provider == "soundcloud":
-                with authorized_import_lock:
-                    authorized_imports[import_id].update(
-                        stage="Downloading from SoundCloud with scdl", progress=15
-                    )
-                process = subprocess.Popen(
-                    _scdl_download_command(request.url, temporary_path),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                )
-                while process.poll() is None:
-                    if cancel_event.wait(.2):
-                        process.terminate()
-                        try:
-                            process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                        raise RuntimeError("Import canceled")
-                stdout, stderr = process.communicate()
-                completed = subprocess.CompletedProcess(
-                    process.args, process.returncode, stdout, stderr
-                )
-                if process.returncode:
-                    raise subprocess.CalledProcessError(
-                        process.returncode, process.args, stdout, stderr
-                    )
-                audio_extensions = {
-                    ".mp3", ".m4a", ".aac", ".opus", ".ogg", ".flac",
-                    ".wav", ".aif", ".aiff",
-                }
-                downloaded = next(
-                    (path for path in temporary_path.rglob("*")
-                     if path.is_file() and path.suffix.casefold() in audio_extensions),
-                    None,
-                )
-                if downloaded is None:
-                    detail = (completed.stderr or completed.stdout or "").strip()
-                    raise RuntimeError(detail[-1000:] or "scdl did not produce an audio file")
-                source_metadata = _probe_local_audio(downloaded)
-                converted = temporary_path / "soundcloud-import.wav"
-                subprocess.run(
-                    ["ffmpeg", "-y", "-v", "error", "-i", str(downloaded),
-                     "-vn", "-c:a", "pcm_s24le", str(converted)],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                info = {
-                    "id": hashlib.sha256(request.url.encode()).hexdigest()[:24],
-                    "title": source_metadata["title"],
-                    "artist": source_metadata["artist"],
-                    "uploader": source_metadata["artist"],
-                    "duration": source_metadata["duration"],
-                    "thumbnail": request.artwork_url,
-                }
-                wavs = [converted]
-                with authorized_import_lock:
-                    authorized_imports[import_id].update(
-                        stage="SoundCloud audio converted to WAV", progress=75
-                    )
-            else:
-                options = {
-                    "format": "bestaudio/best",
-                    "outtmpl": template,
-                    "noplaylist": True,
-                    "restrictfilenames": True,
-                    "progress_hooks": [progress],
-                    "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
-                    "quiet": True,
-                    "no_warnings": True,
-                }
-                with yt_dlp.YoutubeDL(options) as downloader:
-                    info = downloader.extract_info(request.url, download=True)
-                wavs = list(temporary_path.glob("*.wav"))
-            if not wavs:
-                raise RuntimeError("The authorized source could not be converted to WAV")
-            if cancel_event.is_set():
-                raise RuntimeError("Import canceled")
-            title = str(request.title or info.get("title") or wavs[0].stem).strip() or "Imported Audio"
-            safe_name = (
-                "".join(character for character in title if character not in '<>:"/\\|?*').strip()[
-                    :180
-                ]
-                or "Imported Audio"
-            )
-            raw_source_id = str(info.get("id") or "").strip()
-            catalog_source_id = raw_source_id if provider == "youtube" else f"{provider}:{raw_source_id}"
-            existing_download = _cataloged_download_by_youtube_id(catalog_source_id)
-            destination_dir = _music_library_root() / "Other"
-            destination_dir.mkdir(parents=True, exist_ok=True)
-            if existing_download:
-                destination = Path(existing_download["file_path"])
-            else:
-                destination = destination_dir / f"{safe_name}.wav"
-                counter = 2
-                while destination.exists():
-                    destination = destination_dir / f"{safe_name} ({counter}).wav"
-                    counter += 1
-                shutil.move(str(wavs[0]), destination)
-        artist = str(request.artist or info.get("artist") or info.get("uploader") or "").strip()
-        artwork_url = str(request.artwork_url or info.get("thumbnail") or "")
-        artwork_path = _cache_track_artwork(artwork_url, destination)
-        repository.upsert_downloaded_track(
-            title=title,
-            artist=artist,
-            file_path=destination,
-            # These legacy columns represent the downloadable source identity;
-            # prefix non-YouTube IDs to prevent cross-provider collisions.
-            youtube_id=catalog_source_id,
-            youtube_url=request.url,
-            spotify_uri=request.spotify_uri,
-            artwork_url=artwork_url,
-            artwork_path=artwork_path,
-            duration_seconds=float(info.get("duration") or 0) or None,
-            playlist_name="SoundCloud Imports" if provider == "soundcloud" else "Imported Singles",
-        )
-        if not request.process_with_extender:
-            with authorized_import_lock:
-                authorized_imports[import_id].update(
-                    status="complete",
-                    stage="WAV import complete",
-                    progress=100,
-                    filename=destination.name,
-                    file_path=str(destination),
-                    processed_with_extender=False,
-                )
-            return
-        effective = _effective_settings()
-        preset = str(effective["preset"])
-        job_id = repository.create(
-            destination.name,
-            destination,
-            preset,
-            int(effective["intro_bars"]),
-            int(effective["outro_bars"]),
-            bool(effective["use_stems"]),
-            {
-                **effective,
-                **_preset_snapshot(preset),
-                "authorized_source_url": request.url,
-                "rights_basis": request.rights_basis,
-                "intro_bars_auto": True,
-                "outro_bars_auto": True,
-            },
-        )
-        service.enqueue(job_id)
-        with authorized_import_lock:
-            authorized_imports[import_id].update(
-                status="complete",
-                stage="Imported and added to processing queue",
-                progress=100,
-                job_id=job_id,
-                filename=destination.name,
-                file_path=str(destination),
-                processed_with_extender=True,
-            )
-    except Exception as error:
-        message = str(error)
-        if isinstance(error, subprocess.CalledProcessError):
-            detail = str(error.stderr or error.stdout or "").strip()
-            if detail:
-                message = detail[-1500:]
-        with authorized_import_lock:
-            canceled = authorized_import_cancel_events.get(import_id, threading.Event()).is_set()
-            authorized_imports[import_id].update(
-                status="canceled" if canceled else "failed",
-                stage="Import canceled" if canceled else "Import failed",
-                error="Canceled by user" if canceled else message,
-            )
-
-
-@app.post("/api/imports/authorized", status_code=202)
-def create_authorized_import(request: AuthorizedImportRequest) -> dict:
-    provider = _authorized_source_provider(request.url)
-    if provider is None:
-        raise HTTPException(400, "Only YouTube and SoundCloud URLs are supported in this importer")
-    if not request.confirmation:
-        raise HTTPException(400, "Confirm that you have permission to download this audio")
-    import_id = uuid.uuid4().hex
-    with authorized_import_lock:
-        authorized_import_cancel_events[import_id] = threading.Event()
-        authorized_imports[import_id] = {
-            "id": import_id,
-            "status": "processing",
-            "stage": "Preparing authorized import",
-            "progress": 0,
-            "rights_basis": request.rights_basis,
-            "source_provider": provider,
-        }
-    threading.Thread(
-        target=_authorized_import_worker,
-        args=(import_id, request),
-        daemon=True,
-    ).start()
-    return {"import_id": import_id}
-
-
-@app.post("/api/imports/{import_id}/cancel")
-def cancel_authorized_import(import_id: str) -> dict:
-    with authorized_import_lock:
-        state = authorized_imports.get(import_id)
-        cancel_event = authorized_import_cancel_events.get(import_id)
-        if state is None or cancel_event is None:
-            raise HTTPException(404, "Import not found")
-        if state.get("status") != "processing":
-            return {"canceled": False, "status": state.get("status")}
-        cancel_event.set()
-        state.update(stage="Canceling import")
-    return {"canceled": True, "status": "canceling"}
-
-
-@app.get("/api/imports/{import_id}")
-def authorized_import_status(import_id: str) -> dict:
-    with authorized_import_lock:
-        state = authorized_imports.get(import_id)
-        if state is None:
-            raise HTTPException(404, "Import not found")
-        return {key: value for key, value in state.items() if key != "file_path"}
-
-
-@app.get("/api/imports/{import_id}/download")
-def download_authorized_import(import_id: str) -> FileResponse:
-    with authorized_import_lock:
-        state = authorized_imports.get(import_id)
-        path = Path(state["file_path"]) if state and state.get("file_path") else None
-    if path is None or not path.exists():
-        raise HTTPException(404, "Imported WAV is not available")
-    return FileResponse(path, filename=path.name)
+    """Compatibility entry point for deterministic worker tests."""
+    import_service.run(import_id, request)
 
 
 def _downloaded_track_payload(track: dict) -> dict:
@@ -5497,6 +5219,23 @@ def remove_key_verification(source_name: str) -> dict:
 def feedback() -> dict:
     path = OUTPUT / "reports" / "Candidate Feedback.md"
     return {"markdown": path.read_text(encoding="utf-8") if path.exists() else ""}
+
+
+# The authorized importer is composed after its callback dependencies are
+# defined. Lambdas keep those collaborators replaceable in tests and prevent
+# the service from importing this application module.
+import_service = ImportService(
+    repository=repository,
+    processing_service=service,
+    library_root=_music_library_root,
+    effective_settings=_effective_settings,
+    preset_snapshot=_preset_snapshot,
+    duplicate_lookup=_cataloged_download_by_youtube_id,
+    probe_audio=_probe_local_audio,
+    cache_artwork=_cache_track_artwork,
+    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+)
+app.include_router(create_import_router(import_service))
 
 
 if __name__ == "__main__":
