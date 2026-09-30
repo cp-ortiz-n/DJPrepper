@@ -38,19 +38,31 @@ class FrontendContractTests(unittest.TestCase):
 
     def test_settings_save_reports_validation_and_library_verification(self):
         app = (ROOT / "web" / "app.js").read_text()
+        ui = (ROOT / "web" / "modules" / "ui.js").read_text()
 
-        self.assertIn("function apiErrorMessage", app)
-        self.assertIn("field ? `${field}: `", app)
+        self.assertIn("function apiErrorMessage", ui)
+        self.assertIn("field ? `${field}: `", ui)
         self.assertIn("Music library connected", app)
         self.assertIn("Library location verified", app)
         self.assertIn("status.available_tracks", app)
         self.assertIn("status.cataloged_tracks", app)
 
     def test_metadata_editor_uses_genre_language(self):
-        app = (ROOT / "web" / "app.js").read_text()
+        app = (ROOT / "web" / "modules" / "genre-controls.js").read_text()
 
         self.assertIn('<label>Genre<select name="genre_category">', app)
         self.assertNotIn('<label>Category<select name="genre_category">', app)
+
+    def test_frontend_uses_shared_feature_modules(self):
+        app = (ROOT / "web" / "app.js").read_text()
+
+        self.assertIn("from './modules/ui.js'", app)
+        self.assertIn("from './modules/genre-controls.js'", app)
+        self.assertIn("from './modules/audio-player.js'", app)
+        self.assertIn("from './modules/background-tasks.js'", app)
+        self.assertNotIn("function apiErrorMessage", app)
+        self.assertNotIn("const compactAudioEngine", app)
+        self.assertNotIn("const backgroundTasks", app)
 
 
 if __name__ == "__main__":
