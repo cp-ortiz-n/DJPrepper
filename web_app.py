@@ -52,6 +52,8 @@ from helpers.import_service import (
 )
 from helpers.library_backup import LibraryBackupService
 from helpers.library_relocation import LibraryRelocationCoordinator
+from helpers.local_import_service import LocalAudioImportService
+from helpers.playlist_match_service import PlaylistMatchService
 from helpers.presets import PRESETS, EditPreset
 from helpers.track_overrides import load_track_overrides
 from helpers.transition_scorer import assess_custom_insertion
@@ -111,8 +113,6 @@ library_relocation = LibraryRelocationCoordinator(
 pending_backup_restores: dict[str, Path] = {}
 repository.recover_interrupted()
 service = WebJobService(PROJECT, repository)
-playlist_matches: dict[str, dict] = {}
-playlist_match_lock = threading.Lock()
 creative_commons_batches: dict[str, dict] = {}
 creative_commons_batch_lock = threading.Lock()
 wav_tag_batches: dict[str, dict] = {}
@@ -133,8 +133,6 @@ key_analysis_batches: dict[str, dict] = {}
 key_analysis_batch_lock = threading.Lock()
 library_consolidation_batches: dict[str, dict] = {}
 library_consolidation_batch_lock = threading.Lock()
-local_import_batches: dict[str, dict] = {}
-local_import_batch_lock = threading.Lock()
 downloaded_catalog_migration_lock = threading.Lock()
 downloaded_catalog_migrated = False
 DOWNLOADED_CATALOG_MIGRATION_VERSION = "3"
@@ -1144,9 +1142,14 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
         job for job in repository.list_jobs(limit=10_000)
         if job["status"] in {"queued", "processing", "paused"}
     ]
-    active_imports = import_service.has_active_imports() or any(
+    active_imports = (
+        import_service.has_active_imports()
+        or local_import_service.has_active_imports()
+        or playlist_match_service.has_active_imports()
+        or any(
         state.get("status") == "processing"
-        for state in [*playlist_matches.values(), *creative_commons_batches.values()]
+        for state in creative_commons_batches.values()
+        )
     )
     if active_jobs or active_imports:
         raise HTTPException(
@@ -1201,8 +1204,8 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
     OUTPUT.mkdir(parents=True, exist_ok=True)
     reports.mkdir(parents=True, exist_ok=True)
     import_service.clear()
-    with playlist_match_lock:
-        playlist_matches.clear()
+    local_import_service.clear()
+    playlist_match_service.clear()
     with creative_commons_batch_lock:
         creative_commons_batches.clear()
     return {"reset": True, "removed_files": removed}
@@ -1253,7 +1256,9 @@ def restore_presets() -> dict:
     return {"presets": _preset_payload()}
 
 
-def _match_tracks_to_youtube(match_id: str, tracks: list[dict]) -> None:
+def _match_tracks_to_youtube(
+    tracks: list[dict], progress: Callable[..., None]
+) -> list[dict]:
     import yt_dlp
 
     results: list[dict] = []
@@ -1292,20 +1297,13 @@ def _match_tracks_to_youtube(match_id: str, tracks: list[dict]) -> None:
                     "match_warnings": warnings,
                 }
             )
-            with playlist_match_lock:
-                playlist_matches[match_id].update(
-                    stage=f"Matching {index} of {len(tracks)}",
-                    progress=round(index * 100 / len(tracks), 1),
-                    matched=index,
-                    total=len(tracks),
-                )
-    with playlist_match_lock:
-        playlist_matches[match_id].update(
-            status="complete",
-            stage="Playlist matching complete",
-            progress=100,
-            results=results,
-        )
+            progress(
+                stage=f"Matching {index} of {len(tracks)}",
+                progress=round(index * 100 / len(tracks), 1),
+                matched=index,
+                total=len(tracks),
+            )
+    return results
 
 
 def _match_tokens(value: object) -> set[str]:
@@ -1525,25 +1523,6 @@ def _playlist_csv_tracks(contents: bytes) -> list[dict]:
     if not tracks:
         raise ValueError("The playlist CSV does not contain any usable tracks")
     return tracks
-
-
-def _csv_match_worker(match_id: str, tracks: list[dict]) -> None:
-    try:
-        _match_tracks_to_youtube(match_id, tracks)
-    except Exception as error:
-        with playlist_match_lock:
-            playlist_matches[match_id].update(
-                status="failed", stage="Playlist matching failed", error=str(error)
-            )
-
-
-@app.get("/api/imports/playlist-matches/{match_id}")
-def playlist_match_status(match_id: str) -> dict:
-    with playlist_match_lock:
-        state = playlist_matches.get(match_id)
-        if state is None:
-            raise HTTPException(404, "Playlist match job not found")
-        return dict(state)
 
 
 def _safe_audio_name(value: str) -> str:
@@ -2378,160 +2357,6 @@ def _probe_local_audio(path: Path) -> dict:
     except (TypeError, ValueError):
         duration = None
     return {"title": title, "artist": artist, "genre": genre, "duration": duration}
-
-
-def _local_audio_import_worker(batch_id: str, staged_dir: Path, playlist_name: str) -> None:
-    files = [path for path in staged_dir.rglob("*") if path.is_file()]
-    results: list[dict] = []
-    imported = skipped = failed = 0
-    try:
-        existing = repository.list_downloaded_tracks()
-        known = {
-            (str(track.get("artist") or "").casefold(), str(track.get("title") or "").casefold())
-            for track in existing
-            if Path(str(track.get("file_path") or "")).is_file()
-        }
-        for index, source in enumerate(files, start=1):
-            with local_import_batch_lock:
-                local_import_batches[batch_id].update(
-                    stage=f"Converting {source.name}",
-                    progress=round(100 * (index - 1) / max(1, len(files)), 1),
-                )
-            try:
-                metadata = _probe_local_audio(source)
-                identity = (metadata["artist"].casefold(), metadata["title"].casefold())
-                if identity in known:
-                    skipped += 1
-                    results.append({"filename": source.name, "status": "duplicate", **metadata})
-                    continue
-                category = _generalized_genre(metadata["genre"])
-                _require_music_library_online()
-                destination_dir = _genre_directory(category)
-                destination_dir.mkdir(parents=True, exist_ok=True)
-                display_name = " - ".join(value for value in (metadata["artist"], metadata["title"]) if value)
-                destination = destination_dir / f"{_safe_audio_name(display_name or source.stem)}.wav"
-                counter = 2
-                while destination.exists():
-                    destination = destination_dir / f"{_safe_audio_name(display_name or source.stem)} ({counter}).wav"
-                    counter += 1
-                temporary_wav = destination.with_suffix(".importing.wav")
-                subprocess.run(
-                    ["ffmpeg", "-y", "-v", "error", "-i", str(source), "-vn", "-c:a", "pcm_s24le", str(temporary_wav)],
-                    check=True,
-                    capture_output=True,
-                    text=True,
-                )
-                temporary_wav.replace(destination)
-                write_wav_metadata(
-                    destination,
-                    title=metadata["title"],
-                    artist=metadata["artist"],
-                    genre=category,
-                    album=playlist_name,
-                )
-                source_metadata = {
-                    "title": metadata["title"], "artist": metadata["artist"],
-                    "genre": metadata["genre"], "genre_category": category,
-                    "playlist_name": playlist_name, "file_path": str(destination),
-                    "import_source": "local-audio",
-                }
-                _write_source_metadata(destination, source_metadata)
-                repository.upsert_downloaded_track(
-                    title=metadata["title"], artist=metadata["artist"],
-                    file_path=destination, genre=metadata["genre"],
-                    genre_category=category, duration_seconds=metadata["duration"],
-                    playlist_name=playlist_name,
-                )
-                known.add(identity)
-                imported += 1
-                results.append({"filename": destination.name, "status": "imported", "genre_category": category, **metadata})
-            except Exception as error:
-                failed += 1
-                results.append({"filename": source.name, "status": "failed", "error": str(error)})
-        with local_import_batch_lock:
-            local_import_batches[batch_id].update(
-                status="complete", stage="Local playlist import complete", progress=100,
-                counts={"imported": imported, "duplicates": skipped, "failed": failed},
-                results=results,
-            )
-    except Exception as error:
-        with local_import_batch_lock:
-            local_import_batches[batch_id].update(status="failed", stage="Local import failed", error=str(error))
-    finally:
-        shutil.rmtree(staged_dir, ignore_errors=True)
-
-
-@app.post("/api/imports/local-audio", status_code=202)
-async def create_local_audio_import(
-    files: Annotated[list[UploadFile], File()],
-    playlist_name: Annotated[str, Form()] = "Local Playlist",
-) -> dict:
-    if not files or len(files) > 1000:
-        raise HTTPException(400, "Choose between 1 and 1000 audio files")
-    supported = {".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wav", ".aiff", ".aif"}
-    invalid = [file.filename or "unnamed" for file in files if Path(file.filename or "").suffix.casefold() not in supported]
-    if invalid:
-        raise HTTPException(400, f"Unsupported audio file: {invalid[0]}")
-    _require_music_library_online()
-    batch_id = uuid.uuid4().hex
-    safe_playlist = _safe_folder_name(playlist_name or "Local Playlist")
-    staged_dir = INPUT / "local-imports" / batch_id
-    staged_dir.mkdir(parents=True, exist_ok=True)
-    for index, upload in enumerate(files):
-        name = _safe_audio_name(Path(upload.filename or f"Track {index + 1}").name)
-        destination = staged_dir / f"{index:04d}-{name}"
-        with destination.open("wb") as target:
-            shutil.copyfileobj(upload.file, target)
-        await upload.close()
-    with local_import_batch_lock:
-        local_import_batches[batch_id] = {
-            "id": batch_id, "status": "processing", "stage": f"Staged {len(files)} audio files",
-            "progress": 0, "playlist_name": safe_playlist, "total": len(files), "counts": {},
-        }
-    threading.Thread(
-        target=_local_audio_import_worker,
-        args=(batch_id, staged_dir, safe_playlist),
-        daemon=True,
-    ).start()
-    return {"batch_id": batch_id, "track_count": len(files), "playlist_name": safe_playlist}
-
-
-@app.get("/api/imports/local-audio/{batch_id}")
-def local_audio_import_status(batch_id: str) -> dict:
-    with local_import_batch_lock:
-        state = local_import_batches.get(batch_id)
-        if state is None:
-            raise HTTPException(404, "Local audio import not found")
-        return dict(state)
-
-
-@app.post("/api/imports/playlist-file/matches", status_code=202)
-async def create_playlist_file_matches(
-    file: Annotated[UploadFile, File()],
-) -> dict:
-    if not (file.filename or "").casefold().endswith(".csv"):
-        raise HTTPException(400, "Upload a CSV playlist export")
-    contents = await file.read(5 * 1024 * 1024 + 1)
-    if len(contents) > 5 * 1024 * 1024:
-        raise HTTPException(400, "Playlist CSV must be 5 MB or smaller")
-    try:
-        tracks = _playlist_csv_tracks(contents)
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-    playlist_name = _safe_folder_name(Path(file.filename or "Imported Playlist").stem)
-    match_id = uuid.uuid4().hex
-    with playlist_match_lock:
-        playlist_matches[match_id] = {
-            "id": match_id,
-            "status": "processing",
-            "stage": f"Loaded {len(tracks)} tracks from CSV",
-            "progress": 0,
-            "matched": 0,
-            "total": len(tracks),
-            "playlist_name": playlist_name,
-        }
-    threading.Thread(target=_csv_match_worker, args=(match_id, tracks), daemon=True).start()
-    return {"match_id": match_id, "track_count": len(tracks), "playlist_name": playlist_name}
 
 
 def _scdl_download_command(url: str, destination: Path) -> list[str]:
@@ -5235,7 +5060,31 @@ import_service = ImportService(
     cache_artwork=_cache_track_artwork,
     thread_factory=lambda **kwargs: threading.Thread(**kwargs),
 )
-app.include_router(create_import_router(import_service))
+local_import_service = LocalAudioImportService(
+    repository=repository,
+    staging_root=INPUT / "local-imports",
+    require_library_online=_require_music_library_online,
+    probe_audio=_probe_local_audio,
+    generalized_genre=_generalized_genre,
+    genre_directory=_genre_directory,
+    write_metadata=write_wav_metadata,
+    write_source_metadata=_write_source_metadata,
+    safe_name=_safe_audio_name,
+    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+)
+playlist_match_service = PlaylistMatchService(
+    _match_tracks_to_youtube,
+    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+)
+app.include_router(
+    create_import_router(
+        import_service,
+        local_import_service,
+        playlist_match_service,
+        _playlist_csv_tracks,
+        _safe_folder_name,
+    )
+)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import WaveSurfer from '/vendor/wavesurfer/wavesurfer.esm.js';
 import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
+import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -1023,29 +1024,24 @@ async function waitForAuthorizedImport(importId,url,onProgress){
     await new Promise(resolve=>setTimeout(resolve,900));
   }
 }
-let authorizedImportQueue=null;
-function renderAuthorizedImportQueue(){
-  const queue=authorizedImportQueue;if(!queue)return;
-  const panel=$('#authorized-import-queue'),list=$('#authorized-import-queue-list'),progress=$('#authorized-import-progress');panel.hidden=false;progress.hidden=false;
-  const terminal=queue.items.filter(item=>['complete','failed','canceled'].includes(item.status)),percent=queue.items.reduce((sum,item)=>sum+Number(item.progress||0),0)/Math.max(1,queue.items.length);
-  progress.querySelector('span').style.width=`${Math.max(2,percent)}%`;progress.querySelector('small').textContent=`${terminal.length} of ${queue.items.length} finished · ${queue.paused?'Queue paused':queue.active+' active'} · ${Math.round(percent)}%`;
-  $('#authorized-import-queue-summary').textContent=`${queue.items.filter(item=>item.status==='waiting').length} waiting · ${queue.active} active`;
-  $('#authorized-import-pause').textContent=queue.paused?'Resume queue':'Pause queue';
-  $('#authorized-import-retry').disabled=!queue.items.some(item=>['failed','canceled'].includes(item.status));
-  list.innerHTML=queue.items.map((item,index)=>`<article class="authorized-import-queue-item" data-index="${index}" data-status="${item.status}"><div><strong>${escapeHtml(item.url)}</strong><small>${escapeHtml(item.stage||item.status)}${item.error?` · ${escapeHtml(item.error)}`:''}</small></div><div class="authorized-import-queue-actions">${item.status==='waiting'?`<button type="button" data-action="up" aria-label="Move up" ${index===0?'disabled':''}>↑</button><button type="button" data-action="down" aria-label="Move down" ${index===queue.items.length-1?'disabled':''}>↓</button>`:''}${['waiting','processing'].includes(item.status)?'<button type="button" data-action="cancel">Cancel</button>':''}${['failed','canceled'].includes(item.status)?'<button type="button" data-action="retry">Retry</button>':''}</div></article>`).join('');
-  list.querySelectorAll('button').forEach(button=>button.onclick=async()=>{const index=Number(button.closest('article').dataset.index),item=queue.items[index],action=button.dataset.action;if(action==='up'&&index>0)[queue.items[index-1],queue.items[index]]=[item,queue.items[index-1]];if(action==='down'&&index<queue.items.length-1)[queue.items[index+1],queue.items[index]]=[item,queue.items[index+1]];if(action==='cancel'){if(item.importId)await fetch(`/api/imports/${item.importId}/cancel`,{method:'POST'});else{item.status='canceled';item.stage='Canceled before download';item.progress=100;}}if(action==='retry'){Object.assign(item,{status:'waiting',stage:'Waiting to retry',progress:0,error:'',importId:null});}renderAuthorizedImportQueue();queue.schedule();});
-}
+const authorizedImportQueue = new AuthorizedImportQueue({
+  select: $,
+  escapeHtml,
+  waitForImport: waitForAuthorizedImport,
+  onComplete: async queue => {
+    const completed=queue.items.filter(item=>item.status==='complete'),failed=queue.items.filter(item=>item.status!=='complete'),message=$('#authorized-import-message');
+    message.innerHTML=`<strong>${completed.length} of ${queue.items.length} sources imported.</strong>${failed.length?`<span>${failed.length} failed or canceled. Use Retry in the queue when ready.</span>`:''}${completed.length===1?` <a href="/api/imports/${completed[0].importId}/download">Download WAV</a>`:''}`;
+    $('#authorized-import-submit').disabled=false;
+    if(!failed.length)$('#authorized-import-form').reset();
+    await loadJobs();
+  },
+});
 async function importAuthorizedSources(urls,basePayload){
   const metadata=urls.length===1?{title:currentSourceMetadata?.title||'',artist:currentSourceMetadata?.artist||'',spotify_uri:currentSourceMetadata?.spotify_uri||'',artwork_url:currentSourceMetadata?.thumbnail_url||''}:{title:'',artist:'',spotify_uri:'',artwork_url:''};
-  const queue={items:urls.map(url=>({url,status:'waiting',stage:'Waiting',progress:0,error:'',importId:null})),active:0,paused:false,finished:false,schedule:null};authorizedImportQueue=queue;
-  const done=new Promise(resolve=>queue.resolve=resolve);
-  const run=async item=>{queue.active++;item.status='processing';item.stage='Preparing';item.progress=1;renderAuthorizedImportQueue();try{const response=await fetch('/api/imports/authorized',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...basePayload,url:item.url,...metadata})}),payload=await response.json();if(!response.ok)throw new Error(payload.detail||'Could not start import.');item.importId=payload.import_id;const result=await waitForAuthorizedImport(payload.import_id,item.url,(value,stage)=>{item.progress=value;item.stage=stage;renderAuthorizedImportQueue();});Object.assign(item,{...result,status:result.status,progress:100,stage:result.status==='complete'?'Complete':result.status==='canceled'?'Canceled':'Failed',error:result.error||''});}catch(error){Object.assign(item,{status:'failed',stage:'Failed',progress:100,error:error.message});}finally{queue.active--;renderAuthorizedImportQueue();queue.schedule();}};
-  queue.schedule=()=>{if(queue.finished)return;while(!queue.paused&&queue.active<2){const next=queue.items.find(item=>item.status==='waiting');if(!next)break;run(next);}const pending=queue.items.some(item=>['waiting','processing'].includes(item.status));if(!pending&&queue.active===0){queue.finished=true;queue.resolve();}};
-  renderAuthorizedImportQueue();queue.schedule();await done;
-  const completed=queue.items.filter(item=>item.status==='complete'),failed=queue.items.filter(item=>item.status!=='complete'),message=$('#authorized-import-message');message.innerHTML=`<strong>${completed.length} of ${queue.items.length} sources imported.</strong>${failed.length?`<span>${failed.length} failed or canceled. Use Retry in the queue when ready.</span>`:''}${completed.length===1?` <a href="/api/imports/${completed[0].importId}/download">Download WAV</a>`:''}`;$('#authorized-import-submit').disabled=false;if(!failed.length)$('#authorized-import-form').reset();await loadJobs();
+  await authorizedImportQueue.start(urls,basePayload,metadata);
 }
-$('#authorized-import-pause').onclick=()=>{if(!authorizedImportQueue)return;authorizedImportQueue.paused=!authorizedImportQueue.paused;renderAuthorizedImportQueue();authorizedImportQueue.schedule();};
-$('#authorized-import-retry').onclick=()=>{if(!authorizedImportQueue)return;authorizedImportQueue.finished=false;authorizedImportQueue.items.filter(item=>['failed','canceled'].includes(item.status)).forEach(item=>Object.assign(item,{status:'waiting',stage:'Waiting to retry',progress:0,error:'',importId:null}));renderAuthorizedImportQueue();authorizedImportQueue.schedule();};
+$('#authorized-import-pause').onclick=()=>authorizedImportQueue.togglePause();
+$('#authorized-import-retry').onclick=()=>authorizedImportQueue.retryFailed();
 $('#authorized-import-form').addEventListener('submit', async event => {
   event.preventDefault();
   const urls=authorizedSourceUrls();

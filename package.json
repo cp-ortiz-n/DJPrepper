@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check web/app.js"
+    "check": "node --check web/app.js && node --check web/import-queue.js && node --test tests/import_queue.test.js"
   },
   "repository": {
     "type": "git",
