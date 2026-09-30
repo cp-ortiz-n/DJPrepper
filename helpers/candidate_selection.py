@@ -38,8 +38,8 @@ class RankedSelection:
     reason: str | None = None
 
 
-class CandidateSelectionService:
-    """Rank musical candidates independently from CLI and rendering concerns."""
+class CandidateRankingService:
+    """Score and rank musical candidates without choosing or validating them."""
 
     def __init__(self, ranker: Ranker = rank_sections) -> None:
         self._ranker = ranker
@@ -138,3 +138,8 @@ class CandidateSelectionService:
         ):
             fitness -= 0.10
         return fitness
+
+
+# Compatibility name for external callers. New orchestration code uses the
+# responsibility-specific CandidateRankingService name.
+CandidateSelectionService = CandidateRankingService

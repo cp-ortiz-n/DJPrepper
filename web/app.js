@@ -2,46 +2,10 @@ import WaveSurfer from '/vendor/wavesurfer/wavesurfer.esm.js';
 import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
-
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
-
-function notify(message, tone = 'info', options = {}) {
-  const region = $('#app-toast-region');
-  if (!region || !message) return;
-  const toast = document.createElement('article');
-  toast.className = 'app-toast';
-  toast.dataset.tone = tone;
-  toast.setAttribute('role', tone === 'danger' ? 'alert' : 'status');
-  const text = document.createElement('span');
-  text.textContent = String(message);
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'toast-close';
-  close.setAttribute('aria-label', 'Dismiss notification');
-  close.textContent = '×';
-  close.addEventListener('click', () => toast.remove());
-  toast.append(text, close);
-  region.append(toast);
-  requestAnimationFrame(() => toast.classList.add('visible'));
-  const timeout = Number(options.timeout ?? (tone === 'danger' ? 7000 : 4200));
-  if (timeout > 0) setTimeout(() => { toast.classList.remove('visible'); setTimeout(() => toast.remove(), 180); }, timeout);
-}
-
-function confirmAction(message, options = {}) {
-  const dialog = $('#app-confirm-dialog');
-  if (!dialog?.showModal) return Promise.resolve(window.confirm(message));
-  $('#app-confirm-title').textContent = options.title || 'Confirm action';
-  $('#app-confirm-message').textContent = message;
-  const accept = $('#app-confirm-accept');
-  accept.textContent = options.acceptLabel || 'Continue';
-  accept.dataset.tone = options.danger ? 'danger' : 'success';
-  return new Promise(resolve => {
-    const finish = () => resolve(dialog.returnValue === 'confirm');
-    dialog.addEventListener('close', finish, {once:true});
-    dialog.showModal();
-  });
-}
+import {$, $$, notify, confirmAction, escapeHtml, apiErrorMessage, pct, fraction, reportDate, clock} from './modules/ui.js';
+import {normalizedGenreCategory, genreEditorMarkup as genreEditor, metadataEditorMarkup as metadataEditor, detailedGenreSummary} from './modules/genre-controls.js';
+import {bindLazyAudio, compactAudioMarkup, stopCompactAudio, compactAudioIsWithin, stopNativeAudio, bindCompactAudio} from './modules/audio-player.js';
+import {runBackgroundTask, stopBackgroundTask} from './modules/background-tasks.js';
 
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
 // to structured inline messages and richer recovery actions.
@@ -220,9 +184,6 @@ let transitionPreviewFrame = 0;
 let transitionPreviewTimer = 0;
 let transitionPreviewPlayheadFrame = 0;
 let transitionPreviewState = null;
-const compactAudioEngine = new Audio();
-compactAudioEngine.preload = 'none';
-let compactAudioOwner = null;
 let setCompactMode = localStorage.getItem('set-builder-compact') === 'true';
 let setTransitionSettings = {};
 let transitionEditorSurfaces = [];
@@ -240,50 +201,12 @@ let libraryLoadSequence = 0;
 let libraryRequestController = null;
 let pendingMetadataReview = null;
 const VIEW_CACHE_MS = 30000;
-const backgroundTasks = new Map();
 
 $$('.import-method').forEach(method => method.addEventListener('toggle', () => {
   if (!method.open) return;
   $$('.import-method').forEach(other => { if (other !== method) other.open = false; });
 }));
 
-function stopBackgroundTask(key) {
-  const task = backgroundTasks.get(key);
-  if (!task) return;
-  task.cancelled = true;
-  clearTimeout(task.timer);
-  task.controller?.abort();
-  backgroundTasks.delete(key);
-}
-
-function runBackgroundTask({key, url, load=null, interval=1000, active=state => state.status === 'processing', update=()=>{}, complete=()=>{}, fail=()=>{}}) {
-  stopBackgroundTask(key);
-  const task = {cancelled:false,timer:null,controller:null};
-  backgroundTasks.set(key, task);
-  const tick = async () => {
-    if (task.cancelled) return;
-    task.controller = new AbortController();
-    try {
-      let state;
-      if (load) state = await load(task.controller.signal);
-      else {
-        const response = await fetch(typeof url === 'function' ? url() : url, {cache:'no-store',signal:task.controller.signal});
-        state = await response.json();
-        if (!response.ok) throw new Error(state.detail || 'Background task status is unavailable.');
-      }
-      update(state);
-      if (task.cancelled) return;
-      if (active(state)) task.timer = setTimeout(tick, interval);
-      else { backgroundTasks.delete(key); await complete(state); }
-    } catch (error) {
-      if (error.name === 'AbortError' || task.cancelled) return;
-      backgroundTasks.delete(key);
-      fail(error);
-    }
-  };
-  tick();
-  return () => stopBackgroundTask(key);
-}
 const LATIN_GENRE_CATEGORIES = ['Latin / Reggaeton','Latin / Salsa','Latin / Cumbia','Latin / Merengue','Latin / Zapateado','Latin / Corridos','Latin / Regional Mexican','Latin / Bachata','Latin / Dembow','Latin / Latin Pop','Latin / Latin Jazz','Latin / Bolero','Latin / Vallenato','Latin / Brazilian','Latin / Flamenco','Latin / Latin Rock','Latin / Latin Indie','Latin / Latin Ska','Latin / Latin Hip-Hop','Latin / Latin R&B','Latin / Other'];
 const ELECTRONIC_GENRE_CATEGORIES = [
   'Electronic / Techno / Techno','Electronic / Techno / Schranz','Electronic / Techno / Hard Techno','Electronic / Techno / Acid Techno','Electronic / Techno / Melodic Techno','Electronic / Techno / Minimal Techno','Electronic / Techno / Industrial Techno','Electronic / Techno / Hypnotic Techno','Electronic / Techno / Peak-Time Techno',
@@ -292,10 +215,6 @@ const ELECTRONIC_GENRE_CATEGORIES = [
 ];
 const GENRE_CATEGORIES = [...ELECTRONIC_GENRE_CATEGORIES,'Afro & Amapiano','Hip-Hop & Rap','Hip-Hop & Rap / Crunk','Hip-Hop & Rap / Hyphy','R&B & Soul','Disco & Funk','Rock & Alternative','Pop','Pop / Chanson','Ambient & Chill',...LATIN_GENRE_CATEGORIES,'Other'];
 const collapsedGenreFolders = new Set(JSON.parse(localStorage.getItem('dj-collapsed-genre-folders') || '[]'));
-function normalizedGenreCategory(value) {
-  const name=String(value||'Other').trim();
-  return ({techno:'Electronic / Techno / Techno',house:'Electronic / House / House',trance:'Electronic / Trance / Trance','drum & bass':'Electronic / Drum & Bass / Drum & Bass',garage:'Electronic / Garage / Garage',breaks:'Electronic / Breaks / Breakbeat',electronic:'Electronic / General','electronic / electronic / electronic':'Electronic / General'})[name.toLowerCase()] || name;
-}
 
 function genreFolderTree(entries, buttonClass) {
   const root = {children:new Map(), count:0, selfCount:0};
@@ -327,32 +246,11 @@ function bindGenreFolderState(scope) {
 }
 
 function genreEditorMarkup(current, suggested = '', compact = false) {
-  const choices = [...new Set([current, suggested, ...GENRE_CATEGORIES].filter(Boolean))].sort();
-  return `<form class="inline-genre-editor${compact ? ' compact' : ''}" hidden>
-    <div><label>Genre<select class="inline-genre-select">${choices.map(name => `<option value="${escapeHtml(name)}"${name === current ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select></label>
-    <label>Or type a custom genre<input class="inline-genre-custom" maxlength="80" placeholder="Custom genre"></label></div>
-    ${suggested && suggested !== current ? `<p class="genre-suggestion">Detected from metadata: <b>${escapeHtml(suggested)}</b> <button type="button" class="use-genre-suggestion">Use detected</button></p>` : ''}
-    <p class="genre-folder-preview">Folder: ${escapeHtml(current.replace(' / ', '/'))}/</p>
-    <div class="inline-genre-actions"><button type="submit">Save & move</button><button type="button" class="button secondary cancel-genre-edit">Cancel</button></div>
-  </form>`;
+  return genreEditor(current, suggested, compact, GENRE_CATEGORIES);
 }
 
 function metadataEditorMarkup(track, position=1, total=1) {
-  const current = track.genre_category || 'Other';
-  const choices = [...new Set([current,...GENRE_CATEGORIES].filter(Boolean))].sort();
-  const playlist = (track.playlists || [])[0] || 'Imported Singles';
-  return `<form class="track-metadata-editor" hidden>
-    <header><div><strong>Edit track metadata</strong><span>Updates the WAV, folder, Music Files, and linked Library entry.</span></div><div class="metadata-review-position"><span>${position} of ${total}</span><button type="button" class="button secondary close-metadata-editor" aria-label="Close metadata editor">×</button></div></header>
-    <div class="metadata-fields"><label>Title<input name="title" maxlength="300" required value="${escapeHtml(track.title || '')}"></label><label>Artist<input name="artist" maxlength="300" value="${escapeHtml(track.artist || '')}"></label><label>Genre<select name="genre_category">${choices.map(name=>`<option value="${escapeHtml(name)}"${name===current?' selected':''}>${escapeHtml(name)}</option>`).join('')}</select></label><label>Detailed genre tags<input name="genre" maxlength="500" value="${escapeHtml(track.genre || '')}" placeholder="e.g. salsa, merengue"></label><label>Album / source playlist<input name="playlist_name" maxlength="180" required value="${escapeHtml(playlist)}"></label><label>Artwork image URL<input name="artwork_url" type="url" maxlength="1000" value="${escapeHtml(track.artwork_url || '')}" placeholder="Direct Spotify or YouTube cover image URL"></label><label class="metadata-rename"><input name="rename_file" type="checkbox"> Rename WAV to Artist - Title</label></div>
-    <p class="metadata-message"></p><div class="metadata-actions"><div class="metadata-navigation"><button type="button" class="button secondary metadata-previous">← Previous</button><button type="button" class="button secondary metadata-next">Next →</button></div><div class="metadata-save-actions"><button type="submit" class="button secondary">Save</button><button type="submit" data-action="next">Save & next →</button></div></div>
-  </form>`;
-}
-
-function detailedGenreSummary(rawGenres) {
-  const tags=[...new Set(String(rawGenres||'').split(',').map(tag=>tag.trim()).filter(Boolean))];
-  if(!tags.length)return {label:'No detailed genre',title:'No detailed genre metadata',empty:true};
-  const visible=tags.slice(0,2);
-  return {label:`${visible.join(' · ')}${tags.length>2?` +${tags.length-2}`:''}`,title:tags.join(', '),empty:false};
+  return metadataEditor(track, position, total, GENRE_CATEGORIES);
 }
 
 function bindGenreEditor(editor, trackIds, afterSave) {
@@ -386,46 +284,6 @@ function stopArrangementPreview() {
   arrangementPreview = null;
 }
 
-function bindLazyAudio(scope = document) {
-  scope.querySelectorAll('audio[data-src]').forEach(audio => {
-    if (audio.dataset.lazyBound === 'true') return;
-    audio.dataset.lazyBound = 'true';
-    const activate = () => {
-      if (audio.getAttribute('src')) return;
-      audio.src = audio.dataset.src;
-      audio.removeAttribute('data-src');
-      audio.load();
-    };
-    audio.addEventListener('pointerdown', activate, {once:true});
-    audio.addEventListener('focus', activate, {once:true});
-    audio.addEventListener('keydown', activate, {once:true});
-  });
-}
-
-function compactAudioMarkup(src, duration=0, seekable=false) {
-  return `<div class="compact-audio${seekable?' seekable':''}" data-src="${escapeHtml(src)}" data-duration="${Number(duration)||0}"><button type="button" class="compact-audio-play" aria-label="Play track">▶</button><span class="compact-audio-time">0:00 / ${clock(duration)}</span>${seekable?'<input class="compact-audio-seek" type="range" min="0" max="1000" value="0" aria-label="Seek through track">':''}<button type="button" class="compact-audio-volume" aria-label="Mute track">🔊</button></div>`;
-}
-
-function renderCompactAudio(player=compactAudioOwner) {
-  if (!player?.isConnected) return;
-  const duration=Number.isFinite(compactAudioEngine.duration)?compactAudioEngine.duration:Number(player.dataset.duration||0);
-  const time=player.querySelector('.compact-audio-time');const seek=player.querySelector('.compact-audio-seek');
-  time.textContent=`${clock(compactAudioEngine.currentTime||0)} / ${clock(duration)}`;
-  if(seek&&!seek.matches(':active'))seek.value=duration?String(Math.round((compactAudioEngine.currentTime||0)/duration*1000)):'0';
-}
-
-function stopCompactAudio() {
-  compactAudioEngine.pause();compactAudioEngine.currentTime=0;
-  if(compactAudioOwner?.isConnected){const play=compactAudioOwner.querySelector('.compact-audio-play');if(play){play.textContent='▶';play.setAttribute('aria-label','Play track');}renderCompactAudio(compactAudioOwner);}
-  compactAudioOwner=null;
-}
-
-function stopNativeAudio(except = null, scope = document) {
-  scope.querySelectorAll('audio,video').forEach(media => {
-    if (media !== except && !media.paused) media.pause();
-  });
-}
-
 function closeDownloadedInspector({restoreFocus=false} = {}) {
   const inspector=$('#downloaded-inspector');
   if (!inspector || inspector.hidden) return;
@@ -433,24 +291,6 @@ function closeDownloadedInspector({restoreFocus=false} = {}) {
   inspector.hidden=true;
   if (restoreFocus) document.querySelector(`.downloaded-card[data-id="${inspector.dataset.returnId}"]`)?.focus();
 }
-
-function bindCompactAudio(scope = document) {
-  scope.querySelectorAll('.compact-audio').forEach(player => {
-    if (player.dataset.bound === 'true') return;
-    player.dataset.bound = 'true';
-    const play=player.querySelector('.compact-audio-play');const volume=player.querySelector('.compact-audio-volume');const seek=player.querySelector('.compact-audio-seek');
-    const activate=()=>{if(compactAudioOwner===player)return;if(compactAudioOwner?.isConnected){const oldPlay=compactAudioOwner.querySelector('.compact-audio-play');if(oldPlay){oldPlay.textContent='▶';oldPlay.setAttribute('aria-label','Play track');}}compactAudioEngine.pause();compactAudioOwner=player;compactAudioEngine.src=player.dataset.src;compactAudioEngine.load();};
-    play.onclick=async event=>{event.stopPropagation();const wasOwner=compactAudioOwner===player;activate();if(!wasOwner||compactAudioEngine.paused){stopNativeAudio();try{await compactAudioEngine.play();}catch(_){play.textContent='▶';}}else compactAudioEngine.pause();};
-    volume.onclick=event=>{event.stopPropagation();activate();compactAudioEngine.muted=!compactAudioEngine.muted;volume.textContent=compactAudioEngine.muted?'🔇':'🔊';volume.setAttribute('aria-label',compactAudioEngine.muted?'Unmute track':'Mute track');};
-    if(seek){seek.onpointerdown=event=>event.stopPropagation();seek.onclick=event=>event.stopPropagation();seek.oninput=event=>{event.stopPropagation();activate();const duration=Number.isFinite(compactAudioEngine.duration)?compactAudioEngine.duration:Number(player.dataset.duration||0);if(duration)compactAudioEngine.currentTime=Number(seek.value)/1000*duration;renderCompactAudio(player);};}
-  });
-}
-
-compactAudioEngine.addEventListener('play',()=>{const play=compactAudioOwner?.querySelector('.compact-audio-play');if(play){play.textContent='❚❚';play.setAttribute('aria-label','Pause track');}});
-compactAudioEngine.addEventListener('pause',()=>{const play=compactAudioOwner?.querySelector('.compact-audio-play');if(play){play.textContent='▶';play.setAttribute('aria-label','Play track');}});
-compactAudioEngine.addEventListener('ended',()=>{compactAudioEngine.currentTime=0;renderCompactAudio();});
-compactAudioEngine.addEventListener('loadedmetadata',()=>renderCompactAudio());
-compactAudioEngine.addEventListener('timeupdate',()=>renderCompactAudio());
 
 function renderTrackPagination(container, page, totalPages, totalItems, onPage) {
   container.hidden = totalPages <= 1;
@@ -783,7 +623,7 @@ async function loadImportFailures() {
 }
 
 function showView(id) {
-  if (compactAudioOwner && !compactAudioOwner.closest(`#${id}`)) stopCompactAudio();
+  if (!compactAudioIsWithin(`#${id}`)) stopCompactAudio();
   document.querySelectorAll('audio').forEach(audio => {
     if (!audio.closest(`#${id}`) && !audio.paused) audio.pause();
   });
@@ -1961,7 +1801,7 @@ async function loadDownloadedLibrary() {
   const analyzableTotal = Number(paginationData.analyzable_total || 0);
   downloadedUiState.page = paginationData.page;
   const root = $('#downloaded-list');
-  if (compactAudioOwner?.closest('#downloaded-list')) stopCompactAudio();
+  if (compactAudioIsWithin('#downloaded-list')) stopCompactAudio();
   const summary = $('#downloaded-summary');
   const genreEntries = Object.entries(payload.genres || {});
   const detailedGenreEntries = Object.entries(payload.detailed_genres || {}).sort(([a],[b])=>a.localeCompare(b));
@@ -2989,7 +2829,7 @@ async function loadLibrary() {
   const intelligenceJobs=new Map((catalog.intelligence||[]).map(item=>[String(item.source_name||'').toLowerCase(),{id:item.job_id}]));
   renderLibraryIntelligence(intelligenceSongs, intelligenceJobs);
   const root = $('#library-list');
-  if (compactAudioOwner?.closest('#library-list')) stopCompactAudio();
+  if (compactAudioIsWithin('#library-list')) stopCompactAudio();
   if (!catalog.total) {
     root.innerHTML = '<div class="empty">No completed tracks yet.</div>';
     $('#library-select-all').checked = false;
@@ -3348,21 +3188,7 @@ async function loadAnalysis(jobs = null) {
   }));
 }
 
-function pct(value) { return value == null ? '—' : `${Math.round(value)}%`; }
 function candidateLabel(candidate) { return candidate ? `${candidate.extension_bars} bars · ${pct(candidate.loop_quality)}` : 'Preserved'; }
-function escapeHtml(value) { const node = document.createElement('span'); node.textContent = String(value ?? ''); return node.innerHTML; }
-function apiErrorMessage(payload, fallback = 'The request could not be completed.') {
-  const detail = payload?.detail;
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) return detail.map(item => {
-    const field = Array.isArray(item?.loc) ? item.loc.filter(value => value !== 'body').join(' → ') : '';
-    return `${field ? `${field}: ` : ''}${item?.msg || 'Invalid value'}`;
-  }).join(' · ');
-  if (detail && typeof detail === 'object') return detail.message || JSON.stringify(detail);
-  return fallback;
-}
-function fraction(value) { return value == null ? '—' : `${Math.round(100 * value)}%`; }
-function reportDate(value) { if (!value) return 'Not processed yet'; return new Date(value).toLocaleString([], {dateStyle:'medium', timeStyle:'short'}); }
 function reportJob(song) { return reportJobs.find(item => item.source_name.toLowerCase() === song.source_name.toLowerCase() && item.status === 'complete'); }
 function reportHasEdit(song) { return Boolean(song.intro || song.outro || reportJob(song)?.extended_available); }
 
@@ -3506,8 +3332,6 @@ function renderReports() {
   }));
   document.querySelectorAll('.report-row-audio').forEach(audio => ['click','pointerdown','keydown'].forEach(name => audio.addEventListener(name, event => event.stopPropagation())));
 }
-
-function clock(seconds) { if (seconds == null) return '—'; const total = Math.max(0, Math.round(seconds)); return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`; }
 
 async function loadReports() {
   const [report, analytics, jobs, feedback, keyStats] = await Promise.all([fetch('/api/report').then(r => r.json()), fetch('/api/analytics').then(r => r.json()), fetch('/api/report-audio-index').then(r => r.json()), fetch('/api/report-feedback').then(r => r.json()), fetch('/api/key-verifications').then(r => r.json())]);

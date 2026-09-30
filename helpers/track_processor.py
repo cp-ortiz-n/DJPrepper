@@ -212,10 +212,9 @@ class TrackProcessor:
     ) -> None:
         self.stem_provider = stem_provider or StemProvider()
         self.selection_coordinator = (
-            selection_coordinator or SelectionCoordinator()
+            selection_coordinator or SelectionCoordinator(validator=candidate_validator)
         )
         self.export_service = export_service or ExportService()
-        self.candidate_validator = candidate_validator or CandidateValidator()
 
     def process(
         self,
@@ -649,21 +648,21 @@ class TrackProcessor:
                     f"({outro.unit_bars}-bar unit ×{outro.repetitions}, "
                     f"score={outro.score:.2f}, instrumental={outro.instrumentalness:.2f})"
                 )
-            intro_validation = self.candidate_validator.validate(
+            intro_validation = coordinator.finalize(
                 intro,
                 config,
                 instrumental_audio,
                 stem_reliability,
                 vocal_energy is not None,
-                position="intro",
+                "intro",
             )
-            outro_validation = self.candidate_validator.validate(
+            outro_validation = coordinator.finalize(
                 outro,
                 config,
                 instrumental_audio,
                 stem_reliability,
                 vocal_energy is not None,
-                position="outro",
+                "outro",
             )
             intro = intro_validation.candidate
             outro = outro_validation.candidate
@@ -782,6 +781,8 @@ class TrackProcessor:
                 audio, None if redrum_intro else intro, outro, config.crossfade_ms, instrumental_audio,
                 stem_reliability, config.minimum_stem_construction_reliability,
                 config.minimum_vocal_coverage_for_instrumental_edit,
+                None if redrum_intro else intro_validation.splice_plan,
+                outro_validation.splice_plan,
             )
             if config.insert_source_start is not None:
                 assert config.insert_source_end is not None

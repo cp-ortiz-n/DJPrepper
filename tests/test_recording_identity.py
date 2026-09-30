@@ -18,12 +18,18 @@ class RecordingIdentityTests(unittest.TestCase):
             original.touch()
             remix.touch()
             original_id = repository.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=original,
-                duration_seconds=180, playlist_name="Originals",
+                title="Song",
+                artist="Artist",
+                file_path=original,
+                duration_seconds=180,
+                playlist_name="Originals",
             )
             remix_id = repository.upsert_downloaded_track(
-                title="Song (Club Remix)", artist="Artist", file_path=remix,
-                duration_seconds=240, playlist_name="Remixes",
+                title="Song (Club Remix)",
+                artist="Artist",
+                file_path=remix,
+                duration_seconds=240,
+                playlist_name="Remixes",
             )
             original_track = repository.get_downloaded_track(original_id)
             remix_track = repository.get_downloaded_track(remix_id)
@@ -45,20 +51,24 @@ class RecordingIdentityTests(unittest.TestCase):
             first.write_bytes(b"RIFF-first")
             duplicate.write_bytes(b"RIFF-duplicate")
             first_id = repository.upsert_downloaded_track(
-                title="Same Song", artist="Same Artist", file_path=first,
-                spotify_uri="spotify:track:same", duration_seconds=200,
+                title="Same Song",
+                artist="Same Artist",
+                file_path=first,
+                spotify_uri="spotify:track:same",
+                duration_seconds=200,
                 playlist_name="First List",
             )
             duplicate_id = repository.upsert_downloaded_track(
-                title="Same Song", artist="Same Artist", file_path=duplicate,
-                spotify_uri="spotify:track:same", duration_seconds=200.5,
+                title="Same Song",
+                artist="Same Artist",
+                file_path=duplicate,
+                spotify_uri="spotify:track:same",
+                duration_seconds=200.5,
                 playlist_name="Second List",
             )
             job_id = repository.create(duplicate.name, duplicate, "auto", 0, 0, False)
             repository.update(job_id, status="complete", wav_path=str(duplicate))
-            repository.set_key_verification(
-                duplicate.name, "D minor", "F major", [], "Checked"
-            )
+            repository.set_key_verification(duplicate.name, "D minor", "F major", [], "Checked")
             repository.add_track_feedback(
                 duplicate.name, "overall", True, "clean", "Keep this note"
             )
@@ -70,8 +80,11 @@ class RecordingIdentityTests(unittest.TestCase):
 
             self.assertEqual(len(repository.list_downloaded_tracks()), 1)
             self.assertEqual(set(merged["playlists"]), {"First List", "Second List"})
-            self.assertEqual(repository.get(job_id)["source_path"], str(first.resolve()))
-            self.assertEqual(repository.key_verification(first.name)["verified_key"], "D minor")
+            job = repository.get(job_id)
+            verification = repository.key_verification(first.name)
+            assert job is not None and verification is not None
+            self.assertEqual(job["source_path"], str(first.resolve()))
+            self.assertEqual(verification["verified_key"], "D minor")
             self.assertEqual(repository.track_feedback(first.name)[0]["notes"], "Keep this note")
             self.assertTrue(duplicate.is_file())
             self.assertTrue(repository.downloaded_track_is_excluded(duplicate))
@@ -86,10 +99,14 @@ class RecordingIdentityTests(unittest.TestCase):
             first.write_bytes(b"RIFF-identical-audio")
             second.write_bytes(first.read_bytes())
             repository.upsert_downloaded_track(
-                title="Unknown Upload", artist="", file_path=first,
+                title="Unknown Upload",
+                artist="",
+                file_path=first,
             )
             repository.upsert_downloaded_track(
-                title="Correct Title", artist="Correct Artist", file_path=second,
+                title="Correct Title",
+                artist="Correct Artist",
+                file_path=second,
             )
             candidates = repository.duplicate_candidates()
             self.assertEqual(len(candidates), 1)
@@ -104,13 +121,20 @@ class RecordingIdentityTests(unittest.TestCase):
             first.write_bytes(b"RIFF-one")
             second.write_bytes(b"RIFF-two")
             repository.upsert_downloaded_track(
-                title="Intro", artist="Artist", file_path=first, duration_seconds=60,
+                title="Intro",
+                artist="Artist",
+                file_path=first,
+                duration_seconds=60,
             )
             second_id = repository.upsert_downloaded_track(
-                title="Intro", artist="Artist", file_path=second, duration_seconds=61,
+                title="Intro",
+                artist="Artist",
+                file_path=second,
+                duration_seconds=61,
             )
             before = repository.get_downloaded_track(second_id)
             separated = repository.separate_recording(second_id)
+            assert before is not None
             self.assertNotEqual(before["recording_code"], separated["recording_code"])
             self.assertEqual(separated["identity_confidence"], "manual")
             self.assertEqual(repository.duplicate_candidates(), [])
@@ -135,22 +159,28 @@ class RecordingIdentityTests(unittest.TestCase):
             original.write_bytes(b"RIFF-original")
             remix.write_bytes(b"RIFF-remix")
             original_id = repository.upsert_downloaded_track(
-                title="Atrevete", artist="Calle 13", file_path=original,
+                title="Atrevete",
+                artist="Calle 13",
+                file_path=original,
                 duration_seconds=240,
             )
             remix_id = repository.upsert_downloaded_track(
                 title="Calle 13 - Atrevete (Kevin Brand Remix)",
-                artist="Kevin Brand", file_path=remix, duration_seconds=270,
+                artist="Kevin Brand",
+                file_path=remix,
+                duration_seconds=270,
             )
-            self.assertNotEqual(
-                repository.get_downloaded_track(original_id)["recording_code"],
-                repository.get_downloaded_track(remix_id)["recording_code"],
-            )
+            original_track = repository.get_downloaded_track(original_id)
+            remix_track = repository.get_downloaded_track(remix_id)
+            assert original_track is not None and remix_track is not None
+            self.assertNotEqual(original_track["recording_code"], remix_track["recording_code"])
 
             linked = repository.link_recording_version(remix_id, original_id, "RMX")
+            original_track = repository.get_downloaded_track(original_id)
+            assert original_track is not None
             self.assertEqual(
                 linked["recording_code"],
-                repository.get_downloaded_track(original_id)["recording_code"],
+                original_track["recording_code"],
             )
             self.assertEqual(linked["version_code"], "RMX01")
             self.assertEqual(len(repository.recording_family(original_id)), 2)

@@ -39,9 +39,15 @@ class LibraryBackupService:
     def sources(self, include_cache: bool = False) -> list[tuple[Path, str]]:
         items = [
             (self.project / "track_overrides.json", "state/track_overrides.json"),
-            (self.project / "output/reports/processing_report.json", "state/processing_report.json"),
+            (
+                self.project / "output/reports/processing_report.json",
+                "state/processing_report.json",
+            ),
             (self.project / "output/reports/web_presets.json", "state/web_presets.json"),
-            (self.project / "output/reports/set_builder_catalog.json", "state/set_builder_catalog.json"),
+            (
+                self.project / "output/reports/set_builder_catalog.json",
+                "state/set_builder_catalog.json",
+            ),
         ]
         for root, prefix in (
             (self.library_root / ".audioextender", "library/.audioextender"),
@@ -58,7 +64,8 @@ class LibraryBackupService:
             if cache.is_dir():
                 items.extend(
                     (path, f"cache/{path.relative_to(cache).as_posix()}")
-                    for path in cache.rglob("*") if path.is_file()
+                    for path in cache.rglob("*")
+                    if path.is_file()
                 )
         return [(path, name) for path, name in items if path.is_file()]
 
@@ -68,18 +75,27 @@ class LibraryBackupService:
         archive = destination / f"AudioExtender-Backup-{stamp}.aexbackup"
         with tempfile.TemporaryDirectory(prefix="audioextender-backup-") as temporary:
             snapshot = Path(temporary) / "audioextender.sqlite3"
-            with closing(sqlite3.connect(self.database)) as source, closing(sqlite3.connect(snapshot)) as target:
+            with (
+                closing(sqlite3.connect(self.database)) as source,
+                closing(sqlite3.connect(snapshot)) as target,
+            ):
                 source.backup(target)
                 target.commit()
             files = [(snapshot, "state/audioextender.sqlite3"), *self.sources(include_cache)]
             manifest_files = []
-            with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as bundle:
+            with zipfile.ZipFile(
+                archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
+            ) as bundle:
                 for path, name in files:
-                    manifest_files.append({"path": name, "size": path.stat().st_size, "sha256": _sha256(path)})
+                    manifest_files.append(
+                        {"path": name, "size": path.stat().st_size, "sha256": _sha256(path)}
+                    )
                     bundle.write(path, name)
                 track_count = 0
                 with closing(sqlite3.connect(snapshot)) as connection:
-                    track_count = int(connection.execute("SELECT COUNT(*) FROM downloaded_tracks").fetchone()[0])
+                    track_count = int(
+                        connection.execute("SELECT COUNT(*) FROM downloaded_tracks").fetchone()[0]
+                    )
                 manifest = {
                     "format_version": BACKUP_FORMAT_VERSION,
                     "created_at": _now(),
@@ -90,7 +106,12 @@ class LibraryBackupService:
                 }
                 bundle.writestr("manifest.json", json.dumps(manifest, indent=2))
         self._apply_retention(destination, retention)
-        return {**manifest, "filename": archive.name, "path": str(archive), "size": archive.stat().st_size}
+        return {
+            **manifest,
+            "filename": archive.name,
+            "path": str(archive),
+            "size": archive.stat().st_size,
+        }
 
     def inspect(self, archive: Path) -> dict:
         try:
@@ -137,9 +158,7 @@ class LibraryBackupService:
 
     def restore(self, archive: Path, pre_restore_destination: Path) -> dict:
         manifest = self.inspect(archive)
-        pre_restore = self.create(
-            pre_restore_destination, include_cache=False, retention=10
-        )
+        pre_restore = self.create(pre_restore_destination, include_cache=False, retention=10)
         with tempfile.TemporaryDirectory(prefix="audioextender-restore-") as temporary:
             staging = Path(temporary)
             with zipfile.ZipFile(archive) as bundle:
@@ -151,21 +170,28 @@ class LibraryBackupService:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(bundle.read(name))
             restored_database = staging / "state/audioextender.sqlite3"
-            with closing(sqlite3.connect(restored_database)) as source, closing(sqlite3.connect(self.database)) as target:
-                source.backup(target)
-                target.commit()
+            with (
+                closing(sqlite3.connect(restored_database)) as source_connection,
+                closing(sqlite3.connect(self.database)) as target_connection,
+            ):
+                source_connection.backup(target_connection)
+                target_connection.commit()
             mapping = {
                 "state/track_overrides.json": self.project / "track_overrides.json",
-                "state/processing_report.json": self.project / "output/reports/processing_report.json",
+                "state/processing_report.json": self.project
+                / "output/reports/processing_report.json",
                 "state/web_presets.json": self.project / "output/reports/web_presets.json",
-                "state/set_builder_catalog.json": self.project / "output/reports/set_builder_catalog.json",
+                "state/set_builder_catalog.json": self.project
+                / "output/reports/set_builder_catalog.json",
             }
             for source_name, destination in mapping.items():
-                source = staging / source_name
-                if source.is_file():
+                source_path = staging / source_name
+                if source_path.is_file():
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(source, destination)
-            self._restore_tree(staging / "library/.audioextender", self.library_root / ".audioextender")
+                    os.replace(source_path, destination)
+            self._restore_tree(
+                staging / "library/.audioextender", self.library_root / ".audioextender"
+            )
             self._restore_tree(staging / "library/_Playlist", self.library_root / "_Playlist")
             self._restore_tree(staging / "cache", self.project / "cache")
         return {"restored": True, "manifest": manifest, "pre_restore_backup": pre_restore}
@@ -184,6 +210,10 @@ class LibraryBackupService:
 
     @staticmethod
     def _apply_retention(destination: Path, retention: int) -> None:
-        backups = sorted(destination.glob("AudioExtender-Backup-*.aexbackup"), key=lambda path: path.stat().st_mtime, reverse=True)
-        for expired in backups[max(1, retention):]:
+        backups = sorted(
+            destination.glob("AudioExtender-Backup-*.aexbackup"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for expired in backups[max(1, retention) :]:
             expired.unlink(missing_ok=True)

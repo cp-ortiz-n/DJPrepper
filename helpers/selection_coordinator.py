@@ -8,25 +8,29 @@ from dataclasses import dataclass
 import numpy as np
 
 from helpers.analysis import TrackAnalysis
+from helpers.audio_loader import AudioData
 from helpers.candidate_reranker import rerank_candidates
 from helpers.candidate_selection import (
-    CandidateSelectionService,
+    CandidateRankingService,
     Position,
     SelectionRequest,
 )
+from helpers.candidate_validator import CandidateValidator, ValidationResult
 from helpers.config import EditConfig
 from helpers.interfaces import ProgressReporter
 from helpers.section_selector import SectionCandidate
-from settings import (
-    MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO,
-    MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH,
-    SUPPORTED_BAR_COUNTS,
-)
+from helpers.splice_policy import SplicePlan, build_splice_plan
+from settings import SUPPORTED_BAR_COUNTS
 
 CandidateChooser = Callable[
     [list[SectionCandidate], Position, int],
     tuple[SectionCandidate | None, int | None],
 ]
+CandidateReranker = Callable[
+    [list[SectionCandidate], Position, str | None],
+    list[SectionCandidate],
+]
+SplicePlanner = Callable[[SectionCandidate, float], SplicePlan]
 
 
 @dataclass(frozen=True)
@@ -54,55 +58,82 @@ class SideSelectionResult:
     fallback: str | None = None
 
 
+@dataclass(frozen=True)
+class FinalizedSelection:
+    """Validated selection plus rendering policy, produced by orchestration."""
+
+    validation: ValidationResult
+    splice_plan: SplicePlan | None
+
+    @property
+    def candidate(self) -> SectionCandidate | None:
+        return self.validation.candidate
+
+    @property
+    def rejection_reason(self) -> str | None:
+        return self.validation.rejection_reason
+
+    @property
+    def uses_instrumental(self) -> bool:
+        return self.validation.uses_instrumental
+
+    @property
+    def shortened(self) -> bool:
+        return self.validation.shortened
+
+
 def candidate_safety_issue(
     candidate: SectionCandidate,
     config: EditConfig,
     position: Position | None = None,
 ) -> str | None:
-    if candidate.vocal_energy is not None and (
-        candidate.vocal_coverage > config.maximum_vocal_coverage
-        or candidate.vocal_boundary_risk > config.maximum_vocal_boundary_risk
-    ):
-        return (
-            f"vocals {candidate.vocal_coverage:.0%}, boundary risk "
-            f"{candidate.vocal_boundary_risk:.0%}"
-        )
-    if candidate.buildup_risk > config.maximum_buildup_risk:
-        return f"buildup risk {candidate.buildup_risk:.0%}"
-    if candidate.bass_reset_risk > config.maximum_bass_reset_risk:
-        return f"bass-reset risk {candidate.bass_reset_risk:.0%}"
-    if candidate.arrangement_fit < config.minimum_arrangement_fit:
-        return f"section {candidate.section_label}, fit {candidate.arrangement_fit:+.0%}"
-    if (
-        position == "intro"
-        and candidate.rhythmic_strength
-        < MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH
-        and candidate.instrumentalness
-        < MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO
-    ):
-        return (
-            "exposed melodic phrase without a stable rhythmic bed "
-            f"(rhythm {candidate.rhythmic_strength:.0%})"
-        )
-    quality_floor = max(
-        config.minimum_loop_quality,
-        config.minimum_intro_loop_quality
-        if position == "intro"
-        else config.minimum_outro_loop_quality,
+    return CandidateValidator().safety_issue(
+        candidate,
+        config,
+        position,
+        vocal_analysis_available=candidate.vocal_energy is not None,
     )
-    if round(candidate.loop_quality) < quality_floor:
-        return (
-            f"quality {candidate.loop_quality:.0f}% below "
-            f"{quality_floor:.0f}%"
-        )
-    return None
 
 
 class SelectionCoordinator:
     """Apply identical selection behavior to either side of an edit."""
 
-    def __init__(self, ranking: CandidateSelectionService | None = None) -> None:
-        self._ranking = ranking or CandidateSelectionService()
+    def __init__(
+        self,
+        ranking: CandidateRankingService | None = None,
+        validator: CandidateValidator | None = None,
+        reranker: CandidateReranker = rerank_candidates,
+        splice_planner: SplicePlanner = build_splice_plan,
+    ) -> None:
+        self._ranking = ranking or CandidateRankingService()
+        self._validator = validator or CandidateValidator()
+        self._reranker = reranker
+        self._splice_planner = splice_planner
+
+    def finalize(
+        self,
+        candidate: SectionCandidate | None,
+        config: EditConfig,
+        instrumental_audio: AudioData | None,
+        stem_reliability: float,
+        vocal_analysis_available: bool,
+        position: Position,
+    ) -> FinalizedSelection:
+        """Complete selection with the authoritative post-boundary validation."""
+        validation = self._validator.validate(
+            candidate,
+            config,
+            instrumental_audio,
+            stem_reliability,
+            vocal_analysis_available,
+            position=position,
+        )
+        plan = (
+            self._splice_planner(validation.candidate, config.crossfade_ms)
+            if validation.candidate is not None
+            else None
+        )
+        return FinalizedSelection(validation, plan)
 
     def select(
         self,
@@ -164,7 +195,7 @@ class SelectionCoordinator:
                 f"({ranked.reason})"
             )
         options = self._prefer_instrumental(list(ranked.candidates), prefer_instrumental)
-        options = rerank_candidates(options, request.position, config.preset_name)
+        options = self._reranker(options, request.position, config.preset_name)
         chosen, rank = chooser(options, request.position, request.requested_rank)
         fallback_description = None
 
@@ -174,8 +205,11 @@ class SelectionCoordinator:
             and not config.manual_candidate_selection
             and request.requested_rank == 1
             and (
-                issue := candidate_safety_issue(
-                    chosen, config, request.position
+                issue := self._validator.safety_issue(
+                    chosen,
+                    config,
+                    request.position,
+                    vocal_analysis_available=vocal_energy is not None,
                 )
             ) is not None
         ):
@@ -253,7 +287,12 @@ class SelectionCoordinator:
     ) -> tuple[SectionCandidate, int | None, str] | None:
         def safe(candidate: SectionCandidate) -> bool:
             return (
-                candidate_safety_issue(candidate, config, request.position) is None
+                self._validator.safety_issue(
+                    candidate,
+                    config,
+                    request.position,
+                    vocal_analysis_available=vocal_energy is not None,
+                ) is None
                 and candidate.loop_quality >= config.minimum_fallback_loop_quality
             )
 
