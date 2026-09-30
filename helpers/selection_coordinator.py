@@ -8,6 +8,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from helpers.analysis import TrackAnalysis
+from helpers.audio_loader import AudioData
 from helpers.candidate_reranker import rerank_candidates
 from helpers.candidate_selection import (
     CandidateRankingService,
@@ -15,7 +16,6 @@ from helpers.candidate_selection import (
     SelectionRequest,
 )
 from helpers.candidate_validator import CandidateValidator, ValidationResult
-from helpers.audio_loader import AudioData
 from helpers.config import EditConfig
 from helpers.interfaces import ProgressReporter
 from helpers.section_selector import SectionCandidate

@@ -17,15 +17,21 @@ class LibraryRelocationTests(unittest.TestCase):
         artwork.parent.mkdir(parents=True)
         artwork.write_bytes(b"cover")
         track_id = repository.upsert_downloaded_track(
-            title="Track", artist="Artist", file_path=track,
-            genre="house", genre_category="Electronic / House",
-            artwork_path=str(artwork), playlist_name="House Set",
+            title="Track",
+            artist="Artist",
+            file_path=track,
+            genre="house",
+            genre_category="Electronic / House",
+            artwork_path=str(artwork),
+            playlist_name="House Set",
         )
         return track_id, track
 
     def test_copy_preserves_source_without_switching_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary); source = base / "Library"; destination = base / "Backup"
+            base = Path(temporary)
+            source = base / "Library"
+            destination = base / "Backup"
             repository = JobRepository(base / "catalog.sqlite3")
             track_id, source_track = self.make_library(source, repository)
             coordinator = LibraryRelocationCoordinator(repository, base / "relocation.json")
@@ -35,29 +41,40 @@ class LibraryRelocationTests(unittest.TestCase):
             self.assertEqual(state["status"], "complete")
             self.assertTrue(source_track.is_file())
             self.assertTrue((destination / source_track.relative_to(source)).is_file())
-            self.assertEqual(repository.get_downloaded_track(track_id)["file_path"], str(source_track.resolve()))
+            track = repository.get_downloaded_track(track_id)
+            assert track is not None
+            self.assertEqual(track["file_path"], str(source_track.resolve()))
 
     def test_move_relinks_paths_preserves_id_and_keeps_original(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary); source = base / "Library"; destination = base / "External Library"
+            base = Path(temporary)
+            source = base / "Library"
+            destination = base / "External Library"
             repository = JobRepository(base / "catalog.sqlite3")
             track_id, source_track = self.make_library(source, repository)
             job_id = repository.create("Artist - Track.wav", source_track, "auto", 0, 0, False)
             repository.update(
-                job_id, status="complete", wav_path=str(source_track.resolve()),
+                job_id,
+                status="complete",
+                wav_path=str(source_track.resolve()),
                 intro_preview_path=str((source / "previews" / "intro.wav").resolve()),
             )
             coordinator = LibraryRelocationCoordinator(repository, base / "relocation.json")
             coordinator.prepare(source, destination, "move", "fast")
             coordinator._run()
             relocated = repository.get_downloaded_track(track_id)
+            assert relocated is not None
             self.assertEqual(coordinator.status()["status"], "complete")
             self.assertEqual(relocated["id"], track_id)
-            self.assertEqual(Path(relocated["file_path"]), (destination / source_track.relative_to(source)).resolve())
+            self.assertEqual(
+                Path(relocated["file_path"]),
+                (destination / source_track.relative_to(source)).resolve(),
+            )
             self.assertTrue(source_track.is_file())
             self.assertTrue((destination / ".audioextender" / "library.json").is_file())
             self.assertTrue(any((destination / "_Playlist").glob("*.m3u8")))
             relocated_job = repository.get(job_id)
+            assert relocated_job is not None
             self.assertEqual(
                 Path(relocated_job["wav_path"]).resolve(),
                 (destination / source_track.relative_to(source)).resolve(),
@@ -78,24 +95,35 @@ class LibraryRelocationTests(unittest.TestCase):
             self.assertTrue(coordinator.status()["database_backup"])
             rolled_back = coordinator.rollback()
             self.assertEqual(rolled_back["status"], "rolled_back")
-            self.assertEqual(Path(repository.get_downloaded_track(track_id)["file_path"]), source_track.resolve())
+            restored_track = repository.get_downloaded_track(track_id)
+            assert restored_track is not None
+            self.assertEqual(Path(restored_track["file_path"]), source_track.resolve())
 
     def test_relink_accepts_an_already_moved_library(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            base = Path(temporary); source = base / "Missing Library"; destination = base / "Found Library"
+            base = Path(temporary)
+            source = base / "Missing Library"
+            destination = base / "Found Library"
             repository = JobRepository(base / "catalog.sqlite3")
             old_track = source / "Latin" / "Artist - Song.wav"
             track_id = repository.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=old_track,
-                genre="salsa", genre_category="Latin / Salsa", playlist_name="Latin Set",
+                title="Song",
+                artist="Artist",
+                file_path=old_track,
+                genre="salsa",
+                genre_category="Latin / Salsa",
+                playlist_name="Latin Set",
             )
             new_track = destination / old_track.relative_to(source)
-            new_track.parent.mkdir(parents=True); new_track.write_bytes(b"RIFF-relocated")
+            new_track.parent.mkdir(parents=True)
+            new_track.write_bytes(b"RIFF-relocated")
             coordinator = LibraryRelocationCoordinator(repository, base / "relocation.json")
             coordinator.prepare(source, destination, "relink", "fast")
             coordinator._run()
             self.assertEqual(coordinator.status()["status"], "complete")
-            self.assertEqual(Path(repository.get_downloaded_track(track_id)["file_path"]), new_track.resolve())
+            relocated = repository.get_downloaded_track(track_id)
+            assert relocated is not None
+            self.assertEqual(Path(relocated["file_path"]), new_track.resolve())
 
 
 if __name__ == "__main__":

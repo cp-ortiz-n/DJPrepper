@@ -1,6 +1,6 @@
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 from helpers.presets import EditPreset
 from helpers.web_configuration import PresetStore, WebConfigurationService, web_defaults

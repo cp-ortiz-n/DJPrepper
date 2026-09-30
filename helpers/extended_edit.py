@@ -14,7 +14,6 @@ from helpers.splice_policy import (
     build_splice_plan,
     choose_splice_mode,
     crossfade_duration_ms,
-    tail_duration_ms,
 )
 
 
@@ -139,21 +138,9 @@ def optimize_candidate_boundaries(
     )
 
 
-def _choose_splice_mode(candidate: SectionCandidate) -> str:
-    """Backward-compatible wrapper for callers of the original private API."""
-    return choose_splice_mode(candidate)
-
-
 def adaptive_crossfade_ms(candidate: SectionCandidate, minimum_ms: float) -> float:
     """Compatibility helper; orchestration now supplies complete splice plans."""
     return crossfade_duration_ms(candidate, minimum_ms)
-
-
-def _adaptive_fade_frames(
-    candidate: SectionCandidate, sample_rate: int, minimum_ms: float
-) -> int:
-    fade_ms = adaptive_crossfade_ms(candidate, minimum_ms)
-    return max(1, round(sample_rate * fade_ms / 1000.0))
 
 
 def _harmonic_component(samples: np.ndarray) -> np.ndarray:
@@ -165,11 +152,6 @@ def _harmonic_component(samples: np.ndarray) -> np.ndarray:
         harmonic, _percussive = librosa.effects.hpss(samples[:, channel])
         channels.append(harmonic)
     return np.column_stack(channels).astype(np.float32, copy=False)
-
-
-def _tail_duration_frames(candidate: SectionCandidate, sample_rate: int) -> int:
-    """Carry 250–750 ms of ambience, using more when timbre changes strongly."""
-    return max(1, round(sample_rate * tail_duration_ms(candidate) / 1000.0))
 
 
 def _preserve_harmonic_tail(

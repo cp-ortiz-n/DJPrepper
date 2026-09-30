@@ -9,10 +9,11 @@ import shutil
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Callable
 from contextlib import closing
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 
 def _now() -> str:
@@ -21,6 +22,7 @@ def _now() -> str:
 
 class RelocationRepository(Protocol):
     path: Path
+
     def list_downloaded_tracks(self) -> list[dict]: ...
     def relocate_library_paths(self, old_root: Path, new_root: Path) -> dict[str, int]: ...
 
@@ -48,7 +50,11 @@ class LibraryRelocationPlanner:
         files = [path for path in source.rglob("*") if path.is_file()] if source.is_dir() else []
         total_bytes = sum(path.stat().st_size for path in files)
         tracks = self.repository.list_downloaded_tracks()
-        managed = [track for track in tracks if self._relative(Path(track["file_path"]), source) is not None]
+        managed = [
+            track
+            for track in tracks
+            if self._relative(Path(track["file_path"]), source) is not None
+        ]
         missing = [track for track in managed if not Path(track["file_path"]).is_file()]
         if mode != "relink":
             probe = destination.parent if destination.parent.exists() else source.parent
@@ -56,13 +62,24 @@ class LibraryRelocationPlanner:
             if free < total_bytes:
                 raise ValueError("The destination does not have enough free space")
         else:
-            absent = [track for track in managed if not (destination / self._relative(Path(track["file_path"]), source)).is_file()]
+            absent = []
+            for track in managed:
+                relative = self._relative(Path(track["file_path"]), source)
+                if relative is None or not (destination / relative).is_file():
+                    absent.append(track)
             if absent:
-                raise ValueError(f"The relocated folder is missing {len(absent)} cataloged track(s)")
+                raise ValueError(
+                    f"The relocated folder is missing {len(absent)} cataloged track(s)"
+                )
         return {
-            "source": str(source), "destination": str(destination), "mode": mode,
-            "verification": verification, "file_count": len(files), "track_count": len(managed),
-            "missing_source_tracks": len(missing), "total_bytes": total_bytes,
+            "source": str(source),
+            "destination": str(destination),
+            "mode": mode,
+            "verification": verification,
+            "file_count": len(files),
+            "track_count": len(managed),
+            "missing_source_tracks": len(missing),
+            "total_bytes": total_bytes,
         }
 
     @staticmethod
@@ -74,7 +91,13 @@ class LibraryRelocationPlanner:
 
 
 class LibraryFileTransferService:
-    def copy(self, source: Path, staging: Path, update: Callable[[int, int, str], None], canceled: Callable[[], bool]) -> None:
+    def copy(
+        self,
+        source: Path,
+        staging: Path,
+        update: Callable[[int, int, str], None],
+        canceled: Callable[[], bool],
+    ) -> None:
         files = [path for path in source.rglob("*") if path.is_file()]
         staging.mkdir(parents=True, exist_ok=True)
         for index, path in enumerate(files, 1):
@@ -89,7 +112,14 @@ class LibraryFileTransferService:
 
 
 class LibraryRelocationVerifier:
-    def verify(self, source: Path, destination: Path, level: str, update: Callable[[int, int, str], None], canceled: Callable[[], bool]) -> None:
+    def verify(
+        self,
+        source: Path,
+        destination: Path,
+        level: str,
+        update: Callable[[int, int, str], None],
+        canceled: Callable[[], bool],
+    ) -> None:
         files = [path for path in source.rglob("*") if path.is_file()]
         for index, source_file in enumerate(files, 1):
             if canceled():
@@ -102,15 +132,22 @@ class LibraryRelocationVerifier:
                 raise ValueError(f"Content verification failed for {relative}")
             update(index, len(files), f"Verifying {relative}")
 
-    def verify_relink(self, tracks: list[dict], source: Path, destination: Path, update: Callable[[int, int, str], None], canceled: Callable[[], bool]) -> None:
-        managed = []
+    def verify_relink(
+        self,
+        tracks: list[dict],
+        source: Path,
+        destination: Path,
+        update: Callable[[int, int, str], None],
+        canceled: Callable[[], bool],
+    ) -> None:
+        managed: list[Path] = []
         for track in tracks:
             try:
                 relative = Path(str(track["file_path"])).resolve().relative_to(source)
             except (OSError, ValueError):
                 continue
-            managed.append((track, relative))
-        for index, (track, relative) in enumerate(managed, 1):
+            managed.append(relative)
+        for index, relative in enumerate(managed, 1):
             if canceled():
                 raise InterruptedError("Relocation canceled")
             if not (destination / relative).is_file():
@@ -148,24 +185,40 @@ class LibraryMetadataRelinker:
             except ValueError:
                 continue
             payload = {
-                "title": track.get("title", ""), "artist": track.get("artist", ""),
-                "genre": track.get("genre", ""), "genre_category": track.get("genre_category", "Other"),
-                "youtube_id": track.get("youtube_id", ""), "youtube_url": track.get("youtube_url", ""),
-                "artwork_url": track.get("artwork_url", ""), "file_path": str(path),
+                "title": track.get("title", ""),
+                "artist": track.get("artist", ""),
+                "genre": track.get("genre", ""),
+                "genre_category": track.get("genre_category", "Other"),
+                "youtube_id": track.get("youtube_id", ""),
+                "youtube_url": track.get("youtube_url", ""),
+                "artwork_url": track.get("artwork_url", ""),
+                "file_path": str(path),
                 "playlist_name": (track.get("playlists") or ["Imported Singles"])[0],
             }
             key = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()
-            (source_root / f"{key}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            (source_root / f"{key}.json").write_text(
+                json.dumps(payload, indent=2), encoding="utf-8"
+            )
             for playlist in track.get("playlists") or []:
                 playlists.setdefault(str(playlist), []).append(str(path))
         playlist_root = destination / "_Playlist"
         playlist_root.mkdir(exist_ok=True)
         for playlist, paths in playlists.items():
-            safe = "".join(char if char.isalnum() or char in " -_" else "_" for char in playlist).strip() or "Playlist"
-            (playlist_root / f"{safe}.m3u8").write_text("#EXTM3U\n" + "\n".join(paths) + "\n", encoding="utf-8")
+            safe = (
+                "".join(
+                    char if char.isalnum() or char in " -_" else "_" for char in playlist
+                ).strip()
+                or "Playlist"
+            )
+            (playlist_root / f"{safe}.m3u8").write_text(
+                "#EXTM3U\n" + "\n".join(paths) + "\n", encoding="utf-8"
+            )
         identity = destination / ".audioextender" / "library.json"
         if not identity.exists():
-            identity.write_text(json.dumps({"library_id": uuid.uuid4().hex, "created_at": _now()}, indent=2), encoding="utf-8")
+            identity.write_text(
+                json.dumps({"library_id": uuid.uuid4().hex, "created_at": _now()}, indent=2),
+                encoding="utf-8",
+            )
 
 
 class LibraryRelocationCoordinator:
@@ -179,7 +232,11 @@ class LibraryRelocationCoordinator:
         self._lock = threading.Lock()
         self._state: dict = self._load()
         if self._state.get("status") == "processing":
-            self._state.update(status="failed", stage="Interrupted safely", error="The app stopped during relocation. Start again to resume the copy.")
+            self._state.update(
+                status="failed",
+                stage="Interrupted safely",
+                error="The app stopped during relocation. Start again to resume the copy.",
+            )
             self._save()
         self._cancel = threading.Event()
 
@@ -202,7 +259,14 @@ class LibraryRelocationCoordinator:
     def prepare(self, source: Path, destination: Path, mode: str, verification: str) -> dict:
         plan = self.planner.plan(source, destination, mode, verification)
         with self._lock:
-            self._state = {"id": uuid.uuid4().hex, "status": "planned", "stage": "Ready", "progress": 0, "created_at": _now(), **plan}
+            self._state = {
+                "id": uuid.uuid4().hex,
+                "status": "planned",
+                "stage": "Ready",
+                "progress": 0,
+                "created_at": _now(),
+                **plan,
+            }
             self._save()
             return dict(self._state)
 
@@ -211,7 +275,9 @@ class LibraryRelocationCoordinator:
             if self._state.get("status") not in {"planned", "failed", "canceled"}:
                 raise ValueError("No relocation plan is ready")
             self._state.update(status="processing", stage="Starting", progress=0, error="")
-            self._cancel.clear(); self._save(); snapshot = dict(self._state)
+            self._cancel.clear()
+            self._save()
+            snapshot = dict(self._state)
         threading.Thread(target=self._run, daemon=True, name="library-relocation").start()
         return snapshot
 
@@ -237,38 +303,78 @@ class LibraryRelocationCoordinator:
         if state.get("status") != "complete" or not backup.is_file():
             raise ValueError("No completed relocation backup is available")
         with self._lock:
-            with closing(sqlite3.connect(backup)) as source, closing(sqlite3.connect(self.repository.path)) as target:
-                source.backup(target); target.commit()
-            self._state.update(status="rolled_back", stage="Catalog restored to the original library", progress=100, rolled_back_at=_now())
+            with (
+                closing(sqlite3.connect(backup)) as source,
+                closing(sqlite3.connect(self.repository.path)) as target,
+            ):
+                source.backup(target)
+                target.commit()
+            self._state.update(
+                status="rolled_back",
+                stage="Catalog restored to the original library",
+                progress=100,
+                rolled_back_at=_now(),
+            )
             self._save()
             return dict(self._state)
 
     def _update(self, stage: str, processed: int = 0, total: int = 0) -> None:
         with self._lock:
-            self._state.update(stage=stage, processed=processed, total=total, progress=round(processed / max(1, total) * 100) if total else self._state.get("progress", 0))
+            self._state.update(
+                stage=stage,
+                processed=processed,
+                total=total,
+                progress=round(processed / max(1, total) * 100)
+                if total
+                else self._state.get("progress", 0),
+            )
             self._save()
 
     def _backup_database(self) -> Path:
-        backup = self.repository.path.with_name(f"{self.repository.path.stem}.before-relocation-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite3")
-        with closing(sqlite3.connect(self.repository.path)) as source, closing(sqlite3.connect(backup)) as target:
-            source.backup(target); target.commit()
+        backup = self.repository.path.with_name(
+            f"{self.repository.path.stem}.before-relocation-{datetime.now().strftime('%Y%m%d-%H%M%S')}.sqlite3"
+        )
+        with (
+            closing(sqlite3.connect(self.repository.path)) as source,
+            closing(sqlite3.connect(backup)) as target,
+        ):
+            source.backup(target)
+            target.commit()
         return backup
 
     def _run(self) -> None:
-        state = self.status(); source = Path(state["source"]); destination = Path(state["destination"])
+        state = self.status()
+        source = Path(state["source"])
+        destination = Path(state["destination"])
         staging = destination.with_name(destination.name + ".relocating")
         try:
             active = destination
             if state["mode"] != "relink":
                 self._update("Copying library")
-                self.transfer.copy(source, staging, lambda i,n,s:self._update(s,i,n), self._cancel.is_set)
+                self.transfer.copy(
+                    source, staging, lambda i, n, s: self._update(s, i, n), self._cancel.is_set
+                )
                 self._update("Verifying copy")
-                self.verifier.verify(source, staging, state["verification"], lambda i,n,s:self._update(s,i,n), self._cancel.is_set)
-                if destination.exists(): destination.rmdir()
-                staging.rename(destination); active = destination
+                self.verifier.verify(
+                    source,
+                    staging,
+                    state["verification"],
+                    lambda i, n, s: self._update(s, i, n),
+                    self._cancel.is_set,
+                )
+                if destination.exists():
+                    destination.rmdir()
+                staging.rename(destination)
+                active = destination
             else:
                 self._update("Verifying relocated library")
-                self.verifier.verify_relink(self.repository.list_downloaded_tracks(), source, destination, lambda i,n,s:self._update(s,i,n), self._cancel.is_set)
+                self.verifier.verify_relink(
+                    self.repository.list_downloaded_tracks(),
+                    source,
+                    destination,
+                    lambda i, n, s: self._update(s, i, n),
+                    self._cancel.is_set,
+                )
             if state["mode"] in {"move", "relink"}:
                 backup = self._backup_database()
                 self._update("Relinking catalog and analysis")
@@ -276,11 +382,24 @@ class LibraryRelocationCoordinator:
                 self._update("Rebuilding metadata and playlists")
                 self.metadata.rebuild(active)
             else:
-                backup = None; counts = {}
+                backup = None
+                counts = {}
             with self._lock:
-                self._state.update(status="complete", stage="Relocation complete", progress=100, completed_at=_now(), database_backup=str(backup or ""), updated=counts, original_retained=True)
+                self._state.update(
+                    status="complete",
+                    stage="Relocation complete",
+                    progress=100,
+                    completed_at=_now(),
+                    database_backup=str(backup or ""),
+                    updated=counts,
+                    original_retained=True,
+                )
                 self._save()
         except InterruptedError as error:
-            with self._lock: self._state.update(status="canceled", stage="Canceled safely", error=str(error)); self._save()
+            with self._lock:
+                self._state.update(status="canceled", stage="Canceled safely", error=str(error))
+                self._save()
         except Exception as error:
-            with self._lock: self._state.update(status="failed", stage="Relocation failed", error=str(error)); self._save()
+            with self._lock:
+                self._state.update(status="failed", stage="Relocation failed", error=str(error))
+                self._save()

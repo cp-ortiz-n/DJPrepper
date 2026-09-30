@@ -6,9 +6,9 @@ import json
 import re
 import sqlite3
 import threading
-from difflib import SequenceMatcher
 from contextlib import closing
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -94,12 +94,10 @@ class SQLiteApplicationStore:
                     "ON jobs(status, created_at DESC)"
                 )
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_jobs_source_id "
-                    "ON jobs(source_path, id DESC)"
+                    "CREATE INDEX IF NOT EXISTS idx_jobs_source_id ON jobs(source_path, id DESC)"
                 )
                 columns = {
-                    str(row[1])
-                    for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
+                    str(row[1]) for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
                 }
                 additions = {
                     "intro_preview_path": "TEXT",
@@ -114,9 +112,7 @@ class SQLiteApplicationStore:
                 }
                 for column, definition in additions.items():
                     if column not in columns:
-                        connection.execute(
-                            f"ALTER TABLE jobs ADD COLUMN {column} {definition}"
-                        )
+                        connection.execute(f"ALTER TABLE jobs ADD COLUMN {column} {definition}")
                 rows = connection.execute(
                     "SELECT id, parent_job_id, config_json, review_status FROM jobs"
                 ).fetchall()
@@ -142,9 +138,7 @@ class SQLiteApplicationStore:
                         child_config = json.loads(row["config_json"] or "{}")
                     except (TypeError, ValueError):
                         child_config = {}
-                    if row["parent_job_id"] and child_config.get(
-                        "manual_candidate_selection"
-                    ):
+                    if row["parent_job_id"] and child_config.get("manual_candidate_selection"):
                         connection.execute(
                             "UPDATE jobs SET review_status = 'resolved' WHERE id = ?",
                             (row["parent_job_id"],),
@@ -223,9 +217,8 @@ class SQLiteApplicationStore:
                     """
                 )
                 downloaded_columns = {
-                    str(row[1]) for row in connection.execute(
-                        "PRAGMA table_info(downloaded_tracks)"
-                    ).fetchall()
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(downloaded_tracks)").fetchall()
                 }
                 for column in ("artwork_url", "artwork_path"):
                     if column not in downloaded_columns:
@@ -346,7 +339,8 @@ class SQLiteApplicationStore:
                     set_analysis_json TEXT NOT NULL DEFAULT '{}')"""
                 )
                 library_columns = {
-                    str(row[1]) for row in connection.execute(
+                    str(row[1])
+                    for row in connection.execute(
                         "PRAGMA table_info(library_search_index)"
                     ).fetchall()
                 }
@@ -394,9 +388,7 @@ class SQLiteApplicationStore:
     @staticmethod
     def _next_recording_number(connection: sqlite3.Connection) -> int:
         numbers = []
-        for row in connection.execute(
-            "SELECT DISTINCT recording_code FROM downloaded_tracks"
-        ):
+        for row in connection.execute("SELECT DISTINCT recording_code FROM downloaded_tracks"):
             try:
                 match = re.fullmatch(r"[A-Z]{2,4}-(\d+)", str(row[0]))
                 if match:
@@ -441,9 +433,7 @@ class SQLiteApplicationStore:
         ).fetchone()
         if missing is None:
             return
-        rows = connection.execute(
-            "SELECT * FROM downloaded_tracks ORDER BY id"
-        ).fetchall()
+        rows = connection.execute("SELECT * FROM downloaded_tracks ORDER BY id").fetchall()
         next_number = self._next_recording_number(connection)
         families: dict[str, str] = {}
         versions: dict[str, set[str]] = {}
@@ -503,24 +493,21 @@ class SQLiteApplicationStore:
                 "SELECT COUNT(*), COALESCE(MAX(id),0), COALESCE(MAX(updated_at),'') "
                 "FROM downloaded_tracks"
             ).fetchone()
-            indexed = int(connection.execute(
-                "SELECT COUNT(*) FROM library_search_index"
-            ).fetchone()[0])
-        return json.dumps({"jobs": list(jobs), "tracks": list(tracks), "indexed": indexed}, separators=(",", ":"))
+            indexed = int(
+                connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0]
+            )
+        return json.dumps(
+            {"jobs": list(jobs), "tracks": list(tracks), "indexed": indexed}, separators=(",", ":")
+        )
 
     def catalog_source_signatures(self) -> dict[str, tuple[int, int]]:
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 "SELECT source_path,mtime_ns,size FROM catalog_source_index"
             ).fetchall()
-        return {
-            str(row["source_path"]): (int(row["mtime_ns"]), int(row["size"]))
-            for row in rows
-        }
+        return {str(row["source_path"]): (int(row["mtime_ns"]), int(row["size"])) for row in rows}
 
-    def upsert_catalog_source_signatures(
-        self, signatures: list[tuple[str, int, int]]
-    ) -> None:
+    def upsert_catalog_source_signatures(self, signatures: list[tuple[str, int, int]]) -> None:
         if not signatures:
             return
         now = _now()
@@ -583,9 +570,20 @@ class SQLiteApplicationStore:
 
     def update(self, job_id: int, **values: Any) -> None:
         allowed = {
-            "status", "progress", "stage", "error", "extended_path", "wav_path",
-            "intro_preview_path", "outro_preview_path", "bpm", "intro_quality",
-            "outro_quality", "cue_sheet_path", "rekordbox_path", "candidates_json",
+            "status",
+            "progress",
+            "stage",
+            "error",
+            "extended_path",
+            "wav_path",
+            "intro_preview_path",
+            "outro_preview_path",
+            "bpm",
+            "intro_quality",
+            "outro_quality",
+            "cue_sheet_path",
+            "rekordbox_path",
+            "candidates_json",
             "cues_json",
             "review_status",
         }
@@ -602,9 +600,7 @@ class SQLiteApplicationStore:
 
     def get(self, job_id: int) -> dict[str, Any] | None:
         with closing(self._connect()) as connection:
-            row = connection.execute(
-                "SELECT * FROM jobs WHERE id = ?", (job_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
         return dict(row) if row else None
 
     def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -673,10 +669,12 @@ class SQLiteApplicationStore:
             where = f"WHERE status IN ({placeholders})"
             parameters = statuses
         with closing(self._connect()) as connection:
-            total = int(connection.execute(
-                f"SELECT COUNT(*) FROM jobs {where}",  # noqa: S608
-                parameters,
-            ).fetchone()[0])
+            total = int(
+                connection.execute(
+                    f"SELECT COUNT(*) FROM jobs {where}",  # noqa: S608
+                    parameters,
+                ).fetchone()[0]
+            )
             rows = connection.execute(
                 f"SELECT * FROM jobs {where} ORDER BY id DESC LIMIT ? OFFSET ?",  # noqa: S608
                 (*parameters, page_size, (page - 1) * page_size),
@@ -740,10 +738,27 @@ class SQLiteApplicationStore:
     def replace_library_search_index(self, entries: list[dict[str, Any]]) -> None:
         """Atomically refresh the compact, queryable latest-generation Library index."""
         columns = (
-            "job_id", "source_name", "title", "artist", "downloaded_id", "category", "detail_genre",
-            "roles", "preset", "requested_preset", "result", "bpm", "musical_key",
-            "camelot", "energy", "energy_band", "vocals", "timing", "updated_at",
-            "analysis_json", "set_analysis_json",
+            "job_id",
+            "source_name",
+            "title",
+            "artist",
+            "downloaded_id",
+            "category",
+            "detail_genre",
+            "roles",
+            "preset",
+            "requested_preset",
+            "result",
+            "bpm",
+            "musical_key",
+            "camelot",
+            "energy",
+            "energy_band",
+            "vocals",
+            "timing",
+            "updated_at",
+            "analysis_json",
+            "set_analysis_json",
         )
         with self._lock, closing(self._connect()) as connection, connection:
             connection.execute("DELETE FROM library_search_index")
@@ -751,21 +766,38 @@ class SQLiteApplicationStore:
                 connection.executemany(
                     f"INSERT INTO library_search_index ({','.join(columns)}) "
                     f"VALUES ({','.join('?' for _ in columns)})",
-                    [tuple(
-                        entry.get(column, "{}") if column == "set_analysis_json"
-                        else entry.get(column, "") if column == "detail_genre"
-                        else entry.get(column)
-                        for column in columns
-                    ) for entry in entries],
+                    [
+                        tuple(
+                            entry.get(column, "{}")
+                            if column == "set_analysis_json"
+                            else entry.get(column, "")
+                            if column == "detail_genre"
+                            else entry.get(column)
+                            for column in columns
+                        )
+                        for entry in entries
+                    ],
                 )
 
     def page_library_tracks(
-        self, *, page: int, page_size: int, search: str = "", role: str = "all",
-        category: str = "all", detail_genre: str = "all", preset: str = "all", result: str = "all",
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str = "",
+        role: str = "all",
+        category: str = "all",
+        detail_genre: str = "all",
+        preset: str = "all",
+        result: str = "all",
         quality: str = "all",
-        bpm_min: float | None = None, bpm_max: float | None = None,
-        musical_key: str = "all", energy: str = "all", vocals: str = "all",
-        timing: str = "all", sort: str = "newest",
+        bpm_min: float | None = None,
+        bpm_max: float | None = None,
+        musical_key: str = "all",
+        energy: str = "all",
+        vocals: str = "all",
+        timing: str = "all",
+        sort: str = "newest",
     ) -> tuple[list[dict[str, Any]], int]:
         conditions: list[str] = []
         parameters: list[Any] = []
@@ -793,9 +825,14 @@ class SQLiteApplicationStore:
                 "(',' || REPLACE(REPLACE(LOWER(COALESCE(idx.detail_genre, '')), ', ', ','), ' ,', ',') || ',') LIKE ?"
             )
             parameters.append(f"%,{detail_genre.strip().casefold()},%")
-        for column, value in (("preset", preset), ("result", result),
-                              ("musical_key", musical_key), ("energy_band", energy),
-                              ("vocals", vocals), ("timing", timing)):
+        for column, value in (
+            ("preset", preset),
+            ("result", result),
+            ("musical_key", musical_key),
+            ("energy_band", energy),
+            ("vocals", vocals),
+            ("timing", timing),
+        ):
             if value != "all":
                 conditions.append(f"idx.{column} = ?")
                 parameters.append(value)
@@ -824,12 +861,14 @@ class SQLiteApplicationStore:
             "newest": "idx.updated_at DESC, idx.job_id DESC",
         }.get(sort, "idx.updated_at DESC, idx.job_id DESC")
         with closing(self._connect()) as connection:
-            total = int(connection.execute(
-                f"""SELECT COUNT(*) FROM library_search_index idx
+            total = int(
+                connection.execute(
+                    f"""SELECT COUNT(*) FROM library_search_index idx
                 LEFT JOIN downloaded_tracks tracks ON tracks.id = idx.downloaded_id
                 {where}""",
-                parameters,
-            ).fetchone()[0])
+                    parameters,
+                ).fetchone()[0]
+            )
             rows = connection.execute(
                 f"""SELECT jobs.id, jobs.source_name, jobs.source_path, jobs.status,
                 jobs.progress, jobs.stage, jobs.preset, jobs.intro_bars, jobs.outro_bars,
@@ -861,21 +900,31 @@ class SQLiteApplicationStore:
 
     def library_search_facets(self) -> dict[str, Any]:
         with closing(self._connect()) as connection:
-            total = int(connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0])
-            categories = dict(connection.execute(
-                "SELECT category, COUNT(*) FROM library_search_index GROUP BY category"
-            ).fetchall())
+            total = int(
+                connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0]
+            )
+            categories = dict(
+                connection.execute(
+                    "SELECT category, COUNT(*) FROM library_search_index GROUP BY category"
+                ).fetchall()
+            )
             detail_rows = connection.execute(
                 "SELECT category, detail_genre, COUNT(*) FROM library_search_index "
                 "WHERE detail_genre != '' GROUP BY category, detail_genre"
             ).fetchall()
-            presets = [row[0] for row in connection.execute(
-                "SELECT DISTINCT preset FROM library_search_index ORDER BY preset"
-            ).fetchall()]
-            keys = [row[0] for row in connection.execute(
-                "SELECT DISTINCT musical_key FROM library_search_index "
-                "WHERE musical_key != '' ORDER BY musical_key"
-            ).fetchall()]
+            presets = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT DISTINCT preset FROM library_search_index ORDER BY preset"
+                ).fetchall()
+            ]
+            keys = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT DISTINCT musical_key FROM library_search_index "
+                    "WHERE musical_key != '' ORDER BY musical_key"
+                ).fetchall()
+            ]
             role_rows = connection.execute("SELECT roles FROM library_search_index").fetchall()
             intelligence = connection.execute(
                 """SELECT job_id, source_name, bpm, musical_key, roles, energy,
@@ -898,10 +947,16 @@ class SQLiteApplicationStore:
                 display = canonical.setdefault(genre.casefold(), genre)
                 detailed_genres[display] = detailed_genres.get(display, 0) + int(count)
                 category_counts[display] = category_counts.get(display, 0) + int(count)
-        return {"total": total, "categories": categories,
-                "detailed_genres": detailed_genres,
-                "detailed_genres_by_category": detailed_by_category, "presets": presets,
-                "keys": keys, "roles": roles, "intelligence": [dict(row) for row in intelligence]}
+        return {
+            "total": total,
+            "categories": categories,
+            "detailed_genres": detailed_genres,
+            "detailed_genres_by_category": detailed_by_category,
+            "presets": presets,
+            "keys": keys,
+            "roles": roles,
+            "intelligence": [dict(row) for row in intelligence],
+        }
 
     def get_library_analysis(self, job_id: int) -> dict[str, Any]:
         """Load one indexed analysis record for waveform timeline rendering."""
@@ -1008,8 +1063,12 @@ class SQLiteApplicationStore:
         return [dict(row) for row in rows]
 
     def set_key_verification(
-        self, source_name: str, verified_key: str, detected_key: str,
-        candidates: list[dict[str, Any]], notes: str = "",
+        self,
+        source_name: str,
+        verified_key: str,
+        detected_key: str,
+        candidates: list[dict[str, Any]],
+        notes: str = "",
     ) -> dict[str, Any]:
         """Persist a user-confirmed key independently from generated analysis."""
         now = _now()
@@ -1024,8 +1083,15 @@ class SQLiteApplicationStore:
                 candidates_json=excluded.candidates_json,
                 notes=excluded.notes,
                 updated_at=excluded.updated_at""",
-                (source_name, verified_key, detected_key,
-                 json.dumps(candidates, separators=(",", ":")), notes, now, now),
+                (
+                    source_name,
+                    verified_key,
+                    detected_key,
+                    json.dumps(candidates, separators=(",", ":")),
+                    notes,
+                    now,
+                    now,
+                ),
             )
         return self.key_verification(source_name) or {}
 
@@ -1078,7 +1144,9 @@ class SQLiteApplicationStore:
 
     def fail_stalled_jobs(self, minutes: int = 30) -> int:
         """Close processing records that have stopped reporting progress."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(
+            timespec="seconds"
+        )
         with self._lock, closing(self._connect()) as connection, connection:
             cursor = connection.execute(
                 """UPDATE jobs SET status='failed', stage='Processing stalled',
@@ -1090,15 +1158,13 @@ class SQLiteApplicationStore:
 
     def library_index_count(self) -> int:
         with closing(self._connect()) as connection:
-            return int(connection.execute(
-                "SELECT COUNT(*) FROM library_search_index"
-            ).fetchone()[0])
+            return int(
+                connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0]
+            )
 
     def get_settings(self) -> dict[str, Any]:
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                "SELECT key, value_json FROM web_settings"
-            ).fetchall()
+            rows = connection.execute("SELECT key, value_json FROM web_settings").fetchall()
         settings: dict[str, Any] = {}
         for row in rows:
             try:
@@ -1112,10 +1178,7 @@ class SQLiteApplicationStore:
             connection.execute("DELETE FROM web_settings")
             connection.executemany(
                 "INSERT INTO web_settings (key, value_json, updated_at) VALUES (?, ?, ?)",
-                [
-                    (key, json.dumps(value), _now())
-                    for key, value in values.items()
-                ],
+                [(key, json.dumps(value), _now()) for key, value in values.items()],
             )
 
     def relocate_library_paths(self, old_root: Path, new_root: Path) -> dict[str, int]:
@@ -1136,7 +1199,9 @@ class SQLiteApplicationStore:
                 (new_prefix + "%", old_prefix + "%", new_prefix, len(old_prefix) + 1),
             ).fetchone()[0]
             if duplicate:
-                raise ValueError("The destination is already represented by conflicting catalog records")
+                raise ValueError(
+                    "The destination is already represented by conflicting catalog records"
+                )
             cursor = connection.execute(
                 "UPDATE downloaded_tracks SET file_path=? || SUBSTR(file_path, ?), updated_at=? WHERE file_path LIKE ?",
                 (new_prefix, len(old_prefix) + 1, _now(), old_prefix + "%"),
@@ -1153,8 +1218,12 @@ class SQLiteApplicationStore:
             )
             counts["jobs"] = cursor.rowcount
             for field in (
-                "wav_path", "extended_path", "intro_preview_path", "outro_preview_path",
-                "cue_sheet_path", "rekordbox_path",
+                "wav_path",
+                "extended_path",
+                "intro_preview_path",
+                "outro_preview_path",
+                "cue_sheet_path",
+                "rekordbox_path",
             ):
                 cursor = connection.execute(
                     f"UPDATE jobs SET {field}=? || SUBSTR({field}, ?), updated_at=? WHERE {field} LIKE ?",  # noqa: S608
@@ -1209,9 +1278,7 @@ class SQLiteApplicationStore:
         """Catalog a downloaded WAV without involving extended-edit jobs."""
         now = _now()
         resolved = str(file_path.resolve())
-        resolved_artwork = (
-            str(Path(artwork_path).expanduser().resolve()) if artwork_path else ""
-        )
+        resolved_artwork = str(Path(artwork_path).expanduser().resolve()) if artwork_path else ""
         fingerprint = audio_fingerprint(file_path) if file_path.is_file() else ""
         with self._lock, closing(self._connect()) as connection, connection:
             key = identity_key(artist, title)
@@ -1252,7 +1319,8 @@ class SQLiteApplicationStore:
                     self._next_recording_number(connection), genre_category
                 )
             existing_versions = {
-                str(row[0]) for row in connection.execute(
+                str(row[0])
+                for row in connection.execute(
                     "SELECT version_code FROM downloaded_tracks WHERE recording_code=?",
                     (recording_code,),
                 )
@@ -1283,10 +1351,25 @@ class SQLiteApplicationStore:
                     updated_at=excluded.updated_at
                 """,
                 (
-                    title, artist, resolved, file_path.name, genre,
-                    genre_category or "Other", spotify_uri, youtube_id,
-                    youtube_url, artwork_url, resolved_artwork, duration_seconds, now, now,
-                    recording_code, version_code, key, identity_confidence, identity_reason,
+                    title,
+                    artist,
+                    resolved,
+                    file_path.name,
+                    genre,
+                    genre_category or "Other",
+                    spotify_uri,
+                    youtube_id,
+                    youtube_url,
+                    artwork_url,
+                    resolved_artwork,
+                    duration_seconds,
+                    now,
+                    now,
+                    recording_code,
+                    version_code,
+                    key,
+                    identity_confidence,
+                    identity_reason,
                     fingerprint,
                 ),
             )
@@ -1337,30 +1420,44 @@ class SQLiteApplicationStore:
             if not recording_code or len(family) < 2:
                 continue
             for index, first in enumerate(family):
-                for second in family[index + 1:]:
+                for second in family[index + 1 :]:
                     first_kind = re.sub(r"\d+$", "", str(first.get("version_code") or "ORG"))
                     second_kind = re.sub(r"\d+$", "", str(second.get("version_code") or "ORG"))
                     if first_kind != second_kind:
                         continue
-                    same_spotify = bool(first.get("spotify_uri")) and first["spotify_uri"] == second.get("spotify_uri")
-                    same_youtube = bool(first.get("youtube_id")) and first["youtube_id"] == second.get("youtube_id")
-                    durations = (first.get("duration_seconds"), second.get("duration_seconds"))
-                    close_duration = all(value is not None for value in durations) and abs(float(durations[0]) - float(durations[1])) <= 2
+                    same_spotify = bool(first.get("spotify_uri")) and first[
+                        "spotify_uri"
+                    ] == second.get("spotify_uri")
+                    same_youtube = bool(first.get("youtube_id")) and first[
+                        "youtube_id"
+                    ] == second.get("youtube_id")
+                    first_duration = first.get("duration_seconds")
+                    second_duration = second.get("duration_seconds")
+                    close_duration = (
+                        first_duration is not None
+                        and second_duration is not None
+                        and abs(float(first_duration) - float(second_duration)) <= 2
+                    )
                     if not (same_spotify or same_youtube or close_duration):
                         continue
-                    pair = tuple(sorted((int(first["id"]), int(second["id"]))))
+                    first_id, second_id = int(first["id"]), int(second["id"])
+                    pair = (min(first_id, second_id), max(first_id, second_id))
                     seen.add(pair)
                     reason = (
-                        "Same Spotify recording" if same_spotify else
-                        "Same source recording" if same_youtube else
-                        "Same artist/title version and duration"
+                        "Same Spotify recording"
+                        if same_spotify
+                        else "Same source recording"
+                        if same_youtube
+                        else "Same artist/title version and duration"
                     )
-                    candidates.append({
-                        "recording_code": recording_code,
-                        "reason": reason,
-                        "confidence": "high" if same_spotify or same_youtube else "review",
-                        "tracks": [first, second],
-                    })
+                    candidates.append(
+                        {
+                            "recording_code": recording_code,
+                            "reason": reason,
+                            "confidence": "high" if same_spotify or same_youtube else "review",
+                            "tracks": [first, second],
+                        }
+                    )
         fingerprints: dict[str, list[dict[str, Any]]] = {}
         for track in tracks:
             fingerprint = str(track.get("audio_fingerprint") or "")
@@ -1368,17 +1465,20 @@ class SQLiteApplicationStore:
                 fingerprints.setdefault(fingerprint, []).append(track)
         for matches in fingerprints.values():
             for index, first in enumerate(matches):
-                for second in matches[index + 1:]:
-                    pair = tuple(sorted((int(first["id"]), int(second["id"]))))
+                for second in matches[index + 1 :]:
+                    first_id, second_id = int(first["id"]), int(second["id"])
+                    pair = (min(first_id, second_id), max(first_id, second_id))
                     if pair in seen:
                         continue
                     seen.add(pair)
-                    candidates.append({
-                        "recording_code": str(first.get("recording_code") or ""),
-                        "reason": "Exact audio fingerprint",
-                        "confidence": "high",
-                        "tracks": [first, second],
-                    })
+                    candidates.append(
+                        {
+                            "recording_code": str(first.get("recording_code") or ""),
+                            "reason": "Exact audio fingerprint",
+                            "confidence": "high",
+                            "tracks": [first, second],
+                        }
+                    )
         return candidates
 
     def refresh_missing_audio_fingerprints(self) -> int:
@@ -1480,7 +1580,8 @@ class SQLiteApplicationStore:
             if not recording_code:
                 raise ValueError("The target track does not have a recording identity")
             existing = {
-                str(row[0]) for row in connection.execute(
+                str(row[0])
+                for row in connection.execute(
                     "SELECT version_code FROM downloaded_tracks WHERE recording_code=? AND id<>?",
                     (recording_code, track_id),
                 ).fetchall()
@@ -1500,9 +1601,7 @@ class SQLiteApplicationStore:
             )
         return self.get_downloaded_track(track_id) or {}
 
-    def recording_family_suggestions(
-        self, track_id: int, limit: int = 8
-    ) -> list[dict[str, Any]]:
+    def recording_family_suggestions(self, track_id: int, limit: int = 8) -> list[dict[str, Any]]:
         """Rank plausible recording families using metadata and duration evidence."""
         source = self.get_downloaded_track(track_id)
         if not source:
@@ -1512,16 +1611,34 @@ class SQLiteApplicationStore:
         source_duration = float(source.get("duration_seconds") or 0)
         candidates: list[dict[str, Any]] = []
         for candidate in self.list_downloaded_tracks():
-            if candidate["id"] == track_id or candidate.get("recording_code") == source.get("recording_code"):
+            if candidate["id"] == track_id or candidate.get("recording_code") == source.get(
+                "recording_code"
+            ):
                 continue
-            candidate_title = base_title(str(candidate.get("title") or candidate.get("filename") or ""))
-            title_score = SequenceMatcher(None, source_title, candidate_title).ratio() if source_title and candidate_title else 0
+            candidate_title = base_title(
+                str(candidate.get("title") or candidate.get("filename") or "")
+            )
+            title_score = (
+                SequenceMatcher(None, source_title, candidate_title).ratio()
+                if source_title and candidate_title
+                else 0
+            )
             candidate_artist = normalize_identity_text(str(candidate.get("artist") or ""))
-            artist_score = SequenceMatcher(None, source_artist, candidate_artist).ratio() if source_artist and candidate_artist else 0
+            artist_score = (
+                SequenceMatcher(None, source_artist, candidate_artist).ratio()
+                if source_artist and candidate_artist
+                else 0
+            )
             duration = float(candidate.get("duration_seconds") or 0)
-            duration_score = max(0.0, 1.0 - abs(source_duration - duration) / 120.0) if source_duration and duration else 0.35
-            score = round(100 * (title_score * .62 + artist_score * .23 + duration_score * .15))
-            exact_audio = bool(source.get("audio_fingerprint")) and source.get("audio_fingerprint") == candidate.get("audio_fingerprint")
+            duration_score = (
+                max(0.0, 1.0 - abs(source_duration - duration) / 120.0)
+                if source_duration and duration
+                else 0.35
+            )
+            score = round(100 * (title_score * 0.62 + artist_score * 0.23 + duration_score * 0.15))
+            exact_audio = bool(source.get("audio_fingerprint")) and source.get(
+                "audio_fingerprint"
+            ) == candidate.get("audio_fingerprint")
             if exact_audio:
                 score = max(score, 98)
             if score < 38:
@@ -1529,13 +1646,15 @@ class SQLiteApplicationStore:
             reasons = []
             if exact_audio:
                 reasons.append("matching audio fingerprint")
-            if title_score >= .72:
+            if title_score >= 0.72:
                 reasons.append("similar base title")
-            if artist_score >= .72:
+            if artist_score >= 0.72:
                 reasons.append("matching artist")
             if source_duration and duration and abs(source_duration - duration) <= 45:
                 reasons.append("similar duration")
-            candidates.append({"score": score, "reasons": reasons or ["metadata similarity"], "track": candidate})
+            candidates.append(
+                {"score": score, "reasons": reasons or ["metadata similarity"], "track": candidate}
+            )
         candidates.sort(key=lambda item: (-item["score"], str(item["track"].get("title") or "")))
         return candidates[: max(1, min(limit, 20))]
 
@@ -1565,7 +1684,14 @@ class SQLiteApplicationStore:
                 """UPDATE jobs SET source_path=?, source_name=?,
                 wav_path=CASE WHEN wav_path=? THEN ? ELSE wav_path END, updated_at=?
                 WHERE source_path=?""",
-                (survivor_path, survivor["filename"], duplicate_path, survivor_path, now, duplicate_path),
+                (
+                    survivor_path,
+                    survivor["filename"],
+                    duplicate_path,
+                    survivor_path,
+                    now,
+                    duplicate_path,
+                ),
             )
             connection.execute(
                 "UPDATE library_search_index SET downloaded_id=? WHERE downloaded_id=?",
@@ -1599,9 +1725,16 @@ class SQLiteApplicationStore:
                 duration_seconds=COALESCE(duration_seconds,?),
                 identity_confidence='manual', identity_reason='Confirmed duplicate merge',
                 updated_at=? WHERE id=?""",
-                (duplicate["spotify_uri"], duplicate["youtube_id"], duplicate["youtube_url"],
-                 duplicate["artwork_url"], duplicate["artwork_path"],
-                 duplicate["duration_seconds"], now, survivor_id),
+                (
+                    duplicate["spotify_uri"],
+                    duplicate["youtube_id"],
+                    duplicate["youtube_url"],
+                    duplicate["artwork_url"],
+                    duplicate["artwork_path"],
+                    duplicate["duration_seconds"],
+                    now,
+                    survivor_id,
+                ),
             )
             connection.execute(
                 "DELETE FROM downloaded_track_playlists WHERE track_id=?", (duplicate_id,)
@@ -1652,18 +1785,24 @@ class SQLiteApplicationStore:
         for row in rows:
             item = dict(row)
             item["playlists"] = [
-                value
-                for value in str(item.get("playlists") or "").split("||")
-                if value
+                value for value in str(item.get("playlists") or "").split("||") if value
             ]
             results.append(item)
         return results
 
     def page_downloaded_tracks(
-        self, *, page: int, page_size: int, search: str = "",
-        genre: str = "all", playlist: str = "all",
-        detailed_genre: str = "all", analysis: str = "all",
-        artwork: str = "all", quality: str = "all", sort: str = "newest",
+        self,
+        *,
+        page: int,
+        page_size: int,
+        search: str = "",
+        genre: str = "all",
+        playlist: str = "all",
+        detailed_genre: str = "all",
+        analysis: str = "all",
+        artwork: str = "all",
+        quality: str = "all",
+        sort: str = "newest",
     ) -> tuple[list[dict[str, Any]], int]:
         """Filter, sort, and page the downloaded catalog entirely in SQLite."""
         conditions: list[str] = []
@@ -1683,8 +1822,12 @@ class SQLiteApplicationStore:
         missing_artist = "TRIM(COALESCE(tracks.artist, '')) = '' OR LOWER(TRIM(tracks.artist)) IN ('unknown artist','unknown','unavailable')"
         missing_genre = "TRIM(COALESCE(tracks.genre, '')) = ''"
         missing_artwork = "TRIM(COALESCE(tracks.artwork_path, '')) = ''"
-        unmapped_genre = "TRIM(COALESCE(tracks.genre, '')) != '' AND tracks.genre_category = 'Other'"
-        broad_genre = "(tracks.genre_category LIKE '% / General' OR tracks.genre_category LIKE '% / Other')"
+        unmapped_genre = (
+            "TRIM(COALESCE(tracks.genre, '')) != '' AND tracks.genre_category = 'Other'"
+        )
+        broad_genre = (
+            "(tracks.genre_category LIKE '% / General' OR tracks.genre_category LIKE '% / Other')"
+        )
         if genre != "all":
             aliases = {
                 "Electronic / General": "Electronic / Electronic / Electronic",
@@ -1760,9 +1903,11 @@ class SQLiteApplicationStore:
             LEFT JOIN latest_complete ON latest_complete.source_path = tracks.file_path
             LEFT JOIN jobs AS completed_job ON completed_job.id = latest_complete.job_id"""
         with closing(self._connect()) as connection:
-            total = int(connection.execute(
-                f"{ctes} SELECT COUNT(*) {joins} {where}", parameters
-            ).fetchone()[0])
+            total = int(
+                connection.execute(
+                    f"{ctes} SELECT COUNT(*) {joins} {where}", parameters
+                ).fetchone()[0]
+            )
             rows = connection.execute(
                 f"""{ctes} SELECT tracks.id, tracks.title, tracks.artist,
                 tracks.filename, tracks.genre, tracks.genre_category,
@@ -1797,8 +1942,14 @@ class SQLiteApplicationStore:
                 """UPDATE downloaded_tracks SET audio_quality_score=?,
                 audio_quality_label=?,audio_quality_json=?,audio_quality_analyzed_at=?,
                 updated_at=? WHERE id=?""",
-                (float(result["score"]), str(result["label"]),
-                 json.dumps(result, sort_keys=True), now, now, track_id),
+                (
+                    float(result["score"]),
+                    str(result["label"]),
+                    json.dumps(result, sort_keys=True),
+                    now,
+                    now,
+                    track_id,
+                ),
             )
 
     def audio_quality_summary(self) -> dict[str, Any]:
@@ -1819,12 +1970,16 @@ class SQLiteApplicationStore:
     def downloaded_catalog_facets(self) -> dict[str, Any]:
         with closing(self._connect()) as connection:
             total = int(connection.execute("SELECT COUNT(*) FROM downloaded_tracks").fetchone()[0])
-            genres = dict(connection.execute(
-                "SELECT genre_category, COUNT(*) FROM downloaded_tracks GROUP BY genre_category"
-            ).fetchall())
-            playlists = dict(connection.execute(
-                "SELECT playlist_name, COUNT(*) FROM downloaded_track_playlists GROUP BY playlist_name"
-            ).fetchall())
+            genres = dict(
+                connection.execute(
+                    "SELECT genre_category, COUNT(*) FROM downloaded_tracks GROUP BY genre_category"
+                ).fetchall()
+            )
+            playlists = dict(
+                connection.execute(
+                    "SELECT playlist_name, COUNT(*) FROM downloaded_track_playlists GROUP BY playlist_name"
+                ).fetchall()
+            )
             detailed_genres: dict[str, int] = {}
             detailed_genres_by_category: dict[str, dict[str, int]] = {}
             canonical_tags: dict[str, str] = {}
@@ -1853,19 +2008,26 @@ class SQLiteApplicationStore:
                 "broad_genre": "genre_category LIKE '% / General' OR genre_category LIKE '% / Other'",
             }
             review_states = {
-                name: int(connection.execute(
-                    f"SELECT COUNT(*) FROM downloaded_tracks WHERE {condition}"
-                ).fetchone()[0])
+                name: int(
+                    connection.execute(
+                        f"SELECT COUNT(*) FROM downloaded_tracks WHERE {condition}"
+                    ).fetchone()[0]
+                )
                 for name, condition in issue_conditions.items()
             }
-            review_states["needs_attention"] = int(connection.execute(
-                "SELECT COUNT(*) FROM downloaded_tracks WHERE "
-                + " OR ".join(f"({condition})" for condition in issue_conditions.values())
-            ).fetchone()[0])
+            review_states["needs_attention"] = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM downloaded_tracks WHERE "
+                    + " OR ".join(f"({condition})" for condition in issue_conditions.values())
+                ).fetchone()[0]
+            )
         return {
-            "total": total, "genres": genres, "detailed_genres": detailed_genres,
+            "total": total,
+            "genres": genres,
+            "detailed_genres": detailed_genres,
             "detailed_genres_by_category": detailed_genres_by_category,
-            "playlists": playlists, "review_states": review_states,
+            "playlists": playlists,
+            "review_states": review_states,
         }
 
     def get_downloaded_track(self, track_id: int) -> dict[str, Any] | None:
@@ -1898,7 +2060,11 @@ class SQLiteApplicationStore:
             )
 
     def update_downloaded_track_key_analysis(
-        self, track_id: int, *, detected_key: str, confidence: float,
+        self,
+        track_id: int,
+        *,
+        detected_key: str,
+        confidence: float,
         candidates: list[dict[str, Any]],
     ) -> dict[str, Any]:
         """Save a key-only result without replacing the track's other analysis."""
@@ -1907,14 +2073,26 @@ class SQLiteApplicationStore:
             connection.execute(
                 """UPDATE downloaded_tracks SET detected_key=?, key_confidence=?,
                 key_candidates_json=?, key_analyzed_at=?, updated_at=? WHERE id=?""",
-                (detected_key, confidence,
-                 json.dumps(candidates, separators=(",", ":")), now, now, track_id),
+                (
+                    detected_key,
+                    confidence,
+                    json.dumps(candidates, separators=(",", ":")),
+                    now,
+                    now,
+                    track_id,
+                ),
             )
         return self.get_downloaded_track(track_id) or {}
 
     def record_import_failure(
-        self, *, playlist_name: str, title: str, artist: str = "",
-        spotify_uri: str = "", youtube_url: str = "", error: str,
+        self,
+        *,
+        playlist_name: str,
+        title: str,
+        artist: str = "",
+        spotify_uri: str = "",
+        youtube_url: str = "",
+        error: str,
     ) -> None:
         """Persist the latest failure for a track without duplicating retries."""
         now = _now()
@@ -1934,9 +2112,7 @@ class SQLiteApplicationStore:
                 (playlist_name, title, artist, spotify_uri, youtube_url, error, now, now),
             )
 
-    def resolve_import_failure(
-        self, *, playlist_name: str, title: str, artist: str = ""
-    ) -> None:
+    def resolve_import_failure(self, *, playlist_name: str, title: str, artist: str = "") -> None:
         with self._lock, closing(self._connect()) as connection, connection:
             connection.execute(
                 """UPDATE import_failures SET resolved=1, updated_at=?
@@ -1972,9 +2148,7 @@ class SQLiteApplicationStore:
         ]
         return item
 
-    def relocate_downloaded_tracks(
-        self, moves: list[tuple[int, Path, Path, str]]
-    ) -> None:
+    def relocate_downloaded_tracks(self, moves: list[tuple[int, Path, Path, str]]) -> None:
         """Update catalog and job paths after WAVs move between genre folders."""
         now = _now()
         with self._lock, closing(self._connect()) as connection, connection:
@@ -1993,14 +2167,27 @@ class SQLiteApplicationStore:
                     wav_path = CASE WHEN wav_path IN (?, ?) THEN ? ELSE wav_path END,
                     updated_at = ? WHERE source_path IN (?, ?)""",
                     (
-                        new_value, old_value, old_resolved, new_value, now,
-                        old_value, old_resolved,
+                        new_value,
+                        old_value,
+                        old_resolved,
+                        new_value,
+                        now,
+                        old_value,
+                        old_resolved,
                     ),
                 )
 
     def update_downloaded_track_metadata(
-        self, *, track_id: int, old_path: Path, new_path: Path, title: str,
-        artist: str, genre: str, genre_category: str, playlist_name: str,
+        self,
+        *,
+        track_id: int,
+        old_path: Path,
+        new_path: Path,
+        title: str,
+        artist: str,
+        genre: str,
+        genre_category: str,
+        playlist_name: str,
     ) -> None:
         """Keep catalog identity, playlist membership, and linked jobs synchronized."""
         now = _now()
@@ -2019,7 +2206,8 @@ class SQLiteApplicationStore:
             version_code = str(current["version_code"] or "ORG")
             if wanted_kind != current_kind:
                 existing_versions = {
-                    str(row[0]) for row in connection.execute(
+                    str(row[0])
+                    for row in connection.execute(
                         "SELECT version_code FROM downloaded_tracks "
                         "WHERE recording_code=? AND id!=?",
                         (current["recording_code"], track_id),
@@ -2031,12 +2219,24 @@ class SQLiteApplicationStore:
                 genre=?, genre_category=?, identity_key=?, version_code=?,
                 identity_confidence='manual', identity_reason='Metadata confirmed by user',
                 updated_at=? WHERE id=?""",
-                (title, artist, new_value, new_path.name, genre, genre_category,
-                 identity_key(artist, title), version_code, now, track_id),
+                (
+                    title,
+                    artist,
+                    new_value,
+                    new_path.name,
+                    genre,
+                    genre_category,
+                    identity_key(artist, title),
+                    version_code,
+                    now,
+                    track_id,
+                ),
             )
             if cursor.rowcount != 1:
                 raise KeyError(track_id)
-            connection.execute("DELETE FROM downloaded_track_playlists WHERE track_id=?", (track_id,))
+            connection.execute(
+                "DELETE FROM downloaded_track_playlists WHERE track_id=?", (track_id,)
+            )
             connection.execute(
                 """INSERT INTO downloaded_track_playlists
                 (track_id, playlist_name, added_at) VALUES (?, ?, ?)""",
@@ -2046,8 +2246,18 @@ class SQLiteApplicationStore:
                 """UPDATE jobs SET source_name=?, source_path=?,
                 wav_path=CASE WHEN wav_path IN (?,?) THEN ? ELSE wav_path END,
                 updated_at=? WHERE source_path IN (?,?)""",
-                (new_path.name, new_value, old_value, old_resolved, new_value, now, old_value, old_resolved),
+                (
+                    new_path.name,
+                    new_value,
+                    old_value,
+                    old_resolved,
+                    new_value,
+                    now,
+                    old_value,
+                    old_resolved,
+                ),
             )
+
     def delete_downloaded_track(self, track_id: int) -> bool:
         with self._lock, closing(self._connect()) as connection, connection:
             row = connection.execute(
@@ -2063,9 +2273,7 @@ class SQLiteApplicationStore:
             connection.execute(
                 "DELETE FROM downloaded_track_playlists WHERE track_id = ?", (track_id,)
             )
-            cursor = connection.execute(
-                "DELETE FROM downloaded_tracks WHERE id = ?", (track_id,)
-            )
+            cursor = connection.execute("DELETE FROM downloaded_tracks WHERE id = ?", (track_id,))
         return cursor.rowcount > 0
 
     def downloaded_track_is_excluded(self, file_path: Path) -> bool:

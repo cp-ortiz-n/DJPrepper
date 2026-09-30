@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -28,8 +28,11 @@ def embed_wav_artwork(path: Path, artwork: Path | bytes, mime: str = "image/jpeg
     audio = WAVE(path)
     if audio.tags is None:
         audio.add_tags()
-    audio.tags.delall("APIC")
-    audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
+    tags = audio.tags
+    if tags is None:
+        raise RuntimeError("Could not create the WAV metadata container")
+    tags.delall("APIC")
+    tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
     audio.save()
 
 
@@ -59,12 +62,26 @@ def write_wav_metadata(
     temporary = Path(temporary_name)
     temporary.unlink(missing_ok=True)
     command = [
-        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(source), "-map", "0:a:0", "-c:a", "copy",
-        "-metadata", f"title={title.strip()}",
-        "-metadata", f"artist={artist.strip()}",
-        "-metadata", f"genre={genre.strip()}",
-        "-metadata", f"album={album.strip()}",
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(source),
+        "-map",
+        "0:a:0",
+        "-c:a",
+        "copy",
+        "-metadata",
+        f"title={title.strip()}",
+        "-metadata",
+        f"artist={artist.strip()}",
+        "-metadata",
+        f"genre={genre.strip()}",
+        "-metadata",
+        f"album={album.strip()}",
         str(temporary),
     ]
     try:
@@ -83,8 +100,14 @@ def read_wav_metadata(path: Path) -> dict[str, str]:
         raise FileNotFoundError(source)
     result = subprocess.run(
         [
-            "ffprobe", "-v", "error", "-show_entries", "format_tags",
-            "-of", "json", str(source),
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format_tags",
+            "-of",
+            "json",
+            str(source),
         ],
         check=True,
         capture_output=True,
@@ -110,8 +133,10 @@ def sync_wav_metadata(
 ) -> bool:
     """Return True only when the WAV needed to be rewritten."""
     expected = {
-        "title": title.strip(), "artist": artist.strip(),
-        "genre": genre.strip(), "album": album.strip(),
+        "title": title.strip(),
+        "artist": artist.strip(),
+        "genre": genre.strip(),
+        "album": album.strip(),
     }
     existing = read_wav_metadata(path)
     if all(existing.get(key, "") == value for key, value in expected.items()):
