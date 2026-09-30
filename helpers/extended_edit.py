@@ -10,6 +10,8 @@ import numpy as np
 from helpers.audio_loader import AudioData
 from helpers.section_selector import SectionCandidate
 from helpers.splice_policy import (
+    SplicePlan,
+    build_splice_plan,
     choose_splice_mode,
     crossfade_duration_ms,
     tail_duration_ms,
@@ -143,6 +145,7 @@ def _choose_splice_mode(candidate: SectionCandidate) -> str:
 
 
 def adaptive_crossfade_ms(candidate: SectionCandidate, minimum_ms: float) -> float:
+    """Compatibility helper; orchestration now supplies complete splice plans."""
     return crossfade_duration_ms(candidate, minimum_ms)
 
 
@@ -212,6 +215,8 @@ def create_extended_edit(
     stem_reliability: float = 0.0,
     minimum_stem_reliability: float = 1.0,
     minimum_vocal_coverage: float = 1.0,
+    intro_splice_plan: SplicePlan | None = None,
+    outro_splice_plan: SplicePlan | None = None,
 ) -> AudioData:
     """Repeat phrases in context while retaining the natural opening and ending.
 
@@ -242,10 +247,12 @@ def create_extended_edit(
         return audio
 
     if intro is not None:
+        intro_splice_plan = intro_splice_plan or build_splice_plan(intro, crossfade_ms)
+        intro = replace(intro, splice_mode=intro_splice_plan.mode)
         intro_source = loop_source(intro)
         intro_audio = _slice(intro_source, intro.start, intro.end)
-        intro_fade_frames = _adaptive_fade_frames(intro, audio.sample_rate, crossfade_ms)
-        intro_tail_frames = _tail_duration_frames(intro, audio.sample_rate)
+        intro_fade_frames = max(1, round(audio.sample_rate * intro_splice_plan.crossfade_ms / 1000.0))
+        intro_tail_frames = max(1, round(audio.sample_rate * intro_splice_plan.tail_ms / 1000.0))
         intro_continuation = _slice(
             intro_source, intro.end,
             intro.end + intro_tail_frames / audio.sample_rate + 0.1
@@ -268,10 +275,12 @@ def create_extended_edit(
         assembled = audio.samples[:outro_end].copy()
 
     if outro is not None:
+        outro_splice_plan = outro_splice_plan or build_splice_plan(outro, crossfade_ms)
+        outro = replace(outro, splice_mode=outro_splice_plan.mode)
         outro_source = loop_source(outro)
         outro_audio = _slice(outro_source, outro.start, outro.end)
-        outro_fade_frames = _adaptive_fade_frames(outro, audio.sample_rate, crossfade_ms)
-        outro_tail_frames = _tail_duration_frames(outro, audio.sample_rate)
+        outro_fade_frames = max(1, round(audio.sample_rate * outro_splice_plan.crossfade_ms / 1000.0))
+        outro_tail_frames = max(1, round(audio.sample_rate * outro_splice_plan.tail_ms / 1000.0))
         outro_continuation = _slice(
             outro_source, outro.end,
             outro.end + outro_tail_frames / audio.sample_rate + 0.1
