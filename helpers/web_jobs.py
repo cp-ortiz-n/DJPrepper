@@ -23,7 +23,7 @@ from helpers.processing_report import update_processing_report
 from helpers.resource_planner import choose_worker_count
 from helpers.track_overrides import load_track_overrides
 from helpers.track_processor import process_file
-from helpers.web_database import JobRepository
+from helpers.repository_views import JobsAndQueuesRepository
 from helpers.wav_metadata import split_artist_title, write_wav_metadata
 from settings import (
     CACHE_FOLDER_NAME,
@@ -57,7 +57,7 @@ def _stage_duration(seconds: float) -> str:
 class DatabaseProgress(ProgressReporter):
     def __init__(
         self,
-        repository: JobRepository,
+        repository: JobsAndQueuesRepository,
         job_id: int,
         run_gate: threading.Event | None = None,
     ) -> None:
@@ -106,7 +106,7 @@ class DatabaseProgress(ProgressReporter):
 class WebJobService:
     """Run lightweight analysis in parallel while keeping heavy edits exclusive."""
 
-    def __init__(self, project: Path, repository: JobRepository) -> None:
+    def __init__(self, project: Path, repository: JobsAndQueuesRepository) -> None:
         self.project = project
         self.repository = repository
         self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="audioextender")
@@ -117,6 +117,14 @@ class WebJobService:
         self._run_gates: dict[int, threading.Event] = {}
         for job in reversed(repository.list_jobs(1000)):
             if job["status"] == "queued":
+                if not Path(str(job["source_path"])).is_file():
+                    repository.update(
+                        int(job["id"]),
+                        status="failed",
+                        stage="Source file unavailable",
+                        error="The queued source file is no longer available.",
+                    )
+                    continue
                 self._pending.append(int(job["id"]))
         self._start_next_locked()
 

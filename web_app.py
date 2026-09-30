@@ -99,12 +99,34 @@ STORAGE_INVENTORY_SNAPSHOT = OUTPUT / "reports" / "storage_inventory.json"
 app = FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 repository = JobRepository(DATABASE)
+
+
+class _ActiveRepositoryView:
+    """Resolve a focused repository from the currently active aggregate.
+
+    Keeping this lookup dynamic also lets backup restore and isolated workflow
+    tests swap the aggregate atomically without leaving stale domain handles.
+    """
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __getattr__(self, operation: str):
+        return getattr(getattr(repository, self.name), operation)
+
+
+track_catalog_repository = _ActiveRepositoryView("track_catalog")
+jobs_repository = _ActiveRepositoryView("jobs_and_queues")
+settings_repository = _ActiveRepositoryView("settings_system")
+recording_family_repository = _ActiveRepositoryView("recording_families")
+feedback_repository = _ActiveRepositoryView("feedback_key_verification")
+relocation_repository = _ActiveRepositoryView("backups_relocation")
 library_relocation = LibraryRelocationCoordinator(
-    repository, OUTPUT / "reports" / "library_relocation.json"
+    relocation_repository, OUTPUT / "reports" / "library_relocation.json"
 )
 pending_backup_restores: dict[str, Path] = {}
-repository.recover_interrupted()
-service = WebJobService(PROJECT, repository)
+jobs_repository.recover_interrupted()
+service = WebJobService(PROJECT, jobs_repository)
 authorized_imports: dict[str, dict] = {}
 authorized_import_lock = threading.Lock()
 authorized_import_cancel_events: dict[str, threading.Event] = {}
@@ -611,8 +633,8 @@ class CueEditRequest(BaseModel):
 
 
 def _effective_settings() -> dict:
-    overrides = repository.get_settings()
-    durable_library_path = repository.get_system_state("music_library_path")
+    overrides = settings_repository.get_settings()
+    durable_library_path = settings_repository.get_system_state("music_library_path")
     return {
         **WEB_DEFAULTS,
         **({"music_library_path": durable_library_path} if durable_library_path else {}),
@@ -643,7 +665,7 @@ def _library_location_summary() -> dict:
     root = _music_library_root()
     locations: dict[str, int] = {}
     outside: list[dict] = []
-    for track in repository.list_downloaded_tracks():
+    for track in track_catalog_repository.list_downloaded_tracks():
         path = Path(str(track.get("file_path") or "")).expanduser()
         try:
             path.resolve().relative_to(root)
@@ -701,7 +723,7 @@ def config() -> dict:
         "bar_counts": list(SUPPORTED_BAR_COUNTS),
         "defaults": WEB_DEFAULTS,
         "effective": _effective_settings(),
-        "overrides": repository.get_settings(),
+        "overrides": settings_repository.get_settings(),
     }
 
 
@@ -725,8 +747,8 @@ def save_settings(settings: WebSettings) -> dict:
     if values["pcm_bits"] not in (16, 24):
         raise HTTPException(400, "PCM depth must be 16 or 24")
     overrides = {key: value for key, value in values.items() if value != WEB_DEFAULTS[key]}
-    repository.replace_settings(overrides)
-    repository.set_system_state("music_library_path", values["music_library_path"])
+    settings_repository.replace_settings(overrides)
+    settings_repository.set_system_state("music_library_path", values["music_library_path"])
     with library_status_cache_lock:
         library_status_cache.update(payload=None, expires_at=0.0)
     if Path(values["music_library_path"]).is_dir():
@@ -736,7 +758,7 @@ def save_settings(settings: WebSettings) -> dict:
 
 @app.delete("/api/settings")
 def reset_settings() -> dict:
-    repository.replace_settings({})
+    settings_repository.replace_settings({})
     with library_status_cache_lock:
         library_status_cache.update(payload=None, expires_at=0.0)
     return {"defaults": WEB_DEFAULTS, "effective": _effective_settings(), "overrides": {}}
@@ -764,7 +786,7 @@ def music_library_status() -> dict:
         except (OSError, ValueError):
             pass
         storage_scan_started = perf_counter()
-        tracks = repository.list_downloaded_tracks()
+        tracks = track_catalog_repository.list_downloaded_tracks()
         available_paths: set[Path] = set()
         song_bytes = 0
         for track in tracks:
@@ -808,7 +830,7 @@ def music_library_status() -> dict:
             "song_bytes": song_bytes, "supporting_bytes": max(0, total_bytes - song_bytes),
             "total_bytes": total_bytes, "file_count": file_count,
             "free_bytes": free_bytes, "capacity_bytes": capacity_bytes,
-            "audio_quality": repository.audio_quality_summary(),
+            "audio_quality": track_catalog_repository.audio_quality_summary(),
             "location_integrity": _library_location_summary(),
             "storage_scan_ms": round((perf_counter() - storage_scan_started) * 1000, 1),
         }
@@ -858,7 +880,7 @@ def _storage_inventory(refresh: bool = False) -> dict:
                 storage_inventory_cache.update(payload=saved, expires_at=now + 120.0)
             return saved
     cache_root = (PROJECT / CACHE_FOLDER_NAME).resolve()
-    jobs = repository.list_storage_job_references()
+    jobs = relocation_repository.list_storage_job_references()
     cache = AnalysisCache(cache_root, enabled=False)
     retained_cache: set[Path] = set()
     referenced_outputs: set[Path] = set()
@@ -883,7 +905,7 @@ def _storage_inventory(refresh: bool = False) -> dict:
                     retained_cache.add(cache.waveform_path(audio))
                 except OSError:
                     pass
-    for track in repository.list_downloaded_tracks():
+    for track in track_catalog_repository.list_downloaded_tracks():
         for field in ("file_path", "artwork_path"):
             value = str(track.get(field) or "").strip()
             if value:
@@ -946,7 +968,7 @@ class StorageCleanupRequest(BaseModel):
 @app.post("/api/settings/storage/cleanup")
 def cleanup_settings_storage(request: StorageCleanupRequest) -> dict:
     active = [
-        job for job in repository.list_jobs(limit=10_000)
+        job for job in jobs_repository.list_jobs(limit=10_000)
         if job.get("status") in {"queued", "processing", "paused"}
     ]
     if active:
@@ -1031,7 +1053,7 @@ def _public_backup_summary(payload: dict) -> dict:
 
 
 def _require_idle_for_restore() -> None:
-    active = repository.list_jobs_page(
+    active = jobs_repository.list_jobs_page(
         page=1, page_size=1, statuses=("queued", "processing", "paused")
     )[1]
     if active:
@@ -1096,7 +1118,7 @@ async def preview_backup(file: UploadFile = File(...)) -> dict:
         target.unlink(missing_ok=True)
         raise HTTPException(400, str(error)) from error
     pending_backup_restores[token] = target
-    current_tracks = len(repository.list_downloaded_tracks())
+    current_tracks = len(track_catalog_repository.list_downloaded_tracks())
     return {
         **_public_backup_summary(preview),
         "token": token,
@@ -1149,7 +1171,7 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
     if request.confirmation != "DELETE EVERYTHING":
         raise HTTPException(400, "Type DELETE EVERYTHING exactly to confirm the reset")
     active_jobs = [
-        job for job in repository.list_jobs(limit=10_000)
+        job for job in jobs_repository.list_jobs(limit=10_000)
         if job["status"] in {"queued", "processing", "paused"}
     ]
     active_imports = any(
@@ -1168,10 +1190,10 @@ def cleanup_application(request: ApplicationCleanupRequest) -> dict:
 
     downloaded_files = [
         Path(track["file_path"])
-        for track in repository.list_downloaded_tracks()
+        for track in track_catalog_repository.list_downloaded_tracks()
         if track.get("file_path")
     ]
-    repository.reset_track_data()
+    track_catalog_repository.reset_track_data()
     removed = 0
     for downloaded_file in downloaded_files:
         if downloaded_file.is_file():
@@ -1765,7 +1787,7 @@ def _cataloged_download_by_youtube_id(video_id: str) -> dict | None:
     return next(
         (
             track
-            for track in repository.list_downloaded_tracks()
+            for track in track_catalog_repository.list_downloaded_tracks()
             if track.get("youtube_id") == video_id
             and Path(str(track.get("file_path") or "")).is_file()
         ),
@@ -1792,7 +1814,7 @@ def _migrate_downloaded_catalog(
     metadata_root = _music_library_root() / ".audioextender" / "sources"
     if metadata_root.exists():
         records.extend((record, False) for record in metadata_root.glob("*.json"))
-    known = repository.catalog_source_signatures() if incremental else {}
+    known = track_catalog_repository.catalog_source_signatures() if incremental else {}
     results = {"total": len(records), "processed": 0, "updated": 0, "skipped": 0, "failed": 0}
     signatures: list[tuple[str, int, int]] = []
     for index, (source_record, legacy_record) in enumerate(records, start=1):
@@ -1832,7 +1854,7 @@ def _migrate_downloaded_catalog(
             if progress:
                 progress(dict(results))
             continue
-        if repository.downloaded_track_is_excluded(wav_path):
+        if track_catalog_repository.downloaded_track_is_excluded(wav_path):
             results["skipped"] += 1
             results["processed"] = index
             signatures.append((source_key, *signature))
@@ -1845,7 +1867,7 @@ def _migrate_downloaded_catalog(
         category = _catalog_genre_category(
             wav_path, stored_category, detailed_genre
         )
-        repository.upsert_downloaded_track(
+        track_catalog_repository.upsert_downloaded_track(
             title=str(metadata.get("title") or wav_path.stem),
             artist=str(metadata.get("artist") or ""),
             file_path=wav_path,
@@ -1863,7 +1885,7 @@ def _migrate_downloaded_catalog(
             source_record.unlink(missing_ok=True)
         if progress:
             progress(dict(results))
-    repository.upsert_catalog_source_signatures(signatures)
+    track_catalog_repository.upsert_catalog_source_signatures(signatures)
     return results
 
 
@@ -1875,9 +1897,9 @@ def _ensure_downloaded_catalog_migrated() -> None:
     with downloaded_catalog_migration_lock:
         if downloaded_catalog_migrated:
             return
-        if repository.get_system_state("downloaded_catalog_migration") != DOWNLOADED_CATALOG_MIGRATION_VERSION:
+        if settings_repository.get_system_state("downloaded_catalog_migration") != DOWNLOADED_CATALOG_MIGRATION_VERSION:
             _migrate_downloaded_catalog()
-            repository.set_system_state(
+            settings_repository.set_system_state(
                 "downloaded_catalog_migration", DOWNLOADED_CATALOG_MIGRATION_VERSION
             )
         downloaded_catalog_migrated = True
@@ -1972,7 +1994,7 @@ def _creative_commons_worker(
                     if destination.exists() and recorded_video_id == video_id:
                         base["filename"] = output_name
                         report["already_downloaded"].append(base)
-                        repository.upsert_downloaded_track(
+                        track_catalog_repository.upsert_downloaded_track(
                             title=track.title, artist=track.artist, file_path=destination,
                             genre=track.genre, genre_category=category,
                             spotify_uri=track.spotify_uri, youtube_id=video_id,
@@ -1982,7 +2004,7 @@ def _creative_commons_worker(
                             artwork_path=_cache_track_artwork(artwork_url, destination),
                             playlist_name=track_playlist,
                         )
-                        repository.resolve_import_failure(
+                        jobs_repository.resolve_import_failure(
                             playlist_name=track_playlist, title=track.title, artist=track.artist
                         )
                         continue
@@ -2037,7 +2059,7 @@ def _creative_commons_worker(
                     )
                     base["filename"] = output_name
                     report["downloaded"].append(base)
-                repository.upsert_downloaded_track(
+                track_catalog_repository.upsert_downloaded_track(
                     title=track.title,
                     artist=track.artist,
                     file_path=destination,
@@ -2051,12 +2073,12 @@ def _creative_commons_worker(
                     artwork_path=_cache_track_artwork(artwork_url, destination),
                     playlist_name=track_playlist,
                 )
-                repository.resolve_import_failure(
+                jobs_repository.resolve_import_failure(
                     playlist_name=track_playlist, title=track.title, artist=track.artist
                 )
             except Exception as error:
                 report["failed"].append({**base, "error": str(error)})
-                repository.record_import_failure(
+                jobs_repository.record_import_failure(
                     playlist_name=track_playlist,
                     title=track.title,
                     artist=track.artist,
@@ -2195,7 +2217,7 @@ def download_creative_commons_report(batch_id: str) -> FileResponse:
 
 @app.get("/api/imports/failures")
 def list_import_failures() -> dict:
-    if not repository.list_import_failures(include_resolved=True):
+    if not jobs_repository.list_import_failures(include_resolved=True):
         for report_path in (OUTPUT / "reports" / "imports").glob("**/*Import Report.json"):
             try:
                 document = json.loads(report_path.read_text(encoding="utf-8"))
@@ -2203,7 +2225,7 @@ def list_import_failures() -> dict:
                 continue
             playlist_name = str(document.get("playlist_name") or report_path.parent.name)
             for item in (document.get("results") or {}).get("failed", []):
-                repository.record_import_failure(
+                jobs_repository.record_import_failure(
                     playlist_name=playlist_name,
                     title=str(item.get("title") or item.get("filename") or "Unknown track"),
                     artist=str(item.get("artist") or ""),
@@ -2211,7 +2233,7 @@ def list_import_failures() -> dict:
                     youtube_url=str(item.get("url") or item.get("youtube_url") or ""),
                     error=str(item.get("error") or "Download failed"),
                 )
-    failures = repository.list_import_failures()
+    failures = jobs_repository.list_import_failures()
     return {"failures": failures, "total": len(failures)}
 
 
@@ -2276,7 +2298,7 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
                 video_id = str(match.get("id") or "")
                 source_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else old_url
                 if not source_url:
-                    repository.record_import_failure(
+                    jobs_repository.record_import_failure(
                         playlist_name=str(failure.get("playlist_name") or "Imported Playlist"),
                         title=str(failure.get("title") or "Unknown track"),
                         artist=str(failure.get("artist") or ""),
@@ -2333,7 +2355,7 @@ def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
     _require_music_library_online()
     wanted = set(request.failure_ids)
     failures = [
-        item for item in repository.list_import_failures()
+        item for item in jobs_repository.list_import_failures()
         if int(item["id"]) in wanted
     ]
     if len(failures) != len(wanted):
@@ -2353,11 +2375,11 @@ def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
 
 @app.delete("/api/imports/failures/{failure_id}")
 def dismiss_import_failure(failure_id: int) -> dict:
-    failures = repository.list_import_failures(include_resolved=True)
+    failures = jobs_repository.list_import_failures(include_resolved=True)
     failure = next((item for item in failures if int(item["id"]) == failure_id), None)
     if failure is None:
         raise HTTPException(404, "Import failure not found")
-    repository.resolve_import_failure(
+    jobs_repository.resolve_import_failure(
         playlist_name=str(failure["playlist_name"]),
         title=str(failure["title"]),
         artist=str(failure["artist"]),
@@ -2396,7 +2418,7 @@ def _local_audio_import_worker(batch_id: str, staged_dir: Path, playlist_name: s
     results: list[dict] = []
     imported = skipped = failed = 0
     try:
-        existing = repository.list_downloaded_tracks()
+        existing = track_catalog_repository.list_downloaded_tracks()
         known = {
             (str(track.get("artist") or "").casefold(), str(track.get("title") or "").casefold())
             for track in existing
@@ -2446,7 +2468,7 @@ def _local_audio_import_worker(batch_id: str, staged_dir: Path, playlist_name: s
                     "import_source": "local-audio",
                 }
                 _write_source_metadata(destination, source_metadata)
-                repository.upsert_downloaded_track(
+                track_catalog_repository.upsert_downloaded_track(
                     title=metadata["title"], artist=metadata["artist"],
                     file_path=destination, genre=metadata["genre"],
                     genre_category=category, duration_seconds=metadata["duration"],
@@ -2694,7 +2716,7 @@ def _authorized_import_worker(import_id: str, request: AuthorizedImportRequest) 
         artist = str(request.artist or info.get("artist") or info.get("uploader") or "").strip()
         artwork_url = str(request.artwork_url or info.get("thumbnail") or "")
         artwork_path = _cache_track_artwork(artwork_url, destination)
-        repository.upsert_downloaded_track(
+        track_catalog_repository.upsert_downloaded_track(
             title=title,
             artist=artist,
             file_path=destination,
@@ -2721,7 +2743,7 @@ def _authorized_import_worker(import_id: str, request: AuthorizedImportRequest) 
             return
         effective = _effective_settings()
         preset = str(effective["preset"])
-        job_id = repository.create(
+        job_id = jobs_repository.create(
             destination.name,
             destination,
             preset,
@@ -2844,7 +2866,7 @@ def _downloaded_track_payload(track: dict) -> dict:
 
 
 def _run_audio_quality_batch(batch_id: str) -> None:
-    tracks = repository.list_downloaded_tracks()
+    tracks = track_catalog_repository.list_downloaded_tracks()
 
     def inspect(track: dict) -> tuple[dict, Path, dict | None, str]:
         path = Path(str(track.get("file_path") or ""))
@@ -2869,7 +2891,7 @@ def _run_audio_quality_batch(batch_id: str) -> None:
         for index, future in enumerate(as_completed(futures), start=1):
             track, path, result, error = future.result()
             if result is not None:
-                repository.update_audio_quality(int(track["id"]), result)
+                track_catalog_repository.update_audio_quality(int(track["id"]), result)
             with audio_quality_batch_lock:
                 batch = audio_quality_batches[batch_id]
                 batch["processed"] = index
@@ -2877,7 +2899,7 @@ def _run_audio_quality_batch(batch_id: str) -> None:
                 batch["current"] = str(track.get("filename") or track.get("title") or "")
                 if error and len(batch["errors"]) < 30:
                     batch["errors"].append({"id": track.get("id"), "filename": path.name, "error": error})
-    summary = repository.audio_quality_summary()
+    summary = track_catalog_repository.audio_quality_summary()
     with audio_quality_batch_lock:
         audio_quality_batches[batch_id].update(status="complete", stage="Quality scan complete", summary=summary)
     with library_status_cache_lock:
@@ -2891,7 +2913,7 @@ def start_audio_quality_scan() -> dict:
                        if value["status"] == "processing"), None)
         if active:
             return active
-        total = len(repository.list_downloaded_tracks())
+        total = len(track_catalog_repository.list_downloaded_tracks())
         batch_id = uuid.uuid4().hex
         audio_quality_batches[batch_id] = {
             "status": "processing", "stage": "Analyzing audio quality", "total": total,
@@ -2906,7 +2928,7 @@ def start_audio_quality_scan() -> dict:
 def latest_audio_quality_scan() -> dict:
     with audio_quality_batch_lock:
         if not audio_quality_batches:
-            return {"status": "none", "summary": repository.audio_quality_summary()}
+            return {"status": "none", "summary": track_catalog_repository.audio_quality_summary()}
         batch_id = next(reversed(audio_quality_batches))
         return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
 
@@ -2989,8 +3011,8 @@ def downloaded_library(
 ) -> dict:
     _ensure_downloaded_catalog_migrated()
     if paged:
-        facets = repository.downloaded_catalog_facets()
-        tracks, filtered_total = repository.page_downloaded_tracks(
+        facets = track_catalog_repository.downloaded_catalog_facets()
+        tracks, filtered_total = track_catalog_repository.page_downloaded_tracks(
             page=page, page_size=page_size, search=search, genre=genre,
             detailed_genre=detailed_genre, playlist=playlist, analysis=analysis,
             artwork=artwork, quality=quality, sort=sort,
@@ -2998,7 +3020,7 @@ def downloaded_library(
         if analysis in {"complete", "active", "attention", "missing_title", "missing_artist", "missing_genre", "missing_artwork", "unmapped_genre", "broad_genre"}:
             analyzable_total = 0
         else:
-            _, analyzable_total = repository.page_downloaded_tracks(
+            _, analyzable_total = track_catalog_repository.page_downloaded_tracks(
                 page=1, page_size=1, search=search, genre=genre,
                 detailed_genre=detailed_genre, playlist=playlist, artwork=artwork,
                 quality=quality, analysis=("failed" if analysis == "failed" else "needs"), sort=sort,
@@ -3006,7 +3028,7 @@ def downloaded_library(
         total_pages = max(1, (filtered_total + page_size - 1) // page_size)
         if page > total_pages:
             page = total_pages
-            tracks, filtered_total = repository.page_downloaded_tracks(
+            tracks, filtered_total = track_catalog_repository.page_downloaded_tracks(
                 page=page, page_size=page_size, search=search, genre=genre,
                 detailed_genre=detailed_genre, playlist=playlist,
                 analysis=analysis, artwork=artwork, quality=quality, sort=sort,
@@ -3017,7 +3039,7 @@ def downloaded_library(
             genres[normalized] = genres.get(normalized, 0) + int(count)
         playlists = facets["playlists"]
     else:
-        tracks = repository.list_downloaded_tracks_with_jobs()
+        tracks = track_catalog_repository.list_downloaded_tracks_with_jobs()
         genres: dict[str, int] = {}
         playlists: dict[str, int] = {}
         for track in tracks:
@@ -3079,7 +3101,7 @@ def downloaded_library(
 
 @app.get("/api/downloaded-library/tracks/{track_id}/audio")
 def downloaded_track_audio(track_id: int) -> FileResponse:
-    track = repository.get_downloaded_track(track_id)
+    track = track_catalog_repository.get_downloaded_track(track_id)
     path = Path(track["file_path"]) if track else None
     if path is None or not path.is_file():
         raise HTTPException(404, "Downloaded WAV is unavailable")
@@ -3088,7 +3110,7 @@ def downloaded_track_audio(track_id: int) -> FileResponse:
 
 @app.get("/api/downloaded-library/tracks/{track_id}/artwork")
 def downloaded_track_artwork(track_id: int, thumbnail: bool = False) -> FileResponse:
-    track = repository.get_downloaded_track(track_id)
+    track = track_catalog_repository.get_downloaded_track(track_id)
     path = Path(str(track.get("artwork_path") or "")) if track else None
     if path is None or not path.is_file():
         raise HTTPException(404, "Track artwork is unavailable")
@@ -3107,7 +3129,7 @@ def downloaded_track_download(track_id: int) -> FileResponse:
 @app.post("/api/downloaded-library/tracks/{track_id}/reveal")
 def reveal_downloaded_track(track_id: int) -> dict:
     """Reveal a cataloged audio file using the host operating system's file browser."""
-    track = repository.get_downloaded_track(track_id)
+    track = track_catalog_repository.get_downloaded_track(track_id)
     path = Path(str(track.get("file_path") or "")).expanduser() if track else None
     if path is None or not path.is_file():
         raise HTTPException(404, "Downloaded WAV is unavailable")
@@ -3126,7 +3148,7 @@ def reveal_downloaded_track(track_id: int) -> dict:
 
 @app.delete("/api/downloaded-library/tracks/{track_id}")
 def remove_downloaded_track(track_id: int) -> dict:
-    if not repository.delete_downloaded_track(track_id):
+    if not track_catalog_repository.delete_downloaded_track(track_id):
         raise HTTPException(404, "Downloaded track was not found")
     return {"removed": True, "track_id": track_id}
 
@@ -3135,14 +3157,14 @@ def remove_downloaded_track(track_id: int) -> dict:
 def remove_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     requested = set(request.track_ids)
     removed = sum(
-        1 for track_id in requested if repository.delete_downloaded_track(track_id)
+        1 for track_id in requested if track_catalog_repository.delete_downloaded_track(track_id)
     )
     return {"removed": removed, "requested": len(requested)}
 
 
 @app.get("/api/downloaded-library/duplicate-candidates")
 def downloaded_duplicate_candidates() -> dict:
-    candidates = repository.duplicate_candidates()
+    candidates = recording_family_repository.duplicate_candidates()
     return {
         "candidates": [
             {
@@ -3158,7 +3180,7 @@ def downloaded_duplicate_candidates() -> dict:
 @app.post("/api/downloaded-library/merge-duplicate")
 def merge_downloaded_duplicate(request: DuplicateMergeRequest) -> dict:
     try:
-        track = repository.merge_downloaded_tracks(
+        track = recording_family_repository.merge_downloaded_tracks(
             request.survivor_id, request.duplicate_id
         )
     except KeyError as error:
@@ -3171,7 +3193,7 @@ def merge_downloaded_duplicate(request: DuplicateMergeRequest) -> dict:
 @app.post("/api/downloaded-library/tracks/{track_id}/keep-separate")
 def keep_downloaded_track_separate(track_id: int) -> dict:
     try:
-        track = repository.separate_recording(track_id)
+        track = recording_family_repository.separate_recording(track_id)
     except KeyError as error:
         raise HTTPException(404, "Track was not found") from error
     return {"updated": True, "track": _downloaded_track_payload(track)}
@@ -3180,8 +3202,8 @@ def keep_downloaded_track_separate(track_id: int) -> dict:
 @app.get("/api/downloaded-library/tracks/{track_id}/family")
 def downloaded_track_family(track_id: int) -> dict:
     try:
-        family = repository.recording_family(track_id)
-        suggestions = repository.recording_family_suggestions(track_id)
+        family = recording_family_repository.recording_family(track_id)
+        suggestions = recording_family_repository.recording_family_suggestions(track_id)
     except KeyError as error:
         raise HTTPException(404, "Track was not found") from error
     return {
@@ -3195,13 +3217,13 @@ def downloaded_track_family(track_id: int) -> dict:
 
 @app.post("/api/downloaded-library/tracks/{track_id}/link-version")
 def link_downloaded_track_version(track_id: int, request: TrackFamilyLinkRequest) -> dict:
-    target_track_id = request.target_track_id or repository.track_id_for_identity(
+    target_track_id = request.target_track_id or recording_family_repository.track_id_for_identity(
         request.target_identity
     )
     if target_track_id is None:
         raise HTTPException(404, "Target track ID was not found")
     try:
-        track = repository.link_recording_version(
+        track = recording_family_repository.link_recording_version(
             track_id, target_track_id, request.relationship
         )
     except KeyError as error:
@@ -3251,7 +3273,7 @@ def _downloaded_archive(tracks: list[dict], name: str) -> FileResponse:
 def download_selected_tracks(request: DownloadedTracksRequest) -> FileResponse:
     wanted = set(request.track_ids)
     tracks = [
-        track for track in repository.list_downloaded_tracks() if track["id"] in wanted
+        track for track in track_catalog_repository.list_downloaded_tracks() if track["id"] in wanted
     ]
     if len(tracks) != len(wanted):
         raise HTTPException(404, "One or more downloaded tracks were not found")
@@ -3262,7 +3284,7 @@ def download_selected_tracks(request: DownloadedTracksRequest) -> FileResponse:
 def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     wanted = set(request.track_ids)
     tracks = [
-        track for track in repository.list_downloaded_tracks() if track["id"] in wanted
+        track for track in track_catalog_repository.list_downloaded_tracks() if track["id"] in wanted
     ]
     if len(tracks) != len(wanted):
         raise HTTPException(404, "One or more downloaded tracks were not found")
@@ -3273,7 +3295,7 @@ def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
 def reanalyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     wanted = set(request.track_ids)
     tracks = [
-        track for track in repository.list_downloaded_tracks_with_jobs()
+        track for track in track_catalog_repository.list_downloaded_tracks_with_jobs()
         if track["id"] in wanted
     ]
     if len(tracks) != len(wanted):
@@ -3284,7 +3306,7 @@ def reanalyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
 def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> dict:
     existing_paths = {
         str(Path(job["source_path"]).resolve())
-        for job in repository.list_jobs(limit=10_000)
+        for job in jobs_repository.list_jobs(limit=10_000)
         if job["status"] in ({"queued", "processing", "paused"} if force else {"queued", "processing", "paused", "complete"})
     }
     effective = _effective_settings()
@@ -3299,7 +3321,7 @@ def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> di
         if str(source.resolve()) in existing_paths:
             skipped.append(int(track["id"]))
             continue
-        job_id = repository.create(
+        job_id = jobs_repository.create(
             source.name,
             source,
             "auto",
@@ -3331,7 +3353,7 @@ def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> di
 def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest) -> dict:
     if request.analysis in {"complete", "active"}:
         return {"job_ids": [], "skipped": [], "unavailable": [], "matched": 0}
-    tracks, _ = repository.page_downloaded_tracks(
+    tracks, _ = track_catalog_repository.page_downloaded_tracks(
         page=1, page_size=10_000_000, search=request.search, genre=request.genre,
         detailed_genre=request.detailed_genre, playlist=request.playlist,
         analysis=("failed" if request.analysis == "failed" else "needs"),
@@ -3343,7 +3365,7 @@ def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest)
 
 @app.post("/api/downloaded-library/reanalyze-matching", status_code=202)
 def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest) -> dict:
-    tracks, _ = repository.page_downloaded_tracks(
+    tracks, _ = track_catalog_repository.page_downloaded_tracks(
         page=1, page_size=10_000_000, search=request.search, genre=request.genre,
         detailed_genre=request.detailed_genre, playlist=request.playlist,
         analysis=request.analysis, quality=request.quality, sort=request.sort,
@@ -3355,7 +3377,7 @@ def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterReques
 @app.patch("/api/downloaded-library/genre")
 def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
     """Move imported WAVs to a genre folder without losing analysis history."""
-    all_tracks = repository.list_downloaded_tracks()
+    all_tracks = track_catalog_repository.list_downloaded_tracks()
     requested_category = _normalize_genre_category(request.genre_category.strip())
     category = next(
         (
@@ -3402,7 +3424,7 @@ def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
             _write_source_metadata(destination, {**metadata, "genre_category": category})
             if destination.resolve() != source.resolve():
                 old_metadata.unlink(missing_ok=True)
-        repository.relocate_downloaded_tracks(completed)
+        relocation_repository.relocate_downloaded_tracks(completed)
         for _, source, destination, _ in completed:
             old_parent = source.parent
             if destination.resolve() != source.resolve() and old_parent != _music_library_root():
@@ -3421,7 +3443,7 @@ def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
 @app.patch("/api/downloaded-library/tracks/{track_id}/metadata")
 def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataRequest) -> dict:
     """Synchronize editable identity fields across disk, WAV tags, and Library records."""
-    track = repository.get_downloaded_track(track_id)
+    track = track_catalog_repository.get_downloaded_track(track_id)
     if not track:
         raise HTTPException(404, "Downloaded track was not found")
     source = Path(str(track["file_path"]))
@@ -3473,13 +3495,13 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
             "artwork_path": artwork_path,
         }
         _write_source_metadata(destination, metadata)
-        repository.update_downloaded_track_metadata(
+        track_catalog_repository.update_downloaded_track_metadata(
             track_id=track_id, old_path=source, new_path=destination,
             title=title, artist=artist, genre=detailed_genre,
             genre_category=category, playlist_name=playlist_name,
         )
         if artwork_url and artwork_path:
-            repository.update_downloaded_track_artwork(
+            track_catalog_repository.update_downloaded_track_artwork(
                 track_id, artwork_url=artwork_url, artwork_path=artwork_path
             )
         if moved:
@@ -3512,7 +3534,7 @@ def repair_playlist_derived_genres() -> dict:
     restored: list[int] = []
     cleared: list[int] = []
     failed: list[dict[str, object]] = []
-    for track in repository.list_downloaded_tracks():
+    for track in track_catalog_repository.list_downloaded_tracks():
         playlists = [
             str(value).strip()
             for value in (track.get("playlists") or [])
@@ -3570,7 +3592,7 @@ def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     _require_music_library_online()
     wanted = set(request.track_ids)
     tracks = [
-        track for track in repository.list_downloaded_tracks()
+        track for track in track_catalog_repository.list_downloaded_tracks()
         if int(track["id"]) in wanted
     ]
     if len(tracks) != len(wanted):
@@ -3598,7 +3620,7 @@ def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
 
 
 def _run_wav_tag_batch(batch_id: str) -> None:
-    tracks = repository.list_downloaded_tracks()
+    tracks = track_catalog_repository.list_downloaded_tracks()
     for index, track in enumerate(tracks, start=1):
         path = Path(str(track["file_path"]))
         error = ""
@@ -3644,7 +3666,7 @@ def start_retag_all_downloaded_tracks() -> dict:
         if active:
             return active
         batch_id = uuid.uuid4().hex
-        total = len(repository.list_downloaded_tracks())
+        total = len(track_catalog_repository.list_downloaded_tracks())
         wav_tag_batches[batch_id] = {
             "status": "processing", "total": total, "processed": 0,
             "tagged": 0, "skipped": 0, "failed": 0, "errors": [],
@@ -3669,7 +3691,7 @@ def wav_tag_batch_status(batch_id: str) -> dict:
 def latest_wav_tag_batch_status() -> dict:
     with wav_tag_batch_lock:
         if not wav_tag_batches:
-            cached_audit = repository.get_system_state("wav_tag_latest_audit")
+            cached_audit = settings_repository.get_system_state("wav_tag_latest_audit")
             if cached_audit:
                 try:
                     cached = json.loads(cached_audit)
@@ -3686,7 +3708,7 @@ def latest_wav_tag_batch_status() -> dict:
         batch = dict(wav_tag_batches[batch_id])
         if batch.get("status") == "complete" and batch.get("errors"):
             current = {
-                int(track["id"]): track for track in repository.list_downloaded_tracks()
+                int(track["id"]): track for track in track_catalog_repository.list_downloaded_tracks()
             }
             active_errors = []
             for item in batch["errors"]:
@@ -3707,7 +3729,7 @@ def latest_wav_tag_batch_status() -> dict:
 
 
 def _refresh_wav_tag_audit() -> dict:
-    tracks = repository.list_downloaded_tracks()
+    tracks = track_catalog_repository.list_downloaded_tracks()
     errors = [
         {
             "id": int(track["id"]), "filename": track["filename"],
@@ -3721,7 +3743,7 @@ def _refresh_wav_tag_audit() -> dict:
         "tagged": 0, "skipped": len(tracks) - len(errors), "failed": len(errors),
         "errors": errors,
     }
-    repository.set_system_state(
+    settings_repository.set_system_state(
         "wav_tag_latest_audit",
         json.dumps({**payload, "generated_at": datetime.now(timezone.utc).isoformat()}),
     )
@@ -3747,7 +3769,7 @@ def _schedule_wav_tag_audit_refresh() -> None:
 
 
 def _run_artwork_sync_batch(batch_id: str, track_ids: list[int] | None = None) -> None:
-    tracks = repository.list_downloaded_tracks()
+    tracks = track_catalog_repository.list_downloaded_tracks()
     if track_ids is not None:
         requested = set(track_ids)
         tracks = [track for track in tracks if int(track["id"]) in requested]
@@ -3778,7 +3800,7 @@ def _run_artwork_sync_batch(batch_id: str, track_ids: list[int] | None = None) -
                 artwork_path = _cache_track_artwork(artwork_url, path)
                 if not artwork_path:
                     raise ValueError("Artwork could not be downloaded or embedded")
-                repository.update_downloaded_track_artwork(
+                track_catalog_repository.update_downloaded_track_artwork(
                     int(track["id"]), artwork_url=artwork_url, artwork_path=artwork_path
                 )
                 outcome = "updated"
@@ -3801,7 +3823,7 @@ def _run_artwork_sync_batch(batch_id: str, track_ids: list[int] | None = None) -
 def start_downloaded_artwork_sync(request: ArtworkSyncRequest | None = None) -> dict:
     _require_music_library_online()
     track_ids = list(dict.fromkeys(request.track_ids)) if request else []
-    tracks = repository.list_downloaded_tracks()
+    tracks = track_catalog_repository.list_downloaded_tracks()
     if track_ids:
         known = {int(track["id"]) for track in tracks}
         track_ids = [track_id for track_id in track_ids if track_id in known]
@@ -3839,7 +3861,7 @@ def _reconcile_artwork_sync_errors(batch_id: str) -> dict:
         return {"batch_id": batch_id, **snapshot}
 
     current = {
-        int(track["id"]): track for track in repository.list_downloaded_tracks()
+        int(track["id"]): track for track in track_catalog_repository.list_downloaded_tracks()
     }
     active_errors = []
     for item in errors:
@@ -3884,7 +3906,7 @@ def latest_downloaded_artwork_sync() -> dict:
 
 def _run_genre_rescan_batch(batch_id: str) -> None:
     """Reclassify downloads sequentially while publishing per-track progress."""
-    tracks = repository.list_downloaded_tracks()
+    tracks = track_catalog_repository.list_downloaded_tracks()
     for index, track in enumerate(tracks, start=1):
         outcome = "unchanged"
         conflict: dict | None = None
@@ -3955,7 +3977,7 @@ def start_downloaded_genre_rescan() -> dict:
         batch_id = uuid.uuid4().hex
         genre_rescan_batches[batch_id] = {
             "status": "processing",
-            "total": len(repository.list_downloaded_tracks()),
+            "total": len(track_catalog_repository.list_downloaded_tracks()),
             "processed": 0,
             "updated": 0,
             "unchanged": 0,
@@ -4037,8 +4059,8 @@ def catalog_reconcile_status(batch_id: str) -> dict:
 
 def _run_integrity_scan(batch_id: str) -> None:
     root = _music_library_root()
-    repository.refresh_missing_audio_fingerprints()
-    tracks = repository.list_downloaded_tracks_with_jobs()
+    recording_family_repository.refresh_missing_audio_fingerprints()
+    tracks = track_catalog_repository.list_downloaded_tracks_with_jobs()
     findings: dict[str, list[dict]] = {key: [] for key in (
         "missing_files", "uncataloged_files", "duplicate_records", "stale_sidecars",
         "broken_analysis_links", "tag_mismatches", "unreadable_tags",
@@ -4047,7 +4069,7 @@ def _run_integrity_scan(batch_id: str) -> None:
     for track in tracks:
         path = Path(str(track["file_path"]))
         if not path.is_file(): findings["missing_files"].append({"id":str(track["id"]),"title":track.get("title") or track.get("filename"),"path":str(path)})
-    for candidate in repository.duplicate_candidates():
+    for candidate in recording_family_repository.duplicate_candidates():
         group = candidate["tracks"]
         findings["duplicate_records"].append({
             "id": str(group[0]["id"]), "title": group[0].get("title"),
@@ -4058,14 +4080,14 @@ def _run_integrity_scan(batch_id: str) -> None:
             "reason": candidate["reason"], "confidence": candidate["confidence"],
         })
     for path in root.rglob("*.wav"):
-        if ".audioextender" not in path.parts and str(path.resolve()) not in catalog_paths and not repository.downloaded_track_is_excluded(path): findings["uncataloged_files"].append({"id":str(path.resolve()),"title":path.stem,"path":str(path.resolve())})
+        if ".audioextender" not in path.parts and str(path.resolve()) not in catalog_paths and not track_catalog_repository.downloaded_track_is_excluded(path): findings["uncataloged_files"].append({"id":str(path.resolve()),"title":path.stem,"path":str(path.resolve())})
     sidecar_root = root / ".audioextender" / "sources"
     if sidecar_root.exists():
         for sidecar in sidecar_root.glob("*.json"):
             try: audio_path=Path(str(json.loads(sidecar.read_text(encoding="utf-8")).get("file_path") or ""))
             except (OSError,ValueError): audio_path=Path("")
             if not audio_path.is_file(): findings["stale_sidecars"].append({"id":str(sidecar.resolve()),"title":sidecar.name,"path":str(sidecar.resolve()),"audio_path":str(audio_path)})
-    for job in repository.list_jobs(limit=10_000):
+    for job in jobs_repository.list_jobs(limit=10_000):
         source=Path(str(job.get("source_path") or ""))
         try: managed=source.resolve().is_relative_to(root)
         except (OSError,ValueError): managed=False
@@ -4087,7 +4109,7 @@ def _run_integrity_scan(batch_id: str) -> None:
 @app.post("/api/downloaded-library/integrity-scan",status_code=202)
 def start_integrity_scan() -> dict:
     _require_music_library_online()
-    batch_id=uuid.uuid4().hex; total=len(repository.list_downloaded_tracks())
+    batch_id=uuid.uuid4().hex; total=len(track_catalog_repository.list_downloaded_tracks())
     with integrity_scan_batch_lock: integrity_scan_batches[batch_id]={"batch_id":batch_id,"status":"processing","stage":"Indexing catalog and files","progress":0,"processed":0,"total":total,"findings":{},"counts":{}}
     threading.Thread(target=_run_integrity_scan,args=(batch_id,),daemon=True,name=f"integrity-scan-{batch_id[:8]}").start()
     return dict(integrity_scan_batches[batch_id])
@@ -4104,10 +4126,10 @@ def integrity_scan_status(batch_id: str) -> dict:
 @app.post("/api/downloaded-library/integrity-repair")
 def integrity_repair(request: IntegrityRepairRequest) -> dict:
     root=_music_library_root()
-    if request.action=="remove-missing": return {"updated":sum(repository.delete_downloaded_track(int(item)) for item in request.item_ids)}
+    if request.action=="remove-missing": return {"updated":sum(track_catalog_repository.delete_downloaded_track(int(item)) for item in request.item_ids)}
     if request.action=="retag-mismatches":
         wanted={int(item) for item in request.item_ids}; updated=0
-        for track in repository.list_downloaded_tracks():
+        for track in track_catalog_repository.list_downloaded_tracks():
             if int(track["id"]) not in wanted: continue
             path=Path(str(track["file_path"])); updated+=int(sync_wav_metadata(path,title=str(track.get("title") or path.stem),artist=str(track.get("artist") or ""),genre=str(track.get("genre_category") or "Other"),album=str((track.get("playlists") or ["Imported Singles"])[0])))
         return {"updated":updated}
@@ -4122,7 +4144,7 @@ def integrity_repair(request: IntegrityRepairRequest) -> dict:
     for path in paths:
         if not path.is_file() or path.suffix.casefold()!=".wav": continue
         metadata=_probe_local_audio(path); category=_catalog_genre_category(path,"",str(metadata.get("genre") or ""))
-        repository.upsert_downloaded_track(title=str(metadata.get("title") or path.stem),artist=str(metadata.get("artist") or ""),file_path=path,genre=str(metadata.get("genre") or ""),genre_category=category,duration_seconds=metadata.get("duration"),playlist_name="Recovered files"); added+=1
+        track_catalog_repository.upsert_downloaded_track(title=str(metadata.get("title") or path.stem),artist=str(metadata.get("artist") or ""),file_path=path,genre=str(metadata.get("genre") or ""),genre_category=category,duration_seconds=metadata.get("duration"),playlist_name="Recovered files"); added+=1
     return {"updated":added}
 
 
@@ -4130,7 +4152,7 @@ def integrity_repair(request: IntegrityRepairRequest) -> dict:
 def download_genre(genre: str) -> FileResponse:
     tracks = [
         track
-        for track in repository.list_downloaded_tracks()
+        for track in track_catalog_repository.list_downloaded_tracks()
         if str(track.get("genre_category") or "Other").casefold() == genre.casefold()
     ]
     return _downloaded_archive(tracks, genre)
@@ -4140,7 +4162,7 @@ def download_genre(genre: str) -> FileResponse:
 def download_playlist(playlist: str) -> FileResponse:
     tracks = [
         track
-        for track in repository.list_downloaded_tracks()
+        for track in track_catalog_repository.list_downloaded_tracks()
         if any(item.casefold() == playlist.casefold() for item in track.get("playlists", []))
     ]
     return _downloaded_archive(tracks, playlist)
@@ -4155,15 +4177,15 @@ def jobs(
 ) -> list[dict] | dict:
     global jobs_watchdog_last
     if perf_counter() - jobs_watchdog_last >= 60:
-        repository.fail_stalled_jobs()
+        jobs_repository.fail_stalled_jobs()
         jobs_watchdog_last = perf_counter()
     if paged:
-        rows, total = repository.list_jobs_page(
+        rows, total = jobs_repository.list_jobs_page(
             page=page, page_size=page_size, statuses=tuple(status)
         )
     else:
-        rows = repository.list_job_summaries()
-        active_rows, _ = repository.list_jobs_page(
+        rows = jobs_repository.list_job_summaries()
+        active_rows, _ = jobs_repository.list_jobs_page(
             page=1, page_size=10_000, statuses=("queued", "processing")
         )
         rows_by_id = {int(row["id"]): row for row in rows}
@@ -4201,17 +4223,17 @@ def clear_jobs() -> dict:
     """Clear workspace queue entries without removing completed library audio."""
     active_ids = set(service.snapshot().get("active_ids") or [])
     cleared = 0
-    for job in repository.list_jobs(1000):
+    for job in jobs_repository.list_jobs(1000):
         job_id = int(job["id"])
         if job_id in active_ids:
             continue
         if job["status"] == "queued":
             service.cancel(job_id)
-            cleared += int(repository.delete(job_id))
+            cleared += int(jobs_repository.delete(job_id))
         elif job["status"] in {"failed", "canceled"}:
-            cleared += int(repository.delete(job_id))
+            cleared += int(jobs_repository.delete(job_id))
         elif job.get("review_status") in {"pending", "rejected"}:
-            repository.update(job_id, review_status="resolved")
+            jobs_repository.update(job_id, review_status="resolved")
             cleared += 1
     return {"cleared": cleared, "active_preserved": active is not None}
 
@@ -4221,14 +4243,14 @@ def remove_library_track(source_name: str) -> dict:
     """Remove every inactive generation from the Library without deleting exports."""
     matching = [
         job
-        for job in repository.list_jobs(10_000)
+        for job in jobs_repository.list_jobs(10_000)
         if str(job["source_name"]).casefold() == source_name.casefold()
     ]
     if not matching:
         raise HTTPException(404, "Library track not found")
     if any(job["status"] in {"queued", "processing"} for job in matching):
         raise HTTPException(409, "Cancel or finish this track before removing it")
-    removed = sum(int(repository.delete(int(job["id"]))) for job in matching)
+    removed = sum(int(jobs_repository.delete(int(job["id"]))) for job in matching)
     report_path = OUTPUT / "reports" / "processing_report.json"
     try:
         report = json.loads(report_path.read_text(encoding="utf-8"))
@@ -4266,17 +4288,17 @@ def resume_job(job_id: int) -> dict:
 
 @app.delete("/api/jobs/{job_id}")
 def remove_job(job_id: int) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     if job["status"] in {"queued", "processing"}:
         raise HTTPException(409, "Cancel or finish the job before removing it")
-    return {"removed": repository.delete(job_id)}
+    return {"removed": jobs_repository.delete(job_id)}
 
 
 @app.post("/api/jobs/{job_id}/reprocess", status_code=202)
 def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     config_overrides = json.loads(job.get("config_json") or "{}")
@@ -4384,7 +4406,7 @@ def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
             config_overrides["insert_source_end"] = request.insert_source_end
             config_overrides["insert_destination"] = request.insert_destination
             config_overrides["insert_copies"] = request.insert_copies or 1
-    new_id = repository.create(
+    new_id = jobs_repository.create(
         job["source_name"],
         Path(job["source_path"]),
         preset,
@@ -4402,25 +4424,25 @@ def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
         or request.custom_outro_start is not None
         or request.insert_source_start is not None
     ):
-        repository.update(job_id, review_status="resolved")
+        jobs_repository.update(job_id, review_status="resolved")
     service.enqueue(new_id)
     return {"job_id": new_id}
 
 
 @app.post("/api/jobs/{job_id}/review/reject")
 def reject_review(job_id: int) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     if job.get("review_status") != "pending":
         raise HTTPException(409, "Review is no longer pending")
-    repository.update(job_id, review_status="rejected")
+    jobs_repository.update(job_id, review_status="rejected")
     return {"ok": True}
 
 
 @app.get("/api/jobs/{job_id}/candidates")
 def candidates(job_id: int) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     return json.loads(job.get("candidates_json") or "{}")
@@ -4428,7 +4450,7 @@ def candidates(job_id: int) -> dict:
 
 @app.get("/api/jobs/{job_id}/candidate/{position}/{rank}")
 def candidate_audio(job_id: int, position: str, rank: int) -> FileResponse:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None or position not in {"intro", "outro"} or rank not in {1, 2, 3}:
         raise HTTPException(404, "Candidate not found")
     stem = Path(job["source_name"]).stem
@@ -4457,12 +4479,12 @@ def candidate_audio(job_id: int, position: str, rank: int) -> FileResponse:
 
 @app.post("/api/jobs/{job_id}/feedback")
 def save_feedback(job_id: int, request: FeedbackRequest) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     if request.position not in {"intro", "outro"}:
         raise HTTPException(400, "Position must be intro or outro")
-    feedback_id = repository.add_feedback(
+    feedback_id = feedback_repository.add_feedback(
         job_id,
         request.position,
         request.candidate_rank,
@@ -4484,7 +4506,7 @@ def save_feedback(job_id: int, request: FeedbackRequest) -> dict:
 
 @app.get("/api/jobs/{job_id}/feedback")
 def job_feedback(job_id: int) -> list[dict]:
-    return repository.feedback(job_id)
+    return feedback_repository.feedback(job_id)
 
 
 @app.post("/api/jobs", status_code=202)
@@ -4598,7 +4620,7 @@ async def create_jobs(
         destination = INPUT / filename
         with destination.open("wb") as handle:
             shutil.copyfileobj(upload.file, handle)
-        job_id = repository.create(
+        job_id = jobs_repository.create(
             filename,
             destination,
             preset,
@@ -4622,7 +4644,7 @@ async def create_jobs(
 
 @app.get("/api/jobs/{job_id}/audio/{kind}")
 def audio(job_id: int, kind: str) -> FileResponse:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     field = {
@@ -4652,7 +4674,7 @@ def download(job_id: int, kind: str) -> FileResponse:
 def batch_download(request: BatchDownloadRequest) -> FileResponse:
     jobs: list[dict] = []
     for job_id in dict.fromkeys(request.job_ids):
-        job = repository.get(job_id)
+        job = jobs_repository.get(job_id)
         if job is None or job["status"] != "complete":
             raise HTTPException(404, f"Completed job {job_id} is unavailable")
         jobs.append(job)
@@ -4730,7 +4752,7 @@ def batch_download(request: BatchDownloadRequest) -> FileResponse:
 
 @app.get("/api/jobs/{job_id}/waveform/{kind}")
 def waveform(job_id: int, kind: str) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     field = {"wav": "wav_path", "extended": "extended_path"}.get(kind)
@@ -4773,7 +4795,7 @@ def waveform(job_id: int, kind: str) -> dict:
         else:
             duration, peak_values = cached_waveform
     timeline: dict[str, list[dict]] = {"behavior": [], "arrangement": [], "edits": []}
-    record = repository.get_library_analysis(job_id)
+    record = track_catalog_repository.get_library_analysis(job_id)
     if record:
         try:
             intro = record.get("intro")
@@ -4839,7 +4861,7 @@ def waveform(job_id: int, kind: str) -> dict:
 
 @app.post("/api/jobs/{job_id}/transition-score")
 def transition_score(job_id: int, request: TransitionScoreRequest) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     source = Path(job["source_path"])
@@ -4866,7 +4888,7 @@ def transition_score(job_id: int, request: TransitionScoreRequest) -> dict:
 
 @app.get("/api/jobs/{job_id}/cues")
 def cues(job_id: int) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     return {"cues": json.loads(job.get("cues_json") or "[]")}
@@ -4874,11 +4896,11 @@ def cues(job_id: int) -> dict:
 
 @app.put("/api/jobs/{job_id}/cues")
 def update_cues(job_id: int, request: CueEditRequest) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
     values = [cue.model_dump() for cue in request.cues]
-    repository.update(job_id, cues_json=json.dumps(values))
+    jobs_repository.update(job_id, cues_json=json.dumps(values))
     cue_path = Path(job.get("cue_sheet_path") or "")
     if cue_path.is_file():
         document = json.loads(cue_path.read_text(encoding="utf-8"))
@@ -4941,7 +4963,7 @@ def analytics() -> dict:
     with analytics_cache_lock:
         if analytics_cache["payload"] is not None and now < float(analytics_cache["expires_at"]):
             return analytics_cache["payload"]  # type: ignore[return-value]
-    summary = repository.analytics_summary()
+    summary = jobs_repository.analytics_summary()
     feedback = summary["feedback"]
     accepted = [item for item in feedback if item["accepted"]]
     tags: dict[str, int] = {}
@@ -5006,7 +5028,7 @@ def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
 def report_audio_index() -> list[dict]:
     """Expose preview availability without loading the full job queue/history."""
     result = []
-    for job in repository.list_report_audio_jobs():
+    for job in jobs_repository.list_report_audio_jobs():
         wav_available = Path(str(job.get("wav_path") or "")).is_file()
         extended_available = Path(str(job.get("extended_path") or "")).is_file()
         result.append({
@@ -5079,7 +5101,7 @@ def _set_builder_analysis(song: dict, *, roles: list[str], energy: float,
 
 def _build_set_builder_catalog_payload() -> dict:
     tracks = []
-    for row in repository.list_set_builder_tracks():
+    for row in track_catalog_repository.list_set_builder_tracks():
         tracks.append({
             "analysis": json.loads(row.get("set_analysis_json") or "{}"),
             "genre": row.get("category") or "Other",
@@ -5114,15 +5136,15 @@ def _refresh_library_search_index() -> None:
         str(song.get("source_name") or "").casefold(): song
         for song in _load_processing_report().get("songs", {}).values()
     }
-    downloaded_tracks = repository.list_downloaded_tracks_with_jobs()
+    downloaded_tracks = track_catalog_repository.list_downloaded_tracks_with_jobs()
     downloaded_by_path = {str(track.get("file_path") or ""): track for track in downloaded_tracks}
     downloaded_by_job = {int(track["completed_library_job_id"]): track for track in downloaded_tracks if track.get("completed_library_job_id")}
     key_verifications = {
         str(item["source_name"]).casefold(): item
-        for item in repository.key_verifications()
+        for item in feedback_repository.key_verifications()
     }
     entries = []
-    for job in repository.list_latest_completed_jobs():
+    for job in jobs_repository.list_latest_completed_jobs():
         song = dict(analysis_by_name.get(str(job.get("source_name") or "").casefold(), {}))
         verification = key_verifications.get(str(job.get("source_name") or "").casefold())
         if verification:
@@ -5175,7 +5197,7 @@ def _refresh_library_search_index() -> None:
                 separators=(",", ":"),
             ),
         })
-    repository.replace_library_search_index(entries)
+    track_catalog_repository.replace_library_search_index(entries)
     _write_set_builder_catalog_cache()
 
 
@@ -5187,16 +5209,16 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
         (report_path.stat().st_mtime_ns, report_path.stat().st_size)
         if report_path.exists() else (0, 0)
     )
-    source_signature = repository.library_index_source_signature()
+    source_signature = track_catalog_repository.library_index_source_signature()
     signature_text = json.dumps(
         {"version": 4, "report": report_signature, "sources": source_signature}, separators=(",", ":")
     )
     signature = (report_signature, (hash(source_signature), len(source_signature)))
     with library_catalog_cache_lock:
         memory_current = library_catalog_cache.get("signature") == signature
-    persisted_current = repository.get_system_state("library_search_index_signature") == signature_text
+    persisted_current = settings_repository.get_system_state("library_search_index_signature") == signature_text
     needs_refresh = not memory_current and not persisted_current
-    if needs_refresh and repository.library_index_count() > 0:
+    if needs_refresh and track_catalog_repository.library_index_count() > 0:
         global library_index_refresh_active
         with library_index_refresh_lock:
             if not library_index_refresh_active:
@@ -5209,12 +5231,12 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
         return signature
     if needs_refresh:
         _refresh_library_search_index()
-        source_signature = repository.library_index_source_signature()
+        source_signature = track_catalog_repository.library_index_source_signature()
         signature_text = json.dumps(
             {"version": 4, "report": report_signature, "sources": source_signature}, separators=(",", ":")
         )
         signature = (report_signature, (hash(source_signature), len(source_signature)))
-        repository.set_system_state("library_search_index_signature", signature_text)
+        settings_repository.set_system_state("library_search_index_signature", signature_text)
     with library_catalog_cache_lock:
         library_catalog_cache["signature"] = signature
     return signature
@@ -5229,12 +5251,12 @@ def _refresh_library_index_background() -> None:
             (report_path.stat().st_mtime_ns, report_path.stat().st_size)
             if report_path.exists() else (0, 0)
         )
-        source_signature = repository.library_index_source_signature()
+        source_signature = track_catalog_repository.library_index_source_signature()
         signature_text = json.dumps(
             {"version": 4, "report": report_signature, "sources": source_signature},
             separators=(",", ":"),
         )
-        repository.set_system_state("library_search_index_signature", signature_text)
+        settings_repository.set_system_state("library_search_index_signature", signature_text)
         with library_catalog_cache_lock:
             library_catalog_cache["signature"] = (
                 report_signature, (hash(source_signature), len(source_signature))
@@ -5316,7 +5338,7 @@ def library_catalog(
 ) -> dict:
     """Compact Library index; expensive generation history stays lazy."""
     signature = _ensure_library_search_index_current()
-    rows, filtered_total = repository.page_library_tracks(
+    rows, filtered_total = track_catalog_repository.page_library_tracks(
         page=page, page_size=page_size, search=search, role=role, category=category,
         detail_genre=detailed_genre,
         preset=preset, result=result, quality=quality, bpm_min=bpm_min, bpm_max=bpm_max,
@@ -5328,7 +5350,7 @@ def library_catalog(
             if library_catalog_cache.get("facets_signature") == signature else None
         )
     if cached_facets is None:
-        facets = repository.library_search_facets()
+        facets = track_catalog_repository.library_search_facets()
         with library_catalog_cache_lock:
             library_catalog_cache["facets_signature"] = signature
             library_catalog_cache["facets"] = facets
@@ -5340,7 +5362,7 @@ def library_catalog(
     total_pages = max(1, math.ceil(filtered_total / page_size))
     if page > total_pages:
         page = total_pages
-        rows, filtered_total = repository.page_library_tracks(
+        rows, filtered_total = track_catalog_repository.page_library_tracks(
             page=page, page_size=page_size, search=search, role=role, category=category,
             detail_genre=detailed_genre,
             preset=preset, result=result, quality=quality, bpm_min=bpm_min, bpm_max=bpm_max,
@@ -5399,18 +5421,18 @@ def library_catalog(
 
 @app.get("/api/library/jobs/{job_id}/details")
 def library_job_details(job_id: int) -> dict:
-    job = repository.get(job_id)
+    job = jobs_repository.get(job_id)
     if not job or job.get("status") != "complete":
         raise HTTPException(404, "Library track not found")
     return {
         "job": job,
-        "versions": repository.list_completed_versions(str(job["source_path"])),
+        "versions": jobs_repository.list_completed_versions(str(job["source_path"])),
     }
 
 
 @app.get("/api/report-feedback")
 def report_feedback() -> list[dict]:
-    return repository.track_feedback()
+    return feedback_repository.track_feedback()
 
 
 @app.post("/api/report-feedback")
@@ -5418,7 +5440,7 @@ def save_report_feedback(request: TrackFeedbackRequest) -> dict:
     if request.position not in {"intro", "outro", "overall"}:
         raise HTTPException(400, "Position must be intro, outro, or overall")
     source_name = Path(request.source_name).name
-    feedback_id = repository.add_track_feedback(
+    feedback_id = feedback_repository.add_track_feedback(
         source_name,
         request.position,
         request.accepted,
@@ -5439,7 +5461,7 @@ def save_report_feedback(request: TrackFeedbackRequest) -> dict:
 
 @app.get("/api/key-verifications")
 def key_verifications() -> dict:
-    items = repository.key_verifications()
+    items = feedback_repository.key_verifications()
     detector_totals: dict[str, int] = {}
     detector_correct: dict[str, int] = {}
     for item in items:
@@ -5477,7 +5499,7 @@ def save_key_verification(source_name: str, request: KeyVerificationRequest) -> 
         normalized_key = f"{aliases[parts[0]]} {parts[1].casefold()}"
     if normalized_key not in _CAMELOT_KEYS:
         raise HTTPException(400, "Choose a valid major or minor key")
-    saved = repository.set_key_verification(
+    saved = feedback_repository.set_key_verification(
         normalized_source, normalized_key, request.detected_key.strip(),
         request.candidates, request.notes.strip(),
     )
@@ -5487,7 +5509,7 @@ def save_key_verification(source_name: str, request: KeyVerificationRequest) -> 
 
 @app.delete("/api/key-verifications/{source_name:path}")
 def remove_key_verification(source_name: str) -> dict:
-    removed = repository.delete_key_verification(Path(source_name).name)
+    removed = feedback_repository.delete_key_verification(Path(source_name).name)
     if removed:
         _refresh_library_search_index()
     return {"removed": removed}

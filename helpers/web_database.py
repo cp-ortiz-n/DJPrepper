@@ -21,20 +21,32 @@ from helpers.recording_identity import (
     normalize_identity_text,
     version_kind,
 )
+from helpers.repository_views import RepositoryBundle
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-class JobRepository:
-    """Persist job state so the dashboard survives browser and server restarts."""
+class SQLiteApplicationStore:
+    """Internal SQLite implementation shared by the focused repositories.
+
+    Application code should depend on one of the domain repositories exposed on
+    :class:`JobRepository`, rather than on this storage engine directly.
+    """
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._initialize()
+        repositories = RepositoryBundle(self)
+        self.track_catalog = repositories.track_catalog
+        self.jobs_and_queues = repositories.jobs_and_queues
+        self.settings_system = repositories.settings_system
+        self.recording_families = repositories.recording_families
+        self.feedback_key_verification = repositories.feedback_key_verification
+        self.backups_relocation = repositories.backups_relocation
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=30)
@@ -2077,3 +2089,13 @@ class JobRepository:
                 "jobs",
             ):
                 connection.execute(f"DELETE FROM {table}")  # noqa: S608
+
+
+class JobRepository(SQLiteApplicationStore):
+    """Compatibility aggregate for the six focused repository interfaces.
+
+    Existing integrations can continue calling historical methods while new
+    code selects ``track_catalog``, ``jobs_and_queues``, ``settings_system``,
+    ``recording_families``, ``feedback_key_verification``, or
+    ``backups_relocation`` explicitly.
+    """
