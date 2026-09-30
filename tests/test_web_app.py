@@ -1001,7 +1001,7 @@ class WebApiTests(unittest.TestCase):
                 self.assertEqual(archive.namelist(), ["Test Playlist/Electronic/House/Track.wav"])
             self.assertEqual(list(root.rglob("*.zip")), [])
 
-    def test_settings_fall_back_to_application_defaults_after_reset(self) -> None:
+    def test_settings_reset_preserves_library_location(self) -> None:
         payload = {
             "music_library_path": str(Path(tempfile.gettempdir()) / "AudioExtender Library"),
             "preset": "auto",
@@ -1015,20 +1015,26 @@ class WebApiTests(unittest.TestCase):
             "preview_seconds": 10,
             "export_cues": True,
         }
-        response = self.client.put("/api/settings", json=payload)
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["effective"]["intro_bars"], 4)
-        self.assertEqual(
-            response.json()["effective"]["music_library_path"],
-            str((Path(tempfile.gettempdir()) / "AudioExtender Library").resolve()),
-        )
-        reset = self.client.delete("/api/settings")
-        self.assertEqual(reset.status_code, 200)
-        self.assertEqual(reset.json()["overrides"], {})
-        self.assertEqual(
-            reset.json()["effective"]["intro_bars"],
-            reset.json()["defaults"]["intro_bars"],
-        )
+        with tempfile.TemporaryDirectory() as temporary:
+            isolated = JobRepository(Path(temporary) / "settings.sqlite3")
+            with patch.object(web_module, "repository", isolated):
+                response = self.client.put("/api/settings", json=payload)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json()["effective"]["intro_bars"], 4)
+                self.assertEqual(
+                    response.json()["effective"]["music_library_path"],
+                    str((Path(tempfile.gettempdir()) / "AudioExtender Library").resolve()),
+                )
+                reset = self.client.delete("/api/settings")
+                self.assertEqual(reset.status_code, 200)
+                self.assertEqual(
+                    reset.json()["overrides"]["music_library_path"],
+                    str((Path(tempfile.gettempdir()) / "AudioExtender Library").resolve()),
+                )
+                self.assertEqual(
+                    reset.json()["effective"]["intro_bars"],
+                    reset.json()["defaults"]["intro_bars"],
+                )
 
     def test_analytics_endpoint_has_feedback_fields(self) -> None:
         response = self.client.get("/api/analytics")

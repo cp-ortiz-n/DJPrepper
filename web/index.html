@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260929-180">
+  <link rel="stylesheet" href="/assets/styles.css?v=20260929-184">
 </head>
 <body>
   <header class="topbar">
@@ -176,7 +176,7 @@
       <section class="panel downloaded-toolbar">
         <div class="downloaded-filters">
           <label>Find a track<input id="downloaded-search" type="search" placeholder="Search title, artist, track ID, genre, or playlist"></label>
-          <label>Genre<select id="downloaded-genre"><option value="all">All genres</option></select></label>
+          <label>Parent genre<select id="downloaded-genre"><option value="all">All parent genres</option></select></label>
           <label>Detailed genre<select id="downloaded-detailed-genre-filter"><option value="all">All detailed genres</option></select></label>
           <label>Playlist<select id="downloaded-playlist"><option value="all">All playlists</option></select></label>
           <label>Analysis<select id="downloaded-analysis"><option value="all">All tracks</option><optgroup label="Track analysis"><option value="needs">Needs audio analysis</option><option value="complete">Analyzed</option><option value="active">Queued or analyzing</option><option value="failed">Analysis failed or canceled</option></optgroup><optgroup label="Needs attention"><option value="attention">All needing attention</option><option value="missing_title">Missing title</option><option value="missing_artist">Missing artist</option><option value="missing_genre">Missing genre tags</option><option value="missing_artwork">Missing artwork</option><option value="unmapped_genre">Unrecognized genre</option><option value="broad_genre">Needs a specific genre</option></optgroup></select></label>
@@ -195,6 +195,7 @@
           <button id="downloaded-change-genre" type="button" class="button secondary" disabled>Change genre</button>
           <button id="downloaded-retag-selected" type="button" class="button secondary" disabled>Sync WAV tags</button>
           <button id="downloaded-analyze-selected" type="button" disabled>Analyze</button>
+          <button id="downloaded-key-analyze-selected" type="button" class="button secondary" disabled>Analyze key</button>
           <button id="downloaded-reanalyze-selected" type="button" class="button secondary" disabled>Reanalyze selected</button>
           <button id="downloaded-download-selected" type="button" class="button secondary" disabled>Download WAVs</button>
           <button id="downloaded-remove-selected" type="button" class="button secondary danger-button" disabled>Remove</button>
@@ -257,6 +258,7 @@
             <details class="library-export-options"><summary>File types</summary><div><label><input type="checkbox" value="extended" checked> Extended WAV</label><label><input type="checkbox" value="source"> Source WAV</label><label><input type="checkbox" value="cue-sheet"> Cue sheet</label><label><input type="checkbox" value="rekordbox"> Rekordbox XML</label><label><input type="checkbox" value="intro-preview"> Intro preview</label><label><input type="checkbox" value="outro-preview"> Outro preview</label><label><input type="checkbox" value="analysis"> Analysis report</label></div></details>
             <button id="library-download-selected" class="button secondary" disabled>Download</button>
             <button id="library-reanalyze-selected" class="button secondary" disabled>Reanalyze</button>
+            <button id="library-key-analyze-selected" class="button secondary" disabled>Analyze key</button>
             <button id="library-remove-selected" class="button secondary danger-button" disabled>Remove</button></div>
         </div>
       </section>
@@ -340,7 +342,7 @@
         <p class="report-score-guide"><b>Reading the scores:</b> higher confidence, quality, and DJ readiness are better; lower risk is better. Each score is labeled where it appears.</p>
         <div class="report-toolbar">
           <input id="report-search" type="search" placeholder="Search tracks, styles, presets…">
-          <select id="report-issue"><option value="all">All health signals</option><option value="attention">Needs attention</option><option value="key-review">Needs key review</option><option value="key-disagreement">Key detector disagreement</option><option value="key-verified">Manually verified keys</option><option value="low-grid">Low beat-grid confidence</option><option value="low-key">Low key confidence</option><option value="high-risk">High transition risk</option><option value="slow">Slow processing</option><option value="healthy">Healthy analysis</option><option value="mix-ready">Ready to mix</option></select>
+          <select id="report-issue"><option value="all">All health signals</option><option value="attention">Needs attention</option><option value="key-review">Needs key review</option><option value="key-missing">Key not analyzed</option><option value="key-disagreement">Key detector disagreement</option><option value="key-verified">Manually verified keys</option><option value="low-grid">Low beat-grid confidence</option><option value="low-key">Low key confidence</option><option value="high-risk">High transition risk</option><option value="slow">Slow processing</option><option value="healthy">Healthy analysis</option><option value="mix-ready">Ready to mix</option></select>
           <select id="report-filter"><option value="all">All track types</option><option value="extended">Has generated edit</option><option value="preserved">Original analyzed</option></select>
           <select id="report-sort"><option value="recent">Recently processed</option><option value="name">Track name</option><option value="quality">Highest loop quality</option><option value="bpm">BPM</option></select>
         </div>
@@ -411,11 +413,12 @@
         <div class="relocation-head"><div><p class="eyebrow">PORTABLE LIBRARY</p><h2 id="relocation-title">Move or relink your music library</h2><p>Preserve catalog IDs, analysis, artwork, and playlists when placing the library on another drive.</p></div><span id="library-online-state" class="library-state">Checking…</span></div>
         <div class="relocation-current"><span>Current location</span><strong id="relocation-current-path">—</strong><small id="relocation-current-detail"></small></div>
         <div class="library-storage" aria-label="Library storage usage">
-          <div><span>Song files</span><strong id="library-song-storage">—</strong><small id="library-song-storage-detail">Audio currently available</small></div>
+          <div><span>Cataloged audio</span><strong id="library-song-storage">—</strong><small id="library-song-storage-detail">Across all connected locations</small></div>
           <div><span>Supporting files</span><strong id="library-support-storage">—</strong><small>Artwork, playlists, and library data</small></div>
-          <div><span>Total library</span><strong id="library-total-storage">—</strong><small id="library-total-storage-detail">Managed files</small></div>
+          <div><span>Configured folder</span><strong id="library-total-storage">—</strong><small id="library-total-storage-detail">Unique managed files on disk</small></div>
           <div><span>Drive available</span><strong id="library-free-storage">—</strong><small id="library-free-storage-detail">Remaining capacity</small></div>
         </div>
+        <section id="library-location-integrity" class="library-location-integrity" hidden><div><strong>Tracks outside the configured library</strong><p id="library-location-message"></p></div><button id="library-consolidate" type="button" class="button secondary">Consolidate safely</button></section>
         <section class="library-quality-summary" aria-labelledby="library-quality-title">
           <div class="library-quality-head"><div><span class="eyebrow">AUDIO QUALITY</span><h3 id="library-quality-title">Library sound health</h3><p>Signal-based estimates from the saved audio—not the inflated bitrate of converted WAV containers.</p></div><button id="scan-audio-quality" class="button secondary" type="button">Analyze audio quality</button></div>
           <div class="library-quality-stats"><div><span>Average score</span><strong id="quality-average">—</strong><small id="quality-coverage">Not analyzed</small></div><div><span>Excellent</span><strong id="quality-excellent">—</strong><small>90–100</small></div><div><span>Good</span><strong id="quality-good">—</strong><small>75–89</small></div><div><span>Needs review</span><strong id="quality-review">—</strong><small>Below 75</small></div></div>
@@ -566,6 +569,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20260929-180" type="module"></script>
+  <script src="/assets/app.js?v=20260929-184" type="module"></script>
 </body>
 </html>
