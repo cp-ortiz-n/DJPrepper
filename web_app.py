@@ -6,9 +6,7 @@ import csv
 import hashlib
 import io
 import json
-import math
 import mimetypes
-import os
 import queue
 import re
 import shutil
@@ -21,11 +19,12 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import deque
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Callable, Literal
+from typing import Annotated, Literal
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -39,26 +38,9 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.middleware.gzip import GZipMiddleware
 
-from audioextender.analysis.key_detection import analyze_key
-from audioextender.audio.loading import SUPPORTED_EXTENSIONS, load_audio
-from audioextender.audio.quality import analyze_audio_quality
-from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
-from audioextender.infrastructure.cache import AnalysisCache
-from audioextender.imports.creative_commons import CreativeCommonsImportService
-from audioextender.reporting.feedback import append_web_feedback
-from audioextender.imports.routes import AuthorizedImportRequest, create_import_router
-from audioextender.imports.service import (
-    ImportService,
-    authorized_source_provider,
-    scdl_download_command,
-)
-from audioextender.library.backup import LibraryBackupService
-from audioextender.library.relocation import LibraryRelocationCoordinator
-from audioextender.imports.local import LocalAudioImportService
-from audioextender.imports.playlist_match import PlaylistMatchService
-from audioextender.core.presets import PRESETS, EditPreset
-from audioextender.library.track_overrides import load_track_overrides
 from audioextender.analysis.transition_scorer import assess_custom_insertion
+from audioextender.audio.loading import SUPPORTED_EXTENSIONS
+from audioextender.audio.quality import analyze_audio_quality
 from audioextender.audio.wav_metadata import (
     embed_wav_artwork,
     read_wav_artwork,
@@ -66,8 +48,40 @@ from audioextender.audio.wav_metadata import (
     sync_wav_metadata,
     write_wav_metadata,
 )
-from audioextender.repositories.facade import JobRepository
+from audioextender.core.presets import PRESETS, EditPreset
+from audioextender.imports.creative_commons import CreativeCommonsImportService
+from audioextender.imports.local import LocalAudioImportService
+from audioextender.imports.playlist_match import PlaylistMatchService
+from audioextender.imports.routes import AuthorizedImportRequest, create_import_router
+from audioextender.imports.service import (
+    ImportService,
+    authorized_source_provider,
+    scdl_download_command,
+)
+from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
+from audioextender.infrastructure.cache import AnalysisCache
+from audioextender.library.relocation import LibraryRelocationCoordinator
+from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.web_jobs import WebJobService
+from audioextender.reporting.feedback import append_web_feedback
+from audioextender.repositories.facade import JobRepository
+from audioextender.web.library_routes import (
+    LibraryRouteDependencies,
+    create_library_router,
+)
+from audioextender.web.set_builder_routes import (
+    SetBuilderRouteDependencies,
+    SetExportPreflightRequest,  # noqa: F401 - compatibility re-export
+    SetPlaylistSaveRequest,  # noqa: F401 - compatibility re-export
+    SetPlaylistTrack,  # noqa: F401 - compatibility re-export
+    create_set_builder_router,
+    preflight_paths,
+    save_playlist_file,
+)
+from audioextender.web.settings_routes import (
+    SettingsRouteDependencies,
+    create_settings_router,
+)
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,
@@ -299,49 +313,6 @@ WEB_DEFAULTS = {
 }
 
 
-class WebSettings(BaseModel):
-    music_library_path: str = DEFAULT_MUSIC_LIBRARY
-    preset: str = "auto"
-    intro_bars: int = 8
-    outro_bars: int = 8
-    use_stems: bool = False
-    auto_bars: bool = True
-    minimum_intro_loop_quality: float = Field(65.0, ge=0, le=100)
-    minimum_outro_loop_quality: float = Field(65.0, ge=0, le=100)
-    pcm_bits: int = 24
-    preview_seconds: float = Field(8.0, gt=0, le=60)
-    export_cues: bool = True
-    maximum_repetitions: int = Field(8, ge=1, le=8)
-    crossfade_ms: float = Field(MINIMUM_CROSSFADE_MS, ge=1, le=100)
-    candidate_count: int = Field(DEFAULT_CANDIDATE_COUNT, ge=1, le=8)
-    intro_search_seconds: float = Field(INTRO_SEARCH_SECONDS, ge=15, le=600)
-    outro_search_seconds: float = Field(OUTRO_SEARCH_SECONDS, ge=15, le=600)
-    maximum_vocal_coverage_percent: float = Field(MAXIMUM_VOCAL_COVERAGE * 100, ge=0, le=100)
-    maximum_vocal_boundary_risk_percent: float = Field(
-        MAXIMUM_VOCAL_BOUNDARY_RISK * 100, ge=0, le=100
-    )
-    maximum_buildup_risk_percent: float = Field(MAXIMUM_BUILDUP_RISK * 100, ge=0, le=100)
-    maximum_bass_reset_risk_percent: float = Field(MAXIMUM_BASS_RESET_RISK * 100, ge=0, le=100)
-    minimum_stem_reliability_percent: float = Field(
-        MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, ge=0, le=100
-    )
-
-
-class LibraryRelocationRequest(BaseModel):
-    destination: str = Field(min_length=1)
-    mode: str = Field(pattern=r"^(copy|move|relink)$")
-    verification: str = Field(default="fast", pattern=r"^(fast|full)$")
-
-
-class BackupCreateRequest(BaseModel):
-    include_analysis_cache: bool = False
-    retention: int = Field(default=5, ge=1, le=25)
-
-
-class BackupRestoreRequest(BaseModel):
-    token: str = Field(min_length=1)
-    confirmation: str
-
 
 class PresetRequest(BaseModel):
     name: str = Field(min_length=1, max_length=40, pattern=r"^[a-z0-9][a-z0-9-]*$")
@@ -497,27 +468,9 @@ class IntegrityRepairRequest(BaseModel):
     item_ids: list[str] = Field(default_factory=list, max_length=5000)
 
 
-class ApplicationCleanupRequest(BaseModel):
-    confirmation: str
-
 
 class ReorderRequest(BaseModel):
     job_ids: list[int]
-
-
-class SetExportPreflightRequest(BaseModel):
-    paths: list[str] = Field(default_factory=list, max_length=5000)
-
-
-class SetPlaylistTrack(BaseModel):
-    path: str = Field(min_length=1, max_length=2000)
-    title: str = Field(default="", max_length=500)
-    duration_seconds: float = Field(default=0, ge=0)
-
-
-class SetPlaylistSaveRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=150)
-    tracks: list[SetPlaylistTrack] = Field(min_length=1, max_length=5000)
 
 
 BatchFileType = Literal[
@@ -677,539 +630,6 @@ def _write_source_metadata(audio_path: Path, metadata: dict) -> Path:
     temporary.replace(destination)
     return destination
 
-
-@app.get("/api/config")
-def config() -> dict:
-    available_presets = _available_presets()
-    return {
-        "presets": ["auto", *available_presets.keys()],
-        "preset_details": {
-            name: {
-                "intro_bars": preset.intro_bars,
-                "outro_bars": preset.outro_bars,
-                "use_stems": preset.use_stems,
-                "minimum_loop_quality": preset.minimum_loop_quality,
-                "maximum_repetitions": preset.maximum_repetitions,
-            }
-            for name, preset in available_presets.items()
-        },
-        "bar_counts": list(SUPPORTED_BAR_COUNTS),
-        "defaults": WEB_DEFAULTS,
-        "effective": _effective_settings(),
-        "overrides": repository.get_settings(),
-    }
-
-
-@app.put("/api/settings")
-def save_settings(settings: WebSettings) -> dict:
-    values = settings.model_dump()
-    try:
-        library_root = Path(values["music_library_path"].strip()).expanduser()
-        if not library_root.is_absolute():
-            raise ValueError
-        values["music_library_path"] = str(library_root.resolve())
-    except (OSError, ValueError):
-        raise HTTPException(400, "Music Library Location must be an absolute path")
-    if values["preset"] != "auto" and values["preset"] not in _available_presets():
-        raise HTTPException(400, "Unknown preset")
-    if (
-        values["intro_bars"] not in SUPPORTED_BAR_COUNTS
-        or values["outro_bars"] not in SUPPORTED_BAR_COUNTS
-    ):
-        raise HTTPException(400, "Unsupported bar count")
-    if values["pcm_bits"] not in (16, 24):
-        raise HTTPException(400, "PCM depth must be 16 or 24")
-    overrides = {key: value for key, value in values.items() if value != WEB_DEFAULTS[key]}
-    repository.replace_settings(overrides)
-    repository.set_system_state("music_library_path", values["music_library_path"])
-    with library_status_cache_lock:
-        library_status_cache.update(payload=None, expires_at=0.0)
-    if Path(values["music_library_path"]).is_dir():
-        _refresh_wav_tag_audit()
-    return {"defaults": WEB_DEFAULTS, "effective": _effective_settings(), "overrides": overrides}
-
-
-@app.delete("/api/settings")
-def reset_settings() -> dict:
-    repository.replace_settings({})
-    with library_status_cache_lock:
-        library_status_cache.update(payload=None, expires_at=0.0)
-    return {"defaults": WEB_DEFAULTS, "effective": _effective_settings(), "overrides": {}}
-
-
-@app.get("/api/settings/library-status")
-def music_library_status() -> dict:
-    now = perf_counter()
-    with library_status_cache_lock:
-        root = _music_library_root()
-        cached = library_status_cache.get("payload")
-        # Mount state can change without an application event. Never retain an
-        # online/offline result after the external folder's existence flips.
-        mount_state_changed = (
-            cached is not None
-            and bool(cached.get("online")) != root.is_dir()
-        )
-        if (cached is not None and not mount_state_changed
-                and now < float(library_status_cache["expires_at"])):
-            return dict(cached)
-        identity = root / ".audioextender" / "library.json"
-        library_id = ""
-        try:
-            library_id = str(json.loads(identity.read_text(encoding="utf-8")).get("library_id") or "")
-        except (OSError, ValueError):
-            pass
-        storage_scan_started = perf_counter()
-        tracks = repository.list_downloaded_tracks()
-        available_paths: set[Path] = set()
-        song_bytes = 0
-        for track in tracks:
-            path = Path(str(track.get("file_path") or ""))
-            try:
-                stat = path.stat()
-            except OSError:
-                continue
-            if path.is_file():
-                available_paths.add(path)
-                song_bytes += stat.st_size
-        total_bytes = 0
-        file_count = 0
-        pending = [root]
-        while pending:
-            directory = pending.pop()
-            try:
-                with os.scandir(directory) as entries:
-                    for entry in entries:
-                        try:
-                            if entry.is_dir(follow_symlinks=False):
-                                pending.append(Path(entry.path))
-                            elif entry.is_file(follow_symlinks=False):
-                                total_bytes += entry.stat(follow_symlinks=False).st_size
-                                file_count += 1
-                        except OSError:
-                            continue
-            except OSError:
-                continue
-        try:
-            disk = shutil.disk_usage(root if root.exists() else root.parent)
-            free_bytes = disk.free
-            capacity_bytes = disk.total
-        except OSError:
-            free_bytes = capacity_bytes = 0
-        available = len(available_paths)
-        payload = {
-            "path": str(root), "online": root.is_dir(), "library_id": library_id,
-            "cataloged_tracks": len(tracks), "available_tracks": available,
-            "offline_tracks": len(tracks) - available,
-            "song_bytes": song_bytes, "supporting_bytes": max(0, total_bytes - song_bytes),
-            "total_bytes": total_bytes, "file_count": file_count,
-            "free_bytes": free_bytes, "capacity_bytes": capacity_bytes,
-            "audio_quality": repository.audio_quality_summary(),
-            "location_integrity": _library_location_summary(),
-            "storage_scan_ms": round((perf_counter() - storage_scan_started) * 1000, 1),
-        }
-        library_status_cache.update(payload=payload, expires_at=now + 60.0)
-        return payload
-
-
-def _path_size(path: Path) -> int:
-    try:
-        return path.stat().st_size if path.is_file() else 0
-    except OSError:
-        return 0
-
-
-def _storage_inventory_signature() -> list[list[object]]:
-    paths = [DATABASE, PROJECT / CACHE_FOLDER_NAME, OUTPUT / "extended", OUTPUT / "previews", OUTPUT / "versions"]
-    signature: list[list[object]] = []
-    for path in paths:
-        try:
-            stat = path.stat()
-            signature.append([str(path.resolve()), stat.st_mtime_ns, stat.st_size])
-        except OSError:
-            signature.append([str(path.resolve()), 0, 0])
-    return signature
-
-
-def _saved_storage_inventory(signature: list[list[object]]) -> dict | None:
-    try:
-        saved = json.loads(STORAGE_INVENTORY_SNAPSHOT.read_text(encoding="utf-8"))
-    except (OSError, ValueError, TypeError):
-        return None
-    payload = saved.get("payload")
-    return dict(payload) if saved.get("signature") == signature and isinstance(payload, dict) else None
-
-
-def _storage_inventory(refresh: bool = False) -> dict:
-    now = perf_counter()
-    with storage_inventory_lock:
-        cached = storage_inventory_cache.get("payload")
-        if not refresh and cached is not None and now < float(storage_inventory_cache["expires_at"]):
-            return dict(cached)
-    signature = _storage_inventory_signature()
-    if not refresh:
-        saved = _saved_storage_inventory(signature)
-        if saved is not None:
-            with storage_inventory_lock:
-                storage_inventory_cache.update(payload=saved, expires_at=now + 120.0)
-            return saved
-    cache_root = (PROJECT / CACHE_FOLDER_NAME).resolve()
-    jobs = repository.list_storage_job_references()
-    cache = AnalysisCache(cache_root, enabled=False)
-    retained_cache: set[Path] = set()
-    referenced_outputs: set[Path] = set()
-    for job in jobs:
-        for field in (
-            "source_path", "wav_path", "extended_path", "intro_preview_path",
-            "outro_preview_path", "cue_sheet_path", "rekordbox_path",
-        ):
-            value = str(job.get(field) or "").strip()
-            if value:
-                referenced_outputs.add(Path(value).expanduser().resolve())
-        source = Path(str(job.get("source_path") or ""))
-        if source.is_file():
-            try:
-                retained_cache.update(cache.processing_paths(source, service.config_for(job)))
-            except (OSError, ValueError, KeyError, TypeError):
-                pass
-        for field in ("wav_path", "extended_path"):
-            audio = Path(str(job.get(field) or ""))
-            if audio.is_file():
-                try:
-                    retained_cache.add(cache.waveform_path(audio))
-                except OSError:
-                    pass
-    for track in repository.list_downloaded_tracks():
-        for field in ("file_path", "artwork_path"):
-            value = str(track.get(field) or "").strip()
-            if value:
-                referenced_outputs.add(Path(value).expanduser().resolve())
-    cache_files = {
-        path.resolve() for path in cache_root.glob("*")
-        if path.is_file() and (
-            path.suffix == ".npz" or path.name.endswith((".instrumental.wav", ".drums.wav"))
-        )
-    }
-    stale_cache = sorted(cache_files - retained_cache)
-    generated_candidates: set[Path] = set()
-    for directory in (OUTPUT / "extended", OUTPUT / "previews", OUTPUT / "versions"):
-        if directory.is_dir():
-            generated_candidates.update(
-                path.resolve() for path in directory.rglob("*") if path.is_file()
-            )
-    generated_candidates.update(path.resolve() for path in OUTPUT.glob("*.wav") if path.is_file())
-    orphaned_outputs = sorted(generated_candidates - referenced_outputs)
-    stale_bytes = sum(_path_size(path) for path in stale_cache)
-    orphaned_bytes = sum(_path_size(path) for path in orphaned_outputs)
-    payload = {
-        "analysis_cache_bytes": sum(_path_size(path) for path in cache_files),
-        "analysis_cache_files": len(cache_files),
-        "stale_cache_bytes": stale_bytes,
-        "stale_cache_files": len(stale_cache),
-        "generated_output_bytes": sum(_path_size(path) for path in generated_candidates),
-        "generated_output_files": len(generated_candidates),
-        "orphaned_output_bytes": orphaned_bytes,
-        "orphaned_output_files": len(orphaned_outputs),
-        "reclaimable_bytes": stale_bytes + orphaned_bytes,
-        "_stale_cache": [str(path) for path in stale_cache],
-        "_orphaned_outputs": [str(path) for path in orphaned_outputs],
-    }
-    with storage_inventory_lock:
-        storage_inventory_cache.update(payload=payload, expires_at=now + 120.0)
-    try:
-        STORAGE_INVENTORY_SNAPSHOT.parent.mkdir(parents=True, exist_ok=True)
-        temporary = STORAGE_INVENTORY_SNAPSHOT.with_suffix(".tmp")
-        temporary.write_text(json.dumps({"signature": signature, "payload": payload}), encoding="utf-8")
-        temporary.replace(STORAGE_INVENTORY_SNAPSHOT)
-    except OSError:
-        pass
-    return dict(payload)
-
-
-def _public_storage_inventory(payload: dict) -> dict:
-    return {key: value for key, value in payload.items() if not key.startswith("_")}
-
-
-@app.get("/api/settings/storage")
-def settings_storage() -> dict:
-    return _public_storage_inventory(_storage_inventory())
-
-
-class StorageCleanupRequest(BaseModel):
-    target: Literal["stale-cache", "orphaned-output"]
-
-
-@app.post("/api/settings/storage/cleanup")
-def cleanup_settings_storage(request: StorageCleanupRequest) -> dict:
-    active = [
-        job for job in repository.list_jobs(limit=10_000)
-        if job.get("status") in {"queued", "processing", "paused"}
-    ]
-    if active:
-        raise HTTPException(409, "Finish or cancel active analysis jobs before cleaning storage")
-    inventory = _storage_inventory(refresh=True)
-    key = "_stale_cache" if request.target == "stale-cache" else "_orphaned_outputs"
-    removed_files = 0
-    removed_bytes = 0
-    for value in inventory[key]:
-        path = Path(value)
-        try:
-            size = path.stat().st_size
-            path.unlink()
-            removed_files += 1
-            removed_bytes += size
-        except FileNotFoundError:
-            continue
-        except OSError as error:
-            raise HTTPException(500, f"Could not remove {path.name}: {error}")
-    with storage_inventory_lock:
-        storage_inventory_cache.update(payload=None, expires_at=0.0)
-    return {
-        "removed_files": removed_files,
-        "removed_bytes": removed_bytes,
-        "storage": _public_storage_inventory(_storage_inventory(refresh=True)),
-    }
-
-
-@app.post("/api/settings/library-relocation/plan")
-def plan_library_relocation(request: LibraryRelocationRequest) -> dict:
-    try:
-        destination = Path(request.destination).expanduser()
-        if not destination.is_absolute():
-            raise ValueError("The destination must be an absolute path")
-        return library_relocation.prepare(
-            _music_library_root(), destination, request.mode, request.verification
-        )
-    except (OSError, ValueError) as error:
-        raise HTTPException(400, str(error))
-
-
-@app.post("/api/settings/library-relocation/start", status_code=202)
-def start_library_relocation() -> dict:
-    try:
-        return library_relocation.start()
-    except ValueError as error:
-        raise HTTPException(409, str(error))
-
-
-@app.get("/api/settings/library-relocation")
-def library_relocation_status() -> dict:
-    return library_relocation.status()
-
-
-@app.delete("/api/settings/library-relocation")
-def reset_library_relocation() -> dict:
-    try:
-        return library_relocation.reset()
-    except ValueError as error:
-        raise HTTPException(409, str(error))
-
-
-@app.post("/api/settings/library-relocation/cancel")
-def cancel_library_relocation() -> dict:
-    return library_relocation.cancel()
-
-
-@app.post("/api/settings/library-relocation/rollback")
-def rollback_library_relocation() -> dict:
-    try:
-        return library_relocation.rollback()
-    except ValueError as error:
-        raise HTTPException(409, str(error))
-
-
-def _backup_service() -> LibraryBackupService:
-    return LibraryBackupService(DATABASE, PROJECT, _music_library_root())
-
-
-def _public_backup_summary(payload: dict) -> dict:
-    return {key: value for key, value in payload.items() if key not in {"files", "path"}}
-
-
-def _require_idle_for_restore() -> None:
-    active = repository.list_jobs_page(
-        page=1, page_size=1, statuses=("queued", "processing", "paused")
-    )[1]
-    if active:
-        raise HTTPException(409, "Finish or cancel active analysis jobs before restoring a backup")
-
-
-@app.get("/api/settings/backups")
-def list_backups() -> dict:
-    BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
-    backups = []
-    for path in sorted(BACKUP_ROOT.glob("*.aexbackup"), key=lambda item: item.stat().st_mtime, reverse=True):
-        try:
-            info = _backup_service().describe(path)
-            backups.append(_public_backup_summary(info))
-        except ValueError:
-            backups.append({"filename": path.name, "size": _path_size(path), "valid": False})
-    return {"backups": backups, "directory": str(BACKUP_ROOT)}
-
-
-@app.post("/api/settings/backups", status_code=201)
-def create_backup(request: BackupCreateRequest) -> dict:
-    try:
-        result = _backup_service().create(
-            BACKUP_ROOT,
-            include_cache=request.include_analysis_cache,
-            retention=request.retention,
-        )
-        return {
-            **_public_backup_summary(result),
-            "download_url": f"/api/settings/backups/{result['filename']}/download",
-        }
-    except (OSError, sqlite3.Error, ValueError) as error:
-        raise HTTPException(500, f"Backup could not be created: {error}") from error
-
-
-@app.get("/api/settings/backups/{filename}/download")
-def download_backup(filename: str) -> FileResponse:
-    if Path(filename).name != filename or not filename.endswith(".aexbackup"):
-        raise HTTPException(400, "Invalid backup name")
-    path = BACKUP_ROOT / filename
-    if not path.is_file():
-        raise HTTPException(404, "Backup not found")
-    return FileResponse(path, filename=path.name, media_type="application/zip")
-
-
-@app.post("/api/settings/backups/preview")
-async def preview_backup(file: UploadFile = File(...)) -> dict:
-    if not str(file.filename or "").endswith(".aexbackup"):
-        raise HTTPException(400, "Choose an .aexbackup file")
-    pending = BACKUP_ROOT / ".pending"
-    pending.mkdir(parents=True, exist_ok=True)
-    token = uuid.uuid4().hex
-    target = pending / f"{token}.aexbackup"
-    try:
-        with target.open("wb") as handle:
-            shutil.copyfileobj(file.file, handle)
-        if target.stat().st_size > 4 * 1024 * 1024 * 1024:
-            target.unlink(missing_ok=True)
-            raise HTTPException(413, "Backup files larger than 4 GB are not supported")
-        preview = _backup_service().inspect(target)
-    except ValueError as error:
-        target.unlink(missing_ok=True)
-        raise HTTPException(400, str(error)) from error
-    pending_backup_restores[token] = target
-    current_tracks = len(repository.list_downloaded_tracks())
-    return {
-        **_public_backup_summary(preview),
-        "token": token,
-        "current_track_count": current_tracks,
-        "track_difference": int(preview.get("track_count") or 0) - current_tracks,
-    }
-
-
-@app.post("/api/settings/backups/restore")
-def restore_backup(request: BackupRestoreRequest) -> dict:
-    if request.confirmation != "RESTORE BACKUP":
-        raise HTTPException(400, "Type RESTORE BACKUP exactly to confirm")
-    _require_idle_for_restore()
-    archive = pending_backup_restores.pop(request.token, None)
-    if archive is None or not archive.is_file():
-        raise HTTPException(404, "The restore preview expired; select the backup again")
-    try:
-        result = _backup_service().restore(archive, BACKUP_ROOT)
-        report_cache.update(mtime_ns=None, payload={"songs": {}})
-        library_catalog_cache.update(signature=None, facets_signature=None, facets=None)
-        return {
-            "restored": True,
-            "manifest": _public_backup_summary(result["manifest"]),
-            "pre_restore_backup": _public_backup_summary(result["pre_restore_backup"]),
-        }
-    except (OSError, sqlite3.Error, ValueError) as error:
-        raise HTTPException(500, f"Backup restore failed: {error}") from error
-    finally:
-        archive.unlink(missing_ok=True)
-
-
-def _remove_managed_path(path: Path) -> int:
-    """Remove one path only when it is contained by the AudioExtender project."""
-    resolved = path.resolve()
-    resolved.relative_to(PROJECT.resolve())
-    if not path.exists() and not path.is_symlink():
-        return 0
-    count = 1 if path.is_file() or path.is_symlink() else sum(
-        1 for child in path.rglob("*") if child.is_file() or child.is_symlink()
-    )
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
-    else:
-        path.unlink(missing_ok=True)
-    return count
-
-
-@app.post("/api/settings/cleanup")
-def cleanup_application(request: ApplicationCleanupRequest) -> dict:
-    if request.confirmation != "DELETE EVERYTHING":
-        raise HTTPException(400, "Type DELETE EVERYTHING exactly to confirm the reset")
-    active_jobs = [
-        job for job in repository.list_jobs(limit=10_000)
-        if job["status"] in {"queued", "processing", "paused"}
-    ]
-    active_imports = (
-        import_service.has_active_imports()
-        or local_import_service.has_active_imports()
-        or playlist_match_service.has_active_imports()
-        or creative_commons_service.has_active_imports()
-    )
-    if active_jobs or active_imports:
-        raise HTTPException(
-            409,
-            "Cancel or finish all processing and imports before cleaning up the app",
-        )
-
-    downloaded_files = [
-        Path(track["file_path"])
-        for track in repository.list_downloaded_tracks()
-        if track.get("file_path")
-    ]
-    repository.reset_track_data()
-    removed = 0
-    for downloaded_file in downloaded_files:
-        if downloaded_file.is_file():
-            downloaded_file.unlink()
-            removed += 1
-        source_record = _source_metadata_path(downloaded_file)
-        if source_record.is_file():
-            source_record.unlink()
-            removed += 1
-    for path in (
-        INPUT,
-        PROJECT / CACHE_FOLDER_NAME,
-        OUTPUT / "cue_sheets",
-        OUTPUT / "extended",
-        OUTPUT / "previews",
-        OUTPUT / "rekordbox",
-        OUTPUT / "versions",
-        OUTPUT / "wav",
-    ):
-        removed += _remove_managed_path(path)
-    if OUTPUT.exists():
-        for child in OUTPUT.iterdir():
-            if child.name == "reports":
-                continue
-            removed += _remove_managed_path(child)
-    reports = OUTPUT / "reports"
-    if reports.exists():
-        for child in reports.iterdir():
-            if child.name in {
-                DATABASE.name,
-                f"{DATABASE.name}-wal",
-                f"{DATABASE.name}-shm",
-                WEB_PRESETS.name,
-            }:
-                continue
-            removed += _remove_managed_path(child)
-    removed += _remove_managed_path(OVERRIDES)
-    INPUT.mkdir(parents=True, exist_ok=True)
-    OUTPUT.mkdir(parents=True, exist_ok=True)
-    reports.mkdir(parents=True, exist_ok=True)
-    import_service.clear()
-    local_import_service.clear()
-    playlist_match_service.clear()
-    creative_commons_service.clear()
-    return {"reset": True, "removed_files": removed}
 
 
 @app.get("/api/presets")
@@ -4761,157 +4181,14 @@ def _refresh_library_index_background() -> None:
             library_index_refresh_active = False
 
 
-@app.get("/api/set-builder/catalog", response_model=None)
-def set_builder_catalog() -> FileResponse | dict:
-    """All latest analyzed tracks, without loading the full job history."""
-    signature = _ensure_library_search_index_current()
-    cache_current = False
-    try:
-        cache_current = json.loads(
-            SET_BUILDER_CATALOG_CACHE.read_text(encoding="utf-8")
-        ).get("version") == 2
-    except (OSError, ValueError):
-        pass
-    if not cache_current:
-        _write_set_builder_catalog_cache()
-    return FileResponse(
-        SET_BUILDER_CATALOG_CACHE,
-        media_type="application/json",
-        headers={"Cache-Control": "no-cache"},
-    )
-
-
-@app.post("/api/set-builder/export-preflight")
+# Compatibility entry points retained for scripts and tests that used these
+# application helpers before Set Builder received its own router module.
 def set_builder_export_preflight(request: SetExportPreflightRequest) -> dict:
-    """Verify every local audio path before a Rekordbox playlist is exported."""
-    items = []
-    for raw_path in request.paths:
-        value = str(raw_path or "").strip()
-        path = Path(value).expanduser() if value else None
-        exists = bool(path and path.is_file())
-        items.append({
-            "path": str(path) if path else value,
-            "exists": exists,
-            "reason": "" if exists else ("No file path is available" if not value else "File is missing from disk"),
-        })
-    valid = sum(1 for item in items if item["exists"])
-    return {"ready": valid == len(items) and bool(items), "valid": valid,
-            "missing": len(items) - valid, "total": len(items), "items": items}
+    return preflight_paths(request)
 
 
-@app.post("/api/set-builder/save-playlist")
 def set_builder_save_playlist(request: SetPlaylistSaveRequest) -> dict:
-    """Persist a created set beside the organized music library."""
-    missing = [track.path for track in request.tracks if not Path(track.path).expanduser().is_file()]
-    if missing:
-        raise HTTPException(409, detail={
-            "message": "Playlist contains files that are missing from disk.",
-            "missing": missing,
-        })
-    playlist_directory = _music_library_root() / "_Playlist"
-    playlist_directory.mkdir(parents=True, exist_ok=True)
-    filename = f"{_safe_folder_name(request.name)}.m3u8"
-    playlist_path = playlist_directory / filename
-    lines = ["#EXTM3U"]
-    for track in request.tracks:
-        lines.extend([
-            f"#EXTINF:{round(track.duration_seconds)},{track.title or Path(track.path).stem}",
-            str(Path(track.path).expanduser().resolve()),
-        ])
-    playlist_path.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8")
-    return {"saved": True, "path": str(playlist_path), "tracks": len(request.tracks)}
-
-
-@app.get("/api/library/catalog")
-def library_catalog(
-    page: int = Query(default=1, ge=1), page_size: int = Query(default=50, ge=1, le=100),
-    search: str = "", role: str = "all", category: str = "all", detailed_genre: str = "all", preset: str = "all",
-    result: str = "all", bpm_min: float | None = None, bpm_max: float | None = None,
-    key: str = "all", energy: str = "all", vocals: str = "all", timing: str = "all",
-    quality: str = Query(default="all", pattern="^(all|excellent|good|review|poor|below-target|unanalyzed)$"),
-    sort: str = "newest",
-) -> dict:
-    """Compact Library index; expensive generation history stays lazy."""
-    signature = _ensure_library_search_index_current()
-    rows, filtered_total = repository.page_library_tracks(
-        page=page, page_size=page_size, search=search, role=role, category=category,
-        detail_genre=detailed_genre,
-        preset=preset, result=result, quality=quality, bpm_min=bpm_min, bpm_max=bpm_max,
-        musical_key=key, energy=energy, vocals=vocals, timing=timing, sort=sort,
-    )
-    with library_catalog_cache_lock:
-        cached_facets = (
-            library_catalog_cache.get("facets")
-            if library_catalog_cache.get("facets_signature") == signature else None
-        )
-    if cached_facets is None:
-        facets = repository.library_search_facets()
-        with library_catalog_cache_lock:
-            library_catalog_cache["facets_signature"] = signature
-            library_catalog_cache["facets"] = facets
-        facets = dict(facets)
-    else:
-        # The endpoint removes the intelligence payload below, so copy the
-        # shallow containers while retaining immutable row dictionaries.
-        facets = dict(cached_facets)
-    total_pages = max(1, math.ceil(filtered_total / page_size))
-    if page > total_pages:
-        page = total_pages
-        rows, filtered_total = repository.page_library_tracks(
-            page=page, page_size=page_size, search=search, role=role, category=category,
-            detail_genre=detailed_genre,
-            preset=preset, result=result, quality=quality, bpm_min=bpm_min, bpm_max=bpm_max,
-            musical_key=key, energy=energy, vocals=vocals, timing=timing, sort=sort,
-        )
-    tracks = []
-    for row in rows:
-        row.pop("analysis_json", None)
-        analysis = {
-            "source_name": row.get("source_name") or "",
-            "bpm": row.get("library_bpm") or row.get("bpm") or 0,
-            "key": row.get("musical_key") or "",
-            "_roles": str(row.get("library_roles") or "").strip("|").split("|"),
-            "_energy": row.get("library_energy"),
-            "_vocals": row.get("vocals") or "mixed",
-            "_timing": row.get("timing") or "steady",
-        }
-        downloaded = None
-        if row.get("downloaded_id"):
-            try:
-                quality_details = json.loads(str(row.get("audio_quality_json") or "{}"))
-            except (TypeError, ValueError, json.JSONDecodeError):
-                quality_details = {}
-            downloaded = {
-                "id": row["downloaded_id"], "title": row["library_title"], "artist": row["library_artist"],
-                "genre": row.get("genre") or "", "genre_category": row["library_category"],
-                "recording_code": row.get("recording_code") or "",
-                "version_code": row.get("version_code") or "",
-                "identity_confidence": row.get("identity_confidence") or "",
-                "identity_reason": row.get("identity_reason") or "",
-                "audio_quality_score": row.get("audio_quality_score"),
-                "audio_quality_label": row.get("audio_quality_label") or "",
-                "audio_quality": quality_details,
-                "suggested_genre": _generalized_genre(str(row.get("genre") or "")),
-                "completed_library_job_id": row["job_id"],
-                "artwork_available": bool(row.get("artwork_path")) and Path(str(row["artwork_path"])).is_file(),
-            }
-        job = {key: row.get(key) for key in ("id","source_name","source_path","status","progress","stage","preset","intro_bars","outro_bars","use_stems","config_json","error","extended_path","wav_path","intro_preview_path","outro_preview_path","cue_sheet_path","rekordbox_path","parent_job_id","bpm","intro_quality","outro_quality","review_status","created_at","updated_at","generation_count")}
-        tracks.append({"job": job, "analysis": analysis, "downloaded": downloaded})
-    intelligence = [{
-        "job_id": item["job_id"],
-        "source_name": item["source_name"],
-        "analysis": {
-            "source_name": item["source_name"], "bpm": item["bpm"],
-            "key": item["musical_key"],
-            "_roles": str(item.get("roles") or "").strip("|").split("|"),
-            "_energy": item["energy"], "_vocals": item["vocals"],
-            "_timing": item["timing"],
-        },
-    } for item in facets.pop("intelligence")]
-    payload = {"tracks": tracks, "total": facets["total"], "filtered_total": filtered_total,
-               "page": page, "page_size": page_size, "total_pages": total_pages,
-               "facets": facets, "intelligence": intelligence}
-    return payload
+    return save_playlist_file(request, _music_library_root(), _safe_folder_name)
 
 
 @app.get("/api/library/jobs/{job_id}/details")
@@ -5052,6 +4329,67 @@ creative_commons_service = CreativeCommonsImportService(
     worker=_creative_commons_worker,
     retry_worker=_retry_import_failures_worker,
     thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+)
+app.include_router(
+    create_settings_router(
+        SettingsRouteDependencies(
+            repository=lambda: repository,
+            job_service=service,
+            relocation=library_relocation,
+            import_services=(
+                import_service,
+                local_import_service,
+                playlist_match_service,
+                creative_commons_service,
+            ),
+            project=PROJECT,
+            input_root=INPUT,
+            output_root=OUTPUT,
+            database=DATABASE,
+            overrides_path=OVERRIDES,
+            presets_path=WEB_PRESETS,
+            backup_root=BACKUP_ROOT,
+            storage_snapshot=STORAGE_INVENTORY_SNAPSHOT,
+            cache_folder_name=CACHE_FOLDER_NAME,
+            supported_bar_counts=SUPPORTED_BAR_COUNTS,
+            defaults=WEB_DEFAULTS,
+            available_presets=_available_presets,
+            effective_settings=_effective_settings,
+            music_library_root=lambda: _music_library_root(),
+            library_location_summary=_library_location_summary,
+            source_metadata_path=_source_metadata_path,
+            refresh_wav_tag_audit=_refresh_wav_tag_audit,
+            library_status_cache=library_status_cache,
+            library_status_lock=library_status_cache_lock,
+            storage_inventory_cache=storage_inventory_cache,
+            storage_inventory_lock=storage_inventory_lock,
+            report_cache=report_cache,
+            catalog_cache=library_catalog_cache,
+            pending_restores=pending_backup_restores,
+        )
+    )
+)
+app.include_router(
+    create_set_builder_router(
+        SetBuilderRouteDependencies(
+            catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+            ensure_catalog_current=_ensure_library_search_index_current,
+            write_catalog_cache=_write_set_builder_catalog_cache,
+            music_library_root=lambda: _music_library_root(),
+            safe_folder_name=_safe_folder_name,
+        )
+    )
+)
+app.include_router(
+    create_library_router(
+        LibraryRouteDependencies(
+            repository=lambda: repository,
+            ensure_search_index_current=_ensure_library_search_index_current,
+            generalized_genre=_generalized_genre,
+            catalog_cache=library_catalog_cache,
+            catalog_cache_lock=library_catalog_cache_lock,
+        )
+    )
 )
 app.include_router(
     create_import_router(

@@ -272,7 +272,8 @@ AudioExtender/
 │   ├── library/         # Library identity, relocation, backup, and export
 │   ├── processing/      # Track, batch, and web-job orchestration
 │   ├── reporting/       # Feedback and processing reports
-│   └── repositories/    # Focused persistence repositories
+│   ├── repositories/    # Focused persistence repositories
+│   └── web/             # FastAPI routers and delivery adapters
 ├── tests/               # Fast unit tests and synthetic test fixtures
 ├── input/               # Drop source songs here
 ├── output/

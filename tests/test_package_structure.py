@@ -18,6 +18,7 @@ DOMAIN_PACKAGES = {
     "processing",
     "reporting",
     "repositories",
+    "web",
 }
 
 
