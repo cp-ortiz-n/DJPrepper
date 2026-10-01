@@ -48,6 +48,43 @@ class PackageStructureTests(unittest.TestCase):
                             violations.append(f"{source.relative_to(PROJECT_ROOT)}:{node.lineno}")
         self.assertEqual([], violations)
 
+    def test_web_composition_root_keeps_extracted_routes_out(self) -> None:
+        source = (PROJECT_ROOT / "web_app.py").read_text(encoding="utf-8")
+        application = (PACKAGE_ROOT / "web" / "application.py").read_text(encoding="utf-8")
+        self.assertLess(len(source.splitlines()), 40)
+        self.assertIn("audioextender.web import application", source)
+        self.assertIn("def create_app() -> FastAPI:", application)
+        for route in (
+            '@app.get("/api/jobs")',
+            '@app.post("/api/jobs/reorder")',
+            '@app.post("/api/jobs/clear")',
+            '@app.get("/api/report-feedback")',
+            '@app.get("/api/key-verifications")',
+            '@app.get("/api/jobs/{job_id}/audio/{kind}")',
+            '@app.get("/api/jobs/{job_id}/waveform/{kind}")',
+            '@app.post("/api/jobs/{job_id}/transition-score")',
+            '@app.get("/api/jobs/{job_id}/cues")',
+            '@app.post("/api/library/download")',
+            '@app.post("/api/downloaded-library/reconcile-files")',
+            '@app.post("/api/downloaded-library/integrity-scan")',
+            '@app.post("/api/downloaded-library/integrity-repair")',
+        ):
+            self.assertNotIn(route, application)
+
+    def test_web_feature_modules_remain_bounded(self) -> None:
+        web = PACKAGE_ROOT / "web"
+        limits = {
+            "job_routes.py": 240,
+            "job_media_routes.py": 400,
+            "reporting_routes.py": 320,
+            "library_routes.py": 280,
+            "library_maintenance_routes.py": 430,
+            "set_builder_routes.py": 220,
+        }
+        for filename, maximum in limits.items():
+            lines = (web / filename).read_text(encoding="utf-8").splitlines()
+            self.assertLessEqual(len(lines), maximum, filename)
+
 
 if __name__ == "__main__":
     unittest.main()
