@@ -42,23 +42,18 @@ class StabilityWorkflowTests(unittest.TestCase):
 
             repository = JobRepository(database)
             track_id = repository.upsert_downloaded_track(
-                title="Track",
-                artist="Artist",
-                file_path=source_track,
+                title="Track", artist="Artist", file_path=source_track,
                 genre="deep house",
                 genre_category="Electronic / House / Deep House",
                 spotify_uri="spotify:track:stable-recording",
                 artwork_url="https://example.test/cover.jpg",
-                artwork_path=str(source_artwork),
-                duration_seconds=184.0,
+                artwork_path=str(source_artwork), duration_seconds=184.0,
                 playlist_name="House Night",
             )
 
             # A repeat import adds its source playlist to the existing recording.
             duplicate_id = repository.upsert_downloaded_track(
-                title="Track",
-                artist="Artist",
-                file_path=source_track,
+                title="Track", artist="Artist", file_path=source_track,
                 genre="deep house",
                 genre_category="Electronic / House / Deep House",
                 spotify_uri="spotify:track:stable-recording",
@@ -68,36 +63,20 @@ class StabilityWorkflowTests(unittest.TestCase):
             self.assertEqual(len(repository.list_downloaded_tracks()), 1)
 
             completed_job = repository.create(
-                source_track.name,
-                source_track,
-                "auto",
-                0,
-                0,
-                False,
+                source_track.name, source_track, "auto", 0, 0, False,
                 {"analysis_only": True},
             )
             repository.update(
-                completed_job,
-                status="complete",
-                progress=100,
-                stage="Complete",
-                wav_path=str(source_track),
-                bpm=124.0,
+                completed_job, status="complete", progress=100, stage="Complete",
+                wav_path=str(source_track), bpm=124.0,
                 cues_json=json.dumps([{"name": "Mix in", "start": 16.0}]),
             )
             repository.set_key_verification(
-                source_track.name,
-                "A minor",
-                "C major",
-                [{"key": "A minor", "detectors": "manual"}],
-                "Checked by ear",
+                source_track.name, "A minor", "C major",
+                [{"key": "A minor", "detectors": "manual"}], "Checked by ear",
             )
             repository.add_track_feedback(
-                source_track.name,
-                "whole-track",
-                True,
-                "clean-grid",
-                "Mixes cleanly",
+                source_track.name, "whole-track", True, "clean-grid", "Mixes cleanly",
             )
 
             relocation = LibraryRelocationCoordinator(
@@ -122,20 +101,18 @@ class StabilityWorkflowTests(unittest.TestCase):
             self.assertRegex(track["recording_code"], r"^HOU-\d{6,}$")
             self.assertEqual(track["version_code"], "ORG")
             self.assertEqual(set(track["playlists"]), {"House Night", "Favorites"})
-            verification = restarted.key_verification(source_track.name)
-            assert verification is not None
-            self.assertEqual(verification["verified_key"], "A minor")
+            self.assertEqual(
+                restarted.key_verification(source_track.name)["verified_key"], "A minor"
+            )
             self.assertEqual(
                 restarted.track_feedback(source_track.name)[0]["notes"], "Mixes cleanly"
             )
 
             # Reanalysis links a new generation without replacing user-owned data.
             service = Mock()
-            with (
-                patch.object(web_module, "repository", restarted),
-                patch.object(web_module, "service", service),
-                patch.object(web_module, "_effective_settings", return_value={}),
-            ):
+            with patch.object(web_module, "repository", restarted), patch.object(
+                web_module, "service", service
+            ), patch.object(web_module, "_effective_settings", return_value={}):
                 queued = web_module._queue_downloaded_analysis(
                     restarted.list_downloaded_tracks_with_jobs(), force=True
                 )
@@ -145,31 +122,32 @@ class StabilityWorkflowTests(unittest.TestCase):
             self.assertEqual(reanalysis["parent_job_id"], completed_job)
             self.assertTrue(json.loads(reanalysis["config_json"])["refresh_cache"])
             service.enqueue_many.assert_called_once_with(queued["job_ids"])
-            verification = restarted.key_verification(source_track.name)
-            assert verification is not None
-            self.assertEqual(verification["verified_key"], "A minor")
+            self.assertEqual(
+                restarted.key_verification(source_track.name)["verified_key"], "A minor"
+            )
             self.assertEqual(len(restarted.track_feedback(source_track.name)), 1)
 
             preflight = web_module.set_builder_export_preflight(
                 SetExportPreflightRequest(paths=[str(relocated_track)])
             )
             self.assertTrue(preflight["ready"])
-            with patch.object(web_module, "_music_library_root", return_value=external_library):
+            with patch.object(
+                web_module, "_music_library_root", return_value=external_library
+            ):
                 saved = web_module.set_builder_save_playlist(
                     SetPlaylistSaveRequest(
                         name="Regression Set",
-                        tracks=[
-                            SetPlaylistTrack(
-                                path=str(relocated_track),
-                                title="Artist - Track",
-                                duration_seconds=184.0,
-                            )
-                        ],
+                        tracks=[SetPlaylistTrack(
+                            path=str(relocated_track), title="Artist - Track",
+                            duration_seconds=184.0,
+                        )],
                     )
                 )
             playlist = Path(saved["path"])
             self.assertTrue(playlist.is_file())
-            self.assertIn(str(relocated_track.resolve()), playlist.read_text(encoding="utf-8"))
+            self.assertIn(
+                str(relocated_track.resolve()), playlist.read_text(encoding="utf-8")
+            )
 
 
 if __name__ == "__main__":
