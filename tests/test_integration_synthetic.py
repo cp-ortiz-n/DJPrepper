@@ -10,9 +10,9 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from helpers.config import EditConfig
-from helpers.interfaces import NullProgressReporter
-from helpers.track_processor import TrackProcessor
+from audioextender.core.config import EditConfig
+from audioextender.core.interfaces import NullProgressReporter
+from audioextender.processing.track_processor import TrackProcessor
 
 
 class SyntheticPipelineIntegrationTests(unittest.TestCase):

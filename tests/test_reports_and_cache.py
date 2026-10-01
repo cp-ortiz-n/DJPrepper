@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
-from helpers.cache import AnalysisCache, clear_cache
-from helpers.processing_report import update_processing_report
+from audioextender.infrastructure.cache import AnalysisCache, clear_cache
+from audioextender.reporting.processing import update_processing_report
 
 
 class ProcessingReportTests(unittest.TestCase):

@@ -9,8 +9,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 
-from helpers.cue_export import write_rekordbox_xml
-from helpers.wav_metadata import (
+from audioextender.library.cue_export import write_rekordbox_xml
+from audioextender.audio.wav_metadata import (
     embed_wav_artwork,
     read_wav_artwork,
     split_artist_title,

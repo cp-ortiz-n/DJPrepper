@@ -2,10 +2,13 @@ import WaveSurfer from '/vendor/wavesurfer/wavesurfer.esm.js';
 import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
-import {$, $$, notify, confirmAction, escapeHtml, apiErrorMessage, pct, fraction, reportDate, clock} from './modules/ui.js';
-import {normalizedGenreCategory, genreEditorMarkup as genreEditor, metadataEditorMarkup as metadataEditor, detailedGenreSummary} from './modules/genre-controls.js';
-import {bindLazyAudio, compactAudioMarkup, stopCompactAudio, compactAudioIsWithin, stopNativeAudio, bindCompactAudio} from './modules/audio-player.js';
-import {runBackgroundTask, stopBackgroundTask} from './modules/background-tasks.js';
+import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
+import {$, $$, apiErrorMessage, clock, confirmAction, escapeHtml, fraction, notify, option, pct, renderTrackPagination, reportDate} from './shared-components.js';
+import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
+import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js';
+import {createMusicFilesUiState, musicFilesQuery} from './music-files.js';
+import {SET_PROPOSAL_STRATEGIES, SET_STORAGE_KEY, createSetBuilderState, setTrackDetailedGenres, setTrackId, targetSetEnergy, trackMatchesSetDetailedGenre, trackMatchesSetGenre} from './set-builder.js';
+import {createSettingsController} from './settings.js';
 
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
 // to structured inline messages and richer recovery actions.
@@ -167,28 +170,29 @@ let reportPageSize = 50;
 let arrangementPreview = null;
 let stagedFiles = [];
 let workspaceMode = 'analyze';
-let setBuilderLibrary = [];
-let currentSetPlan = [];
-let setRequiredIds = new Set();
-let setExcludedIds = new Set();
-let setLockedIds = new Set();
-let setBuilderBound = false;
-let setGenreSelectionOrder = [];
-let setGenerationNonce = 0;
-let setProposals = [];
-let activeSetProposal = '';
-let setPlanHistory = [];
-let setPlanFuture = [];
+const initialSetBuilderState = createSetBuilderState();
+let setBuilderLibrary = initialSetBuilderState.library;
+let currentSetPlan = initialSetBuilderState.plan;
+let setRequiredIds = initialSetBuilderState.requiredIds;
+let setExcludedIds = initialSetBuilderState.excludedIds;
+let setLockedIds = initialSetBuilderState.lockedIds;
+let setBuilderBound = initialSetBuilderState.bound;
+let setGenreSelectionOrder = initialSetBuilderState.genreSelectionOrder;
+let setGenerationNonce = initialSetBuilderState.generationNonce;
+let setProposals = initialSetBuilderState.proposals;
+let activeSetProposal = initialSetBuilderState.activeProposal;
+let setPlanHistory = initialSetBuilderState.history;
+let setPlanFuture = initialSetBuilderState.future;
 let transitionPreviewAudio = [];
 let transitionPreviewFrame = 0;
 let transitionPreviewTimer = 0;
 let transitionPreviewPlayheadFrame = 0;
 let transitionPreviewState = null;
-let setCompactMode = localStorage.getItem('set-builder-compact') === 'true';
-let setTransitionSettings = {};
+let setCompactMode = initialSetBuilderState.compactMode;
+let setTransitionSettings = initialSetBuilderState.transitionSettings;
 let transitionEditorSurfaces = [];
 const transitionWaveCache = new Map();
-const downloadedUiState = {search:'', genre:'all', detailedGenre:'all', playlist:'all', analysis:'all', artwork:'all', quality:'all', sort:'newest', page:1, pageSize:Number(localStorage.getItem('music-files-page-size') || 50)};
+const downloadedUiState = createMusicFilesUiState();
 const downloadedSelection = new Map();
 let downloadedLoadSequence = 0;
 let downloadedSearchTimer = null;
@@ -196,17 +200,55 @@ let downloadedRequestController = null;
 let downloadedLoadedAt = 0;
 let libraryLoadedAt = 0;
 let librarySearchTimer = null;
-const libraryUiState = {search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1,pageSize:Number(localStorage.getItem('dj-library-page-size') || 50)};
+const libraryUiState = createLibraryUiState();
 let libraryLoadSequence = 0;
 let libraryRequestController = null;
 let pendingMetadataReview = null;
 const VIEW_CACHE_MS = 30000;
+const backgroundTasks = new Map();
 
 $$('.import-method').forEach(method => method.addEventListener('toggle', () => {
   if (!method.open) return;
   $$('.import-method').forEach(other => { if (other !== method) other.open = false; });
 }));
 
+function stopBackgroundTask(key) {
+  const task = backgroundTasks.get(key);
+  if (!task) return;
+  task.cancelled = true;
+  clearTimeout(task.timer);
+  task.controller?.abort();
+  backgroundTasks.delete(key);
+}
+
+function runBackgroundTask({key, url, load=null, interval=1000, active=state => state.status === 'processing', update=()=>{}, complete=()=>{}, fail=()=>{}}) {
+  stopBackgroundTask(key);
+  const task = {cancelled:false,timer:null,controller:null};
+  backgroundTasks.set(key, task);
+  const tick = async () => {
+    if (task.cancelled) return;
+    task.controller = new AbortController();
+    try {
+      let state;
+      if (load) state = await load(task.controller.signal);
+      else {
+        const response = await fetch(typeof url === 'function' ? url() : url, {cache:'no-store',signal:task.controller.signal});
+        state = await response.json();
+        if (!response.ok) throw new Error(state.detail || 'Background task status is unavailable.');
+      }
+      update(state);
+      if (task.cancelled) return;
+      if (active(state)) task.timer = setTimeout(tick, interval);
+      else { backgroundTasks.delete(key); await complete(state); }
+    } catch (error) {
+      if (error.name === 'AbortError' || task.cancelled) return;
+      backgroundTasks.delete(key);
+      fail(error);
+    }
+  };
+  tick();
+  return () => stopBackgroundTask(key);
+}
 const LATIN_GENRE_CATEGORIES = ['Latin / Reggaeton','Latin / Salsa','Latin / Cumbia','Latin / Merengue','Latin / Zapateado','Latin / Corridos','Latin / Regional Mexican','Latin / Bachata','Latin / Dembow','Latin / Latin Pop','Latin / Latin Jazz','Latin / Bolero','Latin / Vallenato','Latin / Brazilian','Latin / Flamenco','Latin / Latin Rock','Latin / Latin Indie','Latin / Latin Ska','Latin / Latin Hip-Hop','Latin / Latin R&B','Latin / Other'];
 const ELECTRONIC_GENRE_CATEGORIES = [
   'Electronic / Techno / Techno','Electronic / Techno / Schranz','Electronic / Techno / Hard Techno','Electronic / Techno / Acid Techno','Electronic / Techno / Melodic Techno','Electronic / Techno / Minimal Techno','Electronic / Techno / Industrial Techno','Electronic / Techno / Hypnotic Techno','Electronic / Techno / Peak-Time Techno',
@@ -215,6 +257,10 @@ const ELECTRONIC_GENRE_CATEGORIES = [
 ];
 const GENRE_CATEGORIES = [...ELECTRONIC_GENRE_CATEGORIES,'Afro & Amapiano','Hip-Hop & Rap','Hip-Hop & Rap / Crunk','Hip-Hop & Rap / Hyphy','R&B & Soul','Disco & Funk','Rock & Alternative','Pop','Pop / Chanson','Ambient & Chill',...LATIN_GENRE_CATEGORIES,'Other'];
 const collapsedGenreFolders = new Set(JSON.parse(localStorage.getItem('dj-collapsed-genre-folders') || '[]'));
+function normalizedGenreCategory(value) {
+  const name=String(value||'Other').trim();
+  return ({techno:'Electronic / Techno / Techno',house:'Electronic / House / House',trance:'Electronic / Trance / Trance','drum & bass':'Electronic / Drum & Bass / Drum & Bass',garage:'Electronic / Garage / Garage',breaks:'Electronic / Breaks / Breakbeat',electronic:'Electronic / General','electronic / electronic / electronic':'Electronic / General'})[name.toLowerCase()] || name;
+}
 
 function genreFolderTree(entries, buttonClass) {
   const root = {children:new Map(), count:0, selfCount:0};
@@ -246,11 +292,32 @@ function bindGenreFolderState(scope) {
 }
 
 function genreEditorMarkup(current, suggested = '', compact = false) {
-  return genreEditor(current, suggested, compact, GENRE_CATEGORIES);
+  const choices = [...new Set([current, suggested, ...GENRE_CATEGORIES].filter(Boolean))].sort();
+  return `<form class="inline-genre-editor${compact ? ' compact' : ''}" hidden>
+    <div><label>Genre<select class="inline-genre-select">${choices.map(name => `<option value="${escapeHtml(name)}"${name === current ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('')}</select></label>
+    <label>Or type a custom genre<input class="inline-genre-custom" maxlength="80" placeholder="Custom genre"></label></div>
+    ${suggested && suggested !== current ? `<p class="genre-suggestion">Detected from metadata: <b>${escapeHtml(suggested)}</b> <button type="button" class="use-genre-suggestion">Use detected</button></p>` : ''}
+    <p class="genre-folder-preview">Folder: ${escapeHtml(current.replace(' / ', '/'))}/</p>
+    <div class="inline-genre-actions"><button type="submit">Save & move</button><button type="button" class="button secondary cancel-genre-edit">Cancel</button></div>
+  </form>`;
 }
 
 function metadataEditorMarkup(track, position=1, total=1) {
-  return metadataEditor(track, position, total, GENRE_CATEGORIES);
+  const current = track.genre_category || 'Other';
+  const choices = [...new Set([current,...GENRE_CATEGORIES].filter(Boolean))].sort();
+  const playlist = (track.playlists || [])[0] || 'Imported Singles';
+  return `<form class="track-metadata-editor" hidden>
+    <header><div><strong>Edit track metadata</strong><span>Updates the WAV, folder, Music Files, and linked Library entry.</span></div><div class="metadata-review-position"><span>${position} of ${total}</span><button type="button" class="button secondary close-metadata-editor" aria-label="Close metadata editor">×</button></div></header>
+    <div class="metadata-fields"><label>Title<input name="title" maxlength="300" required value="${escapeHtml(track.title || '')}"></label><label>Artist<input name="artist" maxlength="300" value="${escapeHtml(track.artist || '')}"></label><label>Genre<select name="genre_category">${choices.map(name=>`<option value="${escapeHtml(name)}"${name===current?' selected':''}>${escapeHtml(name)}</option>`).join('')}</select></label><label>Detailed genre tags<input name="genre" maxlength="500" value="${escapeHtml(track.genre || '')}" placeholder="e.g. salsa, merengue"></label><label>Album / source playlist<input name="playlist_name" maxlength="180" required value="${escapeHtml(playlist)}"></label><label>Artwork image URL<input name="artwork_url" type="url" maxlength="1000" value="${escapeHtml(track.artwork_url || '')}" placeholder="Direct Spotify or YouTube cover image URL"></label><label class="metadata-rename"><input name="rename_file" type="checkbox"> Rename WAV to Artist - Title</label></div>
+    <p class="metadata-message"></p><div class="metadata-actions"><div class="metadata-navigation"><button type="button" class="button secondary metadata-previous">← Previous</button><button type="button" class="button secondary metadata-next">Next →</button></div><div class="metadata-save-actions"><button type="submit" class="button secondary">Save</button><button type="submit" data-action="next">Save & next →</button></div></div>
+  </form>`;
+}
+
+function detailedGenreSummary(rawGenres) {
+  const tags=[...new Set(String(rawGenres||'').split(',').map(tag=>tag.trim()).filter(Boolean))];
+  if(!tags.length)return {label:'No detailed genre',title:'No detailed genre metadata',empty:true};
+  const visible=tags.slice(0,2);
+  return {label:`${visible.join(' · ')}${tags.length>2?` +${tags.length-2}`:''}`,title:tags.join(', '),empty:false};
 }
 
 function bindGenreEditor(editor, trackIds, afterSave) {
@@ -282,26 +349,6 @@ function stopArrangementPreview() {
   cancelAnimationFrame(arrangementPreview.frame);
   if (arrangementPreview.button?.isConnected) arrangementPreview.button.textContent = arrangementPreview.label;
   arrangementPreview = null;
-}
-
-function closeDownloadedInspector({restoreFocus=false} = {}) {
-  const inspector=$('#downloaded-inspector');
-  if (!inspector || inspector.hidden) return;
-  stopNativeAudio(null, inspector);
-  inspector.hidden=true;
-  if (restoreFocus) document.querySelector(`.downloaded-card[data-id="${inspector.dataset.returnId}"]`)?.focus();
-}
-
-function renderTrackPagination(container, page, totalPages, totalItems, onPage) {
-  container.hidden = totalPages <= 1;
-  if (container.hidden) { container.replaceChildren(); return; }
-  const candidates = [...new Set([1,page-2,page-1,page,page+1,page+2,totalPages].filter(value => value >= 1 && value <= totalPages))].sort((a,b) => a-b);
-  let previous = 0;
-  const pages = candidates.map(value => { const gap = previous && value - previous > 1 ? '<span class="page-gap">…</span>' : ''; previous = value; return `${gap}<button type="button" class="page-number${value === page ? ' active' : ''}" data-page="${value}"${value === page ? ' aria-current="page"' : ''}>${value}</button>`; }).join('');
-  container.innerHTML = `<button type="button" class="page-previous"${page <= 1 ? ' disabled' : ''}>← Previous</button><span class="page-numbers">${pages}</span><span class="page-summary">Page ${page} of ${totalPages} · ${totalItems} tracks</span><button type="button" class="page-next"${page >= totalPages ? ' disabled' : ''}>Next →</button>`;
-  container.querySelector('.page-previous').onclick = () => onPage(page - 1);
-  container.querySelector('.page-next').onclick = () => onPage(page + 1);
-  container.querySelectorAll('.page-number').forEach(button => button.onclick = () => onPage(Number(button.dataset.page)));
 }
 
 async function decodedAudio(url, cache, key) {
@@ -481,11 +528,6 @@ async function previewArrangementInsertion(editor, job, button) {
   const label = button.textContent; button.textContent = '■ Stop placement preview';
   const timer = setTimeout(stopArrangementPreview, Math.max(100, (when - context.currentTime) * 1000));
   arrangementPreview = {nodes,timer,button,label,frame:requestAnimationFrame(followPlayhead)};
-}
-
-function option(value, label = value) {
-  const node = document.createElement('option');
-  node.value = value; node.textContent = label; return node;
 }
 
 async function loadConfig() {
@@ -863,29 +905,24 @@ async function waitForAuthorizedImport(importId,url,onProgress){
     await new Promise(resolve=>setTimeout(resolve,900));
   }
 }
-let authorizedImportQueue=null;
-function renderAuthorizedImportQueue(){
-  const queue=authorizedImportQueue;if(!queue)return;
-  const panel=$('#authorized-import-queue'),list=$('#authorized-import-queue-list'),progress=$('#authorized-import-progress');panel.hidden=false;progress.hidden=false;
-  const terminal=queue.items.filter(item=>['complete','failed','canceled'].includes(item.status)),percent=queue.items.reduce((sum,item)=>sum+Number(item.progress||0),0)/Math.max(1,queue.items.length);
-  progress.querySelector('span').style.width=`${Math.max(2,percent)}%`;progress.querySelector('small').textContent=`${terminal.length} of ${queue.items.length} finished · ${queue.paused?'Queue paused':queue.active+' active'} · ${Math.round(percent)}%`;
-  $('#authorized-import-queue-summary').textContent=`${queue.items.filter(item=>item.status==='waiting').length} waiting · ${queue.active} active`;
-  $('#authorized-import-pause').textContent=queue.paused?'Resume queue':'Pause queue';
-  $('#authorized-import-retry').disabled=!queue.items.some(item=>['failed','canceled'].includes(item.status));
-  list.innerHTML=queue.items.map((item,index)=>`<article class="authorized-import-queue-item" data-index="${index}" data-status="${item.status}"><div><strong>${escapeHtml(item.url)}</strong><small>${escapeHtml(item.stage||item.status)}${item.error?` · ${escapeHtml(item.error)}`:''}</small></div><div class="authorized-import-queue-actions">${item.status==='waiting'?`<button type="button" data-action="up" aria-label="Move up" ${index===0?'disabled':''}>↑</button><button type="button" data-action="down" aria-label="Move down" ${index===queue.items.length-1?'disabled':''}>↓</button>`:''}${['waiting','processing'].includes(item.status)?'<button type="button" data-action="cancel">Cancel</button>':''}${['failed','canceled'].includes(item.status)?'<button type="button" data-action="retry">Retry</button>':''}</div></article>`).join('');
-  list.querySelectorAll('button').forEach(button=>button.onclick=async()=>{const index=Number(button.closest('article').dataset.index),item=queue.items[index],action=button.dataset.action;if(action==='up'&&index>0)[queue.items[index-1],queue.items[index]]=[item,queue.items[index-1]];if(action==='down'&&index<queue.items.length-1)[queue.items[index+1],queue.items[index]]=[item,queue.items[index+1]];if(action==='cancel'){if(item.importId)await fetch(`/api/imports/${item.importId}/cancel`,{method:'POST'});else{item.status='canceled';item.stage='Canceled before download';item.progress=100;}}if(action==='retry'){Object.assign(item,{status:'waiting',stage:'Waiting to retry',progress:0,error:'',importId:null});}renderAuthorizedImportQueue();queue.schedule();});
-}
+const authorizedImportQueue = new AuthorizedImportQueue({
+  select: $,
+  escapeHtml,
+  waitForImport: waitForAuthorizedImport,
+  onComplete: async queue => {
+    const completed=queue.items.filter(item=>item.status==='complete'),failed=queue.items.filter(item=>item.status!=='complete'),message=$('#authorized-import-message');
+    message.innerHTML=`<strong>${completed.length} of ${queue.items.length} sources imported.</strong>${failed.length?`<span>${failed.length} failed or canceled. Use Retry in the queue when ready.</span>`:''}${completed.length===1?` <a href="/api/imports/${completed[0].importId}/download">Download WAV</a>`:''}`;
+    $('#authorized-import-submit').disabled=false;
+    if(!failed.length)$('#authorized-import-form').reset();
+    await loadJobs();
+  },
+});
 async function importAuthorizedSources(urls,basePayload){
   const metadata=urls.length===1?{title:currentSourceMetadata?.title||'',artist:currentSourceMetadata?.artist||'',spotify_uri:currentSourceMetadata?.spotify_uri||'',artwork_url:currentSourceMetadata?.thumbnail_url||''}:{title:'',artist:'',spotify_uri:'',artwork_url:''};
-  const queue={items:urls.map(url=>({url,status:'waiting',stage:'Waiting',progress:0,error:'',importId:null})),active:0,paused:false,finished:false,schedule:null};authorizedImportQueue=queue;
-  const done=new Promise(resolve=>queue.resolve=resolve);
-  const run=async item=>{queue.active++;item.status='processing';item.stage='Preparing';item.progress=1;renderAuthorizedImportQueue();try{const response=await fetch('/api/imports/authorized',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...basePayload,url:item.url,...metadata})}),payload=await response.json();if(!response.ok)throw new Error(payload.detail||'Could not start import.');item.importId=payload.import_id;const result=await waitForAuthorizedImport(payload.import_id,item.url,(value,stage)=>{item.progress=value;item.stage=stage;renderAuthorizedImportQueue();});Object.assign(item,{...result,status:result.status,progress:100,stage:result.status==='complete'?'Complete':result.status==='canceled'?'Canceled':'Failed',error:result.error||''});}catch(error){Object.assign(item,{status:'failed',stage:'Failed',progress:100,error:error.message});}finally{queue.active--;renderAuthorizedImportQueue();queue.schedule();}};
-  queue.schedule=()=>{if(queue.finished)return;while(!queue.paused&&queue.active<2){const next=queue.items.find(item=>item.status==='waiting');if(!next)break;run(next);}const pending=queue.items.some(item=>['waiting','processing'].includes(item.status));if(!pending&&queue.active===0){queue.finished=true;queue.resolve();}};
-  renderAuthorizedImportQueue();queue.schedule();await done;
-  const completed=queue.items.filter(item=>item.status==='complete'),failed=queue.items.filter(item=>item.status!=='complete'),message=$('#authorized-import-message');message.innerHTML=`<strong>${completed.length} of ${queue.items.length} sources imported.</strong>${failed.length?`<span>${failed.length} failed or canceled. Use Retry in the queue when ready.</span>`:''}${completed.length===1?` <a href="/api/imports/${completed[0].importId}/download">Download WAV</a>`:''}`;$('#authorized-import-submit').disabled=false;if(!failed.length)$('#authorized-import-form').reset();await loadJobs();
+  await authorizedImportQueue.start(urls,basePayload,metadata);
 }
-$('#authorized-import-pause').onclick=()=>{if(!authorizedImportQueue)return;authorizedImportQueue.paused=!authorizedImportQueue.paused;renderAuthorizedImportQueue();authorizedImportQueue.schedule();};
-$('#authorized-import-retry').onclick=()=>{if(!authorizedImportQueue)return;authorizedImportQueue.finished=false;authorizedImportQueue.items.filter(item=>['failed','canceled'].includes(item.status)).forEach(item=>Object.assign(item,{status:'waiting',stage:'Waiting to retry',progress:0,error:'',importId:null}));renderAuthorizedImportQueue();authorizedImportQueue.schedule();};
+$('#authorized-import-pause').onclick=()=>authorizedImportQueue.togglePause();
+$('#authorized-import-retry').onclick=()=>authorizedImportQueue.retryFailed();
 $('#authorized-import-form').addEventListener('submit', async event => {
   event.preventDefault();
   const urls=authorizedSourceUrls();
@@ -1782,7 +1819,7 @@ async function loadDownloadedLibrary() {
   downloadedRequestController = new AbortController();
   const view = $('#downloads-view');
   view.classList.add('view-refreshing');
-  const parameters = new URLSearchParams({paged:'true',page:String(downloadedUiState.page),page_size:String(downloadedUiState.pageSize),search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,artwork:downloadedUiState.artwork,quality:downloadedUiState.quality,sort:downloadedUiState.sort});
+  const parameters = musicFilesQuery(downloadedUiState);
   let payload;
   try {
     const response = await fetch(`/api/downloaded-library?${parameters}`, {cache:'no-store',signal:downloadedRequestController.signal});
@@ -2354,110 +2391,10 @@ async function loadDownloadedLibrary() {
   if(pendingMetadataReview){const requested=root.querySelector(`.downloaded-card[data-id="${pendingMetadataReview.id}"]`)||metadataCards[0];pendingMetadataReview=null;requested?.querySelector('.edit-track-metadata')?.click();}
 }
 
-function libraryRoles(song) {
-  if (Array.isArray(song._roles) && song._roles.length) return song._roles;
-  const style = String(song.detected_style || '').toLowerCase();
-  const timing = String(song.timing || '').toLowerCase();
-  const bpm = Number(song.bpm || 0);
-  const roles = new Set();
-  if (style.includes('ambient') || style.includes('sparse')) roles.add('ambient');
-  if (style.includes('melodic') || style.includes('harmonic') || Number(song.key_confidence || 0) >= .65) roles.add('melodic');
-  if (style.includes('vocal-safe') || Math.max(song.intro?.instrumentalness || 0, song.outro?.instrumentalness || 0) >= .72) roles.add('vocal-safe');
-  if (timing.includes('live') || timing.includes('variable') || Number(song.tempo_drift || 0) >= .08) roles.add('live timing');
-  if (style.includes('peak') || style.includes('high-energy') || (bpm >= 122 && !roles.has('ambient'))) roles.add('peak-time');
-  if (style.includes('slow') || style.includes('subtle') || bpm && bpm < 120 || roles.has('ambient')) roles.add('warm-up');
-  if (style.includes('closing') || Number(song.dj_readiness?.outro_mixable_bars || 0) >= 8 || song.outro?.section === 'closing') roles.add('closing');
-  if (!roles.size) roles.add(bpm >= 122 ? 'peak-time' : 'warm-up');
-  return [...roles];
-}
-
-const LIBRARY_ROLE_INFO = {
-  'warm-up':['Warm-up','Lower-pressure selections that build the room without spending peak energy too early.'],
-  'peak-time':['Peak-time','High-impact tracks suited to the busiest, most energetic part of a set.'],
-  closing:['Closing','Tracks with an ending, mood, or mix-out shape that can resolve a set.'],
-  'vocal-safe':['Vocal-safe','More instrumental space, useful for layering without clashing with another vocal.'],
-  melodic:['Melodic','Clear tonal or harmonic identity; key compatibility matters more when mixing these.'],
-  ambient:['Ambient','Sparse or atmospheric material useful for openings, resets, and transitions.'],
-  'live timing':['Live timing','Tempo may drift; ride the pitch or mix shorter instead of trusting a rigid beat grid.'],
-};
-
-const CAMELOT_KEYS = {
-  'A minor':'8A','E minor':'9A','B minor':'10A','F# minor':'11A','C# minor':'12A','G# minor':'1A','D# minor':'2A','A# minor':'3A','F minor':'4A','C minor':'5A','G minor':'6A','D minor':'7A',
-  'C major':'8B','G major':'9B','D major':'10B','A major':'11B','E major':'12B','B major':'1B','F# major':'2B','C# major':'3B','G# major':'4B','D# major':'5B','A# major':'6B','F major':'7B',
-};
-
-function normalizedKey(value) {
-  return String(value || '').replace(/^Db /,'C# ').replace(/^Eb /,'D# ').replace(/^Gb /,'F# ').replace(/^Ab /,'G# ').replace(/^Bb /,'A# ');
-}
-
-function camelotKey(value) { return CAMELOT_KEYS[normalizedKey(value)] || '—'; }
-function libraryKeyMode() { return localStorage.getItem('audioextender-key-view') || 'both'; }
-function formatLibraryKey(value, mode=libraryKeyMode()) {
-  const standard = value || 'Unknown key'; const camelot = camelotKey(value);
-  if (mode === 'standard') return standard;
-  if (mode === 'camelot') return camelot === '—' ? 'Unknown Camelot' : camelot;
-  return camelot === '—' ? standard : `${standard} · ${camelot}`;
-}
-
-function songEnergy(song) {
-  if (Number.isFinite(Number(song._energy))) return Number(song._energy);
-  const values = (song.section_profiles || []).map(section => Number(String(section.reason || '').match(/energy\s+([\d.]+)/i)?.[1])).filter(Number.isFinite);
-  if (values.length) return values.reduce((sum,value) => sum + value, 0) / values.length;
-  const style = String(song.detected_style || '').toLowerCase();
-  return style.includes('high-energy') || style.includes('peak') ? .8 : style.includes('ambient') || style.includes('sparse') ? .25 : .5;
-}
-function energyBand(value) { return value >= .67 ? 'high' : value < .4 ? 'low' : 'medium'; }
-function vocalProfile(song) {
-  if (song._vocals) return song._vocals;
-  const instrumental = Math.max(Number(song.intro?.instrumentalness || 0), Number(song.outro?.instrumentalness || 0));
-  return instrumental >= .72 ? 'vocal-safe' : instrumental < .45 ? 'vocal-forward' : 'mixed';
-}
-function timingProfile(song) {
-  if (song._timing) return song._timing;
-  const timing = String(song.timing || '').toLowerCase();
-  return timing.includes('live') || timing.includes('variable') || Number(song.tempo_drift || 0) >= .08 ? 'variable' : 'steady';
-}
-function effectivePreset(song, job) {
-  const analyzed = String(song.preset || '');
-  const resolved = analyzed.includes('→') ? analyzed.split('→').at(-1).trim() : analyzed.trim();
-  return String(resolved || job?.preset || 'default').toLowerCase();
-}
-
-function harmonicCompatibility(left, right) {
-  const notes = {C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
-  const parse = value => { const match = String(value || '').match(/^([A-G](?:#|b)?)\s+(major|minor)/i); return match ? {pitch:notes[match[1]], mode:match[2].toLowerCase()} : null; };
-  const a = parse(left); const b = parse(right);
-  if (!a || !b) return {score:10,label:'key unknown'};
-  const distance = Math.min((a.pitch-b.pitch+12)%12,(b.pitch-a.pitch+12)%12);
-  if (a.pitch === b.pitch && a.mode === b.mode) return {score:40,label:'same key'};
-  if (a.mode !== b.mode && ((a.mode === 'minor' && (a.pitch+3)%12 === b.pitch) || (b.mode === 'minor' && (b.pitch+3)%12 === a.pitch))) return {score:36,label:'relative key'};
-  if (distance === 5 && a.mode === b.mode) return {score:30,label:'neighboring key'};
-  if (a.pitch === b.pitch) return {score:24,label:'parallel key'};
-  return {score:0,label:'distant key'};
-}
-
-function compatibility(left, right) {
-  const bpmA = Number(left.bpm || 0); const bpmB = Number(right.bpm || 0);
-  const ratios = [bpmB, bpmB / 2, bpmB * 2].filter(Boolean);
-  const difference = bpmA ? Math.min(...ratios.map(value => Math.abs(value - bpmA) / bpmA)) : 1;
-  const tempoScore = Math.max(0, 45 * (1 - difference / .08));
-  const key = harmonicCompatibility(left.key, right.key);
-  const keyScore = key.score * .875;
-  const energyScore = Math.max(0, 10 * (1 - Math.abs(songEnergy(left) - songEnergy(right)) / .55));
-  const sharedRoles = libraryRoles(left).filter(role => libraryRoles(right).includes(role));
-  const roleScore = Math.min(10, sharedRoles.length * 5);
-  return {score:Math.round(tempoScore + keyScore + energyScore + roleScore), difference, key:key.label, components:{tempo:Math.round(tempoScore),key:Math.round(keyScore),energy:Math.round(energyScore),role:Math.round(roleScore)}, sharedRoles};
-}
-
-const SET_STORAGE_KEY = 'dj-library-studio-sets-v1';
-function setTrackId(track) { return String(track.source_name || '').toLowerCase(); }
 function selectedSetGenres() { return [...$('#set-genre').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
 function selectedSetDetailedGenres() { return [...$('#set-detailed-genres').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
 function selectedExcludedSetGenres() { return [...$('#set-excluded-genres').selectedOptions].map(option=>option.value).filter(Boolean); }
 function renderExcludedSetGenres() { const selected=selectedExcludedSetGenres();const chips=$('#set-excluded-genre-chips');chips.replaceChildren(...selected.map(genre=>{const chip=document.createElement('button');chip.type='button';chip.textContent=`${genre} ×`;chip.onclick=()=>{const option=[...$('#set-excluded-genres').options].find(item=>item.value===genre);if(option)option.selected=false;$('#set-excluded-genres').dispatchEvent(new Event('change',{bubbles:true}));};return chip;})); }
-function trackMatchesSetGenre(track, genre) { return track._genre===genre || track._genre.startsWith(`${genre} / `); }
-function setTrackDetailedGenres(track){return String(track._detailedGenre||'').split(',').map(value=>value.trim()).filter(Boolean);}
-function trackMatchesSetDetailedGenre(track, genre) { return setTrackDetailedGenres(track).some(value=>value.toLowerCase()===String(genre||'').toLowerCase()); }
 function renderSetDetailedGenres(){const selected=selectedSetDetailedGenres(),chips=$('#set-detailed-genre-chips');chips.replaceChildren(...selected.map(genre=>{const chip=document.createElement('button');chip.type='button';chip.textContent=`${genre} ×`;chip.onclick=()=>{const option=[...$('#set-detailed-genres').options].find(item=>item.value===genre);if(option)option.selected=false;$('#set-detailed-genres').dispatchEvent(new Event('change',{bubbles:true}));};return chip;}));}
 function populateSetDetailedGenres(restore=[]){const parents=selectedSetGenres();const select=$('#set-detailed-genres');const current=restore.length?restore:selectedSetDetailedGenres();const choices=[...new Set(setBuilderLibrary.filter(track=>!parents.length||parents.some(parent=>trackMatchesSetGenre(track,parent))).flatMap(setTrackDetailedGenres))].sort((a,b)=>a.localeCompare(b));select.replaceChildren(option('all','Any detailed genre'),...choices.map(value=>option(value,value)));[...select.options].forEach(item=>{item.selected=current.length?current.includes(item.value):item.value==='all';});if(!select.selectedOptions.length)select.querySelector('option[value="all"]').selected=true;renderSetDetailedGenres();}
 function renderSetGenreMix() {
@@ -2474,19 +2411,6 @@ function setBrief() {
   const genres=selectedSetGenres();const genreWeights=Object.fromEntries([...$('#set-genre-weights').querySelectorAll('input')].map(input=>[input.dataset.genre,Math.max(0,Number(input.value||0))]));
   return {name:$('#set-name').value.trim() || 'New DJ Set',length:Number($('#set-length').value),genres,detailedGenres:selectedSetDetailedGenres(),excludedGenres:selectedExcludedSetGenres(),genreWeights,genreFlow:$('#set-genre-flow').value,vibe:$('#set-vibe').value,curve:$('#set-curve').value,bpmMin:Number($('#set-bpm-min').value || 0),bpmMax:Number($('#set-bpm-max').value || Infinity),keyStrictness:$('#set-key-strictness').value,vocals:$('#set-vocals').value,timing:$('#set-timing').value,edits:$('#set-edits').value,minimumHealth:Number($('#set-minimum-health').value || 65)};
 }
-function targetSetEnergy(index, count, brief) {
-  const progress = count <= 1 ? 0 : index / (count - 1);
-  const base = {balanced:.5,'dance-party':.7,'warm-up':.32,'peak-time':.78,melodic:.52,'vocal-safe':.48,ambient:.24,closing:.55}[brief.vibe] ?? .5;
-  if (brief.curve === 'rise') return Math.min(.92, base - .12 + progress * .45);
-  if (brief.curve === 'peak-release') return progress < .72 ? Math.min(.92, base - .12 + progress * .62) : Math.max(.35, .92 - (progress - .72) * 1.45);
-  if (brief.curve === 'waves') return Math.max(.2, Math.min(.92, base + Math.sin(progress * Math.PI * 4 - Math.PI / 2) * .22 + progress * .12));
-  return base;
-}
-const SET_PROPOSAL_STRATEGIES = [
-  {id:'safe',label:'Safe Flow',summary:'Smooth, dependable transitions',detail:'Prioritizes tempo, harmony, vocal space, and consistent mixability.'},
-  {id:'energy',label:'Energy Journey',summary:'The strongest planned arc',detail:'Follows the requested rise, waves, or peak-and-release shape most closely.'},
-  {id:'adventurous',label:'Adventurous Mix',summary:'More variety and surprise',detail:'Explores broader genres, roles, and harmonic color while respecting your health floor.'},
-];
 function setCandidateScore(track, previous, index, count, brief, strategy='balanced', usedByOtherProposals=new Set()) {
   const energyFit = Math.max(0, 45 * (1 - Math.abs(songEnergy(track) - targetSetEnergy(index, count, brief)) / .7));
   const roles = libraryRoles(track);
@@ -3590,4 +3514,5 @@ $('#restore-presets').addEventListener('click', async () => {
 });
 
 async function refresh() { const jobs = await loadJobs(); await loadAnalysis(jobs); }
-loadConfig().then(refresh);loadLibraryStatus();loadRelocationState();
+const settingsController = createSettingsController({loadConfig, loadPresets, loadLibraryStatus, loadRelocationState});
+settingsController.initialize(refresh);

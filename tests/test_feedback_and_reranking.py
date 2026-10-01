@@ -6,8 +6,8 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
-from helpers.candidate_reranker import assess_candidate, rerank_candidates
-from helpers.feedback_report import append_candidate_feedback
+from audioextender.analysis.candidate_reranker import assess_candidate, rerank_candidates
+from audioextender.reporting.feedback import append_candidate_feedback
 from tests.factories import candidate
 
 

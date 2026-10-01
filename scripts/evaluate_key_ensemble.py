@@ -15,8 +15,8 @@ from scipy.signal import resample_poly
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from helpers.analysis import _ensemble_key_estimate, _estimate_key
-from helpers.audio_loader import load_audio
+from audioextender.analysis.key_detection import _ensemble_key_estimate, _estimate_key
+from audioextender.audio.loading import load_audio
 
 REFERENCES = {
     "Martin Solveig, Good Times Ahead - Intoxicated - Edit.wav": "C major",

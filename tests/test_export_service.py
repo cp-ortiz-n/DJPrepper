@@ -7,12 +7,12 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from helpers.audio_loader import AudioData
-from helpers.config import EditConfig
-from helpers.cue_export import CuePoint
-from helpers.exceptions import ExportError
-from helpers.export_service import ExportRequest, ExportService
-from helpers.interfaces import NullProgressReporter
+from audioextender.audio.loading import AudioData
+from audioextender.core.config import EditConfig
+from audioextender.library.cue_export import CuePoint
+from audioextender.core.exceptions import ExportError
+from audioextender.library.export_service import ExportRequest, ExportService
+from audioextender.core.interfaces import NullProgressReporter
 
 
 class ExportServiceTests(unittest.TestCase):

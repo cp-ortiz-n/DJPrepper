@@ -108,7 +108,8 @@ normal job still evaluates and automatically selects its ranked candidates; it
 simply does not export or display all of the audition files.
 
 Every Music Files recording has a permanent readable identity such as
-`AE-0184-ORG`. Related versions share the `AE-0184` family while suffixes identify
+`HOU-000184-ORG`. Related versions share the `HOU-000184` family while the
+three-letter prefix identifies the parent genre and suffixes identify
 the original, extended edit, remix, radio edit, live recording, remaster,
 instrumental, or acapella. These IDs survive renames, genre moves, reanalysis,
 and library relocation. **Collection integrity** presents conservative duplicate
@@ -263,7 +264,26 @@ safety thresholds normally.
 AudioExtender/
 ├── main.py              # CLI and batch runner
 ├── settings.py          # User-editable application defaults
-├── helpers/             # Audio loading, analysis, selection, editing, stems
+├── audioextender/       # Application package, organized by domain
+│   ├── analysis/        # Key analysis, selection, validation, and scoring
+│   ├── audio/           # Loading, quality, WAV metadata, and stems
+│   ├── core/            # Configuration, models, interfaces, and presets
+│   ├── imports/         # Source import workflows and route handlers
+│   ├── infrastructure/  # Background tasks, caching, and progress
+│   ├── library/         # Library identity, relocation, backup, and export
+│   ├── processing/      # Track, batch, and web-job orchestration
+│   ├── reporting/       # Feedback and processing reports
+│   ├── repositories/    # Jobs, catalog, analysis, feedback, and system-state persistence
+│   └── web/
+│       ├── application.py               # FastAPI composition and legacy routes
+│       ├── job_routes.py                 # Queue lifecycle
+│       ├── job_media_routes.py           # Audio, waveform, cues, and downloads
+│       ├── library_routes.py             # Paginated DJ Library catalog
+│       ├── library_maintenance_routes.py # Integrity and reconciliation
+│       ├── reporting_routes.py           # Feedback and key verification
+│       ├── set_builder_routes.py          # Set catalog and playlist exports
+│       └── settings_routes.py             # Settings, storage, backup, relocation
+├── web/                  # Browser shell, feature modules, shared UI, and styles
 ├── tests/               # Fast unit tests and synthetic test fixtures
 ├── input/               # Drop source songs here
 ├── output/
@@ -278,6 +298,68 @@ AudioExtender/
 
 The contents of `input/` and `output/` are ignored by Git, while the directories
 themselves remain part of the project.
+
+See [`docs/architecture.md`](docs/architecture.md) for package ownership and dependency rules.
+
+## Maintainer quick guide
+
+The project is organized by responsibility so manual changes can stay local.
+Use this table before searching through the larger composition files:
+
+| If you need to change… | Start in… |
+|---|---|
+| BPM, beat grid, key, confidence, energy, or readiness | `audioextender/analysis/` |
+| Candidate selection or safety | `analysis/selection_coordinator.py`, `candidate_selection.py`, `candidate_validator.py` |
+| Crossfades and audible splice behavior | `analysis/splice_policy.py`, `processing/extended_edit.py` |
+| WAV metadata, artwork embedding, or audio quality | `audio/wav_metadata.py`, `audio/quality.py` |
+| Recording IDs, versions, duplicates, or track paths | `library/recording_identity.py`, `repositories/track_catalog.py` |
+| Processing queue behavior | `processing/web_jobs.py`, `web/job_routes.py`, `repositories/jobs.py` |
+| Audio delivery, waveform, cues, or batch downloads | `web/job_media_routes.py` |
+| DJ Library API filters | `web/library_routes.py` |
+| Integrity scan, catalog reconciliation, or repair | `web/library_maintenance_routes.py` |
+| Settings, storage, backup, or relocation | `web/settings_routes.py` and `audioextender/library/` |
+| YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
+| Music Files UI | `web/music-files.js` and `web/styles.css` |
+| DJ Library UI | `web/dj-library.js` and `web/styles.css` |
+| Set Builder UI | `web/set-builder.js` and `web/styles.css` |
+| Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
+| Preview playback behavior | `web/playback.js` |
+
+`web_app.py` is only a compatibility launcher. The server is composed in
+`audioextender/web/application.py`, which constructs services and injects them
+into router factories. New HTTP functionality should normally live in a
+focused `*_routes.py` module with a dependency dataclass, rather than adding
+another feature directly to `application.py`.
+
+`JobRepository` remains the stable persistence facade, but SQL is divided among
+focused mixins under `audioextender/repositories/`: jobs, track catalog,
+analysis/search indexing, feedback/key verification, and settings/system state.
+Add a database method to the mixin that owns the data instead of expanding
+`repositories/facade.py`.
+
+The music-library path saved in Settings is durable SQLite state. Import code
+must obtain it through the injected library-root callback, reject an offline
+external drive, and never silently write to `~/Music` or a temporary folder.
+
+Before committing a manual change, run:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -q
+npm run check
+.venv/bin/ruff check path/to/changed_python_file.py
+git diff --check
+```
+
+When moving modules or changing architectural relationships, also run:
+
+```bash
+graphify . --update --code-only --no-viz
+```
+
+The next planned extraction is the downloaded-library metadata batch workflow:
+genre rescanning, WAV retagging, and artwork synchronization currently remain
+in `audioextender/web/application.py`. See `BACKLOG.md` before starting that
+work.
 
 ### Architecture boundaries
 
@@ -381,7 +463,7 @@ DEFAULT_INTRO_BARS = 4
 DEFAULT_OUTRO_BARS = 0
 ```
 
-Avoid changing scoring formulas inside `helpers/` unless you are intentionally
+Avoid changing scoring formulas inside `audioextender/analysis/` unless you are intentionally
 tuning the audio-selection algorithm. The settings above are the supported
 high-level controls.
 

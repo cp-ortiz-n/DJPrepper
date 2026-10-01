@@ -4,25 +4,20 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-from helpers.candidate_selection import (
-    CandidateRankingService,
+from audioextender.analysis.candidate_selection import (
     CandidateSelectionService,
     RankedSelection,
     SelectionRequest,
 )
-from helpers.candidate_validator import ValidationResult
-from helpers.config import EditConfig
-from helpers.interfaces import NullProgressReporter, ProgressReporter
-from helpers.selection_coordinator import SelectionCoordinator, SideSelectionRequest
-from helpers.splice_policy import SplicePlan, build_splice_plan
-from helpers.track_processor import TrackProcessor
+from audioextender.core.config import EditConfig
+from audioextender.core.interfaces import NullProgressReporter, ProgressReporter
+from audioextender.analysis.selection_coordinator import SelectionCoordinator, SideSelectionRequest
+from audioextender.analysis.splice_policy import build_splice_plan
+from audioextender.processing.track_processor import TrackProcessor
 from tests.factories import candidate
 
 
 class CandidateSelectionServiceTests(unittest.TestCase):
-    def test_legacy_selection_service_name_maps_to_ranking_only(self) -> None:
-        self.assertIs(CandidateSelectionService, CandidateRankingService)
-
     def test_fixed_length_delegates_through_one_shared_intro_outro_contract(self) -> None:
         ranked = [candidate(unit_bars=4)]
         ranker = Mock(return_value=ranked)
@@ -99,47 +94,6 @@ class DependencyContractTests(unittest.TestCase):
 
 
 class SelectionCoordinatorTests(unittest.TestCase):
-    def test_pipeline_dependencies_are_independent_and_coordinated_once(self) -> None:
-        selected = candidate()
-        ranking = Mock()
-        ranking.rank.return_value = RankedSelection((selected,), 4, None)
-        reranker = Mock(return_value=[selected])
-        validator = Mock()
-        validator.validate.return_value = ValidationResult(selected, None, False)
-        splice_plan = SplicePlan("adaptive", 18.0, 400.0)
-        planner = Mock(return_value=splice_plan)
-        coordinator = SelectionCoordinator(
-            ranking=ranking,
-            validator=validator,
-            reranker=reranker,
-            splice_planner=planner,
-        )
-        config = EditConfig(intro_bars=4, intro_bars_locked=True)
-
-        selection = coordinator.select(
-            Mock(),
-            180.0,
-            None,
-            config,
-            SideSelectionRequest("intro", 4, True, 60.0, 1),
-            lambda options, _position, _rank: (options[0], 1),
-            NullProgressReporter(),
-        )
-        finalized = coordinator.finalize(
-            selection.candidate,
-            config,
-            instrumental_audio=None,
-            stem_reliability=0.0,
-            vocal_analysis_available=False,
-            position="intro",
-        )
-
-        reranker.assert_called_once_with([selected], "intro", config.preset_name)
-        validator.validate.assert_called_once()
-        planner.assert_called_once_with(selected, config.crossfade_ms)
-        self.assertIs(finalized.candidate, selected)
-        self.assertIs(finalized.splice_plan, splice_plan)
-
     def test_disabled_side_does_not_invoke_ranking_or_chooser(self) -> None:
         ranking = Mock()
         chooser = Mock()

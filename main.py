@@ -7,17 +7,17 @@ import sys
 import time
 from pathlib import Path
 
-from helpers.audio_loader import SUPPORTED_EXTENSIONS
-from helpers.batch_runner import BatchRunner, TrackJob
-from helpers.cache import clear_cache
-from helpers.config_factory import ConfigFactory
-from helpers.cue_export import write_rekordbox_xml
-from helpers.feedback_report import append_candidate_feedback
-from helpers.models import FileResult
-from helpers.presets import PRESETS
-from helpers.processing_report import update_processing_report
-from helpers.resource_planner import GIB, choose_worker_count
-from helpers.track_overrides import load_track_overrides
+from audioextender.audio.loading import SUPPORTED_EXTENSIONS
+from audioextender.processing.batch_runner import BatchRunner, TrackJob
+from audioextender.infrastructure.cache import clear_cache
+from audioextender.core.config_factory import ConfigFactory
+from audioextender.library.cue_export import write_rekordbox_xml
+from audioextender.reporting.feedback import append_candidate_feedback
+from audioextender.core.models import FileResult
+from audioextender.core.presets import PRESETS
+from audioextender.reporting.processing import update_processing_report
+from audioextender.analysis.resource_planner import GIB, choose_worker_count
+from audioextender.library.track_overrides import load_track_overrides
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,

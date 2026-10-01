@@ -7,10 +7,10 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from helpers.batch_runner import BatchRunner
-from helpers.candidate_validator import CandidateValidator
-from helpers.config import EditConfig
-from helpers.config_factory import ConfigFactory
+from audioextender.processing.batch_runner import BatchRunner
+from audioextender.analysis.candidate_validator import CandidateValidator
+from audioextender.core.config import EditConfig
+from audioextender.core.config_factory import ConfigFactory
 from main import _parser
 from tests.factories import candidate
 
@@ -123,7 +123,7 @@ class ConfigFactoryTests(unittest.TestCase):
 
 
 class BatchRunnerTests(unittest.TestCase):
-    @patch("helpers.batch_runner.process_file")
+    @patch("audioextender.processing.batch_runner.process_file")
     def test_single_job_uses_serial_processor(self, process_file) -> None:
         process_file.return_value = Mock(elapsed=1.5)
         with tempfile.TemporaryDirectory() as temporary:

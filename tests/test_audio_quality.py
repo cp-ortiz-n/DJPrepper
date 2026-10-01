@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import numpy as np
 import soundfile as sf
 
-from helpers.audio_quality import analyze_audio_quality
+from audioextender.audio.quality import analyze_audio_quality
 
 
 class AudioQualityTests(unittest.TestCase):

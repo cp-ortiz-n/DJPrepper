@@ -1,5 +1,14 @@
 # AudioExtender Backlog
 
+## Next work
+
+- [ ] **Extract downloaded-library metadata batch operations.** Move genre
+  rescanning, WAV retagging, and artwork synchronization out of
+  `audioextender/web/application.py` into focused services and routers. Preserve
+  progress reporting, retry/error state, existing API contracts, and background
+  batch behavior. This is the next implementation priority when project work
+  resumes.
+
 ## Implementation audit — September 21, 2026
 
 Status definitions:

@@ -8,8 +8,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 import web_app as web_module
-from helpers.library_relocation import LibraryRelocationCoordinator
-from helpers.web_database import JobRepository
+from audioextender.library.relocation import LibraryRelocationCoordinator
+from audioextender.repositories.facade import JobRepository
 from web_app import SetExportPreflightRequest, SetPlaylistSaveRequest, SetPlaylistTrack
 
 

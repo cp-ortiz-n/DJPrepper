@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from helpers.dj_readiness import detect_dj_readiness
+from audioextender.analysis.dj_readiness import detect_dj_readiness
 
 
 class DJReadinessTests(unittest.TestCase):

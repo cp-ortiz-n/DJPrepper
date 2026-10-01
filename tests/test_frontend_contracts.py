@@ -7,11 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 class FrontendContractTests(unittest.TestCase):
     def test_set_builder_exposes_three_distinct_directions(self):
         app = (ROOT / "web" / "app.js").read_text()
+        set_builder = (ROOT / "web" / "set-builder.js").read_text()
         page = (ROOT / "web" / "index.html").read_text()
 
-        self.assertIn("Safe Flow", app)
-        self.assertIn("Energy Journey", app)
-        self.assertIn("Adventurous Mix", app)
+        self.assertIn("Safe Flow", set_builder)
+        self.assertIn("Energy Journey", set_builder)
+        self.assertIn("Adventurous Mix", set_builder)
         self.assertIn('role="radiogroup"', page)
         self.assertIn("selectSetProposal", app)
         self.assertIn("snapshot=setPlanSnapshot", app.replace(" ", ""))
