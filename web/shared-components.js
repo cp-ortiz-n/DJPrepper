@@ -1,6 +1,17 @@
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
 
+export function captureTextFilter(input, state, key = 'search') {
+  state[key] = String(input.value || '').trim();
+  return state[key];
+}
+
+export function syncControlUnlessEditing(control, value, activeElement = document.activeElement) {
+  if (activeElement === control) return false;
+  control.value = value ?? '';
+  return true;
+}
+
 export function notify(message, tone = 'info', options = {}) {
   const region = $('#app-toast-region');
   if (!region || !message) return;

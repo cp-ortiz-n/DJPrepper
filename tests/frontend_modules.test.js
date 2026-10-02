@@ -11,6 +11,7 @@ const musicFiles = await import('../web/music-files.js');
 const library = await import('../web/dj-library.js');
 const setBuilder = await import('../web/set-builder.js');
 const settings = await import('../web/settings.js');
+const shared = await import('../web/shared-components.js');
 
 test('Music Files owns filter state and API serialization', () => {
   const state = musicFiles.createMusicFilesUiState(25);
@@ -52,4 +53,28 @@ test('Settings controller preserves startup ordering', async () => {
   });
   await controller.initialize(() => calls.push('ready'));
   assert.deepEqual(calls, ['config', 'status', 'relocation', 'ready']);
+});
+
+test('library reconnect hides offline state and clears stale errors', () => {
+  assert.deepEqual(settings.libraryAvailabilityView({online:false,offline_tracks:4}), {
+    online:false,bannerHidden:false,clearStaleErrors:false,label:'Library offline',
+  });
+  assert.deepEqual(settings.libraryAvailabilityView({online:true,offline_tracks:0}), {
+    online:true,bannerHidden:true,clearStaleErrors:true,label:'Library online',
+  });
+});
+
+test('focused search keeps every character while an older response renders', () => {
+  const input = {value:'abcdef'};
+  const state = {search:'abc'};
+  shared.captureTextFilter(input, state);
+  assert.equal(state.search, 'abcdef');
+  assert.equal(shared.syncControlUnlessEditing(input, 'abc', input), false);
+  assert.equal(input.value, 'abcdef');
+
+  input.value = 'abcdefghijklmnopqrstuvwxyz1234567890';
+  shared.captureTextFilter(input, state);
+  shared.syncControlUnlessEditing(input, 'abcdef', input);
+  assert.equal(input.value, 'abcdefghijklmnopqrstuvwxyz1234567890');
+  assert.equal(state.search, 'abcdefghijklmnopqrstuvwxyz1234567890');
 });

@@ -12,3 +12,14 @@ export function createSettingsController({loadConfig, loadPresets, loadLibrarySt
     },
   };
 }
+
+export function libraryAvailabilityView(status = {}) {
+  const online = Boolean(status.online);
+  const offlineTracks = Number(status.offline_tracks || 0);
+  return {
+    online,
+    bannerHidden: online,
+    clearStaleErrors: online && offlineTracks === 0,
+    label: online ? 'Library online' : 'Library offline',
+  };
+}

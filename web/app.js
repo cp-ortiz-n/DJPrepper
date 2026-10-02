@@ -3,12 +3,12 @@ import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
-import {$, $$, apiErrorMessage, clock, confirmAction, escapeHtml, fraction, notify, option, pct, renderTrackPagination, reportDate} from './shared-components.js';
+import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, escapeHtml, fraction, notify, option, pct, renderTrackPagination, reportDate, syncControlUnlessEditing} from './shared-components.js';
 import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
 import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js';
 import {createMusicFilesUiState, musicFilesQuery} from './music-files.js';
 import {SET_PROPOSAL_STRATEGIES, SET_STORAGE_KEY, createSetBuilderState, setTrackDetailedGenres, setTrackId, targetSetEnergy, trackMatchesSetDetailedGenre, trackMatchesSetGenre} from './set-builder.js';
-import {createSettingsController} from './settings.js';
+import {createSettingsController, libraryAvailabilityView} from './settings.js';
 
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
 // to structured inline messages and richer recovery actions.
@@ -1930,7 +1930,7 @@ async function loadDownloadedLibrary() {
   pageSizeSelect.value = String(pageSize);
   let currentPage = paginationData.page;
   const search = $('#downloaded-search'); const analysisSelect = $('#downloaded-analysis'); const artworkSelect = $('#downloaded-artwork'); const qualitySelect=$('#downloaded-quality'); const sort = $('#downloaded-sort');
-  search.value = downloadedUiState.search;
+  syncControlUnlessEditing(search, downloadedUiState.search);
   genreSelect.value = [...genreSelect.options].some(item => item.value === downloadedUiState.genre) ? downloadedUiState.genre : 'all';
   detailedGenreSelect.value=[...detailedGenreSelect.options].some(item=>item.value===downloadedUiState.detailedGenre)?downloadedUiState.detailedGenre:'all';
   playlistSelect.value = [...playlistSelect.options].some(item => item.value === downloadedUiState.playlist) ? downloadedUiState.playlist : 'all';
@@ -2180,7 +2180,11 @@ async function loadDownloadedLibrary() {
   const requestPage = (page = 1) => { downloadedUiState.page = page; loadDownloadedLibrary(); };
   const syncFilters = () => { downloadedUiState.search=search.value.trim();downloadedUiState.genre=genreSelect.value;downloadedUiState.detailedGenre=detailedGenreSelect.value;downloadedUiState.playlist=playlistSelect.value; downloadedUiState.analysis=analysisSelect.value; downloadedUiState.artwork=artworkSelect.value; downloadedUiState.quality=qualitySelect.value; downloadedUiState.sort=sort.value; requestPage(1); };
   clearTimeout(downloadedSearchTimer);
-  search.oninput = () => { clearTimeout(downloadedSearchTimer); downloadedSearchTimer=setTimeout(syncFilters,220); };
+  search.oninput = () => {
+    captureTextFilter(search, downloadedUiState);
+    clearTimeout(downloadedSearchTimer);
+    downloadedSearchTimer=setTimeout(syncFilters,220);
+  };
   genreSelect.onchange = () => {downloadedUiState.detailedGenre='all';detailedGenreSelect.value='all';syncFilters();}; detailedGenreSelect.onchange=syncFilters; playlistSelect.onchange = syncFilters; analysisSelect.onchange = syncFilters; artworkSelect.onchange = syncFilters; qualitySelect.onchange=syncFilters; sort.onchange = syncFilters;
   $('#downloaded-reset-filters').onclick=()=>{Object.assign(downloadedUiState,{search:'',genre:'all',detailedGenre:'all',playlist:'all',analysis:'all',artwork:'all',quality:'all',sort:'newest',page:1});loadDownloadedLibrary();};
   pageSizeSelect.onchange = () => { pageSize=Number(pageSizeSelect.value); downloadedUiState.pageSize=pageSize; localStorage.setItem('music-files-page-size',String(pageSize)); requestPage(1); };
@@ -2986,10 +2990,10 @@ function bindLibraryFilters(catalog) {
   controls.detailedGenre.value=[...controls.detailedGenre.options].some(item=>item.value===libraryUiState.detailedGenre)?libraryUiState.detailedGenre:'all';
   if(controls.detailedGenre.value==='all')libraryUiState.detailedGenre='all';
   fill(controls.preset,catalog.facets?.presets||[],'All effective presets'); fill(controls.key,catalog.facets?.keys||[],'All keys');
-  Object.entries(controls).forEach(([name,control])=>{if(name==='category'||name==='preset'||name==='key'||name==='role')return; control.value=libraryUiState[name]??control.value;});
+  Object.entries(controls).forEach(([name,control])=>{if(name==='category'||name==='preset'||name==='key'||name==='role')return;syncControlUnlessEditing(control,libraryUiState[name]??control.value);});
   $('#library-page-size').value=String(libraryUiState.pageSize); $('#library-key-display').value=libraryKeyMode();
   const request=(page=1)=>{libraryUiState.page=page;loadLibrary();};
-  controls.search.oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>{libraryUiState.search=controls.search.value.trim();request(1);},240);};
+  controls.search.oninput=()=>{captureTextFilter(controls.search,libraryUiState);clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>request(1),240);};
   Object.entries(controls).filter(([name])=>!['search','category'].includes(name)).forEach(([name,control])=>control.onchange=()=>{libraryUiState[name]=control.value;request(1);});
   controls.category.onchange=()=>{libraryUiState.category=controls.category.value;libraryUiState.detailedGenre='all';request(1);};
   [controls.bpmMin,controls.bpmMax].forEach(input=>input.oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>{libraryUiState.bpmMin=controls.bpmMin.value;libraryUiState.bpmMax=controls.bpmMax.value;request(1);},240);});
@@ -3374,8 +3378,13 @@ async function loadLibraryStatus() {
     $('#library-free-storage-detail').textContent=status.capacity_bytes?`of ${formatBytes(status.capacity_bytes)} drive capacity`:'Drive capacity unavailable';
     renderAudioQualitySummary(status.audio_quality);
     const integrity=status.location_integrity||{};const locationPanel=$('#library-location-integrity');const outside=Number(integrity.outside_count||0);locationPanel.hidden=!outside;$('#library-location-message').textContent=outside?`${outside} track${outside===1?' is':'s are'} stored outside ${integrity.configured_root}. Copy, verify, relink, then remove the old files.`:'';
-    const badge=$('#library-online-state');badge.textContent=status.online?'Library online':'Library offline';badge.className=`library-state ${status.online?'online':'offline'}`;
-    $('#library-offline-banner').hidden=status.online;document.body.classList.toggle('library-is-offline',!status.online);
+    const availability=libraryAvailabilityView(status);
+    const badge=$('#library-online-state');badge.textContent=availability.label;badge.className=`library-state ${availability.online?'online':'offline'}`;
+    $('#library-offline-banner').hidden=availability.bannerHidden;document.body.classList.toggle('library-is-offline',!availability.online);
+    if(availability.clearStaleErrors){
+      const errors=$('#downloaded-retag-errors');errors.hidden=true;errors.open=false;errors.querySelector('ul')?.replaceChildren();
+      $('#downloaded-rescan-message').textContent='Library reconnected · all cataloged tracks are available.';
+    }
     return status;
   } catch { $('#library-online-state').textContent='Status unavailable'; return null; }
   finally { libraryStatusRequest=null; }
