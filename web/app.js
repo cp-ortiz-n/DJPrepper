@@ -3412,7 +3412,7 @@ function renderRelocationState(state) {
   $('#relocation-detail').textContent=state.error||`${state.processed||0}${state.total?` of ${state.total}`:''}${state.original_retained?' · Original library retained':''}`;
   $('#relocation-start').hidden=!['planned','failed','canceled'].includes(state.status);$('#relocation-cancel').hidden=state.status!=='processing';
   $('#relocation-rollback').hidden=!(state.status==='complete'&&state.database_backup);
-  if(state.status==='processing'){clearTimeout(relocationPollTimer);relocationPollTimer=setTimeout(loadRelocationState,750);}else if(state.status==='complete'){loadLibraryStatus();loadConfig();downloadedLoadedAt=0;libraryLoadedAt=0;}
+  if(['processing','canceling'].includes(state.status)){clearTimeout(relocationPollTimer);relocationPollTimer=setTimeout(loadRelocationState,750);}else if(state.status==='complete'){loadLibraryStatus();loadConfig();downloadedLoadedAt=0;libraryLoadedAt=0;}
 }
 function resetRelocationUi(){clearTimeout(relocationPollTimer);$('#relocation-progress').hidden=true;$('#relocation-plan-summary').hidden=true;$('#relocation-plan-summary').replaceChildren();$('#relocation-stage').textContent='Preparing…';$('#relocation-percent').textContent='0%';$('#relocation-progress-bar').value=0;$('#relocation-detail').textContent='';$('#relocation-start').hidden=false;$('#relocation-cancel').hidden=false;$('#relocation-rollback').hidden=true;}
 async function loadRelocationState(){try{const response=await fetch('/api/settings/library-relocation',{cache:'no-store'});if(!response.ok)return;const state=await response.json();if(state.status==='canceled'){await fetch('/api/settings/library-relocation',{method:'DELETE'});resetRelocationUi();return;}renderRelocationState(state);}catch{} }

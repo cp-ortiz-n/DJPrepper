@@ -203,7 +203,15 @@ class LibraryRelocationCoordinator:
     def prepare(self, source: Path, destination: Path, mode: str, verification: str) -> dict:
         plan = self.planner.plan(source, destination, mode, verification)
         with self._lock:
-            self._state = {"id": uuid.uuid4().hex, "status": "planned", "stage": "Ready", "progress": 0, "created_at": _now(), **plan}
+            batch_id = uuid.uuid4().hex
+            self._state = {
+                "id": batch_id, "batch_id": batch_id, "kind": "library-relocation",
+                "status": "planned", "stage": "Ready", "progress": 0,
+                "processed": 0, "total": int(plan.get("file_count") or 0),
+                "succeeded": 0, "failed": 0, "skipped": 0,
+                "errors": [], "result": {}, "retryable": False,
+                "created_at": _now(), **plan,
+            }
             self._save()
             return dict(self._state)
 
@@ -211,7 +219,10 @@ class LibraryRelocationCoordinator:
         with self._lock:
             if self._state.get("status") not in {"planned", "failed", "canceled"}:
                 raise ValueError("No relocation plan is ready")
-            self._state.update(status="processing", stage="Starting", progress=0, error="")
+            self._state.update(
+                status="processing", stage="Starting", progress=0, error="",
+                errors=[], retryable=False,
+            )
             self._cancel.clear()
             self._save()
             snapshot = dict(self._state)
@@ -220,7 +231,11 @@ class LibraryRelocationCoordinator:
 
     def cancel(self) -> dict:
         self._cancel.set()
-        return self.status()
+        with self._lock:
+            if self._state.get("status") == "processing":
+                self._state.update(status="canceling", stage="Canceling safely")
+                self._save()
+            return dict(self._state)
 
     def reset(self) -> dict:
         """Discard a terminal plan so Settings returns to a clean form."""
@@ -288,13 +303,26 @@ class LibraryRelocationCoordinator:
                 backup = None
                 counts = {}
             with self._lock:
-                self._state.update(status="complete", stage="Relocation complete", progress=100, completed_at=_now(), database_backup=str(backup or ""), updated=counts, original_retained=True)
+                self._state.update(
+                    status="complete", stage="Relocation complete", progress=100,
+                    succeeded=int(state.get("track_count") or 0), failed=0,
+                    retryable=False, result={"updated": counts},
+                    completed_at=_now(), database_backup=str(backup or ""),
+                    updated=counts, original_retained=True,
+                )
                 self._save()
         except InterruptedError as error:
             with self._lock:
-                self._state.update(status="canceled", stage="Canceled safely", error=str(error))
+                self._state.update(
+                    status="canceled", stage="Canceled safely", error=str(error),
+                    retryable=True, errors=[{"error": str(error)}],
+                )
                 self._save()
         except Exception as error:
             with self._lock:
-                self._state.update(status="failed", stage="Relocation failed", error=str(error))
+                self._state.update(
+                    status="failed", stage="Relocation failed", error=str(error),
+                    failed=max(1, int(self._state.get("failed") or 0)),
+                    retryable=True, errors=[{"error": str(error)}],
+                )
                 self._save()

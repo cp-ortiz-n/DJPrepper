@@ -54,6 +54,7 @@ globals.
 | `web/job_media_routes.py` | Audio delivery, ZIP exports, waveforms, transition scoring, cue editing |
 | `web/library_routes.py` | Paginated DJ Library catalog and facets |
 | `web/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs |
+| `web/metadata_batch_routes.py` | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches |
 | `web/reporting_routes.py` | Track feedback and manual key verification |
 | `web/set_builder_routes.py` | Set Builder catalog, preflight, playlist exports |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
@@ -63,11 +64,16 @@ Router factories accept explicit dependencies. Wire new dependencies in
 `application.py`; never make a router import `application.py`. Repository
 providers are normally lambdas so tests can replace the active repository.
 
-### Remaining extraction boundary
+### Metadata mutation and batch boundary
 
-Genre rescanning, WAV retagging, and artwork synchronization still live in
-`application.py`. Extracting them into focused metadata-batch services and
-routers is the next planned architecture task in `BACKLOG.md`.
+`library/metadata_mutations.py` owns atomic propagation across WAV paths, tags,
+source sidecars, and catalog records. `web/metadata_batch_routes.py` owns the
+HTTP workflows for genre rescans, WAV tag synchronization, artwork updates, and
+catalog propagation. Every background metadata operation publishes the shared
+state model from `infrastructure/batch_operations.py`: progress, cancellation,
+retry lineage, counters, result, and structured errors. Library relocation uses
+the same state vocabulary while retaining its specialized copy/verify/rollback
+coordinator in `library/relocation.py`.
 
 ## Persistence
 

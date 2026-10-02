@@ -13,6 +13,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from audioextender.infrastructure.batch_operations import BatchContext, BatchOperationRegistry
+
 
 class IntegrityRepairRequest(BaseModel):
     action: Literal[
@@ -31,8 +33,7 @@ class LibraryMaintenanceDependencies:
     sync_wav_metadata: Callable[..., bool]
     probe_local_audio: Callable[[Path], dict]
     catalog_genre_category: Callable[[Path, str, str], str]
-    reconcile_batches: dict[str, dict]
-    reconcile_lock: threading.Lock
+    metadata_batches: BatchOperationRegistry
     catalog_migration_lock: threading.Lock
     integrity_batches: dict[str, dict]
     integrity_lock: threading.Lock
@@ -46,58 +47,25 @@ class LibraryMaintenanceService:
     def repository(self) -> Any:
         return self.dependencies.repository()
 
-    def run_catalog_reconcile(self, batch_id: str) -> None:
+    def run_catalog_reconcile(self, context: BatchContext, _items: list[object]) -> dict:
         def publish(result: dict[str, int]) -> None:
-            with self.dependencies.reconcile_lock:
-                self.dependencies.reconcile_batches[batch_id].update(
-                    result,
-                    stage=f"Checking source records {result['processed']} of {result['total']}",
-                )
+            context.check_canceled()
+            context.progress(
+                processed=result["processed"], total=result["total"],
+                stage=f"Checking source records {result['processed']} of {result['total']}",
+                counters={**result, "succeeded": int(result.get("updated") or 0)},
+            )
 
-        try:
-            with self.dependencies.catalog_migration_lock:
-                result = self.dependencies.migrate_catalog(incremental=True, progress=publish)
-            with self.dependencies.reconcile_lock:
-                self.dependencies.reconcile_batches[batch_id].update(
-                    result, status="complete", stage="File reconciliation complete"
-                )
-        except Exception as error:
-            with self.dependencies.reconcile_lock:
-                self.dependencies.reconcile_batches[batch_id].update(
-                    status="failed", stage="File reconciliation failed", error=str(error)
-                )
+        with self.dependencies.catalog_migration_lock:
+            result = self.dependencies.migrate_catalog(incremental=True, progress=publish)
+        return {**result, "stage": "File reconciliation complete"}
 
     def start_catalog_reconcile(self) -> dict:
         self.dependencies.require_library_online()
-        with self.dependencies.reconcile_lock:
-            active = next(
-                (
-                    dict(value)
-                    for value in self.dependencies.reconcile_batches.values()
-                    if value.get("status") == "processing"
-                ),
-                None,
-            )
-            if active:
-                return active
-            batch_id = uuid.uuid4().hex
-            self.dependencies.reconcile_batches[batch_id] = {
-                "batch_id": batch_id,
-                "status": "processing",
-                "stage": "Indexing source records",
-                "total": 0,
-                "processed": 0,
-                "updated": 0,
-                "skipped": 0,
-                "failed": 0,
-            }
-        threading.Thread(
-            target=self.run_catalog_reconcile,
-            args=(batch_id,),
-            daemon=True,
-            name=f"catalog-reconcile-{batch_id[:8]}",
-        ).start()
-        return dict(self.dependencies.reconcile_batches[batch_id])
+        return self.dependencies.metadata_batches.start(
+            "catalog-propagation", [None], self.run_catalog_reconcile,
+            stage="Indexing source records", counters={"updated": 0},
+        )
 
     def run_integrity_scan(self, batch_id: str) -> None:
         root = self.dependencies.music_library_root()
@@ -299,11 +267,10 @@ def create_library_maintenance_router(
 
     @router.get("/reconcile-files/{batch_id}")
     def catalog_reconcile_status(batch_id: str) -> dict:
-        with dependencies.reconcile_lock:
-            batch = dependencies.reconcile_batches.get(batch_id)
-            if not batch:
-                raise HTTPException(404, "File reconciliation was not found")
-            return dict(batch)
+        try:
+            return dependencies.metadata_batches.status(batch_id)
+        except KeyError as error:
+            raise HTTPException(404, "File reconciliation was not found") from error
 
     @router.post("/integrity-scan", status_code=202)
     def start_integrity_scan() -> dict:
