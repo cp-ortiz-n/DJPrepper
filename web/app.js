@@ -595,6 +595,31 @@ async function loadPerformanceDiagnostics() {
   }
 }
 
+function setNumericInputValue(selector, value) {
+  const input = $(selector);
+  const numeric = Number(value);
+  if (!input || value == null || value === '' || !Number.isFinite(numeric)) return;
+  const normalized = String(Math.round((numeric + Number.EPSILON) * 1_000_000) / 1_000_000);
+  input.value = normalized;
+  input.defaultValue = normalized;
+  input.setAttribute('value', normalized);
+  input.dataset.lastValidValue = normalized;
+}
+
+function settingNumber(selector, key) {
+  const input = $(selector);
+  const entered = input?.value?.trim();
+  const numeric = entered === '' ? Number.NaN : Number(entered);
+  if (Number.isFinite(numeric)) return numeric;
+  return Number(appConfig?.effective?.[key]);
+}
+
+function finiteNumericControlValue(input) {
+  if (!(input instanceof HTMLInputElement) || input.value.trim() === '') return null;
+  const value = Number(input.value);
+  return Number.isFinite(value) ? value : null;
+}
+
 function applyEffectiveSettings(values) {
   $('#setting-library-path').value = values.music_library_path || '';
   $('#preset').value = values.preset; $('#intro-bars').value = 'auto';
@@ -610,13 +635,13 @@ function applyEffectiveSettings(values) {
   $('#batch-auto-bars').checked = values.auto_bars;
   $('#batch-cues').checked = values.export_cues;
   $('#batch-candidate-count').value = values.candidate_count;
-  $('#batch-intro-search').value = values.intro_search_seconds;
-  $('#batch-outro-search').value = values.outro_search_seconds;
-  $('#batch-vocal-coverage').value = values.maximum_vocal_coverage_percent;
-  $('#batch-vocal-risk').value = values.maximum_vocal_boundary_risk_percent;
-  $('#batch-buildup-risk').value = values.maximum_buildup_risk_percent;
-  $('#batch-bass-risk').value = values.maximum_bass_reset_risk_percent;
-  $('#batch-stem-reliability').value = values.minimum_stem_reliability_percent;
+  setNumericInputValue('#batch-intro-search', values.intro_search_seconds);
+  setNumericInputValue('#batch-outro-search', values.outro_search_seconds);
+  setNumericInputValue('#batch-vocal-coverage', values.maximum_vocal_coverage_percent);
+  setNumericInputValue('#batch-vocal-risk', values.maximum_vocal_boundary_risk_percent);
+  setNumericInputValue('#batch-buildup-risk', values.maximum_buildup_risk_percent);
+  setNumericInputValue('#batch-bass-risk', values.maximum_bass_reset_risk_percent);
+  setNumericInputValue('#batch-stem-reliability', values.minimum_stem_reliability_percent);
   $('#workspace-default-summary').textContent = `${values.minimum_intro_loop_quality}%/${values.minimum_outro_loop_quality}% quality · max ${values.maximum_repetitions} copies · ${values.crossfade_ms} ms fade`;
   $('#setting-preset').value = values.preset; $('#setting-intro').value = values.intro_bars;
   $('#setting-outro').value = values.outro_bars; $('#setting-stems').checked = values.use_stems;
@@ -628,13 +653,20 @@ function applyEffectiveSettings(values) {
   $('#setting-repetitions').value = values.maximum_repetitions;
   $('#setting-crossfade').value = values.crossfade_ms;
   $('#setting-candidate-count').value = values.candidate_count;
-  $('#setting-intro-search').value = values.intro_search_seconds;
-  $('#setting-outro-search').value = values.outro_search_seconds;
-  $('#setting-vocal-coverage').value = values.maximum_vocal_coverage_percent;
-  $('#setting-vocal-risk').value = values.maximum_vocal_boundary_risk_percent;
-  $('#setting-buildup-risk').value = values.maximum_buildup_risk_percent;
-  $('#setting-bass-risk').value = values.maximum_bass_reset_risk_percent;
-  $('#setting-stem-reliability').value = values.minimum_stem_reliability_percent;
+  setNumericInputValue('#setting-intro-search', values.intro_search_seconds);
+  setNumericInputValue('#setting-outro-search', values.outro_search_seconds);
+  setNumericInputValue('#setting-vocal-coverage', values.maximum_vocal_coverage_percent);
+  setNumericInputValue('#setting-vocal-risk', values.maximum_vocal_boundary_risk_percent);
+  setNumericInputValue('#setting-buildup-risk', values.maximum_buildup_risk_percent);
+  setNumericInputValue('#setting-bass-risk', values.maximum_bass_reset_risk_percent);
+  setNumericInputValue('#setting-stem-reliability', values.minimum_stem_reliability_percent);
+  $('#settings-form').querySelectorAll('input[type="number"], input[data-numeric-setting]').forEach(input => {
+    if (finiteNumericControlValue(input) != null) {
+      input.defaultValue = input.value;
+      input.setAttribute('value', input.value);
+      input.dataset.lastValidValue = input.value;
+    }
+  });
   $('#setting-page-size').value = localStorage.getItem('music-files-page-size') || '50';
   $('#setting-key-display').value = libraryKeyMode();
 }
@@ -1930,7 +1962,9 @@ async function loadDownloadedLibrary() {
   pageSizeSelect.value = String(pageSize);
   let currentPage = paginationData.page;
   const search = $('#downloaded-search'); const analysisSelect = $('#downloaded-analysis'); const artworkSelect = $('#downloaded-artwork'); const qualitySelect=$('#downloaded-quality'); const sort = $('#downloaded-sort');
-  search.value = downloadedUiState.search;
+  // A response can finish while the user is still typing. Never replace the
+  // live edit with the query that produced that response.
+  if (document.activeElement !== search) search.value = downloadedUiState.search;
   genreSelect.value = [...genreSelect.options].some(item => item.value === downloadedUiState.genre) ? downloadedUiState.genre : 'all';
   detailedGenreSelect.value=[...detailedGenreSelect.options].some(item=>item.value===downloadedUiState.detailedGenre)?downloadedUiState.detailedGenre:'all';
   playlistSelect.value = [...playlistSelect.options].some(item => item.value === downloadedUiState.playlist) ? downloadedUiState.playlist : 'all';
@@ -2180,7 +2214,13 @@ async function loadDownloadedLibrary() {
   const requestPage = (page = 1) => { downloadedUiState.page = page; loadDownloadedLibrary(); };
   const syncFilters = () => { downloadedUiState.search=search.value.trim();downloadedUiState.genre=genreSelect.value;downloadedUiState.detailedGenre=detailedGenreSelect.value;downloadedUiState.playlist=playlistSelect.value; downloadedUiState.analysis=analysisSelect.value; downloadedUiState.artwork=artworkSelect.value; downloadedUiState.quality=qualitySelect.value; downloadedUiState.sort=sort.value; requestPage(1); };
   clearTimeout(downloadedSearchTimer);
-  search.oninput = () => { clearTimeout(downloadedSearchTimer); downloadedSearchTimer=setTimeout(syncFilters,220); };
+  search.oninput = () => {
+    // State must follow every keystroke. Only the API request is debounced;
+    // otherwise an earlier response can restore a partial query into the box.
+    downloadedUiState.search = search.value.trim();
+    clearTimeout(downloadedSearchTimer);
+    downloadedSearchTimer=setTimeout(syncFilters,220);
+  };
   genreSelect.onchange = () => {downloadedUiState.detailedGenre='all';detailedGenreSelect.value='all';syncFilters();}; detailedGenreSelect.onchange=syncFilters; playlistSelect.onchange = syncFilters; analysisSelect.onchange = syncFilters; artworkSelect.onchange = syncFilters; qualitySelect.onchange=syncFilters; sort.onchange = syncFilters;
   $('#downloaded-reset-filters').onclick=()=>{Object.assign(downloadedUiState,{search:'',genre:'all',detailedGenre:'all',playlist:'all',analysis:'all',artwork:'all',quality:'all',sort:'newest',page:1});loadDownloadedLibrary();};
   pageSizeSelect.onchange = () => { pageSize=Number(pageSizeSelect.value); downloadedUiState.pageSize=pageSize; localStorage.setItem('music-files-page-size',String(pageSize)); requestPage(1); };
@@ -2986,13 +3026,17 @@ function bindLibraryFilters(catalog) {
   controls.detailedGenre.value=[...controls.detailedGenre.options].some(item=>item.value===libraryUiState.detailedGenre)?libraryUiState.detailedGenre:'all';
   if(controls.detailedGenre.value==='all')libraryUiState.detailedGenre='all';
   fill(controls.preset,catalog.facets?.presets||[],'All effective presets'); fill(controls.key,catalog.facets?.keys||[],'All keys');
-  Object.entries(controls).forEach(([name,control])=>{if(name==='category'||name==='preset'||name==='key'||name==='role')return; control.value=libraryUiState[name]??control.value;});
+  Object.entries(controls).forEach(([name,control])=>{if(name==='category'||name==='preset'||name==='key'||name==='role')return;if(document.activeElement===control)return;control.value=libraryUiState[name]??control.value;});
   $('#library-page-size').value=String(libraryUiState.pageSize); $('#library-key-display').value=libraryKeyMode();
   const request=(page=1)=>{libraryUiState.page=page;loadLibrary();};
-  controls.search.oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>{libraryUiState.search=controls.search.value.trim();request(1);},240);};
+  controls.search.oninput=()=>{
+    libraryUiState.search=controls.search.value.trim();
+    clearTimeout(librarySearchTimer);
+    librarySearchTimer=setTimeout(()=>request(1),240);
+  };
   Object.entries(controls).filter(([name])=>!['search','category'].includes(name)).forEach(([name,control])=>control.onchange=()=>{libraryUiState[name]=control.value;request(1);});
   controls.category.onchange=()=>{libraryUiState.category=controls.category.value;libraryUiState.detailedGenre='all';request(1);};
-  [controls.bpmMin,controls.bpmMax].forEach(input=>input.oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>{libraryUiState.bpmMin=controls.bpmMin.value;libraryUiState.bpmMax=controls.bpmMax.value;request(1);},240);});
+  [controls.bpmMin,controls.bpmMax].forEach(input=>input.oninput=()=>{libraryUiState.bpmMin=controls.bpmMin.value;libraryUiState.bpmMax=controls.bpmMax.value;clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>request(1),240);});
   $('#library-page-size').onchange=event=>{libraryUiState.pageSize=Number(event.target.value);localStorage.setItem('dj-library-page-size',String(libraryUiState.pageSize));request(1);};
   $('#library-key-display').onchange=event=>{localStorage.setItem('audioextender-key-view',event.target.value);document.querySelectorAll('.library-key-value').forEach(node=>node.textContent=formatLibraryKey(node.dataset.standard,event.target.value));};
   const resetLibraryFilters=()=>{Object.assign(libraryUiState,{search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1});loadLibrary();};
@@ -3298,13 +3342,13 @@ $('#settings-form').addEventListener('submit', async event => {
     maximum_repetitions: Number($('#setting-repetitions').value),
     crossfade_ms: Number($('#setting-crossfade').value),
     candidate_count: Number($('#setting-candidate-count').value),
-    intro_search_seconds: Number($('#setting-intro-search').value),
-    outro_search_seconds: Number($('#setting-outro-search').value),
-    maximum_vocal_coverage_percent: Number($('#setting-vocal-coverage').value),
-    maximum_vocal_boundary_risk_percent: Number($('#setting-vocal-risk').value),
-    maximum_buildup_risk_percent: Number($('#setting-buildup-risk').value),
-    maximum_bass_reset_risk_percent: Number($('#setting-bass-risk').value),
-    minimum_stem_reliability_percent: Number($('#setting-stem-reliability').value),
+    intro_search_seconds: settingNumber('#setting-intro-search', 'intro_search_seconds'),
+    outro_search_seconds: settingNumber('#setting-outro-search', 'outro_search_seconds'),
+    maximum_vocal_coverage_percent: settingNumber('#setting-vocal-coverage', 'maximum_vocal_coverage_percent'),
+    maximum_vocal_boundary_risk_percent: settingNumber('#setting-vocal-risk', 'maximum_vocal_boundary_risk_percent'),
+    maximum_buildup_risk_percent: settingNumber('#setting-buildup-risk', 'maximum_buildup_risk_percent'),
+    maximum_bass_reset_risk_percent: settingNumber('#setting-bass-risk', 'maximum_bass_reset_risk_percent'),
+    minimum_stem_reliability_percent: settingNumber('#setting-stem-reliability', 'minimum_stem_reliability_percent'),
   };
   const response = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(values) });
   const payload = await response.json();
@@ -3318,7 +3362,15 @@ $('#settings-form').addEventListener('submit', async event => {
   if ($('#library-page-size')) $('#library-page-size').value = pageSize;
   if ($('#library-key-display')) $('#library-key-display').value = $('#setting-key-display').value;
   appConfig.effective = payload.effective; appConfig.overrides = payload.overrides;
-  applyEffectiveSettings(payload.effective);
+  // Keep the user's submitted controls intact. Reapplying the entire settings
+  // payload here causes WebKit number inputs to visually clear after submit.
+  requiredSettingNumbers.forEach(input => {
+    if (finiteNumericControlValue(input) != null) {
+      input.defaultValue = input.value;
+      input.setAttribute('value', input.value);
+      input.dataset.lastValidValue = input.value;
+    }
+  });
   $('#settings-form').classList.remove('is-dirty');
   $('#settings-message').textContent = 'Settings saved · checking the music library…';
   libraryStatusRequest=null;
@@ -3337,6 +3389,34 @@ $('#settings-form').addEventListener('submit', async event => {
 $('#settings-form').addEventListener('input', () => {
   $('#settings-form').classList.add('is-dirty');
   $('#settings-message').textContent = 'Unsaved changes';
+});
+
+const requiredSettingNumbers = [...$('#settings-form').querySelectorAll('input[type="number"], input[data-numeric-setting]')];
+$('#settings-form').addEventListener('reset', event => event.preventDefault());
+$('#settings-form').addEventListener('keydown', event => {
+  if (event.key !== 'Enter' || !(event.target instanceof HTMLInputElement)) return;
+  event.preventDefault();
+  const fields = [...$('#settings-form').querySelectorAll('input:not([type="checkbox"]), select')]
+    .filter(field => !field.disabled && !field.hidden);
+  const next = fields[fields.indexOf(event.target) + 1];
+  next?.focus();
+});
+$('#settings-form').addEventListener('input', event => {
+  const active = event.target;
+  if (finiteNumericControlValue(active) != null && (active.type === 'number' || active.matches('[data-numeric-setting]'))) {
+    active.dataset.lastValidValue = active.value;
+  }
+  queueMicrotask(() => requiredSettingNumbers.forEach(input => {
+    if (input === active || input.value !== '') return;
+    const fallback = input.dataset.lastValidValue;
+    if (fallback != null && fallback !== '') input.value = fallback;
+  }));
+});
+$('#settings-form').addEventListener('focusout', event => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || (input.type !== 'number' && !input.matches('[data-numeric-setting]')) || input.value !== '') return;
+  const fallback = input.dataset.lastValidValue;
+  if (fallback != null && fallback !== '') input.value = fallback;
 });
 
 $('#reset-settings').addEventListener('click', async () => {
