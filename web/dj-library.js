@@ -17,6 +17,18 @@ export function createLibraryUiState(pageSize = Number(localStorage.getItem('dj-
   return {search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1,pageSize};
 }
 
+export function libraryQuery(state) {
+  const parameters=new URLSearchParams({
+    page:String(state.page),page_size:String(state.pageSize),search:state.search,
+    role:state.role,category:state.category,detailed_genre:state.detailedGenre,
+    preset:state.preset,sort:state.sort,result:state.result,quality:state.quality,
+    key:state.key,energy:state.energy,vocals:state.vocals,timing:state.timing,
+  });
+  if(state.bpmMin)parameters.set('bpm_min',state.bpmMin);
+  if(state.bpmMax)parameters.set('bpm_max',state.bpmMax);
+  return parameters;
+}
+
 export function libraryRoles(song) {
   if (Array.isArray(song._roles) && song._roles.length) return song._roles;
   const style = String(song.detected_style || '').toLowerCase();

@@ -12,6 +12,7 @@ const library = await import('../web/dj-library.js');
 const setBuilder = await import('../web/set-builder.js');
 const settings = await import('../web/settings.js');
 const shared = await import('../web/shared-components.js');
+const requests = await import('../web/request-state-controller.js');
 
 test('Music Files owns filter state and API serialization', () => {
   const state = musicFiles.createMusicFilesUiState(25);
@@ -77,4 +78,14 @@ test('focused search keeps every character while an older response renders', () 
   shared.syncControlUnlessEditing(input, 'abcdef', input);
   assert.equal(input.value, 'abcdefghijklmnopqrstuvwxyz1234567890');
   assert.equal(state.search, 'abcdefghijklmnopqrstuvwxyz1234567890');
+});
+
+test('shared request controller resets pagination when filters change', () => {
+  const state={search:'',page:7};
+  const controller=requests.createRequestStateController({
+    namespace:'test',state,defaults:{search:'',page:1},
+    storage:{getItem:()=>null,setItem:()=>{}},location:null,history:null,
+  });
+  controller.update({search:'all characters 123'});
+  assert.deepEqual(state,{search:'all characters 123',page:1});
 });

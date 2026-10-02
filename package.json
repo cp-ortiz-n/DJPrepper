@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check web/app.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/settings.js && node --check web/import-queue.js && node --test tests/*.test.js"
+    "check": "node --check web/app.js && node --check web/request-state-controller.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/settings.js && node --check web/import-queue.js && node --test tests/*.test.js"
   },
   "repository": {
     "type": "git",

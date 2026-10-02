@@ -5,8 +5,9 @@ import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
 import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, escapeHtml, fraction, notify, option, pct, renderTrackPagination, reportDate, syncControlUnlessEditing} from './shared-components.js';
 import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
-import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js';
+import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js';
 import {createMusicFilesUiState, musicFilesQuery} from './music-files.js';
+import {createRequestStateController} from './request-state-controller.js';
 import {SET_PROPOSAL_STRATEGIES, SET_STORAGE_KEY, createSetBuilderState, setTrackDetailedGenres, setTrackId, targetSetEnergy, trackMatchesSetDetailedGenre, trackMatchesSetGenre} from './set-builder.js';
 import {createSettingsController, libraryAvailabilityView} from './settings.js';
 
@@ -194,15 +195,11 @@ let transitionEditorSurfaces = [];
 const transitionWaveCache = new Map();
 const downloadedUiState = createMusicFilesUiState();
 const downloadedSelection = new Map();
-let downloadedLoadSequence = 0;
-let downloadedSearchTimer = null;
-let downloadedRequestController = null;
 let downloadedLoadedAt = 0;
 let libraryLoadedAt = 0;
-let librarySearchTimer = null;
 const libraryUiState = createLibraryUiState();
-let libraryLoadSequence = 0;
-let libraryRequestController = null;
+const downloadedRequestState=createRequestStateController({namespace:'music',state:downloadedUiState,defaults:createMusicFilesUiState(downloadedUiState.pageSize),debounceMs:220,onLoading:loading=>$('#downloads-view')?.classList.toggle('view-refreshing',loading)});
+const libraryRequestState=createRequestStateController({namespace:'dj',state:libraryUiState,defaults:createLibraryUiState(libraryUiState.pageSize),debounceMs:240,onLoading:loading=>$('#library-view')?.classList.toggle('view-refreshing',loading)});
 let pendingMetadataReview = null;
 const VIEW_CACHE_MS = 30000;
 const backgroundTasks = new Map();
@@ -1814,29 +1811,19 @@ function libraryReprocessForm(job, config) {
 }
 
 async function loadDownloadedLibrary() {
-  const sequence = ++downloadedLoadSequence;
-  downloadedRequestController?.abort();
-  downloadedRequestController = new AbortController();
-  const view = $('#downloads-view');
-  view.classList.add('view-refreshing');
   const parameters = musicFilesQuery(downloadedUiState);
-  let payload;
   try {
-    const response = await fetch(`/api/downloaded-library?${parameters}`, {cache:'no-store',signal:downloadedRequestController.signal});
-    if (!response.ok) throw new Error('Music Files could not be loaded.');
-    payload = await response.json();
+    const result=await downloadedRequestState.request(`/api/downloaded-library?${parameters}`,{errorMessage:'Music Files could not be loaded.'});
+    if(result.status!=='applied')return;
+    var payload=result.payload;
   } catch (error) {
-    if (error.name === 'AbortError') return;
     throw error;
-  } finally {
-    if (sequence === downloadedLoadSequence) view.classList.remove('view-refreshing');
   }
-  if (sequence !== downloadedLoadSequence) return;
   downloadedLoadedAt = Date.now();
   const tracks = payload.tracks || [];
   const paginationData = payload.pagination || {page:1,page_size:50,filtered_total:tracks.length,catalog_total:tracks.length,total_pages:1};
   const analyzableTotal = Number(paginationData.analyzable_total || 0);
-  downloadedUiState.page = paginationData.page;
+  downloadedRequestState.setPage(paginationData.page);
   const root = $('#downloaded-list');
   if (compactAudioIsWithin('#downloaded-list')) stopCompactAudio();
   const summary = $('#downloaded-summary');
@@ -2177,17 +2164,15 @@ async function loadDownloadedLibrary() {
     if(downloadedSelection.has(Number(track.id)))downloadedSelection.set(Number(track.id),track);
     libraryLoadedAt=0;refreshSelection();return true;
   };
-  const requestPage = (page = 1) => { downloadedUiState.page = page; loadDownloadedLibrary(); };
+  const requestPage = (page = 1) => { downloadedRequestState.setPage(page); loadDownloadedLibrary(); };
   const syncFilters = () => { downloadedUiState.search=search.value.trim();downloadedUiState.genre=genreSelect.value;downloadedUiState.detailedGenre=detailedGenreSelect.value;downloadedUiState.playlist=playlistSelect.value; downloadedUiState.analysis=analysisSelect.value; downloadedUiState.artwork=artworkSelect.value; downloadedUiState.quality=qualitySelect.value; downloadedUiState.sort=sort.value; requestPage(1); };
-  clearTimeout(downloadedSearchTimer);
   search.oninput = () => {
     captureTextFilter(search, downloadedUiState);
-    clearTimeout(downloadedSearchTimer);
-    downloadedSearchTimer=setTimeout(syncFilters,220);
+    downloadedRequestState.debounce(syncFilters);
   };
   genreSelect.onchange = () => {downloadedUiState.detailedGenre='all';detailedGenreSelect.value='all';syncFilters();}; detailedGenreSelect.onchange=syncFilters; playlistSelect.onchange = syncFilters; analysisSelect.onchange = syncFilters; artworkSelect.onchange = syncFilters; qualitySelect.onchange=syncFilters; sort.onchange = syncFilters;
-  $('#downloaded-reset-filters').onclick=()=>{Object.assign(downloadedUiState,{search:'',genre:'all',detailedGenre:'all',playlist:'all',analysis:'all',artwork:'all',quality:'all',sort:'newest',page:1});loadDownloadedLibrary();};
-  pageSizeSelect.onchange = () => { pageSize=Number(pageSizeSelect.value); downloadedUiState.pageSize=pageSize; localStorage.setItem('music-files-page-size',String(pageSize)); requestPage(1); };
+  $('#downloaded-reset-filters').onclick=()=>{downloadedRequestState.reset();loadDownloadedLibrary();};
+  pageSizeSelect.onchange = () => { pageSize=Number(pageSizeSelect.value); downloadedRequestState.update({pageSize},{resetPage:true}); localStorage.setItem('music-files-page-size',String(pageSize)); loadDownloadedLibrary(); };
   cards.forEach((card,index) => card.querySelector('input').onchange = event => { const track=tracks[index]; if (event.currentTarget.checked) downloadedSelection.set(Number(track.id),track); else downloadedSelection.delete(Number(track.id)); refreshSelection(); });
   cards.forEach(card => card.onclick = event => {
     if (!downloadedSelection.size) return;
@@ -2207,7 +2192,7 @@ async function loadDownloadedLibrary() {
   });
   selectAll.onchange = () => { cards.forEach((card,index) => { const checkbox=card.querySelector('input'); checkbox.checked=selectAll.checked; if (selectAll.checked) downloadedSelection.set(Number(tracks[index].id),tracks[index]); else downloadedSelection.delete(Number(tracks[index].id)); }); refreshSelection(); };
   clearSelection.onclick=()=>{downloadedSelection.clear();cards.forEach(card=>{card.querySelector('.downloaded-check input').checked=false;});refreshSelection();};
-  const changePage = page => { downloadedUiState.page=page; loadDownloadedLibrary(); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth',block:'start'}); };
+  const changePage = page => { downloadedRequestState.setPage(page); loadDownloadedLibrary(); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth',block:'start'}); };
   renderTrackPagination(pagination,currentPage,paginationData.total_pages,paginationData.filtered_total,changePage);
   renderTrackPagination(paginationTop,currentPage,paginationData.total_pages,paginationData.filtered_total,changePage);
   summary.querySelectorAll('.filter-downloaded-genre').forEach(button => button.classList.toggle('active',button.dataset.value===genreSelect.value));
@@ -2714,29 +2699,17 @@ function renderLibraryIntelligence(songs, latestByName) {
 }
 
 async function loadLibrary() {
-  const view = $('#library-view');
-  view.classList.add('view-refreshing');
   let catalog;
-  const sequence = ++libraryLoadSequence;
-  libraryRequestController?.abort();
-  libraryRequestController = new AbortController();
   try {
-    const parameters = new URLSearchParams({page:String(libraryUiState.page),page_size:String(libraryUiState.pageSize),search:libraryUiState.search,role:libraryUiState.role,category:libraryUiState.category,detailed_genre:libraryUiState.detailedGenre,preset:libraryUiState.preset,sort:libraryUiState.sort,result:libraryUiState.result,quality:libraryUiState.quality,key:libraryUiState.key,energy:libraryUiState.energy,vocals:libraryUiState.vocals,timing:libraryUiState.timing});
-    if(libraryUiState.bpmMin)parameters.set('bpm_min',libraryUiState.bpmMin);
-    if(libraryUiState.bpmMax)parameters.set('bpm_max',libraryUiState.bpmMax);
-    const response = await fetch(`/api/library/catalog?${parameters}`, {cache:'no-store',signal:libraryRequestController.signal});
-    if (!response.ok) throw new Error('DJ Library could not be loaded.');
-    catalog = await response.json();
-    if(sequence!==libraryLoadSequence)return;
-    libraryUiState.page=Number(catalog.page||1);
+    const result=await libraryRequestState.request(`/api/library/catalog?${libraryQuery(libraryUiState)}`,{errorMessage:'DJ Library could not be loaded.'});
+    if(result.status!=='applied')return;
+    catalog=result.payload;
+    libraryRequestState.setPage(Number(catalog.page||1));
     libraryLoadedAt = Date.now();
   } catch(error) {
-    if(error.name==='AbortError')return;
     $('#library-list').innerHTML=`<div class="empty danger-text">${escapeHtml(error.message||'DJ Library could not be loaded.')} <button type="button" class="button secondary library-retry">Retry</button></div>`;
     $('#library-list .library-retry')?.addEventListener('click',loadLibrary);
     return;
-  } finally {
-    if(sequence===libraryLoadSequence)view.classList.remove('view-refreshing');
   }
   const allJobs = (catalog.tracks || []).map(track => track.job);
   const report = {songs:Object.fromEntries((catalog.tracks || []).map((track,index) => [index, track.analysis || {}]))};
@@ -2992,17 +2965,17 @@ function bindLibraryFilters(catalog) {
   fill(controls.preset,catalog.facets?.presets||[],'All effective presets'); fill(controls.key,catalog.facets?.keys||[],'All keys');
   Object.entries(controls).forEach(([name,control])=>{if(name==='category'||name==='preset'||name==='key'||name==='role')return;syncControlUnlessEditing(control,libraryUiState[name]??control.value);});
   $('#library-page-size').value=String(libraryUiState.pageSize); $('#library-key-display').value=libraryKeyMode();
-  const request=(page=1)=>{libraryUiState.page=page;loadLibrary();};
-  controls.search.oninput=()=>{captureTextFilter(controls.search,libraryUiState);clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>request(1),240);};
+  const request=(page=1)=>{libraryRequestState.setPage(page);loadLibrary();};
+  controls.search.oninput=()=>{captureTextFilter(controls.search,libraryUiState);libraryRequestState.debounce(()=>request(1));};
   Object.entries(controls).filter(([name])=>!['search','category'].includes(name)).forEach(([name,control])=>control.onchange=()=>{libraryUiState[name]=control.value;request(1);});
   controls.category.onchange=()=>{libraryUiState.category=controls.category.value;libraryUiState.detailedGenre='all';request(1);};
-  [controls.bpmMin,controls.bpmMax].forEach(input=>input.oninput=()=>{clearTimeout(librarySearchTimer);librarySearchTimer=setTimeout(()=>{libraryUiState.bpmMin=controls.bpmMin.value;libraryUiState.bpmMax=controls.bpmMax.value;request(1);},240);});
-  $('#library-page-size').onchange=event=>{libraryUiState.pageSize=Number(event.target.value);localStorage.setItem('dj-library-page-size',String(libraryUiState.pageSize));request(1);};
+  [controls.bpmMin,controls.bpmMax].forEach(input=>input.oninput=()=>{libraryRequestState.debounce(()=>{libraryRequestState.update({bpmMin:controls.bpmMin.value,bpmMax:controls.bpmMax.value});loadLibrary();});});
+  $('#library-page-size').onchange=event=>{libraryRequestState.update({pageSize:Number(event.target.value)});localStorage.setItem('dj-library-page-size',String(libraryUiState.pageSize));loadLibrary();};
   $('#library-key-display').onchange=event=>{localStorage.setItem('audioextender-key-view',event.target.value);document.querySelectorAll('.library-key-value').forEach(node=>node.textContent=formatLibraryKey(node.dataset.standard,event.target.value));};
-  const resetLibraryFilters=()=>{Object.assign(libraryUiState,{search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1});loadLibrary();};
+  const resetLibraryFilters=()=>{libraryRequestState.reset();loadLibrary();};
   $('#library-reset-filters').onclick=resetLibraryFilters;
   $('#library-reset-filters-top').onclick=resetLibraryFilters;
-  const changePage=page=>{libraryUiState.page=page;loadLibrary();document.querySelector('.library-toolbar').scrollIntoView({behavior:'smooth',block:'start'});};
+  const changePage=page=>{libraryRequestState.setPage(page);loadLibrary();document.querySelector('.library-toolbar').scrollIntoView({behavior:'smooth',block:'start'});};
   renderTrackPagination($('#library-pagination'),catalog.page,catalog.total_pages,catalog.filtered_total,changePage);
   renderTrackPagination($('#library-pagination-top'),catalog.page,catalog.total_pages,catalog.filtered_total,changePage);
   $('#library-filter-count').textContent=`${catalog.filtered_total} of ${catalog.total} tracks${catalog.total_pages>1?` · page ${catalog.page}/${catalog.total_pages}`:''}`;

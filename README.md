@@ -325,6 +325,7 @@ Use this table before searching through the larger composition files:
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
 | Set Builder UI | `web/set-builder.js` and `web/styles.css` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
+| Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
 
 `web_app.py` is only a compatibility launcher. The server is composed in

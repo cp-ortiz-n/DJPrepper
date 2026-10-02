@@ -64,6 +64,15 @@ Router factories accept explicit dependencies. Wire new dependencies in
 `application.py`; never make a router import `application.py`. Repository
 providers are normally lambdas so tests can replace the active repository.
 
+## Browser request state
+
+Music Files and DJ Library use `web/request-state-controller.js` for catalog
+request ownership. The controller provides debouncing, `AbortController`
+cancellation, sequence-based stale-response rejection, pagination resets,
+loading state, and namespaced URL/session persistence. Page-specific modules
+still own their filter fields and API query serialization; they must not add a
+second request sequence, debounce timer, or request controller in `web/app.js`.
+
 ### Metadata mutation and batch boundary
 
 `library/metadata_mutations.py` owns atomic propagation across WAV paths, tags,
