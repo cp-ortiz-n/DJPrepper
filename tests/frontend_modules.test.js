@@ -65,6 +65,12 @@ test('library reconnect hides offline state and clears stale errors', () => {
   });
 });
 
+test('library availability keeps verify disabled until the drive is connected', () => {
+  assert.equal(settings.libraryAvailabilityView({online:false}).online,false);
+  assert.equal(settings.libraryAvailabilityView({online:true,offline_tracks:2}).clearStaleErrors,false);
+  assert.equal(settings.libraryAvailabilityView({online:true,offline_tracks:0}).clearStaleErrors,true);
+});
+
 test('focused search keeps every character while an older response renders', () => {
   const input = {value:'abcdef'};
   const state = {search:'abc'};
@@ -78,6 +84,19 @@ test('focused search keeps every character while an older response renders', () 
   shared.syncControlUnlessEditing(input, 'abcdef', input);
   assert.equal(input.value, 'abcdefghijklmnopqrstuvwxyz1234567890');
   assert.equal(state.search, 'abcdefghijklmnopqrstuvwxyz1234567890');
+});
+
+test('operation receipts expose requested, changed, written, failed, and restart facts', () => {
+  const text = shared.operationReceiptText({
+    requested:{summary:'Save settings'}, changed:{summary:'Changed 2 settings'},
+    written_to:['/tmp/settings.sqlite3'], failures:[], survives_restart:true,
+    durability:'Stored in SQLite.',
+  });
+  assert.match(text, /Requested: Save settings/);
+  assert.match(text, /Changed: Changed 2 settings/);
+  assert.match(text, /Written to: \/tmp\/settings.sqlite3/);
+  assert.match(text, /Failed: 0/);
+  assert.match(text, /Survives restart: Yes/);
 });
 
 test('shared request controller resets pagination when filters change', () => {

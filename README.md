@@ -320,6 +320,7 @@ Use this table before searching through the larger composition files:
 | Integrity scan, catalog reconciliation, or repair | `web/library_maintenance_routes.py` |
 | Bulk genre, WAV-tag, artwork, or catalog propagation | `web/metadata_batch_routes.py`, `library/metadata_mutations.py` |
 | Settings, storage, backup, or relocation | `web/settings_routes.py` and `audioextender/library/` |
+| Library health and post-reconnect verification | `web/settings_routes.py` (`/api/settings/library-health`) |
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
@@ -364,6 +365,12 @@ Downloaded-library metadata batches share one lifecycle in
 so progress, cancellation, retry, results, and structured errors remain
 consistent with genre, WAV-tag, artwork, catalog-propagation, and relocation
 operations.
+
+Mutation APIs return an operation `receipt` with five user-facing facts: what
+was requested, what changed, where data was written, what failed, and whether
+the result survives restart. Use `core/operation_feedback.py` for new saves and
+the batch registry for new background work; do not invent route-specific
+success strings that can drift from the actual result.
 
 ### Architecture boundaries
 

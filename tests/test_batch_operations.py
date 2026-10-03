@@ -41,6 +41,10 @@ class BatchOperationRegistryTests(unittest.TestCase):
         self.assertEqual(result["result"], {"updated": 1})
         self.assertTrue(result["retryable"])
         self.assertEqual(result["stage"], "Metadata complete")
+        self.assertEqual(result["receipt"]["requested"]["count"], 2)
+        self.assertEqual(result["receipt"]["changed"]["count"], 1)
+        self.assertEqual(len(result["receipt"]["failures"]), 1)
+        self.assertTrue(result["receipt"]["survives_restart"])
 
 
     def test_batch_cancel_is_cooperative_and_retry_keeps_the_original_link(self) -> None:

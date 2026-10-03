@@ -9,6 +9,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Any, Literal
@@ -17,6 +18,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from audioextender.core.operation_feedback import operation_receipt
 from audioextender.infrastructure.cache import AnalysisCache
 from audioextender.library.backup import LibraryBackupService
 from settings import (
@@ -107,6 +109,7 @@ class SettingsRouteDependencies:
     library_location_summary: Callable[[], dict[str, Any]]
     source_metadata_path: Callable[[Path], Path]
     refresh_wav_tag_audit: Callable[[], None]
+    metadata_batches: Any
     library_status_cache: dict[str, Any]
     library_status_lock: Any
     storage_inventory_cache: dict[str, Any]
@@ -129,7 +132,7 @@ class SettingsRouteService:
         except OSError:
             return 0
 
-    def library_status(self) -> dict[str, Any]:
+    def library_status(self, refresh: bool = False) -> dict[str, Any]:
         deps = self.dependencies
         now = perf_counter()
         with deps.library_status_lock:
@@ -137,7 +140,8 @@ class SettingsRouteService:
             cached = deps.library_status_cache.get("payload")
             mount_changed = cached is not None and bool(cached.get("online")) != root.is_dir()
             if (
-                cached is not None
+                not refresh
+                and cached is not None
                 and not mount_changed
                 and now < float(deps.library_status_cache["expires_at"])
             ):
@@ -204,6 +208,90 @@ class SettingsRouteService:
             }
             deps.library_status_cache.update(payload=payload, expires_at=now + 60.0)
             return payload
+
+    def library_health(self, *, refresh: bool = False) -> dict[str, Any]:
+        deps = self.dependencies
+        status = self.library_status(refresh=refresh)
+        storage = self.public_inventory(self.storage_inventory(refresh=refresh))
+        active = []
+        failed_operations: list[dict[str, Any]] = []
+        for kind in ("wav-tags", "artwork", "genre-rescan", "catalog-propagation"):
+            batch = deps.metadata_batches.latest(kind)
+            if not batch:
+                continue
+            if batch.get("status") in {"pending", "processing", "canceling"}:
+                active.append(
+                    {
+                        "kind": kind,
+                        "batch_id": batch.get("batch_id"),
+                        "status": batch.get("status"),
+                        "remaining": max(
+                            0,
+                            int(batch.get("total") or 0) - int(batch.get("processed") or 0),
+                        ),
+                    }
+                )
+            if kind not in {"wav-tags", "artwork"}:
+                continue
+            errors = list(batch.get("errors") or [])
+            if kind == "wav-tags":
+                errors = [
+                    item
+                    for item in errors
+                    if not item.get("path") or not Path(str(item["path"])).is_file()
+                ]
+            if errors:
+                failed_operations.append(
+                    {
+                        "kind": kind,
+                        "batch_id": batch.get("batch_id"),
+                        "count": len(errors),
+                        "errors": errors[:10],
+                    }
+                )
+        location = status.get("location_integrity") or {}
+        missing = int(status.get("offline_tracks") or 0)
+        outside = int(location.get("outside_count") or 0)
+        pending = sum(int(item["remaining"]) for item in active)
+        failed = sum(int(item["count"]) for item in failed_operations)
+        return {
+            "configured_folder": status.get("path"),
+            "online": bool(status.get("online")),
+            "connection": "connected" if status.get("online") else "disconnected",
+            "cataloged_tracks": int(status.get("cataloged_tracks") or 0),
+            "available_tracks": int(status.get("available_tracks") or 0),
+            "outside_folder": outside,
+            "missing_files": missing,
+            "pending_metadata_writes": pending,
+            "active_operations": active,
+            "failed_metadata_operations": failed,
+            "failed_operations": failed_operations,
+            "storage": {
+                "song_bytes": int(status.get("song_bytes") or 0),
+                "supporting_bytes": int(status.get("supporting_bytes") or 0),
+                "total_bytes": int(status.get("total_bytes") or 0),
+                "free_bytes": int(status.get("free_bytes") or 0),
+                "capacity_bytes": int(status.get("capacity_bytes") or 0),
+                "reclaimable_bytes": int(storage.get("reclaimable_bytes") or 0),
+            },
+            "audio_quality": status.get("audio_quality") or {},
+            "verified": bool(status.get("online")) and not missing,
+        }
+
+    def verify_library(self) -> dict[str, Any]:
+        deps = self.dependencies
+        root = deps.music_library_root()
+        if not root.is_dir():
+            raise HTTPException(409, f"Connect the configured library drive first: {root}")
+        deps.repository().refresh_missing_audio_fingerprints()
+        deps.refresh_wav_tag_audit()
+        with deps.library_status_lock:
+            deps.library_status_cache.update(payload=None, expires_at=0.0)
+        with deps.storage_inventory_lock:
+            deps.storage_inventory_cache.update(payload=None, expires_at=0.0)
+        deps.catalog_cache.clear()
+        health = self.library_health(refresh=True)
+        return {**health, "verified_at": datetime.now(timezone.utc).isoformat()}
 
     def _inventory_signature(self) -> list[list[object]]:
         deps = self.dependencies
@@ -380,6 +468,7 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
 
     @router.put("/api/settings")
     def save_settings(settings: WebSettings) -> dict:
+        before = deps.effective_settings()
         values = settings.model_dump()
         try:
             root = Path(values["music_library_path"].strip()).expanduser()
@@ -404,20 +493,58 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
             deps.library_status_cache.update(payload=None, expires_at=0.0)
         if Path(values["music_library_path"]).is_dir():
             deps.refresh_wav_tag_audit()
+        effective = deps.effective_settings()
+        changed_keys = [key for key, value in effective.items() if before.get(key) != value]
         return {
             "defaults": deps.defaults,
-            "effective": deps.effective_settings(),
+            "effective": effective,
             "overrides": overrides,
+            "receipt": operation_receipt(
+                operation="save-settings",
+                requested=f"Save {len(values)} application settings",
+                requested_count=len(values),
+                changed=(
+                    f"Changed {len(changed_keys)} setting{'s' if len(changed_keys) != 1 else ''}: "
+                    + (", ".join(changed_keys) if changed_keys else "none")
+                ),
+                changed_count=len(changed_keys),
+                written_to=[str(getattr(deps.repository(), "path", deps.database))],
+                survives_restart=True,
+                durability="Saved in the application database and loaded again after restart.",
+            ),
         }
 
     @router.delete("/api/settings")
     def reset_settings() -> dict:
+        before = deps.effective_settings()
         deps.repository().replace_settings({})
         with deps.library_status_lock:
             deps.library_status_cache.update(payload=None, expires_at=0.0)
-        return {"defaults": deps.defaults, "effective": deps.effective_settings(), "overrides": {}}
+        effective = deps.effective_settings()
+        changed = sum(before.get(key) != value for key, value in effective.items())
+        return {
+            "defaults": deps.defaults, "effective": effective, "overrides": {},
+            "receipt": operation_receipt(
+                operation="reset-settings",
+                requested="Restore application defaults",
+                requested_count=len(deps.defaults),
+                changed=f"Restored {changed} setting{'s' if changed != 1 else ''}",
+                changed_count=changed,
+                written_to=[str(getattr(deps.repository(), "path", deps.database))],
+                survives_restart=True,
+                durability="Default settings are persisted and remain active after restart.",
+            ),
+        }
 
     router.add_api_route("/api/settings/library-status", service.library_status, methods=["GET"])
+
+    @router.get("/api/settings/library-health")
+    def library_health() -> dict:
+        return service.library_health()
+
+    @router.post("/api/settings/library-health/verify")
+    def verify_library() -> dict:
+        return service.verify_library()
 
     @router.get("/api/settings/storage")
     def settings_storage() -> dict:

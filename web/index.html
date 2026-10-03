@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20260930-189">
+  <link rel="stylesheet" href="/assets/styles.css?v=20261002-191">
 </head>
 <body>
   <header class="topbar">
@@ -358,6 +358,19 @@
         <div><p class="eyebrow">WORKSPACE CONFIGURATION</p><h1>Configure your DJ workspace</h1></div>
         <p>Manage processing defaults, presets, storage locations, exports, and application maintenance.</p>
       </div>
+      <section id="library-health-center" class="panel library-health-center" aria-labelledby="library-health-title">
+        <div class="library-health-head"><div><p class="eyebrow">LIBRARY HEALTH</p><h2 id="library-health-title">Library health center</h2><p>Connection, catalog, metadata, storage, and sound quality in one place.</p></div><button id="verify-library" type="button">Verify library</button></div>
+        <div class="library-health-location"><span id="health-connection-dot" aria-hidden="true"></span><div><strong id="health-connection">Checking library…</strong><small id="health-path">—</small></div></div>
+        <div class="library-health-grid">
+          <article data-health-card="outside"><i aria-hidden="true">↗</i><span>Outside configured folder</span><strong id="health-outside">—</strong><small>Tracks requiring consolidation</small></article>
+          <article data-health-card="missing"><i aria-hidden="true">!</i><span>Missing / unavailable</span><strong id="health-missing">—</strong><small>Catalog entries without readable audio</small></article>
+          <article data-health-card="pending"><i aria-hidden="true">↻</i><span>Pending metadata writes</span><strong id="health-pending">—</strong><small id="health-pending-detail">No active writes</small></article>
+          <article data-health-card="failed"><i aria-hidden="true">×</i><span>Failed artwork / tags</span><strong id="health-failed">—</strong><small id="health-failed-detail">No failed operations</small></article>
+          <article data-health-card="storage"><i aria-hidden="true">◫</i><span>Library storage</span><strong id="health-storage">—</strong><small id="health-storage-detail">Configured folder usage</small></article>
+          <article data-health-card="quality"><i aria-hidden="true">◒</i><span>Audio quality</span><strong id="health-quality">—</strong><small id="health-quality-detail">Not analyzed</small></article>
+        </div>
+        <p id="library-health-message" class="library-health-message" role="status">Connect the configured drive, then verify the library.</p>
+      </section>
       <form id="settings-form" class="panel settings-form">
         <div class="setting-group">
           <div><strong>Music library</strong><small>Choose where newly downloaded WAV files are organized. Existing files are not moved automatically.</small></div>
@@ -577,6 +590,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20261002-198" type="module"></script>
+  <script src="/assets/app.js?v=20261002-200" type="module"></script>
 </body>
 </html>

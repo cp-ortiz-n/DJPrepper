@@ -75,6 +75,16 @@ export function apiErrorMessage(payload, fallback = 'The request could not be co
   return fallback;
 }
 
+export function operationReceiptText(receipt) {
+  if (!receipt) return '';
+  const requested = receipt.requested?.summary || 'Operation requested';
+  const changed = receipt.changed?.summary || 'No reported changes';
+  const targets = receipt.written_to?.length ? receipt.written_to.join(', ') : 'No files written';
+  const failed = receipt.failures?.length || 0;
+  const restart = receipt.survives_restart ? 'Yes' : 'No';
+  return `Requested: ${requested} · Changed: ${changed} · Written to: ${targets} · Failed: ${failed} · Survives restart: ${restart} — ${receipt.durability || 'No durability details supplied.'}`;
+}
+
 export const pct = value => value == null ? '—' : `${Math.round(value)}%`;
 export const fraction = value => value == null ? '—' : `${Math.round(100 * value)}%`;
 export const reportDate = value => value

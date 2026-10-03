@@ -9,6 +9,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
+from audioextender.core.operation_feedback import operation_receipt
+
 TERMINAL_BATCH_STATUSES = frozenset({"complete", "failed", "canceled"})
 
 
@@ -58,6 +60,7 @@ class BatchOperationRegistry:
         self._cancel: dict[str, threading.Event] = {}
         self._workers: dict[str, Callable[[BatchContext, list[Any]], dict[str, Any] | None]] = {}
         self._items: dict[str, list[Any]] = {}
+        self._durability: dict[str, str] = {}
 
     def start(
         self,
@@ -69,6 +72,9 @@ class BatchOperationRegistry:
         counters: dict[str, int] | None = None,
         retry_of: str | None = None,
         thread_factory: Callable[..., threading.Thread] = threading.Thread,
+        requested: str | None = None,
+        written_to: Iterable[str] = (),
+        durability: str = "Completed file and catalog changes are permanent.",
     ) -> dict[str, Any]:
         values = list(items)
         with self.lock:
@@ -99,12 +105,26 @@ class BatchOperationRegistry:
                 "retry_of": retry_of,
                 "created_at": _now(),
                 "updated_at": _now(),
+                "receipt": operation_receipt(
+                    operation=kind,
+                    requested=requested or stage,
+                    requested_count=len(values),
+                    changed="No items changed yet",
+                    written_to=written_to,
+                    survives_restart=False,
+                    durability=(
+                        "The batch is still running. Completed writes persist, but the "
+                        "in-memory batch itself does not resume after an application restart."
+                    ),
+                    status="processing",
+                ),
             }
             state.update(counters or {})
             self._states[batch_id] = state
             self._cancel[batch_id] = threading.Event()
             self._workers[batch_id] = worker
             self._items[batch_id] = values
+            self._durability[batch_id] = durability
         thread_factory(
             target=self._run,
             args=(batch_id,),
@@ -131,11 +151,41 @@ class BatchOperationRegistry:
                     completed_at=_now(),
                     updated_at=_now(),
                 )
+                changed_count = int(
+                    state.get("succeeded")
+                    or result.get("updated")
+                    or result.get("tagged")
+                    or 0
+                )
+                state["receipt"] = operation_receipt(
+                    operation=str(state["kind"]),
+                    requested=str(state["receipt"]["requested"]["summary"]),
+                    requested_count=int(state["total"]),
+                    changed=f"{changed_count} item{'s' if changed_count != 1 else ''} changed",
+                    changed_count=changed_count,
+                    written_to=[*state["receipt"]["written_to"], *result.pop("written_to", [])],
+                    failures=state["errors"],
+                    survives_restart=True,
+                    durability=self._durability[batch_id],
+                )
         except BatchCanceled as error:
             with self.lock:
                 self._states[batch_id].update(
                     status="canceled", stage=str(error), retryable=True,
                     canceled_at=_now(), updated_at=_now(),
+                )
+                state = self._states[batch_id]
+                state["receipt"] = operation_receipt(
+                    operation=str(state["kind"]),
+                    requested=str(state["receipt"]["requested"]["summary"]),
+                    requested_count=int(state["total"]),
+                    changed=f"{int(state.get('succeeded') or 0)} items changed before cancellation",
+                    changed_count=int(state.get("succeeded") or 0),
+                    written_to=state["receipt"]["written_to"],
+                    failures=state["errors"],
+                    survives_restart=bool(state.get("succeeded")),
+                    durability="Completed writes persist; unfinished items were not changed.",
+                    status="canceled",
                 )
         except Exception as error:
             with self.lock:
@@ -145,6 +195,18 @@ class BatchOperationRegistry:
                     status="failed", stage="Failed", error=str(error),
                     failed=max(1, int(state.get("failed") or 0)),
                     retryable=True, completed_at=_now(), updated_at=_now(),
+                )
+                state["receipt"] = operation_receipt(
+                    operation=str(state["kind"]),
+                    requested=str(state["receipt"]["requested"]["summary"]),
+                    requested_count=int(state["total"]),
+                    changed=f"{int(state.get('succeeded') or 0)} items changed before failure",
+                    changed_count=int(state.get("succeeded") or 0),
+                    written_to=state["receipt"]["written_to"],
+                    failures=state["errors"],
+                    survives_restart=bool(state.get("succeeded")),
+                    durability="Completed writes persist; failed items were not reported as changed.",
+                    status="failed",
                 )
 
     def progress(
@@ -190,9 +252,13 @@ class BatchOperationRegistry:
             items = [item for item in original if not failed_ids or self._item_id(item) in failed_ids]
             worker = self._workers[batch_id]
             kind = str(state["kind"])
+            requested = str(state["receipt"]["requested"]["summary"])
+            written_to = list(state["receipt"]["written_to"])
+            durability = self._durability[batch_id]
         return self.start(
             kind, items, worker, stage="Retrying", retry_of=batch_id,
             counters={key: 0 for key in state if key in {"tagged", "updated", "unchanged", "unresolved", "resolved"}},
+            requested=requested, written_to=written_to, durability=durability,
         )
 
     @staticmethod

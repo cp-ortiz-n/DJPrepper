@@ -43,6 +43,7 @@ from audioextender.audio.wav_metadata import (
     sync_wav_metadata,
     write_wav_metadata,
 )
+from audioextender.core.operation_feedback import operation_receipt
 from audioextender.core.presets import PRESETS, EditPreset
 from audioextender.imports.creative_commons import CreativeCommonsImportService
 from audioextender.imports.local import LocalAudioImportService
@@ -2252,9 +2253,22 @@ def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterReques
 @app.patch("/api/downloaded-library/genre")
 def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
     try:
-        return track_metadata_mutations.change_genre(
+        result = track_metadata_mutations.change_genre(
             request.track_ids, request.genre_category
         )
+        return {
+            **result,
+            "receipt": operation_receipt(
+                operation="change-track-genre",
+                requested=f"Move {len(set(request.track_ids))} tracks to {request.genre_category}",
+                requested_count=len(set(request.track_ids)),
+                changed=f"Moved and retagged {result['updated']} tracks",
+                changed_count=int(result["updated"]),
+                written_to=[str(_genre_directory(result["genre_category"]))],
+                survives_restart=True,
+                durability="WAV locations, embedded tags, sidecars, and catalog paths were persisted.",
+            ),
+        }
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
     except LookupError as error:
@@ -2349,6 +2363,19 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
         "playlist_name": playlist_name, "filename": destination.name,
         "artwork_url": metadata["artwork_url"],
         "artwork_available": bool(artwork_path),
+        "receipt": operation_receipt(
+            operation="save-track-metadata",
+            requested=f"Save metadata for track {track_id}",
+            requested_count=1,
+            changed="Updated the WAV tags, source record, and catalog entry",
+            changed_count=1,
+            written_to=[
+                str(destination.resolve()), str(_source_metadata_path(destination)),
+                str(getattr(repository, "path", DATABASE)),
+            ],
+            survives_restart=True,
+            durability="The WAV, source sidecar, and catalog database were updated on disk.",
+        ),
     }
 
 
@@ -2441,7 +2468,23 @@ def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
                 skipped.append(int(track["id"]))
         except (FileNotFoundError, OSError, ValueError, subprocess.SubprocessError) as error:
             failed.append({"id": int(track["id"]), "error": str(error)})
-    return {"tagged": tagged, "skipped": skipped, "failed": failed}
+    return {
+        "tagged": tagged, "skipped": skipped, "failed": failed,
+        "receipt": operation_receipt(
+            operation="retag-selected-tracks",
+            requested=f"Synchronize WAV tags for {len(wanted)} selected tracks",
+            requested_count=len(wanted),
+            changed=f"Updated {len(tagged)} WAV files; {len(skipped)} were already correct",
+            changed_count=len(tagged),
+            written_to=[
+                str(Path(str(track["file_path"])).resolve())
+                for track in tracks if int(track["id"]) in tagged
+            ],
+            failures=failed,
+            survives_restart=True,
+            durability="Embedded WAV tags are stored in the audio files and survive restart.",
+        ),
+    }
 
 
 def _refresh_wav_tag_audit() -> dict:
@@ -3357,6 +3400,7 @@ app.include_router(
             library_location_summary=_library_location_summary,
             source_metadata_path=_source_metadata_path,
             refresh_wav_tag_audit=_refresh_wav_tag_audit,
+            metadata_batches=metadata_batch_registry,
             library_status_cache=library_status_cache,
             library_status_lock=library_status_cache_lock,
             storage_inventory_cache=storage_inventory_cache,

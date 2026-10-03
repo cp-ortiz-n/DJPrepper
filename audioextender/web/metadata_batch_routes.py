@@ -53,6 +53,9 @@ class MetadataBatchService:
         return self.dependencies.registry.start(
             "wav-tags", tracks, self._sync_wav_tags,
             stage="Synchronizing WAV metadata", counters={"tagged": 0},
+            requested="Synchronize WAV tags with the catalog",
+            written_to=[str(self.dependencies.music_library_root())],
+            durability="WAV tags are written to the audio files and survive restart.",
             thread_factory=self.dependencies.thread_factory,
         )
 
@@ -105,6 +108,9 @@ class MetadataBatchService:
         return self.dependencies.registry.start(
             "artwork", tracks, self._sync_artwork,
             stage="Synchronizing artwork", counters={"updated": 0, "resolved": 0},
+            requested="Find, cache, and embed missing artwork",
+            written_to=[str(self.dependencies.music_library_root())],
+            durability="Artwork is stored in WAV files and the catalog and survives restart.",
             thread_factory=self.dependencies.thread_factory,
         )
 
@@ -166,6 +172,9 @@ class MetadataBatchService:
             "genre-rescan", self.repository.list_downloaded_tracks(), self._rescan_genres,
             stage="Rescanning genres",
             counters={"updated": 0, "unchanged": 0, "unresolved": 0, "conflicts": []},
+            requested="Rescan detailed genres and organize tracks into genre folders",
+            written_to=[str(self.dependencies.music_library_root())],
+            durability="File moves and catalog paths are permanent and survive restart.",
             thread_factory=self.dependencies.thread_factory,
         )
 

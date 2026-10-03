@@ -66,10 +66,19 @@ class EndToEndBehaviorTests(unittest.TestCase):
                 track.parent.mkdir(parents=True)
                 track.write_bytes(b"RIFF-test")
                 online = self.client.get("/api/settings/library-status").json()
+                health = self.client.get("/api/settings/library-health").json()
+                verified = self.client.post("/api/settings/library-health/verify").json()
             self.assertTrue(online["online"])
             self.assertEqual(online["available_tracks"], 1)
             self.assertEqual(online["offline_tracks"], 0)
             self.assertEqual(Path(online["path"]).resolve(), library.resolve())
+            self.assertEqual(health["connection"], "connected")
+            self.assertEqual(health["missing_files"], 0)
+            self.assertEqual(health["pending_metadata_writes"], 0)
+            self.assertIn("storage", health)
+            self.assertIn("audio_quality", health)
+            self.assertTrue(verified["verified"])
+            self.assertIn("verified_at", verified)
 
 
 if __name__ == "__main__":

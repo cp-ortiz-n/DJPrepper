@@ -73,6 +73,12 @@ loading state, and namespaced URL/session persistence. Page-specific modules
 still own their filter fields and API query serialization; they must not add a
 second request sequence, debounce timer, or request controller in `web/app.js`.
 
+Settings exposes a consolidated library-health read model at
+`/api/settings/library-health`. It combines connection and configured-root
+status, missing/out-of-root tracks, active and failed metadata batches, storage,
+and audio-quality coverage. `/api/settings/library-health/verify` performs the
+read-only reconnect verification and invalidates stale catalog/storage status.
+
 ### Metadata mutation and batch boundary
 
 `library/metadata_mutations.py` owns atomic propagation across WAV paths, tags,
@@ -83,6 +89,13 @@ state model from `infrastructure/batch_operations.py`: progress, cancellation,
 retry lineage, counters, result, and structured errors. Library relocation uses
 the same state vocabulary while retaining its specialized copy/verify/rollback
 coordinator in `library/relocation.py`.
+
+All state-changing settings and metadata responses also expose a `receipt`
+created by `core/operation_feedback.py`. The receipt is the UI/API truth source
+for the requested work, actual change count, concrete write destinations,
+per-item failures, and restart durability. Running batch receipts explicitly
+say that progress is transient even though already-completed disk writes may
+persist; terminal receipts replace that provisional statement with the outcome.
 
 ## Persistence
 

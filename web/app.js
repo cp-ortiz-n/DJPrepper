@@ -3,7 +3,7 @@ import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
-import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, escapeHtml, fraction, notify, option, pct, renderTrackPagination, reportDate, syncControlUnlessEditing} from './shared-components.js';
+import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, escapeHtml, fraction, notify, operationReceiptText, option, pct, renderTrackPagination, reportDate, syncControlUnlessEditing} from './shared-components.js';
 import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
 import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js';
 import {createMusicFilesUiState, musicFilesQuery} from './music-files.js';
@@ -334,6 +334,7 @@ function bindGenreEditor(editor, trackIds, afterSave) {
     try {
       const response = await fetch('/api/downloaded-library/genre', {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds(),genre_category:genre})});
       const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not change genre.');
+      notify(operationReceiptText(payload.receipt), payload.receipt?.failures?.length ? 'danger' : 'success', {timeout:9000});
       await afterSave(payload);
     } catch (error) { alert(error.message); save.disabled = false; save.textContent = 'Save & move'; }
   };
@@ -674,7 +675,7 @@ function showView(id) {
   if (id === 'library-view' && Date.now() - libraryLoadedAt > VIEW_CACHE_MS) loadLibrary();
   if (id === 'set-builder-view') loadSetBuilder();
   if (id === 'import-view') loadImportFailures();
-  if (id === 'settings-view') { loadPresets(); loadPerformanceDiagnostics(); loadStorageManager(); loadBackups(); }
+  if (id === 'settings-view') { loadPresets(); loadLibraryHealth(); loadPerformanceDiagnostics(); loadStorageManager(); loadBackups(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 document.querySelectorAll('[data-view]').forEach(control => control.addEventListener('click', () => showView(control.dataset.view)));
@@ -1939,7 +1940,8 @@ async function loadDownloadedLibrary() {
     $('#downloaded-progress-title').textContent = title;
     $('#downloaded-progress-percent').textContent = `${percent}%`;
     $('#downloaded-progress-bar').value = percent;
-    $('#downloaded-progress-detail').textContent = detail;
+    const receipt = operationReceiptText(batch.receipt);
+    $('#downloaded-progress-detail').textContent = receipt ? `${detail}\n${receipt}` : detail;
     progressPanel.classList.toggle('complete', batch.status === 'complete');
     progressPanel.classList.toggle('failed', batch.status === 'failed');
   };
@@ -1952,7 +1954,7 @@ async function loadDownloadedLibrary() {
     if(!items.length||!await confirmAction(`${label} for ${items.length} item${items.length===1?'':'s'}? Only this listed issue group will be changed.`, {title:'Apply integrity repair', acceptLabel:label}))return;
     const response=await fetch('/api/downloaded-library/integrity-repair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,item_ids:items.map(item=>item.id)})}); const payload=await response.json();
     if(!response.ok){integrityStatus.textContent=payload.detail||'The repair could not be completed.';return;}
-    integrityStatus.textContent=`Repair complete · ${payload.updated||0} item${payload.updated===1?'':'s'} updated. Run the scan again to verify.`; await loadDownloadedLibrary(); integrityRoot.open=true;
+    integrityStatus.textContent=`${operationReceiptText(payload.receipt)} · Run the scan again to verify.`; await loadDownloadedLibrary(); integrityRoot.open=true;
   };
   const duplicateFindingMarkup=item=>{
     const ids=item.track_ids||[],paths=item.paths||[],identities=item.identities||[];
@@ -2223,7 +2225,7 @@ async function loadDownloadedLibrary() {
       const response = await fetch('/api/downloaded-library/retag', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || 'Could not update WAV metadata.');
-      alert(`${result.tagged.length} updated · ${(result.skipped || []).length} already correct${result.failed.length ? ` · ${result.failed.length} failed` : ''}.`);
+      notify(operationReceiptText(result.receipt), result.failed.length ? 'danger' : 'success', {timeout:9000});
     } catch (error) { alert(error.message); }
     finally { retagSelected.textContent = 'Sync WAV tags'; refreshSelection(); }
   };
@@ -2322,6 +2324,7 @@ async function loadDownloadedLibrary() {
       try {
         const response=await fetch(`/api/downloaded-library/tracks/${card.dataset.id}/metadata`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
         const payload=await response.json(); if(!response.ok) throw new Error(payload.detail||'Could not update metadata.');
+        notify(operationReceiptText(payload.receipt), payload.receipt?.failures?.length ? 'danger' : 'success', {timeout:9000});
         downloadedSelection.delete(Number(card.dataset.id));const nextCard=metadataCards[index+1]||null;
         if(advance)pendingMetadataReview={id:nextCard?Number(nextCard.dataset.id):null};
         const stayed=await applyTrackPatch(card,{...payload,playlists:[payload.playlist_name]});
@@ -3029,6 +3032,7 @@ function bindLibrarySelection() {
       const response = await fetch('/api/downloaded-library/genre', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({track_ids:trackIds, genre_category:genre})});
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || 'Could not change genre.');
+      notify(operationReceiptText(payload.receipt), payload.receipt?.failures?.length ? 'danger' : 'success', {timeout:9000});
       genreInput.value = '';
       await Promise.all([loadLibrary(), loadDownloadedLibrary()]);
     } catch (error) { alert(error.message); }
@@ -3297,17 +3301,19 @@ $('#settings-form').addEventListener('submit', async event => {
   appConfig.effective = payload.effective; appConfig.overrides = payload.overrides;
   applyEffectiveSettings(payload.effective);
   $('#settings-form').classList.remove('is-dirty');
-  $('#settings-message').textContent = 'Settings saved · checking the music library…';
+  const receiptMessage = operationReceiptText(payload.receipt);
+  $('#settings-message').textContent = `${receiptMessage} · Checking the music library…`;
   libraryStatusRequest=null;
   const status=await loadLibraryStatus();
+  await loadLibraryHealth();
   if(status?.online){
-    $('#settings-message').textContent=`Music library connected · ${status.available_tracks} of ${status.cataloged_tracks} tracks available at ${status.path}`;
+    $('#settings-message').textContent=`${receiptMessage} · Library connected: ${status.available_tracks} of ${status.cataloged_tracks} tracks available at ${status.path}`;
     if(!status.offline_tracks){
       const errors=$('#downloaded-retag-errors');errors.hidden=true;errors.open=false;errors.querySelector('ul')?.replaceChildren();
       $('#downloaded-rescan-message').textContent='Library location verified · all cataloged tracks are available.';
     }
   }else{
-    $('#settings-message').textContent=`Settings saved, but this folder is not currently available: ${payload.effective.music_library_path}`;
+    $('#settings-message').textContent=`${receiptMessage} · Folder currently unavailable: ${payload.effective.music_library_path}`;
   }
 });
 
@@ -3321,7 +3327,7 @@ $('#reset-settings').addEventListener('click', async () => {
   localStorage.setItem('music-files-page-size', '50'); localStorage.setItem('dj-library-page-size', '50');
   localStorage.setItem('audioextender-key-view', 'both'); downloadedUiState.pageSize = 50;
   appConfig.effective = payload.effective; appConfig.overrides = {};
-  applyEffectiveSettings(payload.effective); $('#settings-form').classList.remove('is-dirty'); $('#settings-message').textContent = 'Application defaults restored.';
+  applyEffectiveSettings(payload.effective); $('#settings-form').classList.remove('is-dirty'); $('#settings-message').textContent = operationReceiptText(payload.receipt);
 });
 
 let relocationPollTimer = null;
@@ -3334,6 +3340,40 @@ function renderAudioQualitySummary(summary={}) {
   $('#quality-excellent').textContent=Number(summary.excellent||0);
   $('#quality-good').textContent=Number(summary.good||0);
   $('#quality-review').textContent=Number(summary.review||0)+Number(summary.poor||0);
+}
+function renderLibraryHealth(health={}) {
+  const online=Boolean(health.online),dot=$('#health-connection-dot');
+  dot.className=online?'online':'offline';
+  $('#health-connection').textContent=online?'Configured library connected':'Configured library disconnected';
+  $('#health-path').textContent=health.configured_folder||'No library folder configured';
+  $('#health-outside').textContent=Number(health.outside_folder||0);
+  $('#health-missing').textContent=Number(health.missing_files||0);
+  $('#health-pending').textContent=Number(health.pending_metadata_writes||0);
+  const active=health.active_operations||[];
+  $('#health-pending-detail').textContent=active.length?active.map(item=>`${String(item.kind).replaceAll('-',' ')} · ${item.remaining} remaining`).join(' · '):'No active metadata writes';
+  $('#health-failed').textContent=Number(health.failed_metadata_operations||0);
+  const failures=health.failed_operations||[];
+  $('#health-failed-detail').textContent=failures.length?failures.map(item=>`${String(item.kind).replaceAll('-',' ')} · ${item.count}`).join(' · '):'No failed artwork or tag operations';
+  const setCard=(name,tone)=>{const card=document.querySelector(`[data-health-card="${name}"]`);card?.classList.remove('good','warning','active');if(tone)card?.classList.add(tone);};
+  setCard('outside',Number(health.outside_folder||0)?'warning':'good');setCard('missing',Number(health.missing_files||0)?'warning':'good');setCard('pending',Number(health.pending_metadata_writes||0)?'active':'good');setCard('failed',Number(health.failed_metadata_operations||0)?'warning':'good');
+  const storage=health.storage||{};
+  $('#health-storage').textContent=formatBytes(storage.total_bytes||storage.song_bytes||0);
+  $('#health-storage-detail').textContent=`${formatBytes(storage.free_bytes||0)} available${storage.reclaimable_bytes?` · ${formatBytes(storage.reclaimable_bytes)} reclaimable`:''}`;
+  const quality=health.audio_quality||{},analyzed=Number(quality.analyzed||0),total=Number(quality.total||0);
+  $('#health-quality').textContent=analyzed?`${Math.round(Number(quality.average_score||0))}/100`:'—';
+  $('#health-quality-detail').textContent=analyzed?`${analyzed} of ${total} tracks analyzed`:'No tracks analyzed yet';
+  setCard('storage','good');setCard('quality',analyzed?'good':'');
+  const button=$('#verify-library');button.disabled=!online;button.textContent='Verify library';
+  $('#library-health-message').textContent=!online?'Connect the configured drive to enable verification.':health.verified?'Library connected and every cataloged track is available.':'Library connected, but some catalog or file issues need attention.';
+}
+let libraryHealthRequest=null;
+async function loadLibraryHealth(){
+  if(libraryHealthRequest)return libraryHealthRequest;
+  libraryHealthRequest=fetch('/api/settings/library-health',{cache:'no-store'}).then(async response=>{const payload=await response.json();if(!response.ok)throw new Error(response.status===404?'Restart the app once to enable the new library health service.':payload.detail||'Library health could not be loaded.');renderLibraryHealth(payload);return payload;}).catch(async error=>{
+    if(error.message.startsWith('Restart the app'))try{const status=await fetch('/api/settings/library-status',{cache:'no-store'}).then(response=>response.json());renderLibraryHealth({configured_folder:status.path,online:status.online,outside_folder:status.location_integrity?.outside_count||0,missing_files:status.offline_tracks||0,pending_metadata_writes:0,failed_metadata_operations:0,storage:status,audio_quality:status.audio_quality,verified:status.online&&!status.offline_tracks});const button=$('#verify-library');button.disabled=true;button.textContent='Restart required';}catch(_){/* Keep the actionable restart message. */}
+    $('#library-health-message').textContent=error.message;return null;
+  }).finally(()=>{libraryHealthRequest=null;});
+  return libraryHealthRequest;
 }
 async function loadLibraryStatus() {
   if(libraryStatusRequest)return libraryStatusRequest;
@@ -3364,6 +3404,16 @@ async function loadLibraryStatus() {
   })();
   return libraryStatusRequest;
 }
+$('#verify-library').addEventListener('click',async()=>{
+  const button=$('#verify-library');button.disabled=true;button.textContent='Verifying…';$('#library-health-message').textContent='Checking the configured folder, catalog paths, metadata operations, storage, and audio quality…';
+  try{
+    const response=await fetch('/api/settings/library-health/verify',{method:'POST'}),health=await response.json();
+    if(!response.ok)throw new Error(health.detail||'The library could not be verified.');
+    renderLibraryHealth(health);libraryStatusRequest=null;await loadLibraryStatus();
+    $('#library-health-message').textContent=health.verified?'Verification complete · every cataloged track is available.':`Verification complete · ${health.missing_files} missing and ${health.outside_folder} outside the configured folder.`;
+    downloadedLoadedAt=0;libraryLoadedAt=0;
+  }catch(error){$('#library-health-message').textContent=error.message;button.disabled=false;button.textContent='Verify library';}
+});
 async function pollLibraryConsolidation(batchId){const button=$('#library-consolidate');const response=await fetch(`/api/settings/library-locations/consolidate/${batchId}`,{cache:'no-store'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=batch.detail||'Consolidation failed';return;}button.textContent=`Verified ${batch.processed}/${batch.total}`;if(batch.status==='processing'){setTimeout(()=>pollLibraryConsolidation(batchId),800);return;}button.disabled=false;button.textContent=batch.failed?`${batch.moved} moved · ${batch.failed} failed`:'Consolidation complete';downloadedLoadedAt=0;libraryLoadedAt=0;await Promise.all([loadLibraryStatus(),loadDownloadedLibrary(),loadLibrary()]);}
 $('#library-consolidate').addEventListener('click',async()=>{const button=$('#library-consolidate');if(!confirm('Copy every out-of-library track to the configured library, verify its SHA-256 checksum, relink catalog and analysis records, then remove the original file?'))return;button.disabled=true;button.textContent='Preparing…';const response=await fetch('/api/settings/library-locations/consolidate',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=batch.detail||'Could not consolidate';return;}if(batch.batch_id)pollLibraryConsolidation(batch.batch_id);else{button.disabled=false;button.textContent='Nothing to consolidate';await loadLibraryStatus();}});
 let qualityScanTimer=null;
@@ -3498,3 +3548,4 @@ $('#restore-presets').addEventListener('click', async () => {
 async function refresh() { const jobs = await loadJobs(); await loadAnalysis(jobs); }
 const settingsController = createSettingsController({loadConfig, loadPresets, loadLibraryStatus, loadRelocationState});
 settingsController.initialize(refresh);
+loadLibraryHealth();
