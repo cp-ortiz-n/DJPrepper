@@ -1598,6 +1598,7 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .app-dialog p { margin:7px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
 .app-dialog footer { display:flex; justify-content:flex-end; gap:8px; margin-top:20px; padding-top:16px; border-top:1px solid var(--line); }
 .app-dialog footer button { width:auto; min-width:96px; min-height:40px; margin:0; }
+.app-dialog footer button[data-tone="success"] { color:#11140a; background:var(--lime); }
 .app-dialog footer button[data-tone="danger"] { color:#22100f; background:var(--status-danger); }
 @media (max-width:620px) { .toast-region { right:16px; bottom:16px; }.app-dialog footer { flex-direction:column-reverse; }.app-dialog footer button { width:100%; } }
 

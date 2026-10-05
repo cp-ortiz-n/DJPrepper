@@ -54,6 +54,13 @@ test('identity editing keeps saved single-track values and opens without page re
   assert.equal(librarySource.includes("document.querySelector('.library-selection').after(panel)"), false);
 });
 
+test('confirmation action labels remain legible for every tone', () => {
+  const stylesPath = fileURLToPath(new URL('../web/styles.css', import.meta.url));
+  const styles = readFileSync(stylesPath, 'utf8');
+  assert.match(styles, /\.app-dialog footer button\[data-tone="success"\]\s*\{[^}]*color:#11140a;[^}]*background:var\(--lime\)/);
+  assert.match(styles, /\.app-dialog footer button\[data-tone="danger"\]\s*\{[^}]*color:#22100f;[^}]*background:var\(--status-danger\)/);
+});
+
 test('DJ Library exposes stable musical compatibility helpers', () => {
   assert.equal(library.camelotKey('A minor'), '8A');
   assert.equal(library.formatLibraryKey('G minor', 'both'), 'G minor · 6A');
