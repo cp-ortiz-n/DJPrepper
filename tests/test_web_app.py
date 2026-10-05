@@ -1004,6 +1004,10 @@ class WebApiTests(unittest.TestCase):
             self.assertEqual(list(root.rglob("*.zip")), [])
 
     def test_settings_fall_back_to_application_defaults_after_reset(self) -> None:
+        production_repository = web_module.repository
+        production_library_path = production_repository.get_system_state(
+            "music_library_path"
+        )
         with tempfile.TemporaryDirectory() as temporary:
             catalog = JobRepository(Path(temporary) / "settings.sqlite3")
             library_path = str((Path(temporary) / "External Library").resolve())
@@ -1038,6 +1042,11 @@ class WebApiTests(unittest.TestCase):
                     reset.json()["effective"]["intro_bars"],
                     reset.json()["defaults"]["intro_bars"],
                 )
+        self.assertEqual(
+            production_repository.get_system_state("music_library_path"),
+            production_library_path,
+            "settings route tests must never write into the production database",
+        )
 
     def test_analytics_endpoint_has_feedback_fields(self) -> None:
         response = self.client.get("/api/analytics")

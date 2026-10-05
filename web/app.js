@@ -561,6 +561,31 @@ async function loadPerformanceDiagnostics() {
   }
 }
 
+function setNumericInputValue(selector, value) {
+  const input = $(selector);
+  const numeric = Number(value);
+  if (!input || value == null || value === '' || !Number.isFinite(numeric)) return;
+  const normalized = String(Math.round((numeric + Number.EPSILON) * 1_000_000) / 1_000_000);
+  input.value = normalized;
+  input.defaultValue = normalized;
+  input.setAttribute('value', normalized);
+  input.dataset.lastValidValue = normalized;
+}
+
+function settingNumber(selector, key) {
+  const input = $(selector);
+  const entered = input?.value?.trim();
+  const numeric = entered === '' ? Number.NaN : Number(entered);
+  if (Number.isFinite(numeric)) return numeric;
+  return Number(appConfig?.effective?.[key]);
+}
+
+function finiteNumericControlValue(input) {
+  if (!(input instanceof HTMLInputElement) || input.value.trim() === '') return null;
+  const value = Number(input.value);
+  return Number.isFinite(value) ? value : null;
+}
+
 function applyEffectiveSettings(values) {
   $('#setting-library-path').value = values.music_library_path || '';
   $('#preset').value = values.preset; $('#intro-bars').value = 'auto';
@@ -576,13 +601,13 @@ function applyEffectiveSettings(values) {
   $('#batch-auto-bars').checked = values.auto_bars;
   $('#batch-cues').checked = values.export_cues;
   $('#batch-candidate-count').value = values.candidate_count;
-  $('#batch-intro-search').value = values.intro_search_seconds;
-  $('#batch-outro-search').value = values.outro_search_seconds;
-  $('#batch-vocal-coverage').value = values.maximum_vocal_coverage_percent;
-  $('#batch-vocal-risk').value = values.maximum_vocal_boundary_risk_percent;
-  $('#batch-buildup-risk').value = values.maximum_buildup_risk_percent;
-  $('#batch-bass-risk').value = values.maximum_bass_reset_risk_percent;
-  $('#batch-stem-reliability').value = values.minimum_stem_reliability_percent;
+  setNumericInputValue('#batch-intro-search', values.intro_search_seconds);
+  setNumericInputValue('#batch-outro-search', values.outro_search_seconds);
+  setNumericInputValue('#batch-vocal-coverage', values.maximum_vocal_coverage_percent);
+  setNumericInputValue('#batch-vocal-risk', values.maximum_vocal_boundary_risk_percent);
+  setNumericInputValue('#batch-buildup-risk', values.maximum_buildup_risk_percent);
+  setNumericInputValue('#batch-bass-risk', values.maximum_bass_reset_risk_percent);
+  setNumericInputValue('#batch-stem-reliability', values.minimum_stem_reliability_percent);
   $('#workspace-default-summary').textContent = `${values.minimum_intro_loop_quality}%/${values.minimum_outro_loop_quality}% quality · max ${values.maximum_repetitions} copies · ${values.crossfade_ms} ms fade`;
   $('#setting-preset').value = values.preset; $('#setting-intro').value = values.intro_bars;
   $('#setting-outro').value = values.outro_bars; $('#setting-stems').checked = values.use_stems;
@@ -594,13 +619,20 @@ function applyEffectiveSettings(values) {
   $('#setting-repetitions').value = values.maximum_repetitions;
   $('#setting-crossfade').value = values.crossfade_ms;
   $('#setting-candidate-count').value = values.candidate_count;
-  $('#setting-intro-search').value = values.intro_search_seconds;
-  $('#setting-outro-search').value = values.outro_search_seconds;
-  $('#setting-vocal-coverage').value = values.maximum_vocal_coverage_percent;
-  $('#setting-vocal-risk').value = values.maximum_vocal_boundary_risk_percent;
-  $('#setting-buildup-risk').value = values.maximum_buildup_risk_percent;
-  $('#setting-bass-risk').value = values.maximum_bass_reset_risk_percent;
-  $('#setting-stem-reliability').value = values.minimum_stem_reliability_percent;
+  setNumericInputValue('#setting-intro-search', values.intro_search_seconds);
+  setNumericInputValue('#setting-outro-search', values.outro_search_seconds);
+  setNumericInputValue('#setting-vocal-coverage', values.maximum_vocal_coverage_percent);
+  setNumericInputValue('#setting-vocal-risk', values.maximum_vocal_boundary_risk_percent);
+  setNumericInputValue('#setting-buildup-risk', values.maximum_buildup_risk_percent);
+  setNumericInputValue('#setting-bass-risk', values.maximum_bass_reset_risk_percent);
+  setNumericInputValue('#setting-stem-reliability', values.minimum_stem_reliability_percent);
+  $('#settings-form').querySelectorAll('input[type="number"], input[data-numeric-setting]').forEach(input => {
+    if (finiteNumericControlValue(input) != null) {
+      input.defaultValue = input.value;
+      input.setAttribute('value', input.value);
+      input.dataset.lastValidValue = input.value;
+    }
+  });
   $('#setting-page-size').value = localStorage.getItem('music-files-page-size') || '50';
   $('#setting-key-display').value = libraryKeyMode();
 }

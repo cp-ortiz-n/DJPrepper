@@ -407,8 +407,8 @@
           <summary><span><strong>Expert analysis</strong><small>Candidate search depth and musical safety thresholds</small></span><span>Advanced</span></summary>
           <div class="expert-settings-grid">
             <label>Candidate depth<input id="setting-candidate-count" name="candidate_count" type="number" min="1" max="8" step="1"></label>
-            <label>Intro search window<input id="setting-intro-search" name="intro_search_seconds" type="number" min="15" max="600" step="5"><span class="suffix">sec</span></label>
-            <label>Outro search window<input id="setting-outro-search" name="outro_search_seconds" type="number" min="15" max="600" step="5"><span class="suffix">sec</span></label>
+            <label>Intro search window<input id="setting-intro-search" name="intro_search_seconds" type="text" inputmode="numeric" pattern="[0-9]+" data-numeric-setting min="15" max="600" autocomplete="off"><span class="suffix">sec</span></label>
+            <label>Outro search window<input id="setting-outro-search" name="outro_search_seconds" type="text" inputmode="numeric" pattern="[0-9]+" data-numeric-setting min="15" max="600" autocomplete="off"><span class="suffix">sec</span></label>
             <label>Maximum vocal coverage<input id="setting-vocal-coverage" name="maximum_vocal_coverage_percent" type="number" min="0" max="100" step="1"><span class="suffix">%</span></label>
             <label>Maximum vocal splice risk<input id="setting-vocal-risk" name="maximum_vocal_boundary_risk_percent" type="number" min="0" max="100" step="1"><span class="suffix">%</span></label>
             <label>Maximum buildup risk<input id="setting-buildup-risk" name="maximum_buildup_risk_percent" type="number" min="0" max="100" step="1"><span class="suffix">%</span></label>

@@ -332,11 +332,13 @@ WEB_DEFAULTS = {
     "candidate_count": DEFAULT_CANDIDATE_COUNT,
     "intro_search_seconds": INTRO_SEARCH_SECONDS,
     "outro_search_seconds": OUTRO_SEARCH_SECONDS,
-    "maximum_vocal_coverage_percent": MAXIMUM_VOCAL_COVERAGE * 100,
-    "maximum_vocal_boundary_risk_percent": MAXIMUM_VOCAL_BOUNDARY_RISK * 100,
-    "maximum_buildup_risk_percent": MAXIMUM_BUILDUP_RISK * 100,
-    "maximum_bass_reset_risk_percent": MAXIMUM_BASS_RESET_RISK * 100,
-    "minimum_stem_reliability_percent": MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100,
+    "maximum_vocal_coverage_percent": round(MAXIMUM_VOCAL_COVERAGE * 100, 6),
+    "maximum_vocal_boundary_risk_percent": round(MAXIMUM_VOCAL_BOUNDARY_RISK * 100, 6),
+    "maximum_buildup_risk_percent": round(MAXIMUM_BUILDUP_RISK * 100, 6),
+    "maximum_bass_reset_risk_percent": round(MAXIMUM_BASS_RESET_RISK * 100, 6),
+    "minimum_stem_reliability_percent": round(
+        MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, 6
+    ),
 }
 
 
