@@ -58,6 +58,12 @@ to queued jobs, and a canceled entry can be reprocessed without uploading the
 song again. Closing the browser does not cancel a running job; closing the Python
 server does.
 
+The browser code is split by user-facing feature: Music Files, DJ Library, Set
+Builder, Settings, and Analysis & Feedback each own their rendering and state.
+`web/app.js` is the composition/navigation entry point; shared request state,
+audio playback, and reusable controls live in dedicated modules. See
+[`docs/architecture.md`](docs/architecture.md) before making frontend changes.
+
 The **Import** tab can convert an individually confirmed, authorized YouTube
 source to WAV. It can also read a Spotify playlist CSV and suggest a likely
 YouTube URL for every track without Spotify credentials. The importer directly
@@ -270,7 +276,7 @@ AudioExtender/
 │   ├── core/            # Configuration, models, interfaces, and presets
 │   ├── imports/         # Source import workflows and route handlers
 │   ├── infrastructure/  # Background tasks, caching, and progress
-│   ├── library/         # Library identity, relocation, backup, and export
+│   ├── library/         # Library identity, metadata mutations, relocation, backup, and export
 │   ├── processing/      # Track, batch, and web-job orchestration
 │   ├── reporting/       # Feedback and processing reports
 │   ├── repositories/    # Jobs, catalog, analysis, feedback, and system-state persistence
@@ -280,6 +286,7 @@ AudioExtender/
 │       ├── job_media_routes.py           # Audio, waveform, cues, and downloads
 │       ├── library_routes.py             # Paginated DJ Library catalog
 │       ├── library_maintenance_routes.py # Integrity and reconciliation
+│       ├── metadata_batch_routes.py       # Genre, tags, artwork, propagation batches
 │       ├── reporting_routes.py           # Feedback and key verification
 │       ├── set_builder_routes.py          # Set catalog and playlist exports
 │       └── settings_routes.py             # Settings, storage, backup, relocation
@@ -317,12 +324,15 @@ Use this table before searching through the larger composition files:
 | Audio delivery, waveform, cues, or batch downloads | `web/job_media_routes.py` |
 | DJ Library API filters | `web/library_routes.py` |
 | Integrity scan, catalog reconciliation, or repair | `web/library_maintenance_routes.py` |
+| Bulk genre, WAV-tag, artwork, or catalog propagation | `web/metadata_batch_routes.py`, `library/metadata_mutations.py` |
 | Settings, storage, backup, or relocation | `web/settings_routes.py` and `audioextender/library/` |
+| Library health and post-reconnect verification | `web/settings_routes.py` (`/api/settings/library-health`) |
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
 | Set Builder UI | `web/set-builder.js` and `web/styles.css` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
+| Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
@@ -356,10 +366,17 @@ When moving modules or changing architectural relationships, also run:
 graphify . --update --code-only --no-viz
 ```
 
-The next planned extraction is the downloaded-library metadata batch workflow:
-genre rescanning, WAV retagging, and artwork synchronization currently remain
-in `audioextender/web/application.py`. See `BACKLOG.md` before starting that
-work.
+Downloaded-library metadata batches share one lifecycle in
+`infrastructure/batch_operations.py`. Add new batch work through that registry
+so progress, cancellation, retry, results, and structured errors remain
+consistent with genre, WAV-tag, artwork, catalog-propagation, and relocation
+operations.
+
+Mutation APIs return an operation `receipt` with five user-facing facts: what
+was requested, what changed, where data was written, what failed, and whether
+the result survives restart. Use `core/operation_feedback.py` for new saves and
+the batch registry for new background work; do not invent route-specific
+success strings that can drift from the actual result.
 
 ### Architecture boundaries
 

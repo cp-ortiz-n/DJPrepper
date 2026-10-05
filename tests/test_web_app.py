@@ -1029,6 +1029,11 @@ class WebApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.json()["effective"]["intro_bars"], 4)
                 self.assertEqual(response.json()["effective"]["music_library_path"], library_path)
+                receipt = response.json()["receipt"]
+                self.assertEqual(receipt["operation"], "save-settings")
+                self.assertTrue(receipt["survives_restart"])
+                self.assertEqual(receipt["failures"], [])
+                self.assertIn(str(catalog.path), receipt["written_to"])
                 reset = self.client.delete("/api/settings")
                 self.assertEqual(reset.status_code, 200)
                 self.assertEqual(reset.json()["overrides"], {})

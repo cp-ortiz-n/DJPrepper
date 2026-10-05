@@ -11,7 +11,7 @@ it to decide where a manual change belongs before editing.
 | `web_app.py` | Small compatibility launcher; never add feature logic here |
 | `audioextender/web/application.py` | FastAPI composition, shared service construction, dependency injection, and remaining legacy routes |
 | `web/index.html` | Browser shell and workspace markup |
-| `web/app.js` | Browser composition and remaining cross-feature UI behavior |
+| `web/app.js` | Browser composition, navigation, processing workspace, and import wiring |
 
 Run the app with `python3 web_app.py`.
 
@@ -54,6 +54,7 @@ globals.
 | `web/job_media_routes.py` | Audio delivery, ZIP exports, waveforms, transition scoring, cue editing |
 | `web/library_routes.py` | Paginated DJ Library catalog and facets |
 | `web/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs |
+| `web/metadata_batch_routes.py` | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches |
 | `web/reporting_routes.py` | Track feedback and manual key verification |
 | `web/set_builder_routes.py` | Set Builder catalog, preflight, playlist exports |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
@@ -63,11 +64,38 @@ Router factories accept explicit dependencies. Wire new dependencies in
 `application.py`; never make a router import `application.py`. Repository
 providers are normally lambdas so tests can replace the active repository.
 
-### Remaining extraction boundary
+## Browser request state
 
-Genre rescanning, WAV retagging, and artwork synchronization still live in
-`application.py`. Extracting them into focused metadata-batch services and
-routers is the next planned architecture task in `BACKLOG.md`.
+Music Files and DJ Library use `web/request-state-controller.js` for catalog
+request ownership. The controller provides debouncing, `AbortController`
+cancellation, sequence-based stale-response rejection, pagination resets,
+loading state, and namespaced URL/session persistence. Page-specific modules
+still own their filter fields and API query serialization; they must not add a
+second request sequence, debounce timer, or request controller in `web/app.js`.
+
+Settings exposes a consolidated library-health read model at
+`/api/settings/library-health`. It combines connection and configured-root
+status, missing/out-of-root tracks, active and failed metadata batches, storage,
+and audio-quality coverage. `/api/settings/library-health/verify` performs the
+read-only reconnect verification and invalidates stale catalog/storage status.
+
+### Metadata mutation and batch boundary
+
+`library/metadata_mutations.py` owns atomic propagation across WAV paths, tags,
+source sidecars, and catalog records. `web/metadata_batch_routes.py` owns the
+HTTP workflows for genre rescans, WAV tag synchronization, artwork updates, and
+catalog propagation. Every background metadata operation publishes the shared
+state model from `infrastructure/batch_operations.py`: progress, cancellation,
+retry lineage, counters, result, and structured errors. Library relocation uses
+the same state vocabulary while retaining its specialized copy/verify/rollback
+coordinator in `library/relocation.py`.
+
+All state-changing settings and metadata responses also expose a `receipt`
+created by `core/operation_feedback.py`. The receipt is the UI/API truth source
+for the requested work, actual change count, concrete write destinations,
+per-item failures, and restart durability. Running batch receipts explicitly
+say that progress is transient even though already-completed disk writes may
+persist; terminal receipts replace that provisional statement with the outcome.
 
 ## Persistence
 
@@ -121,15 +149,20 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | --- | --- |
 | `shared-components.js` | DOM helpers, messages, formatting, pagination |
 | `playback.js` | Single audio-preview owner |
-| `music-files.js` | Music Files filters and request serialization |
-| `dj-library.js` | DJ Library state and compatibility helpers |
-| `set-builder.js` | Set Builder state and proposal policy |
-| `settings.js` | Settings initialization and refresh coordination |
+| `music-files.js` | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector |
+| `dj-library.js` | DJ Library rendering, filtering, selection actions, and compatibility helpers |
+| `set-builder.js` | Set Builder rendering, mutable state, and proposal policy |
+| `settings.js` | Settings forms, library health, relocation, backups, storage, and refresh coordination |
+| `reporting.js` | Analysis & Feedback and key-verification rendering |
+| `request-state-controller.js` | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence |
 | `import-queue.js` | Pause/resume/cancel/retry/reorder import state |
 | `styles.css` | Shared visual system and responsive behavior |
 
 Do not create a second audio player, dropdown implementation, notification
 system, or pagination helper inside a feature. Extend the shared module first.
+`app.js` composes these features and owns global navigation; page-specific
+rendering, filters, inspectors, and maintenance actions belong in their feature
+module. `tests/frontend_modules.test.js` enforces this boundary and a size ceiling.
 
 ## Where to make common changes
 

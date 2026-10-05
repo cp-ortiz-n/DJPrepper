@@ -15,8 +15,9 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("Energy Journey", set_builder)
         self.assertIn("Adventurous Mix", set_builder)
         self.assertIn('role="radiogroup"', page)
-        self.assertIn("selectSetProposal", app)
-        self.assertIn("snapshot=setPlanSnapshot", app.replace(" ", ""))
+        self.assertIn("createSetBuilderFeature", app)
+        self.assertIn("selectSetProposal", set_builder)
+        self.assertIn("snapshot=setPlanSnapshot", set_builder.replace(" ", ""))
 
     def test_shared_controls_have_accessible_responsive_contracts(self):
         css = (ROOT / "web" / "styles.css").read_text()

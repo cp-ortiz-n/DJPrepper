@@ -1,6 +1,17 @@
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
 
+export function captureTextFilter(input, state, key = 'search') {
+  state[key] = String(input.value || '').trim();
+  return state[key];
+}
+
+export function syncControlUnlessEditing(control, value, activeElement = document.activeElement) {
+  if (activeElement === control) return false;
+  control.value = value ?? '';
+  return true;
+}
+
 export function notify(message, tone = 'info', options = {}) {
   const region = $('#app-toast-region');
   if (!region || !message) return;
@@ -62,6 +73,46 @@ export function apiErrorMessage(payload, fallback = 'The request could not be co
   }).join(' · ');
   if (detail && typeof detail === 'object') return detail.message || JSON.stringify(detail);
   return fallback;
+}
+
+export function operationReceiptText(receipt) {
+  if (!receipt) return '';
+  const requested = receipt.requested?.summary || 'Operation requested';
+  const changed = receipt.changed?.summary || 'No reported changes';
+  const targets = receipt.written_to?.length ? receipt.written_to.join(', ') : 'No files written';
+  const failed = receipt.failures?.length || 0;
+  const restart = receipt.survives_restart ? 'Yes' : 'No';
+  return `Requested: ${requested} · Changed: ${changed} · Written to: ${targets} · Failed: ${failed} · Survives restart: ${restart} — ${receipt.durability || 'No durability details supplied.'}`;
+}
+
+export async function startKeyAnalysis(trackIds, button, onComplete = async () => {}) {
+  if (!trackIds.length) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Starting key analysis…';
+  try {
+    const response = await fetch('/api/downloaded-library/key-analysis', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({track_ids:trackIds}),
+    });
+    let batch = await response.json();
+    if (!response.ok) throw new Error(batch.detail || 'Could not start key analysis.');
+    while (batch.status === 'processing') {
+      button.textContent = `Analyzing keys ${batch.processed}/${batch.total}`;
+      await new Promise(resolve => setTimeout(resolve, 700));
+      const status = await fetch(`/api/downloaded-library/key-analysis/${batch.batch_id}`, {cache:'no-store'});
+      batch = await status.json();
+      if (!status.ok) throw new Error(batch.detail || 'Key-analysis status was lost.');
+    }
+    button.textContent = batch.failed
+      ? `${batch.completed} complete · ${batch.failed} failed`
+      : `${batch.completed} keys analyzed`;
+    await onComplete(batch);
+  } catch (error) {
+    button.textContent = error.message || 'Key analysis failed';
+  } finally {
+    setTimeout(() => { button.textContent=original;button.disabled=false; }, 1600);
+  }
 }
 
 export const pct = value => value == null ? '—' : `${Math.round(value)}%`;

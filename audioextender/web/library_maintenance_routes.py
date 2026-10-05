@@ -13,6 +13,9 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from audioextender.core.operation_feedback import operation_receipt
+from audioextender.infrastructure.batch_operations import BatchContext, BatchOperationRegistry
+
 
 class IntegrityRepairRequest(BaseModel):
     action: Literal[
@@ -31,8 +34,7 @@ class LibraryMaintenanceDependencies:
     sync_wav_metadata: Callable[..., bool]
     probe_local_audio: Callable[[Path], dict]
     catalog_genre_category: Callable[[Path, str, str], str]
-    reconcile_batches: dict[str, dict]
-    reconcile_lock: threading.Lock
+    metadata_batches: BatchOperationRegistry
     catalog_migration_lock: threading.Lock
     integrity_batches: dict[str, dict]
     integrity_lock: threading.Lock
@@ -46,58 +48,28 @@ class LibraryMaintenanceService:
     def repository(self) -> Any:
         return self.dependencies.repository()
 
-    def run_catalog_reconcile(self, batch_id: str) -> None:
+    def run_catalog_reconcile(self, context: BatchContext, _items: list[object]) -> dict:
         def publish(result: dict[str, int]) -> None:
-            with self.dependencies.reconcile_lock:
-                self.dependencies.reconcile_batches[batch_id].update(
-                    result,
-                    stage=f"Checking source records {result['processed']} of {result['total']}",
-                )
+            context.check_canceled()
+            context.progress(
+                processed=result["processed"], total=result["total"],
+                stage=f"Checking source records {result['processed']} of {result['total']}",
+                counters={**result, "succeeded": int(result.get("updated") or 0)},
+            )
 
-        try:
-            with self.dependencies.catalog_migration_lock:
-                result = self.dependencies.migrate_catalog(incremental=True, progress=publish)
-            with self.dependencies.reconcile_lock:
-                self.dependencies.reconcile_batches[batch_id].update(
-                    result, status="complete", stage="File reconciliation complete"
-                )
-        except Exception as error:
-            with self.dependencies.reconcile_lock:
-                self.dependencies.reconcile_batches[batch_id].update(
-                    status="failed", stage="File reconciliation failed", error=str(error)
-                )
+        with self.dependencies.catalog_migration_lock:
+            result = self.dependencies.migrate_catalog(incremental=True, progress=publish)
+        return {**result, "stage": "File reconciliation complete"}
 
     def start_catalog_reconcile(self) -> dict:
         self.dependencies.require_library_online()
-        with self.dependencies.reconcile_lock:
-            active = next(
-                (
-                    dict(value)
-                    for value in self.dependencies.reconcile_batches.values()
-                    if value.get("status") == "processing"
-                ),
-                None,
-            )
-            if active:
-                return active
-            batch_id = uuid.uuid4().hex
-            self.dependencies.reconcile_batches[batch_id] = {
-                "batch_id": batch_id,
-                "status": "processing",
-                "stage": "Indexing source records",
-                "total": 0,
-                "processed": 0,
-                "updated": 0,
-                "skipped": 0,
-                "failed": 0,
-            }
-        threading.Thread(
-            target=self.run_catalog_reconcile,
-            args=(batch_id,),
-            daemon=True,
-            name=f"catalog-reconcile-{batch_id[:8]}",
-        ).start()
-        return dict(self.dependencies.reconcile_batches[batch_id])
+        return self.dependencies.metadata_batches.start(
+            "catalog-propagation", [None], self.run_catalog_reconcile,
+            stage="Indexing source records", counters={"updated": 0},
+            requested="Reconcile source records with the downloaded-track catalog",
+            written_to=[str(self.dependencies.music_library_root())],
+            durability="Catalog and sidecar updates are persisted and survive restart.",
+        )
 
     def run_integrity_scan(self, batch_id: str) -> None:
         root = self.dependencies.music_library_root()
@@ -224,21 +196,36 @@ class LibraryMaintenanceService:
                     stage=f"Checking WAV metadata {index} of {total}",
                 )
         with self.dependencies.integrity_lock:
+            finding_count = sum(len(value) for value in findings.values())
             self.dependencies.integrity_batches[batch_id].update(
                 status="complete",
                 stage="Integrity scan complete",
                 progress=100,
                 findings=findings,
                 counts={key: len(value) for key, value in findings.items()},
+                receipt=operation_receipt(
+                    operation="library-integrity-scan",
+                    requested=f"Verify {total} catalog tracks and the configured library folder",
+                    requested_count=total,
+                    changed="Read-only verification; no files or catalog records changed",
+                    changed_count=0,
+                    failures=[],
+                    survives_restart=False,
+                    durability=(
+                        f"Found {finding_count} issues. Scan results are read-only and are "
+                        "recomputed after restart."
+                    ),
+                ),
             )
 
     def repair(self, request: IntegrityRepairRequest) -> dict:
         root = self.dependencies.music_library_root()
         repository = self.repository
         if request.action == "remove-missing":
-            return {
-                "updated": sum(repository.delete_downloaded_track(int(item)) for item in request.item_ids)
-            }
+            updated = sum(repository.delete_downloaded_track(int(item)) for item in request.item_ids)
+            return self._repair_result(
+                request, updated, [str(getattr(repository, "path", "catalog database"))]
+            )
         if request.action == "retag-mismatches":
             wanted = {int(item) for item in request.item_ids}
             updated = 0
@@ -255,7 +242,7 @@ class LibraryMaintenanceService:
                         album=str((track.get("playlists") or ["Imported Singles"])[0]),
                     )
                 )
-            return {"updated": updated}
+            return self._repair_result(request, updated, [str(root)])
         paths = [Path(item).resolve() for item in request.item_ids]
         if any(not path.is_relative_to(root) for path in paths):
             raise HTTPException(400, "Repair target is outside the Music Library")
@@ -265,7 +252,7 @@ class LibraryMaintenanceService:
                 raise HTTPException(400, "Invalid sidecar target")
             for path in paths:
                 path.unlink(missing_ok=True)
-            return {"updated": len(paths)}
+            return self._repair_result(request, len(paths), [str(sidecar_root)])
         added = 0
         for path in paths:
             if not path.is_file() or path.suffix.casefold() != ".wav":
@@ -284,7 +271,27 @@ class LibraryMaintenanceService:
                 playlist_name="Recovered files",
             )
             added += 1
-        return {"updated": added}
+        return self._repair_result(
+            request, added, [str(getattr(repository, "path", "catalog database"))]
+        )
+
+    @staticmethod
+    def _repair_result(
+        request: IntegrityRepairRequest, updated: int, written_to: list[str]
+    ) -> dict:
+        return {
+            "updated": updated,
+            "receipt": operation_receipt(
+                operation=f"library-integrity-{request.action}",
+                requested=f"Apply {request.action} to {len(request.item_ids)} findings",
+                requested_count=len(request.item_ids),
+                changed=f"Updated {updated} items",
+                changed_count=updated,
+                written_to=written_to,
+                survives_restart=True,
+                durability="Completed file or catalog repairs are persisted and survive restart.",
+            ),
+        }
 
 
 def create_library_maintenance_router(
@@ -299,11 +306,10 @@ def create_library_maintenance_router(
 
     @router.get("/reconcile-files/{batch_id}")
     def catalog_reconcile_status(batch_id: str) -> dict:
-        with dependencies.reconcile_lock:
-            batch = dependencies.reconcile_batches.get(batch_id)
-            if not batch:
-                raise HTTPException(404, "File reconciliation was not found")
-            return dict(batch)
+        try:
+            return dependencies.metadata_batches.status(batch_id)
+        except KeyError as error:
+            raise HTTPException(404, "File reconciliation was not found") from error
 
     @router.post("/integrity-scan", status_code=202)
     def start_integrity_scan() -> dict:
@@ -320,6 +326,16 @@ def create_library_maintenance_router(
                 "total": total,
                 "findings": {},
                 "counts": {},
+                "receipt": operation_receipt(
+                    operation="library-integrity-scan",
+                    requested=f"Verify {total} catalog tracks and the configured library folder",
+                    requested_count=total,
+                    changed="No changes; verification is running",
+                    changed_count=0,
+                    survives_restart=False,
+                    durability="The read-only scan must be run again after an application restart.",
+                    status="processing",
+                ),
             }
         threading.Thread(
             target=service.run_integrity_scan,

@@ -43,6 +43,7 @@ from audioextender.audio.wav_metadata import (
     sync_wav_metadata,
     write_wav_metadata,
 )
+from audioextender.core.operation_feedback import operation_receipt
 from audioextender.core.presets import PRESETS, EditPreset
 from audioextender.imports.creative_commons import CreativeCommonsImportService
 from audioextender.imports.local import LocalAudioImportService
@@ -54,6 +55,11 @@ from audioextender.imports.service import (
     scdl_download_command,
 )
 from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
+from audioextender.infrastructure.batch_operations import BatchOperationRegistry
+from audioextender.library.metadata_mutations import (
+    TrackMetadataMutationDependencies,
+    TrackMetadataMutationService,
+)
 from audioextender.library.relocation import LibraryRelocationCoordinator
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.web_jobs import WebJobService
@@ -81,6 +87,11 @@ from audioextender.web.library_maintenance_routes import (
 from audioextender.web.library_routes import (
     LibraryRouteDependencies,
     create_library_router,
+)
+from audioextender.web.metadata_batch_routes import (
+    MetadataBatchDependencies,
+    MetadataBatchService,
+    create_metadata_batch_router,
 )
 from audioextender.web.reporting_routes import (
     KeyVerificationRequest,  # noqa: F401 - compatibility re-export
@@ -168,18 +179,11 @@ creative_commons_registry = BackgroundTaskRegistry(
 )
 creative_commons_batches = creative_commons_registry
 creative_commons_batch_lock = creative_commons_registry.lock
-wav_tag_batches: dict[str, dict] = {}
-wav_tag_batch_lock = threading.Lock()
 wav_tag_audit_refresh_lock = threading.Lock()
 wav_tag_audit_refresh_active = False
-artwork_sync_batches: dict[str, dict] = {}
-artwork_sync_batch_lock = threading.Lock()
-genre_rescan_batches: dict[str, dict] = {}
-genre_rescan_batch_lock = threading.Lock()
+metadata_batch_registry = BatchOperationRegistry()
 integrity_scan_batches: dict[str, dict] = {}
 integrity_scan_batch_lock = threading.Lock()
-catalog_reconcile_batches: dict[str, dict] = {}
-catalog_reconcile_batch_lock = threading.Lock()
 audio_quality_batches: dict[str, dict] = {}
 audio_quality_batch_lock = threading.Lock()
 key_analysis_batches: dict[str, dict] = {}
@@ -2250,68 +2254,31 @@ def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterReques
 
 @app.patch("/api/downloaded-library/genre")
 def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
-    """Move imported WAVs to a genre folder without losing analysis history."""
-    all_tracks = repository.list_downloaded_tracks()
-    requested_category = _normalize_genre_category(request.genre_category.strip())
-    category = next(
-        (
-            str(track.get("genre_category") or "Other")
-            for track in all_tracks
-            if str(track.get("genre_category") or "Other").casefold()
-            == requested_category.casefold()
-        ),
-        requested_category,
-    )
-    if not category or category == ".":
-        raise HTTPException(400, "Choose a valid genre")
-    wanted = set(request.track_ids)
-    tracks = [track for track in all_tracks if track["id"] in wanted]
-    if len(tracks) != len(wanted):
-        raise HTTPException(404, "One or more downloaded tracks were not found")
-    destination_dir = _genre_directory(category)
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    moves: list[tuple[int, Path, Path, str]] = []
-    for track in tracks:
-        source = Path(track["file_path"])
-        if not source.is_file():
-            raise HTTPException(409, f"{track['filename']} is unavailable and cannot be moved")
-        destination = destination_dir / source.name
-        if destination.resolve() != source.resolve() and destination.exists():
-            raise HTTPException(409, f"{destination.name} already exists in {category}")
-        moves.append((int(track["id"]), source, destination, category))
-    completed: list[tuple[int, Path, Path, str]] = []
     try:
-        for move in moves:
-            track_id, source, destination, _ = move
-            old_metadata = _source_metadata_path(source)
-            if destination.resolve() != source.resolve():
-                shutil.move(str(source), str(destination))
-            completed.append(move)
-            metadata = next(track for track in tracks if int(track["id"]) == track_id)
-            write_wav_metadata(
-                destination,
-                title=str(metadata.get("title") or destination.stem),
-                artist=str(metadata.get("artist") or ""),
-                genre=category,
-                album=str((metadata.get("playlists") or ["Imported Singles"])[0]),
-            )
-            _write_source_metadata(destination, {**metadata, "genre_category": category})
-            if destination.resolve() != source.resolve():
-                old_metadata.unlink(missing_ok=True)
-        repository.relocate_downloaded_tracks(completed)
-        for _, source, destination, _ in completed:
-            old_parent = source.parent
-            if destination.resolve() != source.resolve() and old_parent != _music_library_root():
-                try:
-                    old_parent.rmdir()
-                except OSError:
-                    pass
+        result = track_metadata_mutations.change_genre(
+            request.track_ids, request.genre_category
+        )
+        return {
+            **result,
+            "receipt": operation_receipt(
+                operation="change-track-genre",
+                requested=f"Move {len(set(request.track_ids))} tracks to {request.genre_category}",
+                requested_count=len(set(request.track_ids)),
+                changed=f"Moved and retagged {result['updated']} tracks",
+                changed_count=int(result["updated"]),
+                written_to=[str(_genre_directory(result["genre_category"]))],
+                survives_restart=True,
+                durability="WAV locations, embedded tags, sidecars, and catalog paths were persisted.",
+            ),
+        }
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    except (FileNotFoundError, FileExistsError) as error:
+        raise HTTPException(409, str(error)) from error
     except Exception as error:
-        for _, source, destination, _ in reversed(completed):
-            if destination.is_file() and destination.resolve() != source.resolve():
-                shutil.move(str(destination), str(source))
         raise HTTPException(500, f"Could not change genre: {error}") from error
-    return {"updated": len(completed), "genre_category": category}
 
 
 @app.patch("/api/downloaded-library/tracks/{track_id}/metadata")
@@ -2398,6 +2365,19 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
         "playlist_name": playlist_name, "filename": destination.name,
         "artwork_url": metadata["artwork_url"],
         "artwork_available": bool(artwork_path),
+        "receipt": operation_receipt(
+            operation="save-track-metadata",
+            requested=f"Save metadata for track {track_id}",
+            requested_count=1,
+            changed="Updated the WAV tags, source record, and catalog entry",
+            changed_count=1,
+            written_to=[
+                str(destination.resolve()), str(_source_metadata_path(destination)),
+                str(getattr(repository, "path", DATABASE)),
+            ],
+            survives_restart=True,
+            durability="The WAV, source sidecar, and catalog database were updated on disk.",
+        ),
     }
 
 
@@ -2490,116 +2470,23 @@ def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
                 skipped.append(int(track["id"]))
         except (FileNotFoundError, OSError, ValueError, subprocess.SubprocessError) as error:
             failed.append({"id": int(track["id"]), "error": str(error)})
-    return {"tagged": tagged, "skipped": skipped, "failed": failed}
-
-
-def _run_wav_tag_batch(batch_id: str) -> None:
-    tracks = repository.list_downloaded_tracks()
-    for index, track in enumerate(tracks, start=1):
-        path = Path(str(track["file_path"]))
-        error = ""
-        updated = False
-        try:
-            updated = sync_wav_metadata(
-                path,
-                title=str(track.get("title") or path.stem),
-                artist=str(track.get("artist") or ""),
-                genre=str(track.get("genre_category") or "Other"),
-                album=str((track.get("playlists") or ["Imported Singles"])[0]),
-            )
-        except (FileNotFoundError, OSError, ValueError, subprocess.SubprocessError) as exception:
-            error = str(exception)
-        with wav_tag_batch_lock:
-            batch = wav_tag_batches[batch_id]
-            batch["processed"] = index
-            if error:
-                batch["failed"] += 1
-                batch["errors"].append({
-                    "id": int(track["id"]), "filename": track["filename"],
-                    "path": str(path), "error": error,
-                })
-            else:
-                batch["tagged" if updated else "skipped"] += 1
-    with wav_tag_batch_lock:
-        wav_tag_batches[batch_id]["status"] = "complete"
-
-
-@app.post("/api/downloaded-library/retag-all")
-def start_retag_all_downloaded_tracks() -> dict:
-    """Start a sequential, disk-safe metadata synchronization for the catalog."""
-    _require_music_library_online()
-    with wav_tag_batch_lock:
-        active = next(
-            (
-                {"batch_id": key, **value}
-                for key, value in wav_tag_batches.items()
-                if value["status"] == "processing"
-            ),
-            None,
-        )
-        if active:
-            return active
-        batch_id = uuid.uuid4().hex
-        total = len(repository.list_downloaded_tracks())
-        wav_tag_batches[batch_id] = {
-            "status": "processing", "total": total, "processed": 0,
-            "tagged": 0, "skipped": 0, "failed": 0, "errors": [],
-        }
-    threading.Thread(
-        target=_run_wav_tag_batch, args=(batch_id,), daemon=True,
-        name=f"wav-tags-{batch_id[:8]}",
-    ).start()
-    return {"batch_id": batch_id, **wav_tag_batches[batch_id]}
-
-
-@app.get("/api/downloaded-library/retag-all/{batch_id}")
-def wav_tag_batch_status(batch_id: str) -> dict:
-    with wav_tag_batch_lock:
-        batch = wav_tag_batches.get(batch_id)
-        if batch is None:
-            raise HTTPException(404, "WAV metadata synchronization was not found")
-        return {"batch_id": batch_id, **batch}
-
-
-@app.get("/api/downloaded-library/retag-all-latest")
-def latest_wav_tag_batch_status() -> dict:
-    with wav_tag_batch_lock:
-        if not wav_tag_batches:
-            cached_audit = repository.get_system_state("wav_tag_latest_audit")
-            if cached_audit:
-                try:
-                    cached = json.loads(cached_audit)
-                    generated = datetime.fromisoformat(str(cached.pop("generated_at")))
-                    if cached.get("failed") and _music_library_root().is_dir():
-                        return _refresh_wav_tag_audit()
-                    if (datetime.now(timezone.utc) - generated).total_seconds() >= 300:
-                        _schedule_wav_tag_audit_refresh()
-                    return cached
-                except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-                    pass
-            return _refresh_wav_tag_audit()
-        batch_id = next(reversed(wav_tag_batches))
-        batch = dict(wav_tag_batches[batch_id])
-        if batch.get("status") == "complete" and batch.get("errors"):
-            current = {
-                int(track["id"]): track for track in repository.list_downloaded_tracks()
-            }
-            active_errors = []
-            for item in batch["errors"]:
-                track = current.get(int(item.get("id") or 0))
-                current_path = Path(str((track or {}).get("file_path") or item.get("path") or ""))
-                missing_error = (
-                    "missing" in str(item.get("error") or "").casefold()
-                    or "no such file" in str(item.get("error") or "").casefold()
-                )
-                if missing_error and current_path.is_file():
-                    continue
-                active_errors.append({**item, "path": str(current_path)})
-            resolved = len(batch["errors"]) - len(active_errors)
-            batch["errors"] = active_errors
-            batch["failed"] = len(active_errors)
-            batch["skipped"] = int(batch.get("skipped") or 0) + resolved
-        return {"batch_id": batch_id, **batch}
+    return {
+        "tagged": tagged, "skipped": skipped, "failed": failed,
+        "receipt": operation_receipt(
+            operation="retag-selected-tracks",
+            requested=f"Synchronize WAV tags for {len(wanted)} selected tracks",
+            requested_count=len(wanted),
+            changed=f"Updated {len(tagged)} WAV files; {len(skipped)} were already correct",
+            changed_count=len(tagged),
+            written_to=[
+                str(Path(str(track["file_path"])).resolve())
+                for track in tracks if int(track["id"]) in tagged
+            ],
+            failures=failed,
+            survives_restart=True,
+            durability="Embedded WAV tags are stored in the audio files and survive restart.",
+        ),
+    }
 
 
 def _refresh_wav_tag_audit() -> dict:
@@ -2640,251 +2527,6 @@ def _schedule_wav_tag_audit_refresh() -> None:
                 wav_tag_audit_refresh_active = False
 
     threading.Thread(target=refresh, daemon=True, name="wav-tag-audit").start()
-
-
-def _run_artwork_sync_batch(batch_id: str, track_ids: list[int] | None = None) -> None:
-    tracks = repository.list_downloaded_tracks()
-    if track_ids is not None:
-        requested = set(track_ids)
-        tracks = [track for track in tracks if int(track["id"]) in requested]
-    for index, track in enumerate(tracks, start=1):
-        outcome = "skipped"
-        error = ""
-        path = Path(str(track.get("file_path") or ""))
-        try:
-            if not path.is_file():
-                raise FileNotFoundError(path)
-            artwork_url = str(track.get("artwork_url") or "")
-            cached_path = Path(str(track.get("artwork_path") or ""))
-            if cached_path.is_file():
-                if read_wav_artwork(path) is None:
-                    embed_wav_artwork(path, cached_path)
-                    outcome = "updated"
-            else:
-                spotify_uri = str(track.get("spotify_uri") or "")
-                if spotify_uri.startswith("spotify:track:"):
-                    metadata = _spotify_source_metadata(
-                        "https://open.spotify.com/track/" + spotify_uri.rsplit(":", 1)[-1]
-                    )
-                    artwork_url = str(metadata.get("thumbnail_url") or "")
-                if not artwork_url and track.get("youtube_id"):
-                    artwork_url = f"https://i.ytimg.com/vi/{track['youtube_id']}/hqdefault.jpg"
-                if not artwork_url:
-                    raise ValueError("No Spotify or YouTube artwork source is stored")
-                artwork_path = _cache_track_artwork(artwork_url, path)
-                if not artwork_path:
-                    raise ValueError("Artwork could not be downloaded or embedded")
-                repository.update_downloaded_track_artwork(
-                    int(track["id"]), artwork_url=artwork_url, artwork_path=artwork_path
-                )
-                outcome = "updated"
-        except Exception as exception:
-            outcome = "failed"
-            error = str(exception)
-        with artwork_sync_batch_lock:
-            batch = artwork_sync_batches[batch_id]
-            batch["processed"] = index
-            batch[outcome] += 1
-            if error:
-                batch["errors"].append({
-                    "id": int(track["id"]), "filename": track["filename"], "error": error,
-                })
-    with artwork_sync_batch_lock:
-        artwork_sync_batches[batch_id]["status"] = "complete"
-
-
-@app.post("/api/downloaded-library/artwork-sync")
-def start_downloaded_artwork_sync(request: ArtworkSyncRequest | None = None) -> dict:
-    _require_music_library_online()
-    track_ids = list(dict.fromkeys(request.track_ids)) if request else []
-    tracks = repository.list_downloaded_tracks()
-    if track_ids:
-        known = {int(track["id"]) for track in tracks}
-        track_ids = [track_id for track_id in track_ids if track_id in known]
-        if not track_ids:
-            raise HTTPException(404, "None of the selected tracks remain in the catalog")
-    else:
-        # A library-wide artwork sync should only touch tracks that still need it.
-        track_ids = [
-            int(track["id"]) for track in tracks
-            if not Path(str(track.get("artwork_path") or "")).is_file()
-        ]
-    with artwork_sync_batch_lock:
-        active = next(({"batch_id": key, **value} for key, value in artwork_sync_batches.items() if value["status"] == "processing"), None)
-        if active:
-            return active
-        batch_id = uuid.uuid4().hex
-        artwork_sync_batches[batch_id] = {
-            "status": "processing", "total": len(track_ids),
-            "processed": 0, "updated": 0, "skipped": 0, "failed": 0,
-            "resolved": 0, "errors": [],
-        }
-    threading.Thread(target=_run_artwork_sync_batch, args=(batch_id, track_ids), daemon=True, name=f"artwork-{batch_id[:8]}").start()
-    return {"batch_id": batch_id, **artwork_sync_batches[batch_id]}
-
-
-def _reconcile_artwork_sync_errors(batch_id: str) -> dict:
-    """Drop stale failures after a track is repaired manually or removed."""
-    with artwork_sync_batch_lock:
-        stored = artwork_sync_batches.get(batch_id)
-        if stored is None:
-            raise HTTPException(404, "Artwork synchronization was not found")
-        snapshot = dict(stored)
-        errors = list(stored.get("errors") or [])
-    if snapshot.get("status") != "complete" or not errors:
-        return {"batch_id": batch_id, **snapshot}
-
-    current = {
-        int(track["id"]): track for track in repository.list_downloaded_tracks()
-    }
-    active_errors = []
-    for item in errors:
-        track = current.get(int(item.get("id") or 0))
-        if track is None:
-            continue
-        wav_path = Path(str(track.get("file_path") or ""))
-        artwork_path = Path(str(track.get("artwork_path") or ""))
-        try:
-            repaired = (
-                wav_path.is_file()
-                and artwork_path.is_file()
-                and read_wav_artwork(wav_path) is not None
-            )
-        except (OSError, ValueError):
-            repaired = False
-        if not repaired:
-            active_errors.append(item)
-
-    with artwork_sync_batch_lock:
-        batch = artwork_sync_batches[batch_id]
-        resolved_now = len(batch.get("errors") or []) - len(active_errors)
-        batch["errors"] = active_errors
-        batch["failed"] = len(active_errors)
-        batch["resolved"] = int(batch.get("resolved") or 0) + max(0, resolved_now)
-        return {"batch_id": batch_id, **batch}
-
-
-@app.get("/api/downloaded-library/artwork-sync/{batch_id}")
-def downloaded_artwork_sync_status(batch_id: str) -> dict:
-    return _reconcile_artwork_sync_errors(batch_id)
-
-
-@app.get("/api/downloaded-library/artwork-sync-latest")
-def latest_downloaded_artwork_sync() -> dict:
-    with artwork_sync_batch_lock:
-        if not artwork_sync_batches:
-            return {"status": "none"}
-        batch_id = next(reversed(artwork_sync_batches))
-    return _reconcile_artwork_sync_errors(batch_id)
-
-
-def _run_genre_rescan_batch(batch_id: str) -> None:
-    """Reclassify downloads sequentially while publishing per-track progress."""
-    tracks = repository.list_downloaded_tracks()
-    for index, track in enumerate(tracks, start=1):
-        outcome = "unchanged"
-        conflict: dict | None = None
-        detailed = str(track.get("genre") or "").strip()
-        inferred = _generalized_genre(detailed)
-        if inferred == "Other":
-            current = _normalize_genre_category(track.get("genre_category") or "Other")
-            if current == "Latin / Other":
-                try:
-                    change_downloaded_genre(
-                        DownloadedGenreRequest(
-                            track_ids=[int(track["id"])], genre_category="Other"
-                        )
-                    )
-                    outcome = "updated"
-                except HTTPException as error:
-                    outcome = "failed"
-                    conflict = {"id": int(track["id"]), "detail": str(error.detail)}
-            else:
-                outcome = "unresolved"
-        else:
-            source = Path(track["file_path"])
-            destination = _genre_directory(inferred) / source.name
-            current = _normalize_genre_category(track.get("genre_category") or "Other")
-            if current != inferred or source.resolve() != destination.resolve():
-                try:
-                    change_downloaded_genre(
-                        DownloadedGenreRequest(
-                            track_ids=[int(track["id"])], genre_category=inferred
-                        )
-                    )
-                    outcome = "updated"
-                except HTTPException as error:
-                    outcome = "failed"
-                    conflict = {
-                        "track_id": int(track["id"]),
-                        "title": track.get("title") or track.get("filename"),
-                        "reason": str(error.detail),
-                    }
-        with genre_rescan_batch_lock:
-            batch = genre_rescan_batches[batch_id]
-            batch["processed"] = index
-            batch[outcome] += 1
-            if conflict:
-                batch["conflicts"].append(conflict)
-    with genre_rescan_batch_lock:
-        genre_rescan_batches[batch_id]["status"] = "complete"
-    with wav_tag_batch_lock:
-        for wav_batch_id in [
-            key for key, value in wav_tag_batches.items()
-            if value.get("status") != "processing"
-        ]:
-            wav_tag_batches.pop(wav_batch_id, None)
-
-
-@app.post("/api/downloaded-library/rescan-genres", status_code=202)
-def start_downloaded_genre_rescan() -> dict:
-    """Start a sequential genre rescan and return its observable batch state."""
-    _require_music_library_online()
-    with genre_rescan_batch_lock:
-        active = next((
-            {"batch_id": key, **value}
-            for key, value in genre_rescan_batches.items()
-            if value["status"] == "processing"
-        ), None)
-        if active:
-            return active
-        batch_id = uuid.uuid4().hex
-        genre_rescan_batches[batch_id] = {
-            "status": "processing",
-            "total": len(repository.list_downloaded_tracks()),
-            "processed": 0,
-            "updated": 0,
-            "unchanged": 0,
-            "unresolved": 0,
-            "failed": 0,
-            "conflicts": [],
-        }
-    threading.Thread(
-        target=_run_genre_rescan_batch,
-        args=(batch_id,),
-        daemon=True,
-        name=f"genre-rescan-{batch_id[:8]}",
-    ).start()
-    return {"batch_id": batch_id, **genre_rescan_batches[batch_id]}
-
-
-@app.get("/api/downloaded-library/rescan-genres/{batch_id}")
-def downloaded_genre_rescan_status(batch_id: str) -> dict:
-    with genre_rescan_batch_lock:
-        batch = genre_rescan_batches.get(batch_id)
-        if batch is None:
-            raise HTTPException(404, "Genre rescan was not found")
-        return {"batch_id": batch_id, **batch}
-
-
-@app.get("/api/downloaded-library/rescan-genres-latest")
-def latest_downloaded_genre_rescan_status() -> dict:
-    with genre_rescan_batch_lock:
-        if not genre_rescan_batches:
-            return {"status": "none"}
-        batch_id = next(reversed(genre_rescan_batches))
-        return {"batch_id": batch_id, **genre_rescan_batches[batch_id]}
-
 
 
 @app.get("/api/downloaded-library/genres/{genre}/download")
@@ -3691,11 +3333,42 @@ library_maintenance_service = LibraryMaintenanceService(
         catalog_genre_category=lambda path, genre, detailed: _catalog_genre_category(
             path, genre, detailed
         ),
-        reconcile_batches=catalog_reconcile_batches,
-        reconcile_lock=catalog_reconcile_batch_lock,
+        metadata_batches=metadata_batch_registry,
         catalog_migration_lock=downloaded_catalog_migration_lock,
         integrity_batches=integrity_scan_batches,
         integrity_lock=integrity_scan_batch_lock,
+    )
+)
+track_metadata_mutations = TrackMetadataMutationService(
+    TrackMetadataMutationDependencies(
+        repository=repository,
+        normalize_genre=_normalize_genre_category,
+        genre_directory=_genre_directory,
+        music_library_root=_music_library_root,
+        source_metadata_path=_source_metadata_path,
+        write_wav_metadata=write_wav_metadata,
+        write_source_metadata=_write_source_metadata,
+    )
+)
+metadata_batch_service = MetadataBatchService(
+    MetadataBatchDependencies(
+        repository=lambda: repository,
+        require_library_online=_require_music_library_online,
+        sync_wav_metadata=sync_wav_metadata,
+        read_wav_artwork=read_wav_artwork,
+        embed_wav_artwork=embed_wav_artwork,
+        cache_track_artwork=_cache_track_artwork,
+        spotify_source_metadata=_spotify_source_metadata,
+        generalized_genre=_generalized_genre,
+        normalize_genre=_normalize_genre_category,
+        genre_directory=_genre_directory,
+        change_genre=lambda track_ids, category: change_downloaded_genre(
+            DownloadedGenreRequest(track_ids=track_ids, genre_category=category)
+        ),
+        refresh_wav_tag_audit=_refresh_wav_tag_audit,
+        schedule_wav_tag_audit_refresh=_schedule_wav_tag_audit_refresh,
+        music_library_root=_music_library_root,
+        registry=metadata_batch_registry,
     )
 )
 # Compatibility for scripts/tests that used the former application helper.
@@ -3729,6 +3402,7 @@ app.include_router(
             library_location_summary=_library_location_summary,
             source_metadata_path=_source_metadata_path,
             refresh_wav_tag_audit=_refresh_wav_tag_audit,
+            metadata_batches=metadata_batch_registry,
             library_status_cache=library_status_cache,
             library_status_lock=library_status_cache_lock,
             storage_inventory_cache=storage_inventory_cache,
@@ -3762,6 +3436,7 @@ app.include_router(
     )
 )
 app.include_router(create_library_maintenance_router(library_maintenance_service))
+app.include_router(create_metadata_batch_router(metadata_batch_service))
 app.include_router(
     create_job_router(
         JobQueueService(repository=lambda: repository, processor=lambda: service)

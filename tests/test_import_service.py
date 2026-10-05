@@ -39,10 +39,15 @@ class ImportServiceTests(unittest.TestCase):
     def test_offline_root_is_rejected_without_creating_it(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             missing = Path(temporary) / "disconnected-drive" / "AudioExtenderLibrary"
-            service = self.make_service(missing)
+            local_fallback = Path(temporary) / "Music" / "AudioExtender Library"
+            local_fallback.mkdir(parents=True)
+            worker = Mock()
+            service = self.make_service(missing, worker)
             with self.assertRaises(LibraryOfflineError):
                 service.start(ImportRequest())
             self.assertFalse(missing.exists())
+            self.assertEqual(list(local_fallback.iterdir()), [])
+            worker.start.assert_not_called()
 
     def test_start_cancel_status_and_clear_share_one_state_store(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
