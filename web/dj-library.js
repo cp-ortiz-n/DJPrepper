@@ -123,16 +123,33 @@ export function createDjLibraryFeature({
   ELECTRONIC_GENRE_CATEGORIES, LATIN_GENRE_CATEGORIES, libraryReprocessForm, reportDate,
   bindLazyAudio,
   syncControlUnlessEditing, captureTextFilter, operationReceiptText, loadAnalysis,
+  jobAction, jobElement,
 }) {
+  async function revealLibraryTrack(jobId, sourceName) {
+    let card = document.querySelector(`.library-card[data-job-id="${jobId}"]`);
+    if (!card) {
+      libraryRequestState.reset();
+      libraryRequestState.update({search:String(sourceName || '').replace(/\.[^.]+$/, ''), page:1});
+      await loadLibrary();
+      card = document.querySelector(`.library-card[data-job-id="${jobId}"]`);
+    }
+    if (!card) {
+      notify(`Could not reveal ${String(sourceName || 'that track').replace(/\.[^.]+$/, '')}. Reset the Library filters and try again.`, 'danger');
+      return;
+    }
+    card.scrollIntoView({behavior:'smooth',block:'start'});
+    card.querySelector('.library-compact-row')?.focus();
+  }
+
   function renderLibraryIntelligence(songs, latestByName) {
     const roleNames = ['warm-up','peak-time','closing','vocal-safe','melodic','ambient','live timing'];
     const groups = Object.fromEntries(roleNames.map(role => [role, []]));
     songs.forEach(song => libraryRoles(song).forEach(role => groups[role].push(song)));
     $('#role-groups').innerHTML = roleNames.map(role => {
       const [label,description] = LIBRARY_ROLE_INFO[role];
-      return `<details class="role-card"><summary><strong>${groups[role].length}</strong><span>${label}</span><small>${escapeHtml(description)}</small></summary><div>${groups[role].length ? groups[role].map(song => `<button type="button" data-job-id="${latestByName.get(song.source_name.toLowerCase())?.id || ''}">${escapeHtml(song.source_name.replace(/\.[^.]+$/, ''))}<span>${Number(song.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(song.key))}</span></button>`).join('') : '<p>No matching tracks yet.</p>'}<button type="button" class="role-filter" data-role="${role}">Filter DJ Library to ${label}</button></div></details>`;
+      return `<details class="role-card"><summary><strong>${groups[role].length}</strong><span>${label}</span><small>${escapeHtml(description)}</small></summary><div>${groups[role].length ? groups[role].map(song => `<button type="button" data-job-id="${latestByName.get(song.source_name.toLowerCase())?.id || ''}" data-source-name="${escapeHtml(song.source_name)}">${escapeHtml(song.source_name.replace(/\.[^.]+$/, ''))}<span>${Number(song.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(song.key))}</span></button>`).join('') : '<p>No matching tracks yet.</p>'}<button type="button" class="role-filter" data-role="${role}">Filter DJ Library to ${label}</button></div></details>`;
     }).join('');
-    $('#role-groups').querySelectorAll('[data-job-id]').forEach(button => button.onclick = () => document.querySelector(`.library-card[data-job-id="${button.dataset.jobId}"]`)?.scrollIntoView({behavior:'smooth',block:'start'}));
+    $('#role-groups').querySelectorAll('[data-job-id]').forEach(button => button.onclick = () => revealLibraryTrack(button.dataset.jobId, button.dataset.sourceName));
     $('#role-groups').querySelectorAll('.role-filter').forEach(button => button.onclick = () => { $('#library-role').value = button.dataset.role; $('#library-role').dispatchEvent(new Event('change')); document.querySelector('.library-toolbar')?.scrollIntoView({behavior:'smooth',block:'start'}); });
     const select = $('#compatibility-source'); const previous = select.value;
     select.replaceChildren(option('', 'Choose a track'), ...songs.sort((a,b) => a.source_name.localeCompare(b.source_name)).map(song => option(song.source_name, song.source_name.replace(/\.[^.]+$/, ''))));
@@ -141,8 +158,8 @@ export function createDjLibraryFeature({
       const source = songs.find(song => song.source_name === select.value);
       if (!source) { $('#compatible-tracks').innerHTML = '<p>Select a track to see BPM and key-compatible suggestions.</p>'; return; }
       const matches = songs.filter(song => song !== source).map(song => ({song,...compatibility(source,song)})).filter(match => match.score >= 40).sort((a,b) => b.score-a.score).slice(0,8);
-      $('#compatible-tracks').innerHTML = matches.length ? `<div class="compatibility-title"><div><strong>Mix suggestions for ${escapeHtml(source.source_name)}</strong><span>${Number(source.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(source.key))}</span></div><p><b>How the score works:</b> tempo 45% · harmonic key 35% · energy 10% · shared role 10%. Treat it as a shortlist, then listen before mixing.</p></div>${matches.map(match => `<button type="button" data-job-id="${latestByName.get(match.song.source_name.toLowerCase())?.id || ''}"><strong>${escapeHtml(match.song.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${match.score}% match · ${Number(match.song.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(match.song.key))}</span><small>${match.difference <= .02 ? 'tempo locked' : `${(match.difference*100).toFixed(1)}% tempo move`} · ${match.key}</small><em>Tempo ${match.components.tempo}/45 · Key ${match.components.key}/35 · Energy ${match.components.energy}/10 · Role ${match.components.role}/10</em></button>`).join('')}` : '<p>No strong matches are available yet. Try another source track or relax the Library filters.</p>';
-      $('#compatible-tracks').querySelectorAll('button').forEach(button => button.onclick = () => document.querySelector(`.library-card[data-job-id="${button.dataset.jobId}"]`)?.scrollIntoView({behavior:'smooth',block:'start'}));
+      $('#compatible-tracks').innerHTML = matches.length ? `<div class="compatibility-title"><div><strong>Mix suggestions for ${escapeHtml(source.source_name)}</strong><span>${Number(source.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(source.key))}</span></div><p><b>How the score works:</b> tempo 45% · harmonic key 35% · energy 10% · shared role 10%. Treat it as a shortlist, then listen before mixing.</p></div>${matches.map(match => `<button type="button" data-job-id="${latestByName.get(match.song.source_name.toLowerCase())?.id || ''}" data-source-name="${escapeHtml(match.song.source_name)}"><strong>${escapeHtml(match.song.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${match.score}% match · ${Number(match.song.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(match.song.key))}</span><small>${match.difference <= .02 ? 'tempo locked' : `${(match.difference*100).toFixed(1)}% tempo move`} · ${match.key}</small><em>Tempo ${match.components.tempo}/45 · Key ${match.components.key}/35 · Energy ${match.components.energy}/10 · Role ${match.components.role}/10</em></button>`).join('')}` : '<p>No strong matches are available yet. Try another source track or relax the Library filters.</p>';
+      $('#compatible-tracks').querySelectorAll('button').forEach(button => button.onclick = () => revealLibraryTrack(button.dataset.jobId, button.dataset.sourceName));
     };
     select.onchange = show; show();
   }
@@ -196,7 +213,8 @@ export function createDjLibraryFeature({
       const reviewPending = latest.review_status === 'pending';
       const choice = config.manual_candidate_selection ? `Manual choices: intro ${config.intro_candidate ?? '—'} · outro ${config.outro_candidate ?? '—'}` : 'Automatic ranking';
       const generationCount = Number(latest.generation_count || versions.length);
-      return `<article class="panel library-card" data-job-id="${latest.id}"><div class="library-head"><div><p class="eyebrow">LATEST · GENERATION ${latest._generation}${analysisOnly?' · ANALYZED':''}</p><h2>${escapeHtml(latest.source_name)}</h2><span>${escapeHtml(analysisOnly ? 'DJ analysis complete · original preserved' : choice)}</span></div><div class="library-head-actions"><button class="button secondary library-reprocess">${analysisOnly?'Extend track':'Configure reprocess'}</button>${analysisOnly?'':`<button class="button secondary library-review">${reviewPending?'Open review':'Create review'}</button>`}<button class="button secondary open-latest">Show full details</button></div></div>${libraryReprocessForm(latest, config)}<div class="library-metrics"><p><b>${latest.bpm ? Number(latest.bpm).toFixed(1) : '—'}</b><span>BPM</span></p><p><b class="library-key-value">—</b><span>Key</span></p><p><b>${analysisOnly?'Not extended':latest.intro_quality == null ? 'Preserved' : pct(latest.intro_quality)}</b><span>Intro</span></p><p><b>${analysisOnly?'Not extended':latest.outro_quality == null ? 'Preserved' : pct(latest.outro_quality)}</b><span>Outro</span></p><p><b>${reportDate(latest.updated_at)}</b><span>Processed</span></p></div><div class="library-player"><span>${analysisOnly?'Original analyzed track':'Newest extended edit'}</span><audio controls preload="none" data-src="/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}"></audio></div><div class="library-downloads"><a class="button secondary" href="/api/jobs/${latest.id}/download/wav">Source WAV</a>${!analysisOnly && versioned ? `<a class="button secondary" href="/api/jobs/${latest.id}/download/extended">Download newest extended WAV</a>` : analysisOnly ? '<span>Choose Extend track whenever you want to create an edit.</span>' : '<span>Reprocess once to create an immutable downloadable generation.</span>'}</div><div class="library-detail-host"></div><details class="version-history" data-loaded="false"><summary>${generationCount} generation${generationCount===1?'':'s'} · view version history</summary><ul><li class="muted-copy">Open to load version history.</li></ul></details></article>`;
+      const reprocessLabel = analysisOnly ? 'Extend track' : 'Configure reprocess';
+      return `<article class="panel library-card" data-job-id="${latest.id}"><div class="library-head"><div><p class="eyebrow">LATEST · GENERATION ${latest._generation}${analysisOnly?' · ANALYZED':''}</p><h2>${escapeHtml(latest.source_name)}</h2><span>${escapeHtml(analysisOnly ? 'DJ analysis complete · original preserved' : choice)}</span></div><div class="library-head-actions"><button class="button secondary library-reprocess" data-closed-label="${reprocessLabel}">${reprocessLabel}</button>${analysisOnly?'':`<button class="button secondary library-review">${reviewPending?'Open review':'Create review'}</button>`}<button class="button secondary open-latest">Show full details</button></div></div>${libraryReprocessForm(latest, config)}<div class="library-metrics"><p><b>${latest.bpm ? Number(latest.bpm).toFixed(1) : '—'}</b><span>BPM</span></p><p><b class="library-key-value">—</b><span>Key</span></p><p><b>${analysisOnly?'Not extended':latest.intro_quality == null ? 'Preserved' : pct(latest.intro_quality)}</b><span>Intro</span></p><p><b>${analysisOnly?'Not extended':latest.outro_quality == null ? 'Preserved' : pct(latest.outro_quality)}</b><span>Outro</span></p><p><b>${reportDate(latest.updated_at)}</b><span>Processed</span></p></div><div class="library-player"><span>${analysisOnly?'Original analyzed track':'Newest extended edit'}</span><audio controls preload="none" data-src="/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}"></audio></div><div class="library-downloads"><a class="button secondary" href="/api/jobs/${latest.id}/download/wav">Source WAV</a>${!analysisOnly && versioned ? `<a class="button secondary" href="/api/jobs/${latest.id}/download/extended">Download newest extended WAV</a>` : analysisOnly ? '<span>Choose Extend track whenever you want to create an edit.</span>' : '<span>Reprocess once to create an immutable downloadable generation.</span>'}</div><div class="library-detail-host"></div><details class="version-history" data-loaded="false"><summary>${generationCount} generation${generationCount===1?'':'s'} · view version history</summary><ul><li class="muted-copy">Open to load version history.</li></ul></details></article>`;
     });
     root.innerHTML = cards.join('') || '<div class="empty">No tracks match these filters.</div>';
     root.querySelectorAll('.library-card').forEach(card => {
@@ -318,7 +336,7 @@ export function createDjLibraryFeature({
     root.querySelectorAll('.library-reprocess').forEach(button => button.onclick = () => {
       const form = button.closest('.library-card').querySelector('.library-reprocess-form');
       form.hidden = !form.hidden;
-      button.textContent = form.hidden ? 'Configure reprocess' : 'Close configuration';
+      button.textContent = form.hidden ? button.dataset.closedLabel : 'Close configuration';
       if (!form.hidden) form.querySelector('select').focus();
     });
     root.querySelectorAll('.edit-library-genre').forEach(button => button.onclick = () => {
@@ -330,7 +348,8 @@ export function createDjLibraryFeature({
     root.querySelectorAll('.close-reprocess').forEach(button => button.onclick = () => {
       const card = button.closest('.library-card');
       card.querySelector('.library-reprocess-form').hidden = true;
-      card.querySelector('.library-reprocess').textContent = 'Configure reprocess';
+      const trigger = card.querySelector('.library-reprocess');
+      trigger.textContent = trigger.dataset.closedLabel;
     });
     root.querySelectorAll('.library-reprocess-form').forEach(reprocessForm => {
       const submit = async review => {
@@ -365,8 +384,15 @@ export function createDjLibraryFeature({
         };
         reprocessForm.querySelectorAll('button').forEach(item => item.disabled = true);
         reprocessForm.querySelector('.reprocess-message').textContent = review ? 'Queuing review…' : 'Queuing new generation…';
-        await jobAction(latest.id, 'reprocess', body);
-        showView('workspace-view');
+        try {
+          const succeeded = await jobAction(latest.id, 'reprocess', body);
+          if (succeeded === false) throw new Error(review ? 'The review request was not queued.' : 'The new generation was not queued.');
+          showView('workspace-view');
+        } catch (error) {
+          notify(`Reprocessing failed: ${error.message}`, 'danger');
+          reprocessForm.querySelectorAll('button').forEach(item => item.disabled = false);
+          reprocessForm.querySelector('.reprocess-message').textContent = 'Nothing was queued. Your existing track is unchanged.';
+        }
       };
       reprocessForm.addEventListener('submit', event => { event.preventDefault(); submit(false); });
       reprocessForm.querySelector('.reprocess-review').onclick = () => submit(true);
@@ -375,8 +401,13 @@ export function createDjLibraryFeature({
       const card = button.closest('.library-card');
       const latest = jobs.find(job => String(job.id) === card.dataset.jobId);
       if (latest.review_status === 'pending') { showView('review-view'); return; }
-      await jobAction(latest.id, 'reprocess', {review_candidates:true});
-      showView('workspace-view');
+      try {
+        const succeeded = await jobAction(latest.id, 'reprocess', {review_candidates:true});
+        if (succeeded === false) throw new Error('The review request was not queued.');
+        showView('workspace-view');
+      } catch (error) {
+        notify(`Review creation failed: ${error.message}`, 'danger');
+      }
     });
     root.querySelectorAll('.open-latest').forEach(button => button.onclick = async () => {
       const card = button.closest('.library-card');
@@ -385,9 +416,13 @@ export function createDjLibraryFeature({
         host.replaceChildren(); button.textContent = 'Show full details'; return;
       }
       const latest = jobs.find(job => String(job.id) === card.dataset.jobId);
-      const detail = jobElement(latest); detail.classList.add('library-embedded');
-      host.append(detail); detail.querySelector('.details-job').click();
-      button.textContent = 'Hide full details';
+      try {
+        const detail = jobElement(latest); detail.classList.add('library-embedded');
+        host.append(detail); detail.querySelector('.details-job').click();
+        button.textContent = 'Hide full details';
+      } catch (error) {
+        notify(`Track details could not be opened: ${error.message}`, 'danger');
+      }
     });
     root.querySelectorAll('.remove-library-track').forEach(button => button.onclick = async () => {
       const card = button.closest('.library-card');
@@ -488,13 +523,17 @@ export function createDjLibraryFeature({
       const selectedCards = boxes.filter(box => box.checked).map(box => box.closest('.library-card'));
       if (!selectedCards.length || !await confirmAction(`Remove ${selectedCards.length} selected track${selectedCards.length === 1 ? '' : 's'} and all of their generations from the Library? Exported audio files will remain in the output folder.`, {title:'Remove selected tracks', acceptLabel:'Remove', danger:true})) return;
       removeButton.disabled = true; removeButton.textContent = 'Removing…';
-      try {
-        for (const card of selectedCards) {
+      const removed=[]; const failures=[];
+      for (const card of selectedCards) {
+        try {
           const response = await fetch(`/api/library/${encodeURIComponent(card.dataset.sourceName)}`, {method:'DELETE'});
-          if (!response.ok) throw new Error((await response.json()).detail || `Could not remove ${card.dataset.sourceName}.`);
-        }
-        await Promise.all([loadLibrary(), loadAnalysis(), loadReports()]);
-      } catch (error) { alert(error.message); removeButton.textContent = 'Remove from library'; refreshSelection(); }
+          if (!response.ok) throw new Error((await response.json()).detail || 'Could not remove the track.');
+          removed.push(card.dataset.sourceName);
+        } catch (error) { failures.push(`${card.dataset.sourceName}: ${error.message}`); }
+      }
+      await Promise.all([loadLibrary(), loadAnalysis(), loadReports()]);
+      const summary=`Requested: remove ${selectedCards.length} Library track${selectedCards.length===1?'':'s'}. Changed: ${removed.length} removed. Written to: persistent Library catalog. Failed: ${failures.length}${failures.length?` (${failures.slice(0,3).join('; ')}${failures.length>3?'; …':''})`:''}. Survives restart: Yes.`;
+      notify(summary, failures.length ? 'danger' : 'success', {timeout:10000});
     };
     reanalyzeButton.onclick = async () => {
       const selectedCards = boxes.filter(box => box.checked).map(box => box.closest('.library-card'));
