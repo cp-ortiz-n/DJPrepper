@@ -3,7 +3,7 @@ import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
-import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, descriptorChipsMarkup, descriptorEditorMarkup, escapeHtml, fraction, notify, operationReceiptText, option, pct, renderTrackPagination, reportDate, saveDescriptorEditor, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261005-1';
+import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, descriptorChipsMarkup, descriptorEditorMarkup, escapeHtml, fraction, notify, operationReceiptText, option, pct, renderTrackPagination, reportDate, saveDescriptorEditor, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261005-2';
 import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
 import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js?v=20261005-1';
 import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261005-1';

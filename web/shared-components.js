@@ -7,15 +7,19 @@ export const DESCRIPTOR_CATEGORIES = [
   ['context','Context or personal crate'], ['familiarity','Familiarity'],
 ];
 
-export function descriptorChipsMarkup(descriptors = []) {
+export function descriptorChipsMarkup(descriptors = [], {detailed = false} = {}) {
+  if(detailed){
+    const groups=DESCRIPTOR_CATEGORIES.map(([category,label])=>({label,items:descriptors.filter(item=>item.category===category)})).filter(group=>group.items.length);
+    return `<section class="track-descriptor-summary"><header><div><strong>Current identity</strong><small>${descriptors.length?`${descriptors.length} saved descriptor${descriptors.length===1?'':'s'}`:'Nothing has been defined yet'}</small></div>${descriptors.length?'<span>Saved to catalog</span>':''}</header>${groups.length?`<div class="track-descriptor-groups">${groups.map(group=>`<div><small>${escapeHtml(group.label)}</small><div>${group.items.map(item=>`<span>${escapeHtml(item.value)}<i>${escapeHtml(item.provenance||'manual')}${item.confidence==null?'':` · ${Math.round(Number(item.confidence)*100)}%`}</i></span>`).join('')}</div></div>`).join('')}</div>`:'<p class="track-descriptor-empty">No musical identity is saved for this track. Add cultural, rhythmic, vocal, contextual, or DJ-role descriptors to improve Set Builder matching.</p>'}</section>`;
+  }
   return descriptors.length
     ? `<div class="track-descriptor-chips">${descriptors.map(item=>`<span title="${escapeHtml(`${item.category} · ${item.provenance} · ${Math.round(Number(item.confidence||0)*100)}% confidence`)}">${escapeHtml(item.value)}</span>`).join('')}</div>`
-    : '<div class="track-descriptor-chips empty"><span>No musical identity tags yet</span></div>';
+    : '<div class="track-descriptor-chips is-empty"><span>No musical identity tags yet</span></div>';
 }
 
 export function descriptorEditorMarkup(descriptors = [], {bulk = false} = {}) {
   const grouped=Object.fromEntries(DESCRIPTOR_CATEGORIES.map(([category])=>[category,descriptors.filter(item=>item.category===category).map(item=>item.value).join(', ')]));
-  return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Musical identity'}</strong><small>Separate from genre; manual values outrank inferred metadata.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<label>Operation<select class="descriptor-mode"><option value="add">Add these tags</option><option value="remove">Remove these tags</option><option value="replace">Replace all identity tags</option></select></label>':''}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label>${escapeHtml(label)}<input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Comma-separated"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save identity'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
+  return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Edit musical identity'}</strong><small>Use short, specific tags. Separate multiple values with commas.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<label class="descriptor-operation">Operation<select class="descriptor-mode"><option value="add">Add these tags</option><option value="remove">Remove these tags</option><option value="replace">Replace all identity tags</option></select></label>':''}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label><span>${escapeHtml(label)}</span><input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Add tags…"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save changes'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
 }
 
 export async function saveDescriptorEditor(editor, trackIds) {
