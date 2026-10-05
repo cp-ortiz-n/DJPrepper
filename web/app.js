@@ -9,7 +9,7 @@ import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, cr
 import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261003-3';
 import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261003-1';
-import {createSetBuilderFeature} from './set-builder.js?v=20261003-1';
+import {createSetBuilderFeature} from './set-builder.js?v=20261004-5';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261003-1';
 
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
@@ -698,9 +698,11 @@ const reportingFeature = createReportingFeature({
 });
 const {loadAnalysis, loadReports} = reportingFeature;
 const setBuilderFeature = createSetBuilderFeature({
-  $, $$, option, escapeHtml, clock, confirmAction, decodedAudio,
-  compatibility, harmonicCompatibility, camelotKey, energyBand, songEnergy,
-  libraryRoles, bindCompactAudio, compactAudioMarkup, stopNativeAudio, notify,
+  $, $$, option, escapeHtml, clock, confirmAction, decodedAudio, WaveSurfer,
+  compatibility, harmonicCompatibility, camelotKey, formatLibraryKey,
+  energyBand, songEnergy, LIBRARY_ROLE_INFO,
+  libraryRoles, timingProfile, vocalProfile, bindCompactAudio, compactAudioMarkup,
+  stopNativeAudio, stopCompactAudio, notify,
 });
 const {loadSetBuilder} = setBuilderFeature;
 
