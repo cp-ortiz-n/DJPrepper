@@ -17,6 +17,7 @@ from audioextender.library.recording_identity import (
     normalize_identity_text,
     version_kind,
 )
+from audioextender.library.identity_inference import unknown_playlist_signals
 from audioextender.repositories.base import RepositoryMixinBase
 
 
@@ -25,12 +26,65 @@ def _now() -> str:
 
 
 class TrackCatalogRepositoryMixin(RepositoryMixinBase):
+    def identity_vocabulary_rules(self, *, status: str | None = None) -> list[dict[str, Any]]:
+        with closing(self._connect()) as connection:
+            sql = "SELECT signal,category,value,status,source,confidence,updated_at FROM identity_vocabulary_rules"
+            parameters: tuple[Any, ...] = ()
+            if status:
+                sql += " WHERE status=?"
+                parameters = (status,)
+            rows = connection.execute(sql + " ORDER BY signal", parameters).fetchall()
+        return [dict(row) for row in rows]
+
+    def save_identity_vocabulary_rule(
+        self, *, signal: str, category: str = "", value: str = "",
+        status: str = "approved", source: str = "manual", confidence: float = 1.0,
+    ) -> dict[str, Any]:
+        signal = signal.strip().casefold()
+        with self._lock, closing(self._connect()) as connection, connection:
+            connection.execute(
+                """INSERT INTO identity_vocabulary_rules
+                (signal,category,value,status,source,confidence,updated_at)
+                VALUES (?,?,?,?,?,?,?) ON CONFLICT(signal) DO UPDATE SET
+                category=excluded.category,value=excluded.value,status=excluded.status,
+                source=excluded.source,confidence=excluded.confidence,updated_at=excluded.updated_at""",
+                (signal, category.strip().casefold(), value.strip().casefold(), status,
+                 source, max(0.0, min(1.0, confidence)), _now()),
+            )
+        return next(rule for rule in self.identity_vocabulary_rules() if rule["signal"] == signal)
+
+    def identity_vocabulary_review(self) -> list[dict[str, Any]]:
+        rules = {rule["signal"]: rule for rule in self.identity_vocabulary_rules()}
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT playlist_name,COUNT(DISTINCT track_id) track_count
+                FROM downloaded_track_playlists GROUP BY playlist_name"""
+            ).fetchall()
+        aggregated: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            playlist, count = str(row["playlist_name"]), int(row["track_count"])
+            for signal in unknown_playlist_signals([playlist]):
+                item = aggregated.setdefault(signal, {"signal": signal, "track_count": 0, "examples": []})
+                item["track_count"] += count
+                if playlist not in item["examples"] and len(item["examples"]) < 3:
+                    item["examples"].append(playlist)
+        for signal, item in aggregated.items():
+            item["rule"] = rules.get(signal)
+        return sorted(aggregated.values(), key=lambda item: (-item["track_count"], item["signal"]))
+
+    def track_ids_for_vocabulary_signal(self, signal: str) -> list[int]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT track_id,playlist_name FROM downloaded_track_playlists ORDER BY track_id"
+            ).fetchall()
+        return sorted({int(row["track_id"]) for row in rows if signal in unknown_playlist_signals([str(row["playlist_name"])])})
+
     def track_ids_missing_inferred_identity(self) -> list[int]:
         """Return tracks missing identity or carrying descriptors from an older inference model."""
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 """SELECT tracks.id FROM downloaded_tracks tracks
-                WHERE NOT EXISTS (
+                WHERE tracks.identity_inference_locked=0 AND (NOT EXISTS (
                     SELECT 1 FROM downloaded_track_descriptors descriptors
                     WHERE descriptors.track_id=tracks.id
                     AND descriptors.provenance IN ('inferred','crate'))
@@ -44,21 +98,62 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                         ))
                         OR (stale.provenance='inferred' AND stale.category='familiarity'
                             AND stale.value='recognizable material')
-                    ))
+                    )))
                 ORDER BY tracks.id"""
             ).fetchall()
         return [int(row[0]) for row in rows]
 
+    def track_ids_available_for_identity_inference(self) -> list[int]:
+        """Return every track the DJ has not protected as manually approved."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT id FROM downloaded_tracks WHERE identity_inference_locked=0 ORDER BY id"
+            ).fetchall()
+        return [int(row[0]) for row in rows]
+
+    def track_identity_inference_status(self, track_id: int) -> dict[str, Any] | None:
+        """Return durable inference protection and descriptor provenance for one track."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT tracks.identity_inference_locked,
+                EXISTS(SELECT 1 FROM downloaded_track_descriptors descriptors
+                    WHERE descriptors.track_id=tracks.id AND descriptors.provenance='manual') has_manual
+                FROM downloaded_tracks tracks WHERE tracks.id=?""", (track_id,)
+            ).fetchone()
+        if row is None:
+            return None
+        return {"protected_from_inference": bool(row["identity_inference_locked"]),
+                "has_manual_descriptors": bool(row["has_manual"])}
+
+    def set_track_identity_inference_protection(self, track_ids: list[int], protected: bool) -> dict[str, Any]:
+        wanted = list(dict.fromkeys(int(track_id) for track_id in track_ids))
+        with self._lock, closing(self._connect()) as connection, connection:
+            existing = {int(row[0]) for row in connection.execute(
+                f"SELECT id FROM downloaded_tracks WHERE id IN ({','.join('?' for _ in wanted)})", wanted
+            ).fetchall()} if wanted else set()
+            connection.executemany(
+                "UPDATE downloaded_tracks SET identity_inference_locked=?,updated_at=? WHERE id=?",
+                [(int(protected), _now(), track_id) for track_id in existing],
+            )
+        return {"requested": len(wanted), "updated": len(existing),
+                "missing": sorted(set(wanted) - existing)}
+
     def replace_inferred_track_descriptors(
         self, track_id: int, descriptors: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """Refresh machine/crate descriptors while retaining all manual decisions."""
+        """Refresh machine/crate descriptors unless this track is manually protected."""
+        status = self.track_identity_inference_status(track_id)
+        if status is None:
+            return {"requested": 1, "updated": 0, "missing": [track_id], "skipped_protected": False}
+        if status["protected_from_inference"]:
+            return {"requested": 1, "updated": 0, "missing": [], "skipped_protected": True}
         with self._lock, closing(self._connect()) as connection, connection:
             connection.execute(
                 "DELETE FROM downloaded_track_descriptors WHERE track_id=? AND provenance!='manual'",
                 (track_id,),
             )
-        return self.update_track_descriptors([track_id], descriptors, mode="add")
+        return {**self.update_track_descriptors([track_id], descriptors, mode="add"),
+                "skipped_protected": False}
 
     def track_identity_inference_context(self, track_id: int) -> dict[str, Any] | None:
         """Collect catalog, playlist, and latest analysis evidence for inference."""
@@ -836,6 +931,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     tracks.filename, tracks.genre, tracks.genre_category,
                     tracks.recording_code, tracks.version_code,
                     tracks.identity_confidence, tracks.identity_reason,
+                    tracks.identity_inference_locked,
                     tracks.audio_quality_score, tracks.audio_quality_label,
                     tracks.audio_quality_json, tracks.audio_quality_analyzed_at,
                     tracks.artwork_url, tracks.artwork_path, tracks.file_path,

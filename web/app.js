@@ -3,13 +3,13 @@ import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
-import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, descriptorChipsMarkup, descriptorEditorMarkup, escapeHtml, fraction, inferDescriptorEditor, notify, openDescriptorEditorDialog, operationReceiptText, option, pct, renderTrackPagination, reportDate, saveDescriptorEditor, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261005-6';
+import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, descriptorChipsMarkup, descriptorEditorMarkup, escapeHtml, fraction, inferDescriptorEditor, notify, openDescriptorEditorDialog, operationReceiptText, option, pct, renderTrackPagination, reportDate, saveDescriptorEditor, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261005-7';
 import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
 import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js?v=20261005-5';
-import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261005-8';
+import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261005-15';
 import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261003-1';
-import {createSetBuilderFeature} from './set-builder.js?v=20261005-2';
+import {createSetBuilderFeature} from './set-builder.js?v=20261005-4';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261003-1';
 
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate

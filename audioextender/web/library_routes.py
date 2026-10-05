@@ -163,6 +163,7 @@ def _catalog_track(row: dict[str, Any], generalized_genre: Callable[[str], str])
             "version_code": row.get("version_code") or "",
             "identity_confidence": row.get("identity_confidence") or "",
             "identity_reason": row.get("identity_reason") or "",
+            "identity_inference_locked": bool(row.get("identity_inference_locked")),
             "audio_quality_score": row.get("audio_quality_score"),
             "audio_quality_label": row.get("audio_quality_label") or "",
             "audio_quality": quality_details,

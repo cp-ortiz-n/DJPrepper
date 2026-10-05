@@ -77,6 +77,52 @@ class TrackDescriptorTests(unittest.TestCase):
         suggestions = infer_identity_descriptors({"title": "Unknown Original (Club Remix Edit)"})
         self.assertFalse(any(item["category"] == "familiarity" for item in suggestions))
 
+    def test_vocabulary_review_approval_is_durable_and_refreshes_matching_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); path = root / "Track.wav"; _wav(path)
+            repository = JobRepository(root / "catalog.sqlite3")
+            track_id = repository.upsert_downloaded_track(
+                title="Track", artist="Artist", file_path=path,
+                playlist_name="STUTTERHOUSEAHOLIC ✨🎧",
+            )
+            app = FastAPI()
+            invalidations = []
+            app.include_router(create_descriptor_router(DescriptorRouteDependencies(
+                repository=lambda: repository,
+                invalidate_set_catalog=lambda: invalidations.append(True),
+            )))
+            client = TestClient(app)
+            review = client.get("/api/downloaded-library/descriptors/vocabulary").json()
+            self.assertEqual(review["items"][0]["signal"], "stutterhouseaholic")
+            invalid = client.post("/api/downloaded-library/descriptors/vocabulary", json={
+                "signal": "stutterhouseaholic", "category": "context",
+                "value": "context / crate", "status": "approved",
+            })
+            self.assertEqual(invalid.status_code, 422)
+            response = client.post("/api/downloaded-library/descriptors/vocabulary", json={
+                "signal": "stutterhouseaholic", "category": "sound",
+                "value": "stuttered vocal house", "status": "approved",
+            })
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["updated_tracks"], 1)
+            self.assertIn("stuttered vocal house", {
+                item["value"] for item in repository.track_descriptors(track_id)
+            })
+            reviewed = client.get("/api/downloaded-library/descriptors/vocabulary").json()
+            self.assertEqual(reviewed["items"], [])
+            self.assertEqual(reviewed["approved"], 1)
+            restarted = JobRepository(root / "catalog.sqlite3")
+            self.assertEqual(restarted.identity_vocabulary_rules(status="approved")[0]["value"], "stuttered vocal house")
+            self.assertEqual(invalidations, [True])
+
+            ignored = client.post("/api/downloaded-library/descriptors/vocabulary", json={
+                "signal": "stutterhouseaholic", "status": "ignored",
+            })
+            self.assertEqual(ignored.status_code, 200)
+            refreshed = client.get("/api/downloaded-library/descriptors/vocabulary").json()
+            self.assertEqual(refreshed["items"], [])
+            self.assertEqual(refreshed["ignored"], 1)
+
     def test_descriptor_api_reports_durability_and_returns_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -99,6 +145,66 @@ class TrackDescriptorTests(unittest.TestCase):
             self.assertTrue(payload["survives_restart"])
             self.assertEqual(payload["values"][0]["value"], "spanish vocals")
             self.assertEqual(invalidations, [True])
+
+    def test_manual_identity_protection_survives_restart_and_skips_reinference(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); path = root / "Protected.wav"; _wav(path)
+            database = root / "catalog.sqlite3"
+            repository = JobRepository(database)
+            track_id = repository.upsert_downloaded_track(
+                title="Protected", artist="DJ", file_path=path, playlist_name="Indian Party"
+            )
+            app = FastAPI()
+            app.include_router(create_descriptor_router(DescriptorRouteDependencies(
+                repository=lambda: repository, invalidate_set_catalog=lambda: None,
+            )))
+            client = TestClient(app)
+            saved = client.put(f"/api/downloaded-library/tracks/{track_id}/descriptors", json={
+                "descriptors": [{"category": "context", "value": "my manual crate"}],
+                "protect_from_inference": True,
+            })
+            self.assertTrue(saved.json()["protected_from_inference"])
+            toggled = client.put(
+                f"/api/downloaded-library/tracks/{track_id}/inference-protection",
+                json={"protected": False},
+            )
+            self.assertFalse(toggled.json()["protected_from_inference"])
+            client.put(
+                f"/api/downloaded-library/tracks/{track_id}/inference-protection",
+                json={"protected": True},
+            )
+            inferred = client.post("/api/downloaded-library/descriptors/infer", json={
+                "track_ids": [track_id], "apply": True,
+            }).json()
+            self.assertEqual(inferred["skipped_protected"], [track_id])
+            self.assertEqual({item["value"] for item in repository.track_descriptors(track_id)}, {"my manual crate"})
+            restarted = JobRepository(database)
+            self.assertTrue(restarted.track_identity_inference_status(track_id)["protected_from_inference"])
+            restarted.set_track_identity_inference_protection([track_id], False)
+            self.assertIn(track_id, restarted.track_ids_missing_inferred_identity())
+
+    def test_bulk_reinfer_refreshes_only_unprotected_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); database = root / "catalog.sqlite3"
+            repository = JobRepository(database)
+            ids = []
+            for name in ("Protected", "Open"):
+                path = root / f"{name}.wav"; _wav(path)
+                ids.append(repository.upsert_downloaded_track(
+                    title=name, artist="DJ", file_path=path, playlist_name="Indian Party"
+                ))
+            repository.set_track_identity_inference_protection([ids[0]], True)
+            app = FastAPI()
+            app.include_router(create_descriptor_router(DescriptorRouteDependencies(
+                repository=lambda: repository, invalidate_set_catalog=lambda: None,
+            )))
+            payload = TestClient(app).post(
+                "/api/downloaded-library/descriptors/reinfer-unprotected"
+            ).json()
+            self.assertEqual(payload["requested"], 1)
+            self.assertEqual(payload["updated"], 1)
+            self.assertEqual(repository.track_descriptors(ids[0]), [])
+            self.assertTrue(repository.track_descriptors(ids[1]))
 
     def test_descriptors_survive_restart_and_appear_in_catalogs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

@@ -17,16 +17,16 @@ export function descriptorChipsMarkup(descriptors = [], {detailed = false} = {})
     : '<div class="track-descriptor-chips is-empty"><span>No musical identity tags yet</span></div>';
 }
 
-export function descriptorEditorMarkup(descriptors = [], {bulk = false} = {}) {
+export function descriptorEditorMarkup(descriptors = [], {bulk = false, protectedFromInference = null} = {}) {
   const grouped=Object.fromEntries(DESCRIPTOR_CATEGORIES.map(([category])=>[category,descriptors.filter(item=>item.category===category).map(item=>item.value).join(', ')]));
-  return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Edit musical identity'}</strong><small>Use short, specific tags. Separate multiple values with commas.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<fieldset class="descriptor-operation"><legend>How should these tags be applied?</legend><label><input class="descriptor-mode" type="radio" name="descriptor-mode" value="add" checked><span><b>Add</b><small>Keep existing identity</small></span></label><label><input class="descriptor-mode" type="radio" name="descriptor-mode" value="remove"><span><b>Remove</b><small>Only matching tags</small></span></label><label><input class="descriptor-mode" type="radio" name="descriptor-mode" value="replace"><span><b>Replace</b><small>Clear existing identity</small></span></label></fieldset>':''}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label><span>${escapeHtml(label)}</span><input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Add tags…"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="button secondary infer-descriptors">${bulk?'Infer for selection':'Suggest tags'}</button><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save changes'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
+  return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Edit musical identity'}</strong><small>Use short, specific tags. Separate multiple values with commas.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<fieldset class="descriptor-operation"><legend>How should these tags be applied?</legend><label><input class="descriptor-mode" type="radio" name="descriptor-mode" value="add" checked><span><b>Add</b><small>Keep existing identity</small></span></label><label><input class="descriptor-mode" type="radio" name="descriptor-mode" value="remove"><span><b>Remove</b><small>Only matching tags</small></span></label><label><input class="descriptor-mode" type="radio" name="descriptor-mode" value="replace"><span><b>Replace</b><small>Clear existing identity</small></span></label></fieldset>':''}${bulk?'':`<label class="descriptor-inference-protection"><input type="checkbox"${protectedFromInference===false?'':' checked'}><span><b>Manually tagged—do not infer</b><small>Bulk and automatic re-inference will skip this track.</small></span></label>`}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label><span>${escapeHtml(label)}</span><input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Add tags…"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="button secondary infer-descriptors">${bulk?'Infer for selection':'Suggest tags'}</button><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save changes'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
 }
 
-export function openDescriptorEditorDialog({descriptors = [], bulk = false, title = 'Edit musical identity', subtitle = ''} = {}) {
+export function openDescriptorEditorDialog({descriptors = [], bulk = false, protectedFromInference = null, title = 'Edit musical identity', subtitle = ''} = {}) {
   document.querySelector('.descriptor-dialog-backdrop')?.remove();
   const backdrop=document.createElement('div');
   backdrop.className='descriptor-dialog-backdrop';
-  backdrop.innerHTML=`<section class="descriptor-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}"><header class="descriptor-dialog-heading"><div><strong>${escapeHtml(title)}</strong>${subtitle?`<small>${escapeHtml(subtitle)}</small>`:''}</div><button type="button" class="descriptor-dialog-close" aria-label="Close identity editor">×</button></header>${!bulk?descriptorChipsMarkup(descriptors,{detailed:true}):''}${descriptorEditorMarkup(descriptors,{bulk})}</section>`;
+  backdrop.innerHTML=`<section class="descriptor-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}"><header class="descriptor-dialog-heading"><div><strong>${escapeHtml(title)}</strong>${subtitle?`<small>${escapeHtml(subtitle)}</small>`:''}</div><button type="button" class="descriptor-dialog-close" aria-label="Close identity editor">×</button></header>${!bulk?descriptorChipsMarkup(descriptors,{detailed:true}):''}${descriptorEditorMarkup(descriptors,{bulk,protectedFromInference})}</section>`;
   document.body.append(backdrop);
   document.body.classList.add('descriptor-dialog-open');
   const editor=backdrop.querySelector('.track-descriptor-editor');
@@ -51,7 +51,7 @@ export async function inferDescriptorEditor(editor, trackIds) {
   }
   const response=await fetch('/api/downloaded-library/descriptors/infer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:ids,apply:true})}),payload=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':payload.detail||'Identity inference could not be applied.');
-  status.textContent=`Added inferred tags to ${payload.applied} of ${payload.processed} tracks. Manual tags were preserved.`;
+  status.textContent=`Added inferred tags to ${payload.applied} of ${payload.processed} tracks.${payload.skipped_protected?.length?` Skipped ${payload.skipped_protected.length} manually protected track${payload.skipped_protected.length===1?'':'s'}.`:''} Manual tags were preserved.`;
   return payload;
 }
 
@@ -60,7 +60,8 @@ export async function saveDescriptorEditor(editor, trackIds) {
   const descriptors=[...editor.querySelectorAll('[data-descriptor-category]')].flatMap(input=>String(input.value||'').split(',').map(value=>value.trim()).filter(Boolean).map(value=>({category:input.dataset.descriptorCategory,value,provenance:'manual',confidence:1})));
   const mode=editor.querySelector('.descriptor-mode:checked')?.value||'replace';
   const url=ids.length===1?`/api/downloaded-library/tracks/${ids[0]}/descriptors`:'/api/downloaded-library/descriptors/bulk';
-  const response=await fetch(url,{method:ids.length===1?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...(ids.length===1?{}:{track_ids:ids}),descriptors,mode})});
+  const protection=editor.querySelector('.descriptor-inference-protection input');
+  const response=await fetch(url,{method:ids.length===1?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...(ids.length===1?{protect_from_inference:Boolean(protection?.checked)}:{track_ids:ids}),descriptors,mode})});
   const payload=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(payload.detail?.message||payload.detail||'Musical identity could not be saved.');
   return payload;

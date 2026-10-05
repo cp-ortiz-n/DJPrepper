@@ -70,6 +70,17 @@ test('confirmation action labels remain legible for every tone', () => {
   assert.match(styles, /\.app-dialog footer button\[data-tone="danger"\]\s*\{[^}]*color:#22100f;[^}]*background:var\(--status-danger\)/);
 });
 
+test('Music Files exposes a guarded identity vocabulary review workflow', () => {
+  const musicPath = fileURLToPath(new URL('../web/music-files.js', import.meta.url));
+  const indexPath = fileURLToPath(new URL('../web/index.html', import.meta.url));
+  const musicSource = readFileSync(musicPath, 'utf8');
+  const indexSource = readFileSync(indexPath, 'utf8');
+  assert.match(indexSource, /id="downloaded-vocabulary-review"/);
+  assert.match(indexSource, /id="identity-vocabulary-dialog"/);
+  assert.match(musicSource, /\/api\/downloaded-library\/descriptors\/vocabulary/);
+  assert.match(musicSource, /No suggestion changes tracks until you approve|Vocabulary rule could not be saved/);
+});
+
 test('DJ Library exposes stable musical compatibility helpers', () => {
   assert.equal(library.camelotKey('A minor'), '8A');
   assert.equal(library.formatLibraryKey('G minor', 'both'), 'G minor · 6A');
@@ -151,6 +162,24 @@ test('Set Builder derives identity separately from catalog genre', () => {
   assert.ok(tags.includes('latin identity'));
   assert.ok(tags.includes('recognizable material'));
   assert.ok(tags.includes('ecuadorian party'));
+});
+
+test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {
+  const result=setBuilder.interpretSetIntention(
+    'Build a latin reggaeton and dembow mix that also includes some r&b/rap, hip hop for a chill party, kickback. Some dancing will take place as well',
+  );
+  for(const term of ['dembow','reggaeton','r&b','rap','hip hop','chill kickback','dance-friendly'])assert.ok(result.preferred.includes(term),term);
+  assert.equal(result.vibe,'balanced');
+  assert.deepEqual(result.avoided,[]);
+});
+
+test('Set Builder recognizes future catalog vocabulary without another hard-coded parser rule', () => {
+  const result=setBuilder.interpretSetIntention(
+    'Start with jersey club, then bridge into something unfamiliar.',
+    ['Jersey Club','Future Genre Not Requested'],
+  );
+  assert.ok(result.preferred.includes('jersey club'));
+  assert.ok(!result.preferred.includes('future genre not requested'));
 });
 
 test('Set Builder feature declares every musical classifier used during generation', () => {

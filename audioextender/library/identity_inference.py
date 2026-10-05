@@ -11,6 +11,23 @@ GENERIC_PLAYLISTS = {
     "downloads", "downloaded", "music", "tracks", "favorites", "favourites",
 }
 
+PLAYLIST_NOISE_WORDS = {
+    "a", "and", "best", "by", "for", "from", "in", "las", "latest", "lo",
+    "mejores", "mix", "mixes", "of", "on", "playlist", "popular", "songs",
+    "spotify", "the", "tiktok", "track", "tracks", "transitions", "viral", "with",
+}
+
+KNOWN_PLAYLIST_WORDS = {
+    "afro", "afrobeats", "after", "afterhours", "amapiano", "anthem", "bachata",
+    "bhangra", "bollywood", "boiler", "brazil", "brazilian", "caribbean", "classic",
+    "club", "colombia", "colombian", "cumbia", "dance", "dancefloor", "dembow",
+    "desi", "disco", "ecuador", "ecuadorian", "electronic", "festival", "funk",
+    "guaracha", "gym", "hard", "hindi", "hit", "hits", "house", "indian", "latin",
+    "live", "lounge", "merengue", "party", "rave", "reggae", "reggaeton", "remix",
+    "remixes", "room", "running", "salsa", "scratch", "set", "singalong", "skratch",
+    "soca", "techno", "throwback", "tribal", "turntablism", "uk", "workout",
+}
+
 RULES: tuple[tuple[str, str, tuple[str, ...], float], ...] = (
     ("cultural", "latin", ("latin", "latino", "reggaeton", "dembow", "salsa", "bachata", "cumbia", "guaracha"), .82),
     ("cultural", "ecuadorian", ("ecuador", "ecuadorian", "ecuatoriano"), .92),
@@ -75,6 +92,20 @@ def _playlist_contexts(value: str) -> list[str]:
     return contexts
 
 
+def unknown_playlist_signals(playlists: list[str]) -> list[str]:
+    """Return reviewable playlist words that are neither known cues nor formatting noise."""
+    unknown: set[str] = set()
+    for playlist in playlists:
+        normalized = _clean(playlist)
+        for token in re.findall(r"[a-zà-ÿ][a-z0-9à-ÿ'-]{2,}", normalized):
+            if token in PLAYLIST_NOISE_WORDS or token in KNOWN_PLAYLIST_WORDS:
+                continue
+            if token.isdigit() or re.fullmatch(r"20\d{2}", token):
+                continue
+            unknown.add(token.strip("-_'"))
+    return sorted(value for value in unknown if value)
+
+
 def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
     """Return explainable suggestions without asserting unsupported audio facts."""
     playlists = [str(value).strip() for value in context.get("playlists", []) if str(value).strip()]
@@ -110,6 +141,19 @@ def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
         if all(artist in combined for artist in required):
             for category, value, confidence in cues:
                 suggestions.setdefault((category, value), {"category":category,"value":value,"provenance":"inferred","confidence":confidence,"reason":f"Artist-crate cue: {' + '.join(required)}"})
+
+    unknown_signals = set(unknown_playlist_signals(playlists))
+    for rule in context.get("vocabulary_rules", []) or []:
+        signal = _clean(rule.get("signal"))
+        if signal not in unknown_signals:
+            continue
+        category, value = _clean(rule.get("category")), _clean(rule.get("value"))
+        if category and value:
+            suggestions[(category, value)] = {
+                "category": category, "value": value, "provenance": "inferred",
+                "confidence": float(rule.get("confidence") or .8),
+                "reason": f'Approved identity vocabulary: "{signal}"',
+            }
 
     for playlist in playlists:
         normalized = _clean(playlist)

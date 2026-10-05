@@ -53,21 +53,33 @@ export function parseIdentityTerms(value) {
   return [...new Set(String(value||'').split(',').map(term=>term.trim().toLowerCase()).filter(Boolean))];
 }
 
-export function interpretSetIntention(value) {
+function normalizedIntentPhrase(value){return ` ${String(value||'').toLowerCase().replaceAll('&',' and ').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ')} `;}
+
+export function interpretSetIntention(value, catalogVocabulary = []) {
   const text=String(value||'').trim(),lower=text.toLowerCase(),preferred=[],required=[],avoided=[];
   const rules=[
     [/ecuador|ecuadorian/, 'ecuadorian party'], [/colombia|colombian/, 'colombian'], [/caribbean/, 'caribbean'], [/andean/, 'andean'],
     [/spanish[- ]?(?:language )?vocal|vocals? in spanish|español/, 'spanish vocals'], [/dembow/, 'dembow'], [/latin percussion|latin rhythm/, 'latin percussion'],
     [/guaracha/, 'guaracha'], [/cumbia/, 'cumbia'], [/reggaeton|perreo/, 'reggaeton'], [/tribal/, 'tribal'], [/techno/, 'techno foundation'],
+    [/(?:r\s*&\s*b|rnb|rhythm and blues)/, 'r&b'], [/(?:hip[- ]?hop)/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
+    [/(?:chill|kickback|laid[- ]?back|low[- ]?key)/, 'chill kickback'], [/(?:party|danc(?:e|ing))/, 'dance-friendly'],
     [/recognizable|familiar|singalong|classic/, 'recognizable material'], [/peak[- ]?time|high energy|driving/, 'peak-time energy'],
     [/dark/, 'dark'], [/industrial/, 'industrial'], [/melodic/, 'melodic'], [/hypnotic/, 'hypnotic'], [/euphoric/, 'euphoric'],
   ];
   rules.forEach(([pattern,term])=>{if(pattern.test(lower))preferred.push(term);});
+  const normalizedText=normalizedIntentPhrase(text),genericTerms=new Set(['all','any','general','music','other','unknown','unclassified']);
+  for(const rawTerm of catalogVocabulary){
+    const term=String(rawTerm||'').trim().toLowerCase(),normalized=normalizedIntentPhrase(term).trim();
+    if(normalized.length<3||genericTerms.has(normalized))continue;
+    if(normalizedText.includes(` ${normalized} `))preferred.push(term);
+  }
   if(/(?:must|required|require)[^.]*spanish/.test(lower))required.push('spanish vocals');
   if(/(?:must|required|require)[^.]*(?:latin percussion|dembow|latin rhythm)/.test(lower))required.push('latin rhythmic identity');
   if(/avoid[^.]*(?:generic|instrumental)[^.]*techno|limit[^.]*generic[^.]*techno/.test(lower))avoided.push('generic instrumental techno');
   const drift=/do not drift|no genre drift|strict genre/.test(lower)?'none':/small|slight|close genres only/.test(lower)?'low':/wide|open genre|context over genre/.test(lower)?'wide':'moderate';
-  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),drift,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
+  const chill=/(?:chill|kickback|laid[- ]?back|low[- ]?key)/.test(lower),dance=/(?:party|danc(?:e|ing))/.test(lower);
+  const vibe=chill&&dance?'balanced':dance?'dance-party':chill?'warm-up':null;
+  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),drift,vibe,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
 }
 
 export function inferredTrackIdentity(track, manual=[]) {
@@ -78,6 +90,7 @@ export function inferredTrackIdentity(track, manual=[]) {
   add('spanish vocals',/spanish|español|vocal latino|reggaeton|salsa|bachata/);add('dembow',/dembow|reggaeton|perreo/);add('latin percussion',/latin|salsa|cumbia|guaracha|tribal/);
   add('ecuadorian party',/ecuador|ecuadorian/);add('colombian',/colombia|colombian|cumbia/);add('caribbean',/caribbean|reggaeton|salsa|dembow/);add('andean',/andean/);
   add('recognizable material',/remix|edit|bootleg|mashup|classic|anthem/);add('dark',/dark/);add('industrial',/industrial/);add('melodic',/melodic/);add('hypnotic',/hypnotic/);add('euphoric',/euphoric|anthem/);
+  add('r&b',/(?:r\s*&\s*b|rnb|rhythm and blues)/);add('hip hop',/hip[- ]?hop/);add('rap',/(?:^|\W)rap(?:\W|$)/);add('chill kickback',/chill|downtempo|lounge|warm-up|laid[- ]?back/);
   return [...new Set(tags)];
 }
 
@@ -113,14 +126,19 @@ export function createSetBuilderFeature({
   let transitionEditorSurfaces = [];
   const transitionWaveCache = new Map();
   function identityStore(){try{return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY)||'{}');}catch(_){return {};}}
+  function intentionVocabulary(){return [...new Set(setBuilderLibrary.flatMap(track=>[
+    ...String(track._genre||'').split('/').map(value=>value.trim()),
+    ...setTrackDetailedGenres(track),
+    ...(track._descriptors||[]).map(item=>item.value),
+  ]).filter(Boolean))];}
   function manualTrackIdentity(track){return identityStore()[setTrackId(track)]||[];}
   function saveManualTrackIdentity(track,terms){const store=identityStore();store[setTrackId(track)]=parseIdentityTerms(terms);localStorage.setItem(SET_IDENTITY_STORAGE_KEY,JSON.stringify(store));track._manualIdentity=store[setTrackId(track)];}
   function trackIdentity(track){return inferredTrackIdentity(track,track._manualIdentity||manualTrackIdentity(track));}
-  function identityTermMatches(track,term){const normalized=String(term||'').toLowerCase(),tags=trackIdentity(track);if(normalized==='latin rhythmic identity')return tags.some(tag=>['dembow','latin percussion','latin identity'].includes(tag));if(normalized==='generic instrumental techno')return tags.includes('techno foundation')&&!tags.includes('spanish vocals')&&!tags.includes('latin percussion')&&!tags.includes('recognizable material');return tags.some(tag=>tag===normalized||tag.includes(normalized)||normalized.includes(tag));}
+  function identityTermMatches(track,term){const normalized=String(term||'').toLowerCase(),tags=trackIdentity(track);if(normalized==='latin rhythmic identity')return tags.some(tag=>['dembow','latin percussion','latin identity'].includes(tag));if(normalized==='generic instrumental techno')return tags.includes('techno foundation')&&!tags.includes('spanish vocals')&&!tags.includes('latin percussion')&&!tags.includes('recognizable material');if(normalized==='dance-friendly')return songEnergy(track)>=.5;if(normalized==='chill kickback')return songEnergy(track)<=.68||tags.includes('chill kickback');return tags.some(tag=>tag===normalized||tag.includes(normalized)||normalized.includes(tag));}
   function intentionEvaluation(track,brief){const identity=brief.identity||{required:[],preferred:[],avoided:[]};const required=(identity.required||[]).filter(term=>identityTermMatches(track,term)),preferred=(identity.preferred||[]).filter(term=>identityTermMatches(track,term)),avoided=(identity.avoided||[]).filter(term=>identityTermMatches(track,term));const missingRequired=(identity.required||[]).filter(term=>!required.includes(term));return {required,preferred,avoided,missingRequired,score:preferred.length*14+required.length*22-avoided.length*35-missingRequired.length*45};}
   function currentIntention(){return {text:$('#set-intention').value.trim(),required:parseIdentityTerms($('#set-intention-required').value),preferred:parseIdentityTerms($('#set-intention-preferred').value),avoided:parseIdentityTerms($('#set-intention-avoided').value),drift:$('#set-intention-drift').value,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}
   function renderFallbackPolicy(policy=DEFAULT_SET_FALLBACK_POLICY){$('#set-fallback-policy').innerHTML=policy.map((step,index)=>`<li><strong>${index+1}.</strong> ${escapeHtml(step)}</li>`).join('');}
-  function applyIntentionInterpretation(interpreted,{announce=true}={}){const panel=$('#set-intention-interpretation');panel.hidden=false;panel.dataset.source=interpreted.text||'';$('#set-intention-required').value=(interpreted.required||[]).join(', ');$('#set-intention-preferred').value=(interpreted.preferred||[]).join(', ');$('#set-intention-avoided').value=(interpreted.avoided||[]).join(', ');$('#set-intention-drift').value=interpreted.drift||'moderate';renderFallbackPolicy(interpreted.fallbackPolicy);if(announce)$('#set-intention-status').textContent=`Found ${(interpreted.required||[]).length} requirement${(interpreted.required||[]).length===1?'':'s'}, ${(interpreted.preferred||[]).length} preference${(interpreted.preferred||[]).length===1?'':'s'}, and ${(interpreted.avoided||[]).length} limit${(interpreted.avoided||[]).length===1?'':'s'}. Edit anything before generating.`;}
+  function applyIntentionInterpretation(interpreted,{announce=true}={}){const panel=$('#set-intention-interpretation');panel.hidden=false;panel.dataset.source=interpreted.text||'';$('#set-intention-required').value=(interpreted.required||[]).join(', ');$('#set-intention-preferred').value=(interpreted.preferred||[]).join(', ');$('#set-intention-avoided').value=(interpreted.avoided||[]).join(', ');$('#set-intention-drift').value=interpreted.drift||'moderate';if(interpreted.vibe)$('#set-vibe').value=interpreted.vibe;renderFallbackPolicy(interpreted.fallbackPolicy);if(announce)$('#set-intention-status').textContent=`Found ${(interpreted.required||[]).length} requirement${(interpreted.required||[]).length===1?'':'s'}, ${(interpreted.preferred||[]).length} preference${(interpreted.preferred||[]).length===1?'':'s'}, and ${(interpreted.avoided||[]).length} limit${(interpreted.avoided||[]).length===1?'':'s'}. Edit anything before generating.`;}
   function selectedSetGenres() { return [...$('#set-genre').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
   function selectedSetDetailedGenres() { return [...$('#set-detailed-genres').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
   function selectedExcludedSetGenres() { return [...$('#set-excluded-genres').selectedOptions].map(option=>option.value).filter(Boolean); }
@@ -467,8 +485,8 @@ export function createSetBuilderFeature({
   }
   function bindSetBuilder() {
     if(setBuilderBound)return;setBuilderBound=true;
-    $('#set-builder-form').onsubmit=event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation');if(intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText))applyIntentionInterpretation(interpretSetIntention(intentionText));const button=$('#set-generate');button.disabled=true;button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
-    $('#interpret-set-intention').onclick=()=>{const text=$('#set-intention').value.trim();if(!text){$('#set-intention-interpretation').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}applyIntentionInterpretation(interpretSetIntention(text));};
+    $('#set-builder-form').onsubmit=event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation');if(intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText))applyIntentionInterpretation(interpretSetIntention(intentionText,intentionVocabulary()));const button=$('#set-generate');button.disabled=true;button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
+    $('#interpret-set-intention').onclick=()=>{const text=$('#set-intention').value.trim();if(!text){$('#set-intention-interpretation').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}applyIntentionInterpretation(interpretSetIntention(text,intentionVocabulary()));};
     const briefName=$('#set-name'),resultName=$('#set-result-name');
     briefName.addEventListener('input',()=>{if(document.activeElement!==resultName)resultName.value=briefName.value;});
     resultName.addEventListener('input',()=>{briefName.value=resultName.value;});

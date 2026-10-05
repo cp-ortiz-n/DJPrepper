@@ -227,7 +227,9 @@ class JobRepository(
                     "identity_confidence": "TEXT NOT NULL DEFAULT 'migrated'",
                     "identity_reason": "TEXT NOT NULL DEFAULT ''",
                     "audio_fingerprint": "TEXT NOT NULL DEFAULT ''",
+                    "identity_inference_locked": "INTEGER NOT NULL DEFAULT 0",
                 }
+                identity_lock_added = "identity_inference_locked" not in downloaded_columns
                 for column, definition in identity_columns.items():
                     if column not in downloaded_columns:
                         connection.execute(
@@ -332,6 +334,26 @@ class JobRepository(
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_track_descriptors_value "
                     "ON downloaded_track_descriptors(category, value, track_id)"
+                )
+                if identity_lock_added:
+                    connection.execute(
+                    """UPDATE downloaded_tracks SET identity_inference_locked=1
+                    WHERE identity_inference_locked=0 AND EXISTS (
+                        SELECT 1 FROM downloaded_track_descriptors descriptors
+                        WHERE descriptors.track_id=downloaded_tracks.id
+                        AND descriptors.provenance='manual'
+                    )"""
+                    )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS identity_vocabulary_rules (
+                    signal TEXT PRIMARY KEY,
+                    category TEXT NOT NULL DEFAULT '',
+                    value TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'approved',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    updated_at TEXT NOT NULL
+                    )"""
                 )
                 connection.execute(
                     """CREATE TABLE IF NOT EXISTS library_search_index (
