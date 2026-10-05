@@ -22,6 +22,23 @@ export function descriptorEditorMarkup(descriptors = [], {bulk = false} = {}) {
   return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Edit musical identity'}</strong><small>Use short, specific tags. Separate multiple values with commas.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<label class="descriptor-operation">Operation<select class="descriptor-mode"><option value="add">Add these tags</option><option value="remove">Remove these tags</option><option value="replace">Replace all identity tags</option></select></label>':''}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label><span>${escapeHtml(label)}</span><input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Add tags…"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="button secondary infer-descriptors">${bulk?'Infer for selection':'Suggest tags'}</button><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save changes'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
 }
 
+export function openDescriptorEditorDialog({descriptors = [], bulk = false, title = 'Edit musical identity', subtitle = ''} = {}) {
+  document.querySelector('.descriptor-dialog-backdrop')?.remove();
+  const backdrop=document.createElement('div');
+  backdrop.className='descriptor-dialog-backdrop';
+  backdrop.innerHTML=`<section class="descriptor-dialog" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}"><header class="descriptor-dialog-heading"><div><strong>${escapeHtml(title)}</strong>${subtitle?`<small>${escapeHtml(subtitle)}</small>`:''}</div><button type="button" class="descriptor-dialog-close" aria-label="Close identity editor">×</button></header>${!bulk?descriptorChipsMarkup(descriptors,{detailed:true}):''}${descriptorEditorMarkup(descriptors,{bulk})}</section>`;
+  document.body.append(backdrop);
+  document.body.classList.add('descriptor-dialog-open');
+  const editor=backdrop.querySelector('.track-descriptor-editor');
+  editor.hidden=false;
+  const close=()=>{backdrop.remove();if(!document.querySelector('.descriptor-dialog-backdrop'))document.body.classList.remove('descriptor-dialog-open');};
+  backdrop.querySelector('.descriptor-dialog-close').onclick=close;
+  backdrop.addEventListener('click',event=>{if(event.target===backdrop)close();});
+  backdrop.addEventListener('keydown',event=>{if(event.key==='Escape')close();});
+  requestAnimationFrame(()=>editor.querySelector('input')?.focus());
+  return {backdrop,editor,close};
+}
+
 export async function inferDescriptorEditor(editor, trackIds) {
   const ids=[...new Set(trackIds.map(Number).filter(Boolean))],status=editor.querySelector('.descriptor-editor-status');
   const bulkMode=Boolean(editor.querySelector('.descriptor-mode'));

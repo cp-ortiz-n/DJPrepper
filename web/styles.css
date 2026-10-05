@@ -1051,6 +1051,15 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .downloaded-bulk-identity>div,.library-bulk-identity>div { display:flex; justify-content:space-between; gap:10px; }.downloaded-bulk-identity>div span,.library-bulk-identity>div span { color:var(--muted); font-size:8px; }
 .inspector-identity .inspector-family-heading { margin:0; }.inspector-identity .track-descriptor-fields { grid-template-columns:1fr; }.inspector-identity .track-descriptor-groups { grid-template-columns:1fr; }
 .library-identity-summary { margin:0 0 12px; }.library-identity-summary .track-descriptor-summary { margin-top:0; }
+.descriptor-dialog-open { overflow:hidden; }
+.descriptor-dialog-backdrop { position:fixed; inset:0; z-index:1200; display:grid; place-items:center; padding:20px; background:rgba(4,6,4,.78); backdrop-filter:blur(5px); }
+.descriptor-dialog { width:min(760px,100%); max-height:min(820px,calc(100vh - 40px)); overflow:auto; padding:18px; border:1px solid #4b5837; border-radius:14px; background:#111411; box-shadow:0 24px 80px rgba(0,0,0,.55); }
+.descriptor-dialog-heading { position:sticky; top:-18px; z-index:2; display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin:-18px -18px 14px; padding:18px; border-bottom:1px solid var(--line); background:#111411; }
+.descriptor-dialog-heading strong,.descriptor-dialog-heading small { display:block; }.descriptor-dialog-heading strong { font-size:15px; }.descriptor-dialog-heading small { margin-top:4px; color:var(--muted); font-size:8px; }
+.descriptor-dialog-close { width:34px; height:34px; margin:0; padding:0; flex:0 0 auto; color:var(--muted); background:#202320; }
+.descriptor-dialog .track-descriptor-summary { margin:0 0 12px; }
+.descriptor-dialog .track-descriptor-editor { margin:0; }
+.descriptor-dialog .track-descriptor-editor>header .close-descriptor-editor { display:none; }
 @media (max-width:700px) { .track-descriptor-fields { grid-template-columns:1fr; } }
 .set-basics .set-name-field { grid-column:span 2; }
 .set-result-name { background:transparent;border:1px solid transparent;border-radius:10px;color:var(--text);font:inherit;font-size:clamp(2rem,3.2vw,3.2rem);font-weight:800;letter-spacing:-.04em;margin:4px 0 6px;max-width:min(680px,100%);padding:4px 8px;width:100%; }

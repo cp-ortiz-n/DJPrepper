@@ -39,6 +39,21 @@ test('Music Files owns filter state and API serialization', () => {
   assert.equal(query.get('page_size'), '25');
 });
 
+test('identity editing keeps saved single-track values and opens without page relocation', () => {
+  const musicPath = fileURLToPath(new URL('../web/music-files.js', import.meta.url));
+  const libraryPath = fileURLToPath(new URL('../web/dj-library.js', import.meta.url));
+  const sharedPath = fileURLToPath(new URL('../web/shared-components.js', import.meta.url));
+  const musicSource = readFileSync(musicPath, 'utf8');
+  const librarySource = readFileSync(libraryPath, 'utf8');
+  const sharedSource = readFileSync(sharedPath, 'utf8');
+  assert.match(sharedSource, /export function openDescriptorEditorDialog/);
+  assert.match(sharedSource, /descriptorChipsMarkup\(descriptors,\{detailed:true\}\)/);
+  assert.match(musicSource, /descriptors:single\?\(selected\[0\]\.descriptors\|\|\[\]\)/);
+  assert.match(librarySource, /downloadedTracks\.find\(track=>Number\(track\.id\)===trackIds\[0\]\)\?\.descriptors/);
+  assert.equal(musicSource.includes("document.querySelector('.downloaded-selection').after(panel)"), false);
+  assert.equal(librarySource.includes("document.querySelector('.library-selection').after(panel)"), false);
+});
+
 test('DJ Library exposes stable musical compatibility helpers', () => {
   assert.equal(library.camelotKey('A minor'), '8A');
   assert.equal(library.formatLibraryKey('G minor', 'both'), 'G minor · 6A');

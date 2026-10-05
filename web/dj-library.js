@@ -124,7 +124,7 @@ export function createDjLibraryFeature({
   bindLazyAudio,
   syncControlUnlessEditing, captureTextFilter, operationReceiptText, loadAnalysis,
   jobAction, jobElement,
-  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor,
+  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
 }) {
   const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied){notify(`Added inferred identity tags to ${result.applied} tracks. Manual tags were preserved.`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
   async function revealLibraryTrack(jobId, sourceName) {
@@ -535,13 +535,12 @@ export function createDjLibraryFeature({
       finally { genreButton.textContent = 'Change genre'; }
     };
     identityButton.onclick=()=>{
-      document.querySelector('.library-bulk-identity')?.remove();
       const selectedCards=boxes.filter(box=>box.checked).map(box=>box.closest('.library-card'));
       const trackIds=selectedCards.map(card=>Number(card.dataset.downloadedId)).filter(Boolean);
       if(!trackIds.length||trackIds.length!==selectedCards.length)return;
-      const panel=document.createElement('section');panel.className='library-bulk-identity';panel.innerHTML=`<div><strong>Edit musical identity</strong><span>Apply descriptors to ${trackIds.length} selected track${trackIds.length===1?'':'s'}.</span></div>${descriptorEditorMarkup([],{bulk:true})}`;
-      document.querySelector('.library-selection').after(panel);
-      const editor=panel.querySelector('.track-descriptor-editor');editor.hidden=false;editor.querySelector('.cancel-descriptors').onclick=()=>panel.remove();editor.querySelector('.close-descriptor-editor').onclick=()=>panel.remove();editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(editor,trackIds);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');panel.remove();setLoadedAt(0);invalidateMusicFiles();await loadLibrary();}catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save identity';}};
+      const single=trackIds.length===1,saved=single?(downloadedTracks.find(track=>Number(track.id)===trackIds[0])?.descriptors||[]):[];
+      const {editor,close}=openDescriptorEditorDialog({descriptors:saved,bulk:!single,title:single?'Edit identity for selected track':'Edit identity for selected tracks',subtitle:single?'Saved catalog values are shown below and loaded into the editor.':`Apply descriptors to ${trackIds.length} selected tracks.`});
+      editor.querySelector('.cancel-descriptors').onclick=close;editor.querySelector('.close-descriptor-editor').onclick=close;editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(editor,trackIds);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');close();setLoadedAt(0);invalidateMusicFiles();await loadLibrary();}catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save identity';}};
       bindIdentityInference(editor,trackIds,async()=>{setLoadedAt(0);invalidateMusicFiles();await loadLibrary();});
     };
     removeButton.onclick = async () => {

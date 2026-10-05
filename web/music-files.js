@@ -20,7 +20,7 @@ export function createMusicFilesFeature({
   bindGenreEditor, startKeyAnalysis, showView, loadJobs, closeDownloadedInspector,
   clock, stopNativeAudio, bindCompactAudio, bindLazyAudio, compactAudioIsWithin, stopCompactAudio,
   collapsedGenreFolders, bindGenreFolderState,
-  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor,
+  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
 }) {
   let metadataReview = null;
   const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied){notify(`Added inferred identity tags to ${result.applied} tracks. Manual tags were preserved.`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
@@ -336,17 +336,13 @@ export function createMusicFilesFeature({
       selectAll.indeterminate = cards.some(card => card.querySelector('input').checked) && !selectAll.checked;
     };
     editIdentity.onclick=()=>{
-      document.querySelector('.downloaded-bulk-identity')?.remove();
-      const panel=document.createElement('section');
-      panel.className='downloaded-bulk-identity';
-      panel.innerHTML=`<div><strong>Edit musical identity</strong><span>Apply durable descriptors to ${downloadedSelection.size} selected track${downloadedSelection.size===1?'':'s'}.</span></div>${descriptorEditorMarkup([],{bulk:true})}`;
-      document.querySelector('.downloaded-selection').after(panel);
-      const editor=panel.querySelector('.track-descriptor-editor');
-      editor.hidden=false; editor.querySelector('.cancel-descriptors').onclick=()=>panel.remove(); editor.querySelector('.close-descriptor-editor').onclick=()=>panel.remove();
+      const selected=[...downloadedSelection.values()],single=selected.length===1;
+      const {editor,close}=openDescriptorEditorDialog({descriptors:single?(selected[0].descriptors||[]):[],bulk:!single,title:single?`Edit identity · ${selected[0].title||selected[0].filename||'Selected track'}`:'Edit identity for selected tracks',subtitle:single?'Saved catalog values are shown below and loaded into the editor.':`Apply durable descriptors to ${selected.length} selected tracks.`});
+      editor.querySelector('.cancel-descriptors').onclick=close; editor.querySelector('.close-descriptor-editor').onclick=close;
       bindIdentityInference(editor,()=>[...downloadedSelection.keys()],async()=>{setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();});
       editor.querySelector('.save-descriptors').onclick=async event=>{
         const action=event.currentTarget; action.disabled=true; action.textContent='Saving…';
-        try{const result=await saveDescriptorEditor(editor,[...downloadedSelection.keys()]);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');panel.remove();setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
+        try{const result=await saveDescriptorEditor(editor,[...downloadedSelection.keys()]);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');close();setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
         catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save identity';}
       };
     };
