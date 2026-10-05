@@ -75,6 +75,28 @@ test('Set Builder creates isolated mutable state', () => {
   assert.equal(setBuilder.setTrackId({source_name:'Track.WAV'}), 'track.wav');
 });
 
+test('Set Builder converts exact percentages into track allocations', () => {
+  assert.deepEqual(setBuilder.genreAllocationTargets(
+    ['Latin / Cumbia', 'Latin / Salsa', 'Latin / Dembow', 'Electronic / House / Latin House'],
+    {
+      'Latin / Cumbia': 25,
+      'Latin / Salsa': 25,
+      'Latin / Dembow': 25,
+      'Electronic / House / Latin House': 25,
+    },
+    16,
+  ), {
+    'Latin / Cumbia': 4,
+    'Latin / Salsa': 4,
+    'Latin / Dembow': 4,
+    'Electronic / House / Latin House': 4,
+  });
+  assert.deepEqual(
+    setBuilder.genreAllocationTargets(['A', 'B', 'C'], {A:33, B:33, C:34}, 10),
+    {A:3, B:3, C:4},
+  );
+});
+
 test('Set Builder feature declares every musical classifier used during generation', () => {
   const path = fileURLToPath(new URL('../web/set-builder.js', import.meta.url));
   const source = readFileSync(path, 'utf8');
@@ -91,6 +113,15 @@ test('Set Builder feature declares every musical classifier used during generati
   assert.match(source, /proposalSwitchNonce/);
   assert.match(source, /resultName\.addEventListener\('input'/);
   assert.match(source, /briefName\.value=resultName\.value/);
+  assert.match(source, /function setSelectionExplanation/);
+  assert.match(source, /Selected because it is a must-play track/);
+  assert.match(source, /Compatible key:/);
+  assert.match(source, /Moves from \$\{fromBpm\.toFixed\(1\)\} to \$\{toBpm\.toFixed\(1\)\} BPM/);
+  assert.match(source, /Why this track/);
+  assert.match(source, /Why this transition:/);
+  assert.match(source, /input\.step='1'/);
+  assert.match(source, /function renderSetSelectionSummary/);
+  assert.match(source, /allocating the requested genre balance first/);
 });
 
 test('Settings controller preserves startup ordering', async () => {
