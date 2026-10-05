@@ -26,7 +26,7 @@ def _now() -> str:
 
 class TrackCatalogRepositoryMixin(RepositoryMixinBase):
     def track_ids_missing_inferred_identity(self) -> list[int]:
-        """Return catalog tracks that have never received inferred/crate descriptors."""
+        """Return tracks missing identity or carrying descriptors from an older inference model."""
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 """SELECT tracks.id FROM downloaded_tracks tracks
@@ -36,8 +36,15 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     AND descriptors.provenance IN ('inferred','crate'))
                 OR EXISTS (
                     SELECT 1 FROM downloaded_track_descriptors stale
-                    WHERE stale.track_id=tracks.id AND stale.provenance='crate'
-                    AND (INSTR(stale.value, '_')>0 OR stale.value LIKE '% playlist'))
+                    WHERE stale.track_id=tracks.id AND (
+                        (stale.provenance='crate' AND stale.value NOT IN (
+                            'party','indian party','ecuadorian party','latin party',
+                            'workout / gym','rave','dancefloor','scratch practice',
+                            'turntablism','running','boiler room / live set','after-hours'
+                        ))
+                        OR (stale.provenance='inferred' AND stale.category='familiarity'
+                            AND stale.value='recognizable material')
+                    ))
                 ORDER BY tracks.id"""
             ).fetchall()
         return [int(row[0]) for row in rows]

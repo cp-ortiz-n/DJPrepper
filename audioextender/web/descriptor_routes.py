@@ -151,7 +151,6 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
             suggestions = infer_identity_descriptors(context or {})
             if not suggestions:
                 no_suggestions.append(track_id)
-                continue
             repository.replace_inferred_track_descriptors(track_id, suggestions)
             applied += 1
             suggestions_added += len(suggestions)

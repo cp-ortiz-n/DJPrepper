@@ -30,7 +30,6 @@ RULES: tuple[tuple[str, str, tuple[str, ...], float], ...] = (
     ("sound", "bollywood pop", ("bollywood", "indian pop", "hindi pop"), .9),
     ("vocal", "spanish-language cues", ("spanish", "español", "latino vocal", "reggaeton", "salsa", "bachata"), .66),
     ("vocal", "hindi-language cues", ("hindi", "bollywood", "indian pop"), .68),
-    ("familiarity", "recognizable material", ("remix", "edit", "bootleg", "mashup", "classic", "anthem", "throwback"), .76),
     ("role", "peak-time", ("peak time", "peak-time", "mainstage", "festival", "banger"), .83),
     ("role", "warm-up", ("warm up", "warm-up", "opening", "lounge"), .84),
     ("role", "closing", ("closing", "afterhours", "after hours", "sunrise"), .82),
@@ -48,11 +47,32 @@ def _clean(value: Any) -> str:
     return re.sub(r"\s+", " ", value).casefold()
 
 
-def _playlist_context(value: str) -> str:
+def _playlist_contexts(value: str) -> list[str]:
     normalized = _clean(value)
-    normalized = re.sub(r"\b(playlist|songs?|tracks?|music|hits?)\b", " ", normalized)
-    normalized = re.sub(r"\b(and)\b", "+", normalized)
-    return re.sub(r"\s+", " ", normalized).strip(" +-_/")
+    contexts: list[str] = []
+    if "party" in normalized:
+        if any(word in normalized for word in ("indian", "bollywood", "hindi", "desi")):
+            contexts.append("indian party")
+        elif any(word in normalized for word in ("ecuador", "ecuadorian", "ecuatoriano")):
+            contexts.append("ecuadorian party")
+        elif "latin" in normalized:
+            contexts.append("latin party")
+        else:
+            contexts.append("party")
+    controlled = (
+        ("workout / gym", ("workout", "gym")),
+        ("rave", ("rave",)),
+        ("dancefloor", ("dancefloor", "dance floor")),
+        ("scratch practice", ("scratch", "skratch")),
+        ("turntablism", ("turntablism",)),
+        ("running", ("running",)),
+        ("boiler room / live set", ("boiler room", "live set")),
+        ("after-hours", ("afterhours", "after hours")),
+    )
+    for context, needles in controlled:
+        if any(needle in normalized for needle in needles) and context not in contexts:
+            contexts.append(context)
+    return contexts
 
 
 def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
@@ -83,8 +103,8 @@ def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
 
     if any(needle in combined for needle in ("party", "dancefloor", "club", "banger")):
         suggestions.setdefault(("role", "party-ready"), {"category":"role","value":"party-ready","provenance":"inferred","confidence":.78,"reason":"Party or dancefloor context in metadata/playlist"})
-    if any(needle in combined for needle in ("hit", "classic", "throwback", "anthem", "singalong")):
-        suggestions.setdefault(("familiarity", "crowd-recognizable"), {"category":"familiarity","value":"crowd-recognizable","provenance":"inferred","confidence":.76,"reason":"Hits/classics/anthem cue in metadata or playlist"})
+    if any(needle in combined for needle in ("hit", "classic", "throwback", "anthem", "singalong", "popular", "viral", "tiktok")):
+        suggestions.setdefault(("familiarity", "crowd-recognizable"), {"category":"familiarity","value":"crowd-recognizable","provenance":"inferred","confidence":.72,"reason":"Popularity/recognition cue in metadata or playlist; not verified chart data"})
 
     for required, cues in ARTIST_CUES:
         if all(artist in combined for artist in required):
@@ -97,13 +117,11 @@ def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if normalized.endswith(" imports") or normalized.startswith("imported "):
             continue
-        context_value = _playlist_context(playlist)
-        if not context_value:
-            continue
-        suggestions.setdefault(("context", context_value), {
-            "category": "context", "value": context_value, "provenance": "crate",
-            "confidence": .8, "reason": f'Playlist/crate: "{playlist}"',
-        })
+        for context_value in _playlist_contexts(playlist):
+            suggestions.setdefault(("context", context_value), {
+                "category": "context", "value": context_value, "provenance": "crate",
+                "confidence": .78, "reason": f'Normalized playlist/crate cue: "{playlist}"',
+            })
 
     roles = [value for value in str(context.get("library_roles") or "").strip("|").split("|") if value]
     for role in roles:

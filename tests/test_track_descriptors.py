@@ -53,7 +53,29 @@ class TrackDescriptorTests(unittest.TestCase):
         self.assertIn(("sound", "emotive electronic"), artist_values)
         self.assertIn(("sound", "vocal-sample driven"), artist_values)
         self.assertIn(("context", "contemporary electronic crossover"), artist_values)
-        self.assertIn(("context", "skrillex + fred again"), artist_values)
+        self.assertNotIn(("context", "skrillex + fred again"), artist_values)
+
+    def test_promotional_playlist_names_are_decomposed_into_controlled_signals(self) -> None:
+        suggestions = infer_identity_descriptors({
+            "playlists": [
+                "best spotify mix party transitions 🎛️",
+                "🔥GUARACHA 💊 LAS MEJORES 2026 ⭐🤩 🇨🇴",
+                "Afro House Remix of Popular TikTok 2026 🔥 Workout & Gym House Mix",
+                "DEMBOW 2026 🍑 LO MÁS ESCUCHADO",
+            ]
+        })
+        values = {(item["category"], item["value"]) for item in suggestions}
+        self.assertIn(("context", "party"), values)
+        self.assertIn(("context", "workout / gym"), values)
+        self.assertIn(("sound", "tribal"), values)
+        self.assertIn(("rhythm", "dembow"), values)
+        self.assertIn(("cultural", "afro-influenced"), values)
+        self.assertIn(("familiarity", "crowd-recognizable"), values)
+        self.assertFalse(any("spotify" in value or "2026" in value or "🎛" in value for _, value in values))
+
+    def test_remix_or_edit_alone_does_not_claim_familiarity(self) -> None:
+        suggestions = infer_identity_descriptors({"title": "Unknown Original (Club Remix Edit)"})
+        self.assertFalse(any(item["category"] == "familiarity" for item in suggestions))
 
     def test_descriptor_api_reports_durability_and_returns_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
