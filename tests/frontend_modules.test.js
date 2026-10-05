@@ -49,9 +49,18 @@ test('identity editing keeps saved single-track values and opens without page re
   assert.match(sharedSource, /export function openDescriptorEditorDialog/);
   assert.match(sharedSource, /descriptorChipsMarkup\(descriptors,\{detailed:true\}\)/);
   assert.match(musicSource, /descriptors:single\?\(selected\[0\]\.descriptors\|\|\[\]\)/);
-  assert.match(librarySource, /downloadedTracks\.find\(track=>Number\(track\.id\)===trackIds\[0\]\)\?\.descriptors/);
+  assert.match(librarySource, /currentTrack=single\?downloadedTracks\.find\(track=>Number\(track\.id\)===trackIds\[0\]\):null,saved=currentTrack\?\.descriptors/);
   assert.equal(musicSource.includes("document.querySelector('.downloaded-selection').after(panel)"), false);
   assert.equal(librarySource.includes("document.querySelector('.library-selection').after(panel)"), false);
+  assert.match(sharedSource, /type="radio" name="descriptor-mode" value="add" checked/);
+  assert.match(sharedSource, /querySelector\('\.descriptor-mode:checked'\)/);
+  assert.match(musicSource, /inspector-edit-identity">Musical identity/);
+  assert.equal(musicSource.includes("identitySection.className='inspector-identity'"), false);
+  assert.match(musicSource, /nextButton\.textContent='Save & next →'/);
+  assert.match(musicSource, /previousButton\.textContent='← Save & previous'/);
+  assert.match(musicSource, /if\(offset\)openIdentityEditor\(targetIndex\+offset\)/);
+  assert.match(musicSource, /downloadedSelection\.set\(Number\(target\.id\),target\)/);
+  assert.match(librarySource, /targetBox\.checked=true;refreshSelection\(\);identityButton\.onclick\(\)/);
 });
 
 test('confirmation action labels remain legible for every tone', () => {
