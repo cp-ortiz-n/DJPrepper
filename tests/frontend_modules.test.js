@@ -58,6 +58,22 @@ test('Set Builder creates isolated mutable state', () => {
   assert.equal(setBuilder.setTrackId({source_name:'Track.WAV'}), 'track.wav');
 });
 
+test('Set Builder feature declares every musical classifier used during generation', () => {
+  const path = fileURLToPath(new URL('../web/set-builder.js', import.meta.url));
+  const source = readFileSync(path, 'utf8');
+  const signature = source.slice(source.indexOf('createSetBuilderFeature({'), source.indexOf('}) {', source.indexOf('createSetBuilderFeature({')));
+  assert.match(signature, /timingProfile/);
+  assert.match(signature, /vocalProfile/);
+  assert.match(signature, /formatLibraryKey/);
+  assert.match(signature, /LIBRARY_ROLE_INFO/);
+  assert.match(signature, /stopCompactAudio/);
+  assert.match(signature, /WaveSurfer/);
+  assert.match(source, /Set generation failed:/);
+  assert.match(source, /Transition preview failed/);
+  assert.match(source, /renderSetPlan\(\);\s*\$\('#set-builder-message'\).*Optimizing its transitions in the background/);
+  assert.match(source, /proposalSwitchNonce/);
+});
+
 test('Settings controller preserves startup ordering', async () => {
   const calls = [];
   const controller = settings.createSettingsController({

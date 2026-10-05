@@ -31,9 +31,11 @@ export function targetSetEnergy(index, count, brief) {
 }
 
 export function createSetBuilderFeature({
-  $, $$, option, escapeHtml, clock, confirmAction, decodedAudio,
-  compatibility, harmonicCompatibility, camelotKey, energyBand, songEnergy,
-  libraryRoles, bindCompactAudio, compactAudioMarkup, stopNativeAudio, notify,
+  $, $$, option, escapeHtml, clock, confirmAction, decodedAudio, WaveSurfer,
+  compatibility, harmonicCompatibility, camelotKey, formatLibraryKey,
+  energyBand, songEnergy, LIBRARY_ROLE_INFO,
+  libraryRoles, timingProfile, vocalProfile, bindCompactAudio, compactAudioMarkup,
+  stopNativeAudio, stopCompactAudio, notify,
 }) {
   const initialSetBuilderState = createSetBuilderState();
   let setBuilderLibrary = initialSetBuilderState.library;
@@ -55,6 +57,7 @@ export function createSetBuilderFeature({
   let transitionPreviewState = null;
   let setCompactMode = initialSetBuilderState.compactMode;
   let setTransitionSettings = initialSetBuilderState.transitionSettings;
+  let proposalSwitchNonce = 0;
   let transitionEditorSurfaces = [];
   const transitionWaveCache = new Map();
   function selectedSetGenres() { return [...$('#set-genre').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
@@ -152,7 +155,27 @@ export function createSetBuilderFeature({
   }
   function setPlanSnapshot() { return {tracks:currentSetPlan.map(setTrackId),locked:[...setLockedIds],transitions:JSON.parse(JSON.stringify(setTransitionSettings))}; }
   function restoreSetSnapshot(snapshot,render=true) { const byId=new Map(setBuilderLibrary.map(track=>[setTrackId(track),track]));currentSetPlan=(snapshot?.tracks||[]).map(id=>byId.get(id)).filter(Boolean);setLockedIds=new Set(snapshot?.locked||[]);setTransitionSettings=snapshot?.transitions||{};if(render)renderSetPlan(); }
-  async function selectSetProposal(id){const next=setProposals.find(proposal=>proposal.id===id&&proposal.accepted);if(!next||id===activeSetProposal)return;const current=setProposals.find(proposal=>proposal.id===activeSetProposal);if(current){current.snapshot=setPlanSnapshot();current.health=setHealth();}stopTransitionPreview();pushSetHistory();activeSetProposal=id;restoreSetSnapshot(next.snapshot,false);if(!Object.keys(setTransitionSettings).length){$('#set-builder-message').textContent=`Optimizing transitions for ${next.label}…`;await autoOptimizeSetTransitions();next.snapshot=setPlanSnapshot();next.health=setHealth();}renderSetPlan();$('#set-builder-message').textContent=`${next.label} applied · ${setHealth().score}/100 health. Your edits to the other directions are saved.`;}
+  async function selectSetProposal(id){
+    const next=setProposals.find(proposal=>proposal.id===id&&proposal.accepted);if(!next||id===activeSetProposal)return;
+    const current=setProposals.find(proposal=>proposal.id===activeSetProposal);if(current){current.snapshot=setPlanSnapshot();current.health=setHealth();}
+    stopTransitionPreview();pushSetHistory();activeSetProposal=id;restoreSetSnapshot(next.snapshot,false);
+    const switchNonce=++proposalSwitchNonce;
+    const needsOptimization=!Object.keys(setTransitionSettings).length;
+    renderSetPlan();
+    $('#set-builder-message').textContent=needsOptimization?`${next.label} applied · ${setHealth().score}/100 health. Optimizing its transitions in the background…`:`${next.label} applied · ${setHealth().score}/100 health. Your edits to the other directions are saved.`;
+    if(!needsOptimization)return;
+    try{
+      const optimized=await autoOptimizeSetTransitions();
+      if(switchNonce!==proposalSwitchNonce||activeSetProposal!==id)return;
+      next.snapshot=setPlanSnapshot();next.health=setHealth();renderSetPlan();
+      $('#set-builder-message').textContent=`${next.label} applied · ${next.health.score}/100 health · ${optimized} transition${optimized===1?'':'s'} optimized. Your edits to the other directions are saved.`;
+    }catch(error){
+      if(switchNonce!==proposalSwitchNonce||activeSetProposal!==id)return;
+      console.error('Set proposal optimization failed',error);
+      $('#set-builder-message').textContent=`${next.label} is ready, but automatic transition optimization failed: ${error?.message||error}. You can still edit each mix manually.`;
+      notify('The set direction changed, but some transitions could not be optimized.','danger');
+    }
+  }
   function renderSetProposals(){const root=$('#set-proposals');if(!root)return;root.innerHTML=setProposals.map(proposal=>{const active=proposal.id===activeSetProposal;const score=Math.max(0,proposal.health?.score??0);return `<button type="button" class="set-proposal${active?' active':''}${proposal.accepted?'':' unavailable'}" role="radio" aria-checked="${active}" data-proposal="${proposal.id}" ${proposal.accepted?'':'disabled'}><span><b>${proposal.label}</b><em>${proposal.accepted?`${score}/100 health`:`Below target · ${score}/100`}</em></span><strong>${proposal.summary}</strong><small>${proposal.detail}</small></button>`;}).join('');root.querySelectorAll('[data-proposal]').forEach(button=>{button.onclick=()=>selectSetProposal(button.dataset.proposal);button.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();const available=[...root.querySelectorAll('[data-proposal]:not(:disabled)')];const offset=['ArrowRight','ArrowDown'].includes(event.key)?1:-1;const next=available[(available.indexOf(button)+offset+available.length)%available.length];next?.focus();next?.click();};});}
   function pushSetHistory() { if(!currentSetPlan.length)return;setPlanHistory.push(setPlanSnapshot());if(setPlanHistory.length>60)setPlanHistory.shift();setPlanFuture=[];updateSetHistoryButtons(); }
   function updateSetHistoryButtons() { const undo=$('#set-undo'),redo=$('#set-redo');if(undo)undo.disabled=!setPlanHistory.length;if(redo)redo.disabled=!setPlanFuture.length; }
@@ -175,7 +198,7 @@ export function createSetBuilderFeature({
     stopTransitionPreview();const previous=currentSetPlan[index-1],next=currentSetPlan[index];if(!previous?._job?.id||!next?._job?.id)return;
     stopCompactAudio();document.querySelectorAll('audio').forEach(audio=>audio.pause());const settings=transitionSettings(index);const bars=Number(settings.bars||16);const outgoingBpm=Math.max(60,Number(previous.bpm||120));const incomingBpm=Math.max(60,Number(next.bpm||outgoingBpm));const overlap=bars*4*60/outgoingBpm;const lead=Math.min(6,overlap*.25);
     const outgoing=new Audio(`/api/jobs/${previous._job.id}/audio/wav`);const incoming=new Audio(`/api/jobs/${next._job.id}/audio/wav`);outgoing.preload='auto';incoming.preload='auto';incoming.volume=0;incoming.playbackRate=settings.tempoSync?Math.max(.92,Math.min(1.08,outgoingBpm/incomingBpm)):1;transitionPreviewAudio=[outgoing,incoming];button.disabled=true;button.textContent=`Preparing ${bars}-bar mix…`;
-    try{await Promise.all([audioMetadata(outgoing),audioMetadata(incoming)]);const outgoingStart=Math.max(0,Number(settings.mixOut||0)-lead);outgoing.currentTime=Math.min(outgoingStart,Math.max(0,outgoing.duration-1));incoming.currentTime=Math.min(Math.max(0,Number(settings.mixIn||0)),Math.max(0,incoming.duration-1));const audioGraph=createTransitionAudioGraph(outgoing,incoming,settings.technique||'crossfade');transitionPreviewState={button,outgoing,incoming,settings,bars,overlap,lead,outgoingBpm,audioGraph,phase:'lead',remaining:lead,progress:0,paused:false};button.disabled=false;button.classList.add('playing');await audioGraph?.context?.resume?.();await outgoing.play();followTransitionPreviewPlayheads();runTransitionPreviewPhase();}catch(error){stopTransitionPreview();button.textContent='Audio unavailable';setTimeout(()=>{button.textContent=button.classList.contains('preview-transition')?'▶ Preview mix':'Mix transition';},1600);}
+    try{await Promise.all([audioMetadata(outgoing),audioMetadata(incoming)]);const outgoingStart=Math.max(0,Number(settings.mixOut||0)-lead);outgoing.currentTime=Math.min(outgoingStart,Math.max(0,outgoing.duration-1));incoming.currentTime=Math.min(Math.max(0,Number(settings.mixIn||0)),Math.max(0,incoming.duration-1));const audioGraph=createTransitionAudioGraph(outgoing,incoming,settings.technique||'crossfade');transitionPreviewState={button,outgoing,incoming,settings,bars,overlap,lead,outgoingBpm,audioGraph,phase:'lead',remaining:lead,progress:0,paused:false};button.disabled=false;button.classList.add('playing');await audioGraph?.context?.resume?.();await outgoing.play();followTransitionPreviewPlayheads();runTransitionPreviewPhase();}catch(error){console.error('Transition preview failed',error);stopTransitionPreview();const message=error?.message||'Transition audio unavailable';button.textContent='Preview unavailable';button.title=message;notify(`Mix preview could not play: ${message}`,'danger');setTimeout(()=>{button.textContent=button.classList.contains('preview-transition')?'▶ Preview mix':'Mix transition';},2400);}
   }
   function followTransitionPreviewPlayheads(){if(transitionPreviewPlayheadFrame)cancelAnimationFrame(transitionPreviewPlayheadFrame);const tick=()=>{const state=transitionPreviewState;if(!state||state.paused)return;const editor=state.button.closest('.transition-editor');if(editor){const outgoingInput=editor.querySelector('.transition-mix-out'),incomingInput=editor.querySelector('.transition-mix-in');[[outgoingInput,state.outgoing],[incomingInput,state.incoming]].forEach(([input,audio])=>{const surface=input?._transitionSurface;if(!surface)return;const localTime=Math.max(0,Math.min(60,Number(audio.currentTime||0)-Number(input._transitionWindowStart||0)));surface.setTime(localTime);});const fadeProgress=state.phase==='lead'?0:state.phase==='tail'?1:state.progress;updateTransitionFadePlayhead(editor,fadeProgress,state.settings.curve,true,state.settings.technique||'crossfade');}transitionPreviewPlayheadFrame=requestAnimationFrame(tick);};transitionPreviewPlayheadFrame=requestAnimationFrame(tick);}
   function applyTransitionFade(state,progress){const {outgoing,incoming,settings,audioGraph}=state,technique=settings.technique||'crossfade';let {outgoing:outLevel,incoming:inLevel}=transitionFadeLevels(settings.curve,progress,technique);if(technique==='echo-out'&&audioGraph?.echoGain){audioGraph.echoGain.gain.setTargetAtTime(Math.max(0,(progress-.45)*1.35),audioGraph.context.currentTime,.03);}else if(technique==='bass-swap'&&audioGraph){const swap=Math.max(0,Math.min(1,(progress-.4)/.2));audioGraph.outEq.gain.setTargetAtTime(-20*swap,audioGraph.context.currentTime,.03);audioGraph.inEq.gain.setTargetAtTime(-20*(1-swap),audioGraph.context.currentTime,.03);}else if(technique==='filter-blend'&&audioGraph){audioGraph.outFilter.frequency.setTargetAtTime(20000*Math.pow(.025,progress),audioGraph.context.currentTime,.03);audioGraph.inFilter.frequency.setTargetAtTime(20*Math.pow(75,1-progress),audioGraph.context.currentTime,.03);}else if(technique==='loop-assist'&&progress>.05&&progress<.72){const beat=60/Math.max(60,Number(state.outgoingBpm||120)),loopEnd=Number(settings.mixOut||0),loopStart=Math.max(0,loopEnd-beat*8);state.loopRepeats??=0;if(outgoing.currentTime>=loopEnd-.045&&state.loopRepeats<2&&!state.loopPending){state.loopPending=true;const gain=audioGraph?.outGain?.gain,now=audioGraph?.context?.currentTime||0;if(gain){gain.cancelScheduledValues(now);gain.setValueAtTime(gain.value,now);gain.linearRampToValueAtTime(0,now+.035);}setTimeout(()=>{if(transitionPreviewState!==state)return;outgoing.currentTime=loopStart;state.loopRepeats+=1;state.loopPending=false;if(gain){const resumeAt=audioGraph.context.currentTime;gain.cancelScheduledValues(resumeAt);gain.setValueAtTime(0,resumeAt);gain.linearRampToValueAtTime(1,resumeAt+.045);}},38);}}outgoing.volume=Math.max(0,Math.min(1,outLevel));incoming.volume=Math.max(0,Math.min(1,inLevel));}
@@ -338,7 +361,7 @@ export function createSetBuilderFeature({
   }
   function bindSetBuilder() {
     if(setBuilderBound)return;setBuilderBound=true;
-    $('#set-builder-form').onsubmit=event=>{event.preventDefault();const button=$('#set-generate');button.disabled=true;button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
+    $('#set-builder-form').onsubmit=event=>{event.preventDefault();const button=$('#set-generate');button.disabled=true;button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
     $('#add-required-track').onclick=()=>{const id=$('#set-required').value;if(id){setRequiredIds.add(id);setExcludedIds.delete(id);renderSetRules();}};
     $('#add-excluded-track').onclick=()=>{const id=$('#set-excluded').value;if(id){setExcludedIds.add(id);setRequiredIds.delete(id);renderSetRules();}};
     $('#set-genre').addEventListener('change',()=>{const selected=selectedSetGenres();setGenreSelectionOrder=setGenreSelectionOrder.filter(value=>selected.includes(value)).concat(selected.filter(value=>!setGenreSelectionOrder.includes(value)));renderSetGenreMix();populateSetDetailedGenres();});
