@@ -277,6 +277,20 @@
       <div class="set-builder-layout">
         <form id="set-builder-form" class="panel set-controls">
           <div class="set-control-head"><div><p class="eyebrow">SET BRIEF</p><h2>Plan the journey</h2><small>Start with the essentials. Refine constraints only when the set needs them.</small></div><button id="reset-set-brief" type="button" class="button secondary">Reset</button></div>
+          <section class="set-intention-card">
+            <div class="set-intention-heading"><div><label for="set-intention">Set intention</label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div><button id="interpret-set-intention" type="button" class="button secondary">Interpret intention</button></div>
+            <textarea id="set-intention" rows="4" maxlength="1200" placeholder="Example: Build a driving Latin electronic set with a Techno foundation, Spanish vocals, dembow or Latin percussion, and an Ecuadorian party feel. Allow Latin House and Cumbia edits as bridges."></textarea>
+            <div id="set-intention-interpretation" class="set-intention-interpretation" hidden>
+              <div class="set-intention-summary"><strong>Editable interpretation</strong><span id="set-intention-status">Review these preferences before generating.</span></div>
+              <div class="set-intention-fields">
+                <label>Hard requirements<input id="set-intention-required" type="text" placeholder="Comma-separated; never relaxed"></label>
+                <label>Weighted preferences<input id="set-intention-preferred" type="text" placeholder="Spanish vocals, Latin percussion, recognizable sample"></label>
+                <label>Limit or avoid<input id="set-intention-avoided" type="text" placeholder="Generic instrumental Techno"></label>
+                <label>Genre drift<select id="set-intention-drift"><option value="none">None · direct genres only</option><option value="low">Low · close variants</option><option value="moderate" selected>Moderate · musical bridges</option><option value="wide">Wide · context before genre</option></select></label>
+              </div>
+              <ol id="set-fallback-policy" class="set-fallback-policy"></ol>
+            </div>
+          </section>
           <div class="set-basics">
             <label class="set-name-field">Set name<input id="set-name" type="text" maxlength="100" value="New DJ Set"></label>
             <label>Target length<select id="set-length"><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60" selected>60 minutes</option><option value="90">90 minutes</option><option value="120">2 hours</option><option value="180">3 hours</option></select></label>

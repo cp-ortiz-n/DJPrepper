@@ -97,6 +97,31 @@ test('Set Builder converts exact percentages into track allocations', () => {
   );
 });
 
+test('Set Builder interprets an intention into editable deterministic preferences', () => {
+  const result = setBuilder.interpretSetIntention(
+    'Build a driving Latin electronic set with a Techno foundation. Favor Spanish vocals, dembow or Latin percussion for an Ecuadorian party crowd. Avoid generic instrumental Techno.',
+  );
+  assert.equal(result.drift, 'moderate');
+  assert.ok(result.preferred.includes('techno foundation'));
+  assert.ok(result.preferred.includes('spanish vocals'));
+  assert.ok(result.preferred.includes('dembow'));
+  assert.ok(result.preferred.includes('ecuadorian party'));
+  assert.deepEqual(result.avoided, ['generic instrumental techno']);
+  assert.equal(result.fallbackPolicy.length, 5);
+});
+
+test('Set Builder derives identity separately from catalog genre', () => {
+  const tags = setBuilder.inferredTrackIdentity({
+    source_name: 'Cumbia Anthem (Techno Edit).wav',
+    _genre: 'Electronic / Techno',
+    _detailedGenre: 'Latin Techno',
+  }, ['Ecuadorian Party']);
+  assert.ok(tags.includes('techno foundation'));
+  assert.ok(tags.includes('latin identity'));
+  assert.ok(tags.includes('recognizable material'));
+  assert.ok(tags.includes('ecuadorian party'));
+});
+
 test('Set Builder feature declares every musical classifier used during generation', () => {
   const path = fileURLToPath(new URL('../web/set-builder.js', import.meta.url));
   const source = readFileSync(path, 'utf8');
@@ -122,6 +147,9 @@ test('Set Builder feature declares every musical classifier used during generati
   assert.match(source, /input\.step='1'/);
   assert.match(source, /function renderSetSelectionSummary/);
   assert.match(source, /allocating the requested genre balance first/);
+  assert.match(source, /function intentionEvaluation/);
+  assert.match(source, /function openTrackIdentityEditor/);
+  assert.match(source, /applyIntentionInterpretation/);
 });
 
 test('Settings controller preserves startup ordering', async () => {
