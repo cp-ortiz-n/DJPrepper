@@ -107,7 +107,7 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
         cache_current = False
         try:
             cache_current = (
-                json.loads(deps.catalog_cache_path.read_text(encoding="utf-8")).get("version") == 2
+                json.loads(deps.catalog_cache_path.read_text(encoding="utf-8")).get("version") == 3
             )
         except (OSError, ValueError):
             pass

@@ -166,6 +166,7 @@ def _catalog_track(row: dict[str, Any], generalized_genre: Callable[[str], str])
             "audio_quality_score": row.get("audio_quality_score"),
             "audio_quality_label": row.get("audio_quality_label") or "",
             "audio_quality": quality_details,
+            "descriptors": _descriptor_payload(row.get("descriptors_json")),
             "suggested_genre": generalized_genre(str(row.get("genre") or "")),
             "completed_library_job_id": row["job_id"],
             "artwork_available": bool(row.get("artwork_path"))
@@ -204,3 +205,11 @@ def _catalog_track(row: dict[str, Any], generalized_genre: Callable[[str], str])
         "analysis": analysis,
         "downloaded": downloaded,
     }
+
+
+def _descriptor_payload(raw: Any) -> list[dict[str, Any]]:
+    try:
+        value = json.loads(str(raw or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return value if isinstance(value, list) else []

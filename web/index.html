@@ -193,6 +193,7 @@
           <span id="downloaded-selection-count">0 selected</span>
           <button id="downloaded-clear-selection" type="button" class="button secondary">Clear</button>
           <button id="downloaded-change-genre" type="button" class="button secondary" disabled>Change genre</button>
+          <button id="downloaded-edit-identity" type="button" class="button secondary" disabled>Edit identity</button>
           <button id="downloaded-retag-selected" type="button" class="button secondary" disabled>Sync WAV tags</button>
           <button id="downloaded-analyze-selected" type="button" disabled>Analyze</button>
           <button id="downloaded-key-analyze-selected" type="button" class="button secondary" disabled>Analyze key</button>
@@ -255,6 +256,7 @@
         <div class="library-selection">
           <div class="library-selection-main"><label><input id="library-select-all" type="checkbox"> Select visible tracks</label><span id="library-selection-count">0 selected</span></div>
           <div class="library-bulk-actions"><div class="library-genre-editor"><input id="library-genre-value" list="library-genre-options" placeholder="Choose genre"><datalist id="library-genre-options"></datalist><button id="library-change-genre" class="button secondary" disabled>Move</button></div>
+            <button id="library-edit-identity" class="button secondary" disabled>Edit identity</button>
             <details class="library-export-options"><summary>File types</summary><div><label><input type="checkbox" value="extended" checked> Extended WAV</label><label><input type="checkbox" value="source"> Source WAV</label><label><input type="checkbox" value="cue-sheet"> Cue sheet</label><label><input type="checkbox" value="rekordbox"> Rekordbox XML</label><label><input type="checkbox" value="intro-preview"> Intro preview</label><label><input type="checkbox" value="outro-preview"> Outro preview</label><label><input type="checkbox" value="analysis"> Analysis report</label></div></details>
             <button id="library-download-selected" class="button secondary" disabled>Download</button>
             <button id="library-reanalyze-selected" class="button secondary" disabled>Reanalyze</button>

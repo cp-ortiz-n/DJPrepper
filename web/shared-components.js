@@ -1,6 +1,34 @@
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
 
+export const DESCRIPTOR_CATEGORIES = [
+  ['cultural','Cultural / regional influence'], ['rhythm','Rhythmic influence'],
+  ['sound','Sound character'], ['vocal','Vocal identity'], ['role','Energy / DJ role'],
+  ['context','Context or personal crate'], ['familiarity','Familiarity'],
+];
+
+export function descriptorChipsMarkup(descriptors = []) {
+  return descriptors.length
+    ? `<div class="track-descriptor-chips">${descriptors.map(item=>`<span title="${escapeHtml(`${item.category} · ${item.provenance} · ${Math.round(Number(item.confidence||0)*100)}% confidence`)}">${escapeHtml(item.value)}</span>`).join('')}</div>`
+    : '<div class="track-descriptor-chips empty"><span>No musical identity tags yet</span></div>';
+}
+
+export function descriptorEditorMarkup(descriptors = [], {bulk = false} = {}) {
+  const grouped=Object.fromEntries(DESCRIPTOR_CATEGORIES.map(([category])=>[category,descriptors.filter(item=>item.category===category).map(item=>item.value).join(', ')]));
+  return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Musical identity'}</strong><small>Separate from genre; manual values outrank inferred metadata.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<label>Operation<select class="descriptor-mode"><option value="add">Add these tags</option><option value="remove">Remove these tags</option><option value="replace">Replace all identity tags</option></select></label>':''}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label>${escapeHtml(label)}<input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Comma-separated"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save identity'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
+}
+
+export async function saveDescriptorEditor(editor, trackIds) {
+  const ids=[...new Set(trackIds.map(Number).filter(Boolean))];
+  const descriptors=[...editor.querySelectorAll('[data-descriptor-category]')].flatMap(input=>String(input.value||'').split(',').map(value=>value.trim()).filter(Boolean).map(value=>({category:input.dataset.descriptorCategory,value,provenance:'manual',confidence:1})));
+  const mode=editor.querySelector('.descriptor-mode')?.value||'replace';
+  const url=ids.length===1?`/api/downloaded-library/tracks/${ids[0]}/descriptors`:'/api/downloaded-library/descriptors/bulk';
+  const response=await fetch(url,{method:ids.length===1?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...(ids.length===1?{}:{track_ids:ids}),descriptors,mode})});
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(payload.detail?.message||payload.detail||'Musical identity could not be saved.');
+  return payload;
+}
+
 export function captureTextFilter(input, state, key = 'search') {
   state[key] = String(input.value || '').trim();
   return state[key];

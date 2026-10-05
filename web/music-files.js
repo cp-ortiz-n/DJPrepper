@@ -20,6 +20,7 @@ export function createMusicFilesFeature({
   bindGenreEditor, startKeyAnalysis, showView, loadJobs, closeDownloadedInspector,
   clock, stopNativeAudio, bindCompactAudio, bindLazyAudio, compactAudioIsWithin, stopCompactAudio,
   collapsedGenreFolders, bindGenreFolderState,
+  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor,
 }) {
   let metadataReview = null;
   async function loadDownloadedLibrary() {
@@ -137,7 +138,7 @@ export function createMusicFilesFeature({
     artworkSelect.value = downloadedUiState.artwork;
     qualitySelect.value = downloadedUiState.quality;
     sort.value = downloadedUiState.sort;
-    const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const keyAnalyzeSelected=$('#downloaded-key-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const retagSelected = $('#downloaded-retag-selected');
+    const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const keyAnalyzeSelected=$('#downloaded-key-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const editIdentity=$('#downloaded-edit-identity'); const retagSelected = $('#downloaded-retag-selected');
     const rescanGenres = $('#downloaded-rescan-genres');
     const reconcileFiles = $('#downloaded-reconcile-files');
     const retagAll = $('#downloaded-retag-all');
@@ -316,12 +317,27 @@ export function createMusicFilesFeature({
       reanalyzeSelected.disabled = !downloadable.length;
       removeSelected.disabled = !selected.length;
       changeGenre.disabled = !selected.length;
+      editIdentity.disabled = !selected.length;
       retagSelected.disabled = !downloadable.length;
       if(syncArtwork.dataset.busy!=='true') syncArtwork.textContent=selected.length ? `Sync artwork${missingArtwork.length ? ` (${missingArtwork.length})` : ''}` : 'Sync artwork';
       document.querySelector('.downloaded-selection').classList.toggle('has-selection', selected.length > 0);
       cards.forEach(card => { const selected=card.querySelector('.downloaded-check input').checked; card.classList.toggle('is-selected',selected); card.setAttribute('aria-selected',String(selected)); });
       selectAll.checked = cards.length > 0 && cards.every(card => card.querySelector('input').checked);
       selectAll.indeterminate = cards.some(card => card.querySelector('input').checked) && !selectAll.checked;
+    };
+    editIdentity.onclick=()=>{
+      document.querySelector('.downloaded-bulk-identity')?.remove();
+      const panel=document.createElement('section');
+      panel.className='downloaded-bulk-identity';
+      panel.innerHTML=`<div><strong>Edit musical identity</strong><span>Apply durable descriptors to ${downloadedSelection.size} selected track${downloadedSelection.size===1?'':'s'}.</span></div>${descriptorEditorMarkup([],{bulk:true})}`;
+      document.querySelector('.downloaded-selection').after(panel);
+      const editor=panel.querySelector('.track-descriptor-editor');
+      editor.hidden=false; editor.querySelector('.cancel-descriptors').onclick=()=>panel.remove(); editor.querySelector('.close-descriptor-editor').onclick=()=>panel.remove();
+      editor.querySelector('.save-descriptors').onclick=async event=>{
+        const action=event.currentTarget; action.disabled=true; action.textContent='Saving…';
+        try{const result=await saveDescriptorEditor(editor,[...downloadedSelection.keys()]);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');panel.remove();setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
+        catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save identity';}
+      };
     };
     const reloadCollectionViews = async () => {
       const previousScroll = window.scrollY;
@@ -330,7 +346,7 @@ export function createMusicFilesFeature({
     };
     const matchesCurrentDownloadedFilters = track => {
       const query=downloadedUiState.search.trim().toLowerCase();
-      const haystack=`${track.title||''} ${track.artist||''} ${track.genre||''} ${track.genre_category||''} ${(track.playlists||[]).join(' ')}`.toLowerCase();
+      const haystack=`${track.title||''} ${track.artist||''} ${track.genre||''} ${track.genre_category||''} ${(track.playlists||[]).join(' ')} ${(track.descriptors||[]).map(item=>item.value).join(' ')}`.toLowerCase();
       if(query&&!haystack.includes(query))return false;
       if(downloadedUiState.playlist!=='all'&&!(track.playlists||[]).includes(downloadedUiState.playlist))return false;
       const category=String(track.genre_category||'Other'),filter=downloadedUiState.genre;
@@ -552,6 +568,14 @@ export function createMusicFilesFeature({
       const preview = track.available ? `<audio controls preload="metadata" src="/api/downloaded-library/tracks/${track.id}/audio"></audio>` : '<div class="inspector-unavailable">The catalog entry remains available, but its WAV file is missing from disk.</div>';
       const identity=`${track.recording_code || 'OTH-PENDING'}-${track.version_code || 'ORG'}`;
       inspector.innerHTML = `<div class="inspector-head"><div><p class="eyebrow">QUICK VIEW · ${escapeHtml(identity)}</p><h2>${escapeHtml(track.title || track.filename)}</h2><span>${escapeHtml(track.artist || 'Unknown artist')}</span></div><button type="button" class="close-inspector" aria-label="Close inspector">×</button></div>${preview}<div class="inspector-metrics"><button type="button" class="inspector-genre-trigger" title="Change genre"><b>${escapeHtml(track.genre_category || 'Other')}</b><span>Genre</span></button><p><b>${clock(track.duration_seconds)}</b><span>Length</span></p><p><b>${escapeHtml((track.analysis_status || 'not_analyzed').replaceAll('_',' '))}</b><span>Analysis</span></p></div>${genreEditorMarkup(track.genre_category || 'Other', track.suggested_genre || '', true)}<section class="inspector-family" hidden><div class="inspector-family-heading"><div><b>Recording family</b><span>Originals, remixes, edits, and alternate versions</span></div><div class="inspector-family-heading-actions"><button type="button" class="button secondary inspector-family-toggle">Link as version of…</button><button type="button" class="button secondary inspector-family-close" aria-label="Close recording family">×</button></div></div><div class="inspector-family-content"><p>Loading related versions…</p></div><form class="inspector-family-link" hidden><label>Target track ID<input name="target" placeholder="HOU-002386-ORG"></label><label>Relationship<select name="relationship"><option value="RMX">Remix</option><option value="EXT">Extended mix</option><option value="RADIO">Radio edit</option><option value="LIVE">Live version</option><option value="INST">Instrumental</option><option value="ACAP">Acapella</option><option value="REM">Remaster</option><option value="ORG">Original / alternate original</option></select></label><button type="submit">Link version</button><small>Choose a suggestion below or enter the visible genre-based track ID.</small></form><div class="inspector-family-suggestions"></div></section><details class="inspector-metadata"><summary>File & source details</summary><dl><dt>Recording ID</dt><dd>${escapeHtml(identity)}</dd><dt>Identity basis</dt><dd>${escapeHtml(track.identity_reason || 'Catalog assignment')}</dd><dt>Detailed tags</dt><dd>${escapeHtml(track.genre || 'No metadata')}</dd><dt>Source playlist</dt><dd>${escapeHtml((track.playlists || []).join(', ') || 'Imported Singles')}</dd><dt>Filename</dt><dd>${escapeHtml(track.filename || '')}</dd><dt>Absolute path</dt><dd class="inspector-path">${escapeHtml(track.absolute_path || 'Path unavailable')}</dd></dl></details><div class="inspector-actions">${track.completed_library_job_id ? '<button type="button" class="button secondary inspector-library">View in DJ Library</button>' : ''}<button type="button" class="button secondary inspector-edit-metadata">Edit metadata</button><button type="button" class="button secondary inspector-edit-genre">Change genre only</button><button type="button" class="button secondary inspector-manage-family">Recording family</button>${track.available ? `<button type="button" class="button secondary inspector-copy-path">Copy path</button><button type="button" class="button secondary inspector-reveal">Reveal in Finder</button><a class="button secondary" href="/api/downloaded-library/tracks/${track.id}/download">Download WAV</a>` : ''}</div>`;
+      const identitySection=document.createElement('section');
+      identitySection.className='inspector-identity';
+      identitySection.innerHTML=`<div class="inspector-family-heading"><div><b>Musical identity</b><span>Culture, rhythm, sound, vocals, role, and context—separate from genre.</span></div><button type="button" class="button secondary inspector-edit-identity">Edit identity</button></div><div class="inspector-identity-chips">${descriptorChipsMarkup(track.descriptors||[])}</div>${descriptorEditorMarkup(track.descriptors||[])}`;
+      inspector.querySelector('.inspector-metrics').after(identitySection);
+      const descriptorEditor=identitySection.querySelector('.track-descriptor-editor'); descriptorEditor.hidden=true;
+      identitySection.querySelector('.inspector-edit-identity').onclick=()=>{descriptorEditor.hidden=false;descriptorEditor.querySelector('input')?.focus();};
+      descriptorEditor.querySelector('.cancel-descriptors').onclick=()=>{descriptorEditor.hidden=true;}; descriptorEditor.querySelector('.close-descriptor-editor').onclick=()=>{descriptorEditor.hidden=true;};
+      descriptorEditor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(descriptorEditor,[Number(track.id)]);track.descriptors=result.values||[];identitySection.querySelector('.inspector-identity-chips').innerHTML=descriptorChipsMarkup(track.descriptors);descriptorEditor.hidden=true;notify('Musical identity saved to the persistent catalog. It will survive restart.','success');setLoadedAt(0);invalidateLibrary();}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent='Save identity';}};
       inspector.querySelector('.close-inspector').onclick = () => closeDownloadedInspector({restoreFocus:true});
       inspector.querySelector('.inspector-edit-metadata').onclick = () => { const editor=card.querySelector('.track-metadata-editor'); closeDownloadedInspector(); editor.hidden=false; card.scrollIntoView({behavior:'smooth',block:'center'}); editor.elements.title.focus(); };
       const inspectorGenreEditor=inspector.querySelector('.inline-genre-editor');

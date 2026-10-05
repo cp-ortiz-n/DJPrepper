@@ -127,9 +127,11 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                 "LOWER(idx.musical_key) LIKE ? OR LOWER(idx.camelot) LIKE ? OR "
                 "LOWER(COALESCE(tracks.recording_code, '')) LIKE ? OR "
                 "LOWER(COALESCE(tracks.recording_code, '') || '-' || "
-                "COALESCE(tracks.version_code, '')) LIKE ?)"
+                "COALESCE(tracks.version_code, '')) LIKE ? OR "
+                "EXISTS (SELECT 1 FROM downloaded_track_descriptors search_descriptor "
+                "WHERE search_descriptor.track_id = tracks.id AND LOWER(search_descriptor.value) LIKE ?))"
             )
-            parameters.extend([value] * 11)
+            parameters.extend([value] * 12)
         if role != "all":
             conditions.append("idx.roles LIKE ?")
             parameters.append(f"%|{role}|%")
@@ -207,6 +209,13 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                     tracks.version_code, tracks.identity_confidence, tracks.identity_reason,
                     tracks.audio_quality_score, tracks.audio_quality_label,
                     tracks.audio_quality_json, tracks.audio_quality_analyzed_at,
+                    (SELECT json_group_array(json_object(
+                        'category', descriptors.category, 'value', descriptors.value,
+                        'provenance', descriptors.provenance,
+                        'confidence', descriptors.confidence,
+                        'updated_at', descriptors.updated_at))
+                     FROM downloaded_track_descriptors descriptors
+                     WHERE descriptors.track_id=tracks.id) AS descriptors_json,
                     tracks.artwork_path, tracks.file_path AS downloaded_file_path
                     FROM library_search_index idx JOIN jobs ON jobs.id = idx.job_id
                     LEFT JOIN downloaded_tracks tracks ON tracks.id = idx.downloaded_id
@@ -292,11 +301,18 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
         """Return every latest analyzed track using the compact Library index."""
         with closing(self._connect()) as connection:
             rows = connection.execute(
-                """SELECT idx.job_id, idx.source_name, idx.category, idx.detail_genre, idx.roles,
+                """SELECT idx.job_id, idx.downloaded_id, idx.source_name, idx.category, idx.detail_genre, idx.roles,
                     idx.energy, idx.vocals, idx.timing, idx.set_analysis_json,
                     jobs.source_path, jobs.wav_path,
                     jobs.extended_path, jobs.config_json,
-                    downloaded.file_path AS library_path
+                    downloaded.file_path AS library_path,
+                    (SELECT json_group_array(json_object(
+                        'category', descriptors.category, 'value', descriptors.value,
+                        'provenance', descriptors.provenance,
+                        'confidence', descriptors.confidence,
+                        'updated_at', descriptors.updated_at))
+                     FROM downloaded_track_descriptors descriptors
+                     WHERE descriptors.track_id=downloaded.id) AS descriptors_json
                     FROM library_search_index idx
                     JOIN jobs ON jobs.id = idx.job_id
                     LEFT JOIN downloaded_tracks downloaded ON downloaded.id = idx.downloaded_id

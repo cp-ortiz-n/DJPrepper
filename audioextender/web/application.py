@@ -88,6 +88,10 @@ from audioextender.web.library_routes import (
     LibraryRouteDependencies,
     create_library_router,
 )
+from audioextender.web.descriptor_routes import (
+    DescriptorRouteDependencies,
+    create_descriptor_router,
+)
 from audioextender.web.metadata_batch_routes import (
     MetadataBatchDependencies,
     MetadataBatchService,
@@ -1727,10 +1731,14 @@ def _downloaded_track_payload(track: dict) -> dict:
     current_genre = _normalize_genre_category(
         str(track.get("genre_category") or "Other")
     )
+    try:
+        descriptors = json.loads(str(track.get("descriptors_json") or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        descriptors = []
     payload = {
         key: value
         for key, value in track.items()
-        if key not in {"file_path", "artwork_path"}
+        if key not in {"file_path", "artwork_path", "descriptors_json"}
     } | {
         "absolute_path": str(Path(str(track.get("file_path") or "")).expanduser().resolve()),
         "available": Path(track["file_path"]).is_file(),
@@ -1739,6 +1747,7 @@ def _downloaded_track_payload(track: dict) -> dict:
         "genre_category": current_genre,
         "suggested_genre": suggested_genre,
         "needs_genre": current_genre in {"Other", "Latin / Other"},
+        "descriptors": descriptors,
     }
     return payload
 
@@ -3099,10 +3108,16 @@ def _set_builder_analysis(song: dict, *, roles: list[str], energy: float,
 def _build_set_builder_catalog_payload() -> dict:
     tracks = []
     for row in repository.list_set_builder_tracks():
+        try:
+            descriptors = json.loads(str(row.get("descriptors_json") or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            descriptors = []
         tracks.append({
             "analysis": json.loads(row.get("set_analysis_json") or "{}"),
             "genre": row.get("category") or "Other",
             "detailed_genre": row.get("detail_genre") or "",
+            "downloaded_id": row.get("downloaded_id"),
+            "descriptors": descriptors,
             "job": {
                 "id": row["job_id"], "source_name": row["source_name"],
                 "source_path": row.get("source_path"), "wav_path": row.get("wav_path"),
@@ -3111,7 +3126,7 @@ def _build_set_builder_catalog_payload() -> dict:
                 "config_json": row.get("config_json") or "{}",
             },
         })
-    return {"version": 2, "tracks": tracks, "total": len(tracks)}
+    return {"version": 3, "tracks": tracks, "total": len(tracks)}
 
 
 def _write_set_builder_catalog_cache() -> None:
@@ -3432,6 +3447,14 @@ app.include_router(
             generalized_genre=_generalized_genre,
             catalog_cache=library_catalog_cache,
             catalog_cache_lock=library_catalog_cache_lock,
+        )
+    )
+)
+app.include_router(
+    create_descriptor_router(
+        DescriptorRouteDependencies(
+            repository=lambda: repository,
+            invalidate_set_catalog=lambda: SET_BUILDER_CATALOG_CACHE.unlink(missing_ok=True),
         )
     )
 )

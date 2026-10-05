@@ -124,6 +124,7 @@ export function createDjLibraryFeature({
   bindLazyAudio,
   syncControlUnlessEditing, captureTextFilter, operationReceiptText, loadAnalysis,
   jobAction, jobElement,
+  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor,
 }) {
   async function revealLibraryTrack(jobId, sourceName) {
     let card = document.querySelector(`.library-card[data-job-id="${jobId}"]`);
@@ -253,8 +254,8 @@ export function createDjLibraryFeature({
       keyValue.textContent = formatLibraryKey(analysis.key);
       card.querySelector('.library-head-actions').insertAdjacentHTML('beforeend', '<button class="button secondary remove-library-track">Remove from library</button>');
       if (downloadedTrack) {
-        card.querySelector('.library-head-actions').insertAdjacentHTML('afterbegin', '<button class="button secondary edit-library-genre">Edit genre</button>');
-        card.querySelector('.library-head').insertAdjacentHTML('afterend', genreEditorMarkup(downloadedTrack.genre_category || 'Other', downloadedTrack.suggested_genre || '', true));
+        card.querySelector('.library-head-actions').insertAdjacentHTML('afterbegin', '<button class="button secondary edit-library-identity">Edit identity</button><button class="button secondary edit-library-genre">Edit genre</button>');
+        card.querySelector('.library-head').insertAdjacentHTML('afterend', `${genreEditorMarkup(downloadedTrack.genre_category || 'Other', downloadedTrack.suggested_genre || '', true)}${descriptorEditorMarkup(downloadedTrack.descriptors||[])}`);
       }
       const resultLabel = latest.review_status === 'pending' ? 'Awaiting review' : (analysisOnly ? 'Analyzed only' : ((latest.intro_quality != null || latest.outro_quality != null) ? 'Extended' : 'Preserved'));
       const sourceStem = latest.source_name.replace(/\.[^.]+$/,'');
@@ -274,6 +275,7 @@ export function createDjLibraryFeature({
       const qualitySuffix=qualityTarget==='meets_target'?' · Target met':qualityTarget==='below_target'?' · Below target':qualityTarget==='unverified'?' · Unverified':'';
       const qualityText=qualityScore==null?'Quality pending':`Quality ${Math.round(Number(qualityScore))}${qualitySuffix}`;
       card.insertAdjacentHTML('afterbegin', `<div class="library-compact-row" role="button" tabindex="0" aria-expanded="false" aria-label="Show DJ details for ${escapeHtml(trackTitle)}"><label class="library-track-select"><input type="checkbox" value="${card.dataset.jobId}" aria-label="Select ${escapeHtml(trackTitle)}"><span></span></label><div class="library-row-icon">${trackArtwork}</div><div class="library-row-title"><h3>${escapeHtml(trackTitle)}</h3><span class="library-row-artist">${escapeHtml(trackArtist)}</span><small>${escapeHtml(category)}${identity?` · ${escapeHtml(identity)}`:''}</small></div><div class="library-row-metric"><b>${Number(analysis.bpm || latest.bpm || 0).toFixed(1)}</b><span>BPM</span></div><div class="library-row-metric"><b>${escapeHtml(formatLibraryKey(analysis.key))}</b><span>Key / Camelot</span></div><div class="library-row-metric"><b>${escapeHtml(energyBand(energy))}</b><span>Energy</span></div><div class="library-row-role">${roles.slice(0,2).map(role => `<span>${escapeHtml(LIBRARY_ROLE_INFO[role]?.[0] || role)}</span>`).join('')}</div><span class="library-result" data-result="${card.dataset.result}">${resultLabel}<small>${escapeHtml(qualityText)}</small></span>${compactAudioMarkup(`/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}`,latest.duration_seconds||analysis.duration_seconds||0)}<details class="library-row-actions"><summary aria-label="Library track actions">•••</summary><div><button type="button" class="compact-remove danger-text">Remove from Library</button></div></details></div>`);
+      if(downloadedTrack?.descriptors?.length)card.querySelector('.library-row-title').insertAdjacentHTML('beforeend',descriptorChipsMarkup(downloadedTrack.descriptors));
     });
     bindLazyAudio(root);
     bindCompactAudio(root);
@@ -343,6 +345,15 @@ export function createDjLibraryFeature({
       const card = button.closest('.library-card');
       const editor = card.querySelector('.inline-genre-editor'); editor.hidden = !editor.hidden;
       if (!editor.hidden) editor.querySelector('select').focus();
+    });
+    root.querySelectorAll('.edit-library-identity').forEach(button=>button.onclick=()=>{
+      const card=button.closest('.library-card'),editor=card.querySelector('.track-descriptor-editor');editor.hidden=!editor.hidden;
+      if(!editor.hidden)editor.querySelector('input')?.focus();
+    });
+    root.querySelectorAll('.library-card[data-downloaded-id]:not([data-downloaded-id=""]) .track-descriptor-editor').forEach(editor=>{
+      const card=editor.closest('.library-card');
+      editor.querySelector('.cancel-descriptors').onclick=()=>{editor.hidden=true;};editor.querySelector('.close-descriptor-editor').onclick=()=>{editor.hidden=true;};
+      editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(editor,[Number(card.dataset.downloadedId)]);card.querySelector('.library-row-title .track-descriptor-chips')?.remove();card.querySelector('.library-row-title').insertAdjacentHTML('beforeend',descriptorChipsMarkup(result.values||[]));editor.hidden=true;invalidateMusicFiles();notify('Musical identity saved to the persistent catalog. It will survive restart.','success');}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent='Save identity';}};
     });
     root.querySelectorAll('.library-card[data-downloaded-id]:not([data-downloaded-id=""])').forEach(card => bindGenreEditor(card.querySelector('.inline-genre-editor'), () => [Number(card.dataset.downloadedId)], async payload => {card.querySelector('.library-row-title small').textContent=payload.genre_category;card.querySelector('.inline-genre-editor').hidden=true;invalidateMusicFiles();}));
     root.querySelectorAll('.close-reprocess').forEach(button => button.onclick = () => {
@@ -477,6 +488,7 @@ export function createDjLibraryFeature({
     const count = $('#library-selection-count');
     const genreInput = $('#library-genre-value');
     const genreButton = $('#library-change-genre');
+    const identityButton=$('#library-edit-identity');
     const removeButton = $('#library-remove-selected');
     const reanalyzeButton = $('#library-reanalyze-selected');
     const keyAnalyzeButton = $('#library-key-analyze-selected');
@@ -487,6 +499,7 @@ export function createDjLibraryFeature({
       button.disabled = selected === 0 || fileTypes === 0;
       const catalogSelected = boxes.filter(box => box.checked && box.closest('.library-card').dataset.downloadedId).length;
       genreButton.disabled = selected === 0 || catalogSelected !== selected || !genreInput.value.trim();
+      identityButton.disabled = selected === 0 || catalogSelected !== selected;
       removeButton.disabled = selected === 0;
       reanalyzeButton.disabled = selected === 0 || catalogSelected !== selected;
       keyAnalyzeButton.disabled = selected === 0 || catalogSelected !== selected;
@@ -518,6 +531,15 @@ export function createDjLibraryFeature({
         await Promise.all([loadLibrary(), loadDownloadedLibrary()]);
       } catch (error) { alert(error.message); }
       finally { genreButton.textContent = 'Change genre'; }
+    };
+    identityButton.onclick=()=>{
+      document.querySelector('.library-bulk-identity')?.remove();
+      const selectedCards=boxes.filter(box=>box.checked).map(box=>box.closest('.library-card'));
+      const trackIds=selectedCards.map(card=>Number(card.dataset.downloadedId)).filter(Boolean);
+      if(!trackIds.length||trackIds.length!==selectedCards.length)return;
+      const panel=document.createElement('section');panel.className='library-bulk-identity';panel.innerHTML=`<div><strong>Edit musical identity</strong><span>Apply descriptors to ${trackIds.length} selected track${trackIds.length===1?'':'s'}.</span></div>${descriptorEditorMarkup([],{bulk:true})}`;
+      document.querySelector('.library-selection').after(panel);
+      const editor=panel.querySelector('.track-descriptor-editor');editor.hidden=false;editor.querySelector('.cancel-descriptors').onclick=()=>panel.remove();editor.querySelector('.close-descriptor-editor').onclick=()=>panel.remove();editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(editor,trackIds);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');panel.remove();setLoadedAt(0);invalidateMusicFiles();await loadLibrary();}catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save identity';}};
     };
     removeButton.onclick = async () => {
       const selectedCards = boxes.filter(box => box.checked).map(box => box.closest('.library-card'));

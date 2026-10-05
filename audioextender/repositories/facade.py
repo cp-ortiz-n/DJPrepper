@@ -318,6 +318,22 @@ class JobRepository(
                     "ON downloaded_track_playlists(playlist_name, track_id)"
                 )
                 connection.execute(
+                    """CREATE TABLE IF NOT EXISTS downloaded_track_descriptors (
+                    track_id INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    provenance TEXT NOT NULL DEFAULT 'manual',
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(track_id, category, value),
+                    FOREIGN KEY(track_id) REFERENCES downloaded_tracks(id) ON DELETE CASCADE
+                    )"""
+                )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_track_descriptors_value "
+                    "ON downloaded_track_descriptors(category, value, track_id)"
+                )
+                connection.execute(
                     """CREATE TABLE IF NOT EXISTS library_search_index (
                     job_id INTEGER PRIMARY KEY, source_name TEXT NOT NULL,
                     title TEXT NOT NULL, artist TEXT NOT NULL DEFAULT '',

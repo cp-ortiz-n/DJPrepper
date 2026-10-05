@@ -1020,6 +1020,20 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .set-identity-editor { grid-column:2/-1; padding:9px; border:1px solid var(--line); border-radius:8px; background:#111311; }
 .set-identity-editor label,.set-identity-editor small { display:block; }.set-identity-editor small { margin:5px 0 8px; color:var(--muted); font-size:8px; }
 .set-identity-editor-actions { display:flex; gap:6px; margin-top:7px; }.set-identity-editor-actions button { width:auto; height:30px; margin:0; }
+.track-descriptor-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+.track-descriptor-chips span { padding:4px 7px; border:1px solid #4b5837; border-radius:999px; color:#d6ff44; background:#1b2115; font-size:7px; }
+.track-descriptor-chips.empty span { border-color:var(--line); color:var(--muted); background:#181a18; }
+.track-descriptor-editor { margin:10px 0; padding:11px; border:1px solid #4b5837; border-radius:9px; background:#151815; }
+.track-descriptor-editor[hidden] { display:none; }.track-descriptor-editor header { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+.track-descriptor-editor header strong,.track-descriptor-editor header small { display:block; }.track-descriptor-editor header strong { font-size:10px; }.track-descriptor-editor header small { margin-top:3px; color:var(--muted); font-size:8px; }
+.track-descriptor-editor header button { width:30px; height:30px; margin:0; padding:0; color:var(--muted); background:#202320; }
+.track-descriptor-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:9px; }
+.descriptor-editor-actions { display:flex; gap:7px; margin-top:9px; }.descriptor-editor-actions button { width:auto; height:32px; margin:0; }
+.descriptor-editor-status { min-height:12px; margin:7px 0 0; color:var(--muted); font-size:8px; }
+.downloaded-bulk-identity,.library-bulk-identity,.inspector-identity { margin:10px 0; padding:12px; border:1px solid var(--line); border-radius:12px; background:#121512; }
+.downloaded-bulk-identity>div,.library-bulk-identity>div { display:flex; justify-content:space-between; gap:10px; }.downloaded-bulk-identity>div span,.library-bulk-identity>div span { color:var(--muted); font-size:8px; }
+.inspector-identity .inspector-family-heading { margin:0; }
+@media (max-width:700px) { .track-descriptor-fields { grid-template-columns:1fr; } }
 .set-basics .set-name-field { grid-column:span 2; }
 .set-result-name { background:transparent;border:1px solid transparent;border-radius:10px;color:var(--text);font:inherit;font-size:clamp(2rem,3.2vw,3.2rem);font-weight:800;letter-spacing:-.04em;margin:4px 0 6px;max-width:min(680px,100%);padding:4px 8px;width:100%; }
 .set-result-name:hover { border-color:var(--line); }

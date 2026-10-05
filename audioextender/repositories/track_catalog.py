@@ -25,6 +25,78 @@ def _now() -> str:
 
 
 class TrackCatalogRepositoryMixin(RepositoryMixinBase):
+    def track_descriptors(self, track_id: int) -> list[dict[str, Any]]:
+        """Return durable musical-identity descriptors and their provenance."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT category,value,provenance,confidence,updated_at
+                FROM downloaded_track_descriptors WHERE track_id=?
+                ORDER BY category,value COLLATE NOCASE""",
+                (track_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def update_track_descriptors(
+        self,
+        track_ids: list[int],
+        descriptors: list[dict[str, Any]],
+        *,
+        mode: str = "replace",
+    ) -> dict[str, Any]:
+        """Add, remove, or replace descriptors atomically across selected tracks."""
+        wanted = list(dict.fromkeys(int(track_id) for track_id in track_ids))
+        normalized: list[tuple[str, str, str, float]] = []
+        for descriptor in descriptors:
+            category = str(descriptor.get("category") or "context").strip().casefold()
+            value = str(descriptor.get("value") or "").strip().casefold()
+            provenance = str(descriptor.get("provenance") or "manual").strip().casefold()
+            confidence = max(0.0, min(1.0, float(descriptor.get("confidence", 1.0))))
+            if value:
+                normalized.append((category, value, provenance, confidence))
+        now = _now()
+        with self._lock, closing(self._connect()) as connection, connection:
+            existing = {
+                int(row[0])
+                for row in connection.execute(
+                    f"SELECT id FROM downloaded_tracks WHERE id IN ({','.join('?' for _ in wanted)})",
+                    wanted,
+                ).fetchall()
+            } if wanted else set()
+            if mode == "replace":
+                connection.executemany(
+                    "DELETE FROM downloaded_track_descriptors WHERE track_id=?",
+                    [(track_id,) for track_id in existing],
+                )
+            elif mode == "remove" and normalized:
+                connection.executemany(
+                    "DELETE FROM downloaded_track_descriptors WHERE track_id=? AND category=? AND value=?",
+                    [
+                        (track_id, category, value)
+                        for track_id in existing
+                        for category, value, _, _ in normalized
+                    ],
+                )
+            if mode in {"replace", "add"} and normalized:
+                connection.executemany(
+                    """INSERT INTO downloaded_track_descriptors
+                    (track_id,category,value,provenance,confidence,updated_at)
+                    VALUES (?,?,?,?,?,?) ON CONFLICT(track_id,category,value) DO UPDATE SET
+                    provenance=excluded.provenance,confidence=excluded.confidence,
+                    updated_at=excluded.updated_at""",
+                    [
+                        (track_id, category, value, provenance, confidence, now)
+                        for track_id in existing
+                        for category, value, provenance, confidence in normalized
+                    ],
+                )
+        return {
+            "requested": len(wanted),
+            "updated": len(existing),
+            "missing": sorted(set(wanted) - existing),
+            "mode": mode,
+            "descriptors": len(normalized),
+            "survives_restart": True,
+        }
     def upsert_downloaded_track(
         self,
         *,
@@ -509,6 +581,16 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 "DELETE FROM downloaded_track_playlists WHERE track_id=?", (duplicate_id,)
             )
             connection.execute(
+                """INSERT OR IGNORE INTO downloaded_track_descriptors
+                (track_id,category,value,provenance,confidence,updated_at)
+                SELECT ?,category,value,provenance,confidence,updated_at
+                FROM downloaded_track_descriptors WHERE track_id=?""",
+                (survivor_id, duplicate_id),
+            )
+            connection.execute(
+                "DELETE FROM downloaded_track_descriptors WHERE track_id=?", (duplicate_id,)
+            )
+            connection.execute(
                 """INSERT OR REPLACE INTO downloaded_track_exclusions
                     (file_path,excluded_at) VALUES (?,?)""",
                 (duplicate_path, now),
@@ -532,6 +614,13 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     )
                     SELECT tracks.*,
                         GROUP_CONCAT(playlists.playlist_name, '||') AS playlists,
+                        (SELECT json_group_array(json_object(
+                            'category', descriptors.category, 'value', descriptors.value,
+                            'provenance', descriptors.provenance,
+                            'confidence', descriptors.confidence,
+                            'updated_at', descriptors.updated_at))
+                         FROM downloaded_track_descriptors descriptors
+                         WHERE descriptors.track_id=tracks.id) AS descriptors_json,
                         latest_job.status AS analysis_status,
                         latest_job.id AS library_job_id,
                         completed_job.id AS completed_library_job_id
@@ -584,9 +673,11 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 "OR LOWER(tracks.recording_code || '-' || tracks.version_code) LIKE ? "
                 "OR EXISTS (SELECT 1 FROM downloaded_track_playlists search_playlist "
                 "WHERE search_playlist.track_id = tracks.id "
-                "AND LOWER(search_playlist.playlist_name) LIKE ?))"
+                "AND LOWER(search_playlist.playlist_name) LIKE ?) "
+                "OR EXISTS (SELECT 1 FROM downloaded_track_descriptors search_descriptor "
+                "WHERE search_descriptor.track_id = tracks.id AND LOWER(search_descriptor.value) LIKE ?))"
             )
-            parameters.extend([value] * 6)
+            parameters.extend([value] * 7)
         missing_title = "TRIM(COALESCE(tracks.title, '')) = '' OR LOWER(TRIM(tracks.title)) IN ('unknown title','untitled')"
         missing_artist = "TRIM(COALESCE(tracks.artist, '')) = '' OR LOWER(TRIM(tracks.artist)) IN ('unknown artist','unknown','unavailable')"
         missing_genre = "TRIM(COALESCE(tracks.genre, '')) = ''"
@@ -686,6 +777,13 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     tracks.audio_quality_json, tracks.audio_quality_analyzed_at,
                     tracks.artwork_url, tracks.artwork_path, tracks.file_path,
                     tracks.duration_seconds, tracks.imported_at,
+                    (SELECT json_group_array(json_object(
+                        'category', descriptors.category, 'value', descriptors.value,
+                        'provenance', descriptors.provenance,
+                        'confidence', descriptors.confidence,
+                        'updated_at', descriptors.updated_at))
+                     FROM downloaded_track_descriptors descriptors
+                     WHERE descriptors.track_id=tracks.id) AS descriptors_json,
                     (SELECT GROUP_CONCAT(p.playlist_name, '||')
                      FROM downloaded_track_playlists p WHERE p.track_id = tracks.id) AS playlists,
                     latest_job.status AS analysis_status,
@@ -806,7 +904,14 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 """SELECT tracks.*,
                     (SELECT GROUP_CONCAT(p.playlist_name, '||')
                      FROM downloaded_track_playlists p WHERE p.track_id = tracks.id)
-                     AS playlists
+                     AS playlists,
+                    (SELECT json_group_array(json_object(
+                        'category', descriptors.category, 'value', descriptors.value,
+                        'provenance', descriptors.provenance,
+                        'confidence', descriptors.confidence,
+                        'updated_at', descriptors.updated_at))
+                     FROM downloaded_track_descriptors descriptors
+                     WHERE descriptors.track_id=tracks.id) AS descriptors_json
                     FROM downloaded_tracks tracks WHERE tracks.id = ?""",
                 (track_id,),
             ).fetchone()
@@ -1041,6 +1146,9 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             )
             connection.execute(
                 "DELETE FROM downloaded_track_playlists WHERE track_id = ?", (track_id,)
+            )
+            connection.execute(
+                "DELETE FROM downloaded_track_descriptors WHERE track_id = ?", (track_id,)
             )
             cursor = connection.execute("DELETE FROM downloaded_tracks WHERE id = ?", (track_id,))
         return cursor.rowcount > 0
