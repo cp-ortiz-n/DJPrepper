@@ -54,10 +54,7 @@ class CandidateSelectionService:
             candidates = self._rank_at_length(analysis, request, request.maximum_bars, vocal_energy)
             return RankedSelection(tuple(candidates), request.maximum_bars)
 
-        lengths = [
-            bars for bars in SUPPORTED_BAR_COUNTS
-            if 0 < bars <= request.maximum_bars
-        ]
+        lengths = [bars for bars in SUPPORTED_BAR_COUNTS if 0 < bars <= request.maximum_bars]
         ranked: dict[int, list[SectionCandidate]] = {}
         for bars in lengths:
             try:
@@ -66,8 +63,7 @@ class CandidateSelectionService:
                 continue
         if not ranked:
             raise CandidateSelectionError(
-                f"No loopable {request.position} phrase exists up to "
-                f"{request.maximum_bars} bars"
+                f"No loopable {request.position} phrase exists up to {request.maximum_bars} bars"
             )
 
         shortest_quality = ranked[min(ranked)][0].loop_quality
@@ -104,9 +100,7 @@ class CandidateSelectionService:
         )
 
     @staticmethod
-    def _length_fitness(
-        candidate: SectionCandidate, bars: int, shortest_quality: float
-    ) -> float:
+    def _length_fitness(candidate: SectionCandidate, bars: int, shortest_quality: float) -> float:
         fitness = (
             0.50 * candidate.loop_quality / 100.0
             + 0.18 * candidate.structure_consistency
@@ -122,19 +116,25 @@ class CandidateSelectionService:
         if bars == 2:
             fitness -= 0.06
         elif bars == 8:
-            fitness += 0.035 if (
-                candidate.rhythmic_strength >= 0.42
-                and candidate.instrumentalness >= 0.48
-                and candidate.energy_shape == "stable"
-            ) else -0.045
+            fitness += (
+                0.035
+                if (
+                    candidate.rhythmic_strength >= 0.42
+                    and candidate.instrumentalness >= 0.48
+                    and candidate.energy_shape == "stable"
+                )
+                else -0.045
+            )
         elif bars >= 16:
-            fitness += 0.025 if (
-                candidate.rhythmic_strength >= 0.55
-                and candidate.instrumentalness >= 0.55
-                and candidate.energy_shape == "stable"
-            ) else -0.12
-        if bars > 4 and candidate.loop_quality < (
-            shortest_quality - AUTO_BAR_MAXIMUM_QUALITY_LOSS
-        ):
+            fitness += (
+                0.025
+                if (
+                    candidate.rhythmic_strength >= 0.55
+                    and candidate.instrumentalness >= 0.55
+                    and candidate.energy_shape == "stable"
+                )
+                else -0.12
+            )
+        if bars > 4 and candidate.loop_quality < (shortest_quality - AUTO_BAR_MAXIMUM_QUALITY_LOSS):
             fitness -= 0.10
         return fitness

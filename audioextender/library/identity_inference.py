@@ -5,57 +5,142 @@ from __future__ import annotations
 import re
 from typing import Any
 
-
 GENERIC_PLAYLISTS = {
-    "imported singles", "soundcloud imports", "youtube imports", "spotify imports",
-    "downloads", "downloaded", "music", "tracks", "favorites", "favourites",
+    "imported singles",
+    "soundcloud imports",
+    "youtube imports",
+    "spotify imports",
+    "downloads",
+    "downloaded",
+    "music",
+    "tracks",
+    "favorites",
+    "favourites",
 }
 
 PLAYLIST_NOISE_WORDS = {
-    "a", "and", "best", "by", "for", "from", "in", "las", "latest", "lo",
-    "mejores", "mix", "mixes", "of", "on", "playlist", "popular", "songs",
-    "spotify", "the", "tiktok", "track", "tracks", "transitions", "viral", "with",
+    "a",
+    "and",
+    "best",
+    "by",
+    "for",
+    "from",
+    "in",
+    "las",
+    "latest",
+    "lo",
+    "mejores",
+    "mix",
+    "mixes",
+    "of",
+    "on",
+    "playlist",
+    "popular",
+    "songs",
+    "spotify",
+    "the",
+    "tiktok",
+    "track",
+    "tracks",
+    "transitions",
+    "viral",
+    "with",
 }
 
 KNOWN_PLAYLIST_WORDS = {
-    "afro", "afrobeats", "after", "afterhours", "amapiano", "anthem", "bachata",
-    "bhangra", "bollywood", "boiler", "brazil", "brazilian", "caribbean", "classic",
-    "club", "colombia", "colombian", "cumbia", "dance", "dancefloor", "dembow",
-    "desi", "disco", "ecuador", "ecuadorian", "electronic", "festival", "funk",
-    "guaracha", "gym", "hard", "hindi", "hit", "hits", "house", "indian", "latin",
-    "live", "lounge", "merengue", "party", "rave", "reggae", "reggaeton", "remix",
-    "remixes", "room", "running", "salsa", "scratch", "set", "singalong", "skratch",
-    "soca", "techno", "throwback", "tribal", "turntablism", "uk", "workout",
+    "afro",
+    "afrobeats",
+    "after",
+    "afterhours",
+    "amapiano",
+    "anthem",
+    "bachata",
+    "bhangra",
+    "bollywood",
+    "boiler",
+    "brazil",
+    "brazilian",
+    "caribbean",
+    "classic",
+    "club",
+    "colombia",
+    "colombian",
+    "cumbia",
+    "dance",
+    "dancefloor",
+    "dembow",
+    "desi",
+    "disco",
+    "ecuador",
+    "ecuadorian",
+    "electronic",
+    "festival",
+    "funk",
+    "guaracha",
+    "gym",
+    "hard",
+    "hindi",
+    "hit",
+    "hits",
+    "house",
+    "indian",
+    "latin",
+    "live",
+    "lounge",
+    "merengue",
+    "party",
+    "rave",
+    "reggae",
+    "reggaeton",
+    "remix",
+    "remixes",
+    "room",
+    "running",
+    "salsa",
+    "scratch",
+    "set",
+    "singalong",
+    "skratch",
+    "soca",
+    "techno",
+    "throwback",
+    "tribal",
+    "turntablism",
+    "uk",
+    "workout",
 }
 
 RULES: tuple[tuple[str, str, tuple[str, ...], float], ...] = (
-    ("cultural", "latin", ("latin", "latino", "reggaeton", "dembow", "salsa", "bachata", "cumbia", "guaracha"), .82),
-    ("cultural", "ecuadorian", ("ecuador", "ecuadorian", "ecuatoriano"), .92),
-    ("cultural", "colombian", ("colombia", "colombian", "colombiano"), .9),
-    ("cultural", "caribbean", ("caribbean", "caribe", "dancehall", "reggae", "soca"), .82),
-    ("cultural", "brazilian", ("brazil", "brazilian", "brasil", "funk carioca", "baile funk"), .9),
-    ("cultural", "afro-influenced", ("afro", "afrobeats", "amapiano", "afro house"), .82),
-    ("cultural", "indian / south asian", ("indian", "india", "bollywood", "hindi", "desi", "bhangra"), .9),
-    ("rhythm", "dembow", ("dembow", "reggaeton", "perreo"), .9),
-    ("rhythm", "cumbia rhythm", ("cumbia",), .92),
-    ("rhythm", "salsa rhythm", ("salsa",), .92),
-    ("rhythm", "latin percussion", ("latin house", "guaracha", "tribal house", "latin techno"), .78),
-    ("rhythm", "four-on-the-floor", ("house", "techno", "trance", "disco"), .72),
-    ("sound", "melodic", ("melodic", "progressive", "organic house"), .78),
-    ("sound", "dark", ("dark", "industrial", "hard techno"), .8),
-    ("sound", "tribal", ("tribal", "guaracha"), .82),
-    ("sound", "bollywood pop", ("bollywood", "indian pop", "hindi pop"), .9),
-    ("vocal", "spanish-language cues", ("spanish", "español", "latino vocal", "reggaeton", "salsa", "bachata"), .66),
-    ("vocal", "hindi-language cues", ("hindi", "bollywood", "indian pop"), .68),
-    ("role", "peak-time", ("peak time", "peak-time", "mainstage", "festival", "banger"), .83),
-    ("role", "warm-up", ("warm up", "warm-up", "opening", "lounge"), .84),
-    ("role", "closing", ("closing", "afterhours", "after hours", "sunrise"), .82),
+    ("cultural", "latin", ("latin", "latino", "reggaeton", "dembow", "salsa", "bachata", "cumbia", "guaracha"), 0.82),
+    ("cultural", "ecuadorian", ("ecuador", "ecuadorian", "ecuatoriano"), 0.92),
+    ("cultural", "colombian", ("colombia", "colombian", "colombiano"), 0.9),
+    ("cultural", "caribbean", ("caribbean", "caribe", "dancehall", "reggae", "soca"), 0.82),
+    ("cultural", "brazilian", ("brazil", "brazilian", "brasil", "funk carioca", "baile funk"), 0.9),
+    ("cultural", "afro-influenced", ("afro", "afrobeats", "amapiano", "afro house"), 0.82),
+    ("cultural", "indian / south asian", ("indian", "india", "bollywood", "hindi", "desi", "bhangra"), 0.9),
+    ("rhythm", "dembow", ("dembow", "reggaeton", "perreo"), 0.9),
+    ("rhythm", "cumbia rhythm", ("cumbia",), 0.92),
+    ("rhythm", "salsa rhythm", ("salsa",), 0.92),
+    ("rhythm", "latin percussion", ("latin house", "guaracha", "tribal house", "latin techno"), 0.78),
+    ("rhythm", "four-on-the-floor", ("house", "techno", "trance", "disco"), 0.72),
+    ("sound", "melodic", ("melodic", "progressive", "organic house"), 0.78),
+    ("sound", "dark", ("dark", "industrial", "hard techno"), 0.8),
+    ("sound", "tribal", ("tribal", "guaracha"), 0.82),
+    ("sound", "bollywood pop", ("bollywood", "indian pop", "hindi pop"), 0.9),
+    ("vocal", "spanish-language cues", ("spanish", "español", "latino vocal", "reggaeton", "salsa", "bachata"), 0.66),
+    ("vocal", "hindi-language cues", ("hindi", "bollywood", "indian pop"), 0.68),
+    ("role", "peak-time", ("peak time", "peak-time", "mainstage", "festival", "banger"), 0.83),
+    ("role", "warm-up", ("warm up", "warm-up", "opening", "lounge"), 0.84),
+    ("role", "closing", ("closing", "afterhours", "after hours", "sunrise"), 0.82),
 )
 
 ARTIST_CUES: tuple[tuple[tuple[str, ...], tuple[tuple[str, str, float], ...]], ...] = (
-    (("skrillex",), (("sound", "bass-forward", .74), ("sound", "high-impact electronic", .68))),
-    (("fred again",), (("sound", "emotive electronic", .74), ("sound", "vocal-sample driven", .7))),
-    (("skrillex", "fred again"), (("context", "contemporary electronic crossover", .76), ("role", "festival-ready", .66))),
+    (("skrillex",), (("sound", "bass-forward", 0.74), ("sound", "high-impact electronic", 0.68))),
+    (("fred again",), (("sound", "emotive electronic", 0.74), ("sound", "vocal-sample driven", 0.7))),
+    (
+        ("skrillex", "fred again"),
+        (("context", "contemporary electronic crossover", 0.76), ("role", "festival-ready", 0.66)),
+    ),
 )
 
 
@@ -110,10 +195,15 @@ def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
     """Return explainable suggestions without asserting unsupported audio facts."""
     playlists = [str(value).strip() for value in context.get("playlists", []) if str(value).strip()]
     metadata_parts = [
-        context.get("title"), context.get("artist"), context.get("filename"),
-        context.get("genre"), context.get("genre_category"),
-        context.get("library_category"), context.get("library_detail_genre"),
-        context.get("library_roles"), context.get("energy_band"),
+        context.get("title"),
+        context.get("artist"),
+        context.get("filename"),
+        context.get("genre"),
+        context.get("genre_category"),
+        context.get("library_category"),
+        context.get("library_detail_genre"),
+        context.get("library_roles"),
+        context.get("energy_band"),
     ]
     metadata_text = _clean(" ".join(str(value or "") for value in metadata_parts))
     playlist_text = _clean(" ".join(playlists))
@@ -127,20 +217,52 @@ def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
         from_playlist = any(needle in playlist_text for needle in matches)
         source = "playlist" if from_playlist else "catalog metadata"
         suggestions[(category, value)] = {
-            "category": category, "value": value, "provenance": "inferred",
-            "confidence": min(.98, confidence + (.04 if from_playlist else 0)),
+            "category": category,
+            "value": value,
+            "provenance": "inferred",
+            "confidence": min(0.98, confidence + (0.04 if from_playlist else 0)),
             "reason": f"Matched {', '.join(matches[:2])} in {source}",
         }
 
     if any(needle in combined for needle in ("party", "dancefloor", "club", "banger")):
-        suggestions.setdefault(("role", "party-ready"), {"category":"role","value":"party-ready","provenance":"inferred","confidence":.78,"reason":"Party or dancefloor context in metadata/playlist"})
-    if any(needle in combined for needle in ("hit", "classic", "throwback", "anthem", "singalong", "popular", "viral", "tiktok")):
-        suggestions.setdefault(("familiarity", "crowd-recognizable"), {"category":"familiarity","value":"crowd-recognizable","provenance":"inferred","confidence":.72,"reason":"Popularity/recognition cue in metadata or playlist; not verified chart data"})
+        suggestions.setdefault(
+            ("role", "party-ready"),
+            {
+                "category": "role",
+                "value": "party-ready",
+                "provenance": "inferred",
+                "confidence": 0.78,
+                "reason": "Party or dancefloor context in metadata/playlist",
+            },
+        )
+    if any(
+        needle in combined
+        for needle in ("hit", "classic", "throwback", "anthem", "singalong", "popular", "viral", "tiktok")
+    ):
+        suggestions.setdefault(
+            ("familiarity", "crowd-recognizable"),
+            {
+                "category": "familiarity",
+                "value": "crowd-recognizable",
+                "provenance": "inferred",
+                "confidence": 0.72,
+                "reason": "Popularity/recognition cue in metadata or playlist; not verified chart data",
+            },
+        )
 
     for required, cues in ARTIST_CUES:
         if all(artist in combined for artist in required):
             for category, value, confidence in cues:
-                suggestions.setdefault((category, value), {"category":category,"value":value,"provenance":"inferred","confidence":confidence,"reason":f"Artist-crate cue: {' + '.join(required)}"})
+                suggestions.setdefault(
+                    (category, value),
+                    {
+                        "category": category,
+                        "value": value,
+                        "provenance": "inferred",
+                        "confidence": confidence,
+                        "reason": f"Artist-crate cue: {' + '.join(required)}",
+                    },
+                )
 
     unknown_signals = set(unknown_playlist_signals(playlists))
     for rule in context.get("vocabulary_rules", []) or []:
@@ -150,8 +272,10 @@ def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
         category, value = _clean(rule.get("category")), _clean(rule.get("value"))
         if category and value:
             suggestions[(category, value)] = {
-                "category": category, "value": value, "provenance": "inferred",
-                "confidence": float(rule.get("confidence") or .8),
+                "category": category,
+                "value": value,
+                "provenance": "inferred",
+                "confidence": float(rule.get("confidence") or 0.8),
                 "reason": f'Approved identity vocabulary: "{signal}"',
             }
 
@@ -162,30 +286,54 @@ def infer_identity_descriptors(context: dict[str, Any]) -> list[dict[str, Any]]:
         if normalized.endswith(" imports") or normalized.startswith("imported "):
             continue
         for context_value in _playlist_contexts(playlist):
-            suggestions.setdefault(("context", context_value), {
-                "category": "context", "value": context_value, "provenance": "crate",
-                "confidence": .78, "reason": f'Normalized playlist/crate cue: "{playlist}"',
-            })
+            suggestions.setdefault(
+                ("context", context_value),
+                {
+                    "category": "context",
+                    "value": context_value,
+                    "provenance": "crate",
+                    "confidence": 0.78,
+                    "reason": f'Normalized playlist/crate cue: "{playlist}"',
+                },
+            )
 
     roles = [value for value in str(context.get("library_roles") or "").strip("|").split("|") if value]
     for role in roles:
         clean_role = _clean(role).replace("_", "-")
         if clean_role and clean_role not in {"live timing", "steady timing", "variable timing"}:
-            suggestions.setdefault(("role", clean_role), {
-                "category": "role", "value": clean_role, "provenance": "inferred",
-                "confidence": .86, "reason": "Derived from DJ analysis role",
-            })
+            suggestions.setdefault(
+                ("role", clean_role),
+                {
+                    "category": "role",
+                    "value": clean_role,
+                    "provenance": "inferred",
+                    "confidence": 0.86,
+                    "reason": "Derived from DJ analysis role",
+                },
+            )
     vocals = _clean(context.get("vocals"))
     if vocals and vocals not in {"all", "unknown"}:
-        suggestions.setdefault(("vocal", vocals), {
-            "category": "vocal", "value": vocals, "provenance": "inferred",
-            "confidence": .8, "reason": "Derived from vocal-density analysis",
-        })
+        suggestions.setdefault(
+            ("vocal", vocals),
+            {
+                "category": "vocal",
+                "value": vocals,
+                "provenance": "inferred",
+                "confidence": 0.8,
+                "reason": "Derived from vocal-density analysis",
+            },
+        )
     timing = _clean(context.get("timing"))
     if timing in {"steady", "variable", "live", "variable/live"}:
         value = "steady / griddable" if timing == "steady" else "live timing"
-        suggestions.setdefault(("sound", value), {
-            "category": "sound", "value": value, "provenance": "inferred",
-            "confidence": .84, "reason": "Derived from timing analysis",
-        })
+        suggestions.setdefault(
+            ("sound", value),
+            {
+                "category": "sound",
+                "value": value,
+                "provenance": "inferred",
+                "confidence": 0.84,
+                "reason": "Derived from timing analysis",
+            },
+        )
     return sorted(suggestions.values(), key=lambda item: (item["category"], -item["confidence"], item["value"]))

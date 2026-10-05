@@ -21,30 +21,22 @@ class JobQueueService:
     processor: Callable[[], Any]
     watchdog_last: float = 0.0
 
-    def list(
-        self, *, paged: bool, page: int, page_size: int, statuses: list[str]
-    ) -> list[dict] | dict:
+    def list(self, *, paged: bool, page: int, page_size: int, statuses: list[str]) -> list[dict] | dict:
         repository = self.repository()
         if perf_counter() - self.watchdog_last >= 60:
             repository.fail_stalled_jobs()
             self.watchdog_last = perf_counter()
         if paged:
-            rows, total = repository.list_jobs_page(
-                page=page, page_size=page_size, statuses=tuple(statuses)
-            )
+            rows, total = repository.list_jobs_page(page=page, page_size=page_size, statuses=tuple(statuses))
         else:
             rows = repository.list_job_summaries()
-            active_rows, _ = repository.list_jobs_page(
-                page=1, page_size=10_000, statuses=("queued", "processing")
-            )
+            active_rows, _ = repository.list_jobs_page(page=1, page_size=10_000, statuses=("queued", "processing"))
             rows_by_id = {int(row["id"]): row for row in rows}
             rows_by_id.update({int(row["id"]): row for row in active_rows})
             rows = sorted(rows_by_id.values(), key=lambda row: int(row["id"]), reverse=True)
         queue = self.processor().snapshot()
         pending = {job_id: index for index, job_id in enumerate(queue["pending"])}
-        active_ids = set(
-            queue.get("active_ids") or ([] if queue["active"] is None else [queue["active"]])
-        )
+        active_ids = set(queue.get("active_ids") or ([] if queue["active"] is None else [queue["active"]]))
         paused_ids = set(queue.get("paused_ids") or [])
         for row in rows:
             row["queue_index"] = pending.get(int(row["id"]))

@@ -52,14 +52,10 @@ class WebSettings(BaseModel):
     intro_search_seconds: float = Field(INTRO_SEARCH_SECONDS, ge=15, le=600)
     outro_search_seconds: float = Field(OUTRO_SEARCH_SECONDS, ge=15, le=600)
     maximum_vocal_coverage_percent: float = Field(MAXIMUM_VOCAL_COVERAGE * 100, ge=0, le=100)
-    maximum_vocal_boundary_risk_percent: float = Field(
-        MAXIMUM_VOCAL_BOUNDARY_RISK * 100, ge=0, le=100
-    )
+    maximum_vocal_boundary_risk_percent: float = Field(MAXIMUM_VOCAL_BOUNDARY_RISK * 100, ge=0, le=100)
     maximum_buildup_risk_percent: float = Field(MAXIMUM_BUILDUP_RISK * 100, ge=0, le=100)
     maximum_bass_reset_risk_percent: float = Field(MAXIMUM_BASS_RESET_RISK * 100, ge=0, le=100)
-    minimum_stem_reliability_percent: float = Field(
-        MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, ge=0, le=100
-    )
+    minimum_stem_reliability_percent: float = Field(MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, ge=0, le=100)
 
 
 class LibraryRelocationRequest(BaseModel):
@@ -148,9 +144,7 @@ class SettingsRouteService:
                 return dict(cached)
             identity = root / ".audioextender" / "library.json"
             try:
-                library_id = str(
-                    json.loads(identity.read_text(encoding="utf-8")).get("library_id") or ""
-                )
+                library_id = str(json.loads(identity.read_text(encoding="utf-8")).get("library_id") or "")
             except (OSError, ValueError):
                 library_id = ""
             scan_started = perf_counter()
@@ -235,11 +229,7 @@ class SettingsRouteService:
                 continue
             errors = list(batch.get("errors") or [])
             if kind == "wav-tags":
-                errors = [
-                    item
-                    for item in errors
-                    if not item.get("path") or not Path(str(item["path"])).is_file()
-                ]
+                errors = [item for item in errors if not item.get("path") or not Path(str(item["path"])).is_file()]
             if errors:
                 failed_operations.append(
                     {
@@ -317,22 +307,14 @@ class SettingsRouteService:
         except (OSError, ValueError, TypeError):
             return None
         payload = saved.get("payload")
-        return (
-            dict(payload)
-            if saved.get("signature") == signature and isinstance(payload, dict)
-            else None
-        )
+        return dict(payload) if saved.get("signature") == signature and isinstance(payload, dict) else None
 
     def storage_inventory(self, refresh: bool = False) -> dict[str, Any]:
         deps = self.dependencies
         now = perf_counter()
         with deps.storage_inventory_lock:
             cached = deps.storage_inventory_cache.get("payload")
-            if (
-                not refresh
-                and cached is not None
-                and now < float(deps.storage_inventory_cache["expires_at"])
-            ):
+            if not refresh and cached is not None and now < float(deps.storage_inventory_cache["expires_at"]):
                 return dict(cached)
         signature = self._inventory_signature()
         if not refresh and (saved := self._saved_inventory(signature)) is not None:
@@ -358,9 +340,7 @@ class SettingsRouteService:
             source = Path(str(job.get("source_path") or ""))
             if source.is_file():
                 try:
-                    retained_cache.update(
-                        cache.processing_paths(source, deps.job_service.config_for(job))
-                    )
+                    retained_cache.update(cache.processing_paths(source, deps.job_service.config_for(job)))
                 except (OSError, ValueError, KeyError, TypeError):
                     pass
             for field in ("wav_path", "extended_path"):
@@ -377,8 +357,7 @@ class SettingsRouteService:
         cache_files = {
             path.resolve()
             for path in cache_root.glob("*")
-            if path.is_file()
-            and (path.suffix == ".npz" or path.name.endswith((".instrumental.wav", ".drums.wav")))
+            if path.is_file() and (path.suffix == ".npz" or path.name.endswith((".instrumental.wav", ".drums.wav")))
         }
         stale_cache = sorted(cache_files - retained_cache)
         generated: set[Path] = set()
@@ -389,9 +368,7 @@ class SettingsRouteService:
         ):
             if directory.is_dir():
                 generated.update(path.resolve() for path in directory.rglob("*") if path.is_file())
-        generated.update(
-            path.resolve() for path in deps.output_root.glob("*.wav") if path.is_file()
-        )
+        generated.update(path.resolve() for path in deps.output_root.glob("*.wav") if path.is_file())
         orphaned = sorted(generated - referenced_outputs)
         stale_bytes = sum(self._path_size(path) for path in stale_cache)
         orphaned_bytes = sum(self._path_size(path) for path in orphaned)
@@ -413,9 +390,7 @@ class SettingsRouteService:
         try:
             deps.storage_snapshot.parent.mkdir(parents=True, exist_ok=True)
             temporary = deps.storage_snapshot.with_suffix(".tmp")
-            temporary.write_text(
-                json.dumps({"signature": signature, "payload": payload}), encoding="utf-8"
-            )
+            temporary.write_text(json.dumps({"signature": signature, "payload": payload}), encoding="utf-8")
             temporary.replace(deps.storage_snapshot)
         except OSError:
             pass
@@ -523,7 +498,9 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
         effective = deps.effective_settings()
         changed = sum(before.get(key) != value for key, value in effective.items())
         return {
-            "defaults": deps.defaults, "effective": effective, "overrides": {},
+            "defaults": deps.defaults,
+            "effective": effective,
+            "overrides": {},
             "receipt": operation_receipt(
                 operation="reset-settings",
                 requested="Restore application defaults",
@@ -558,9 +535,7 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
             if job.get("status") in {"queued", "processing", "paused"}
         ]
         if active:
-            raise HTTPException(
-                409, "Finish or cancel active analysis jobs before cleaning storage"
-            )
+            raise HTTPException(409, "Finish or cancel active analysis jobs before cleaning storage")
         inventory = service.storage_inventory(refresh=True)
         key = "_stale_cache" if request.target == "stale-cache" else "_orphaned_outputs"
         removed_files = removed_bytes = 0
@@ -588,9 +563,7 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
             destination = Path(request.destination).expanduser()
             if not destination.is_absolute():
                 raise ValueError("The destination must be an absolute path")
-            return deps.relocation.prepare(
-                deps.music_library_root(), destination, request.mode, request.verification
-            )
+            return deps.relocation.prepare(deps.music_library_root(), destination, request.mode, request.verification)
         except (OSError, ValueError) as error:
             raise HTTPException(400, str(error)) from error
 
@@ -601,9 +574,7 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
 
-    router.add_api_route(
-        "/api/settings/library-relocation", deps.relocation.status, methods=["GET"]
-    )
+    router.add_api_route("/api/settings/library-relocation", deps.relocation.status, methods=["GET"])
 
     @router.delete("/api/settings/library-relocation")
     def reset_relocation() -> dict:
@@ -612,9 +583,7 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
 
-    router.add_api_route(
-        "/api/settings/library-relocation/cancel", deps.relocation.cancel, methods=["POST"]
-    )
+    router.add_api_route("/api/settings/library-relocation/cancel", deps.relocation.cancel, methods=["POST"])
 
     @router.post("/api/settings/library-relocation/rollback")
     def rollback_relocation() -> dict:
@@ -635,9 +604,7 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
             try:
                 backups.append(service.public_backup(service.backup_service().describe(path)))
             except ValueError:
-                backups.append(
-                    {"filename": path.name, "size": service._path_size(path), "valid": False}
-                )
+                backups.append({"filename": path.name, "size": service._path_size(path), "valid": False})
         return {"backups": backups, "directory": str(deps.backup_root)}
 
     @router.post("/api/settings/backups", status_code=201)
@@ -695,13 +662,9 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
     def restore_backup(request: BackupRestoreRequest) -> dict:
         if request.confirmation != "RESTORE BACKUP":
             raise HTTPException(400, "Type RESTORE BACKUP exactly to confirm")
-        active = deps.repository().list_jobs_page(
-            page=1, page_size=1, statuses=("queued", "processing", "paused")
-        )[1]
+        active = deps.repository().list_jobs_page(page=1, page_size=1, statuses=("queued", "processing", "paused"))[1]
         if active:
-            raise HTTPException(
-                409, "Finish or cancel active analysis jobs before restoring a backup"
-            )
+            raise HTTPException(409, "Finish or cancel active analysis jobs before restoring a backup")
         archive = deps.pending_restores.pop(request.token, None)
         if archive is None or not archive.is_file():
             raise HTTPException(404, "The restore preview expired; select the backup again")
@@ -729,13 +692,9 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
             if job["status"] in {"queued", "processing", "paused"}
         ]
         if active_jobs or any(item.has_active_imports() for item in deps.import_services):
-            raise HTTPException(
-                409, "Cancel or finish all processing and imports before cleaning up the app"
-            )
+            raise HTTPException(409, "Cancel or finish all processing and imports before cleaning up the app")
         downloaded = [
-            Path(track["file_path"])
-            for track in deps.repository().list_downloaded_tracks()
-            if track.get("file_path")
+            Path(track["file_path"]) for track in deps.repository().list_downloaded_tracks() if track.get("file_path")
         ]
         deps.repository().reset_track_data()
         removed = 0

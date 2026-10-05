@@ -63,10 +63,7 @@ def candidate_safety_issue(
         candidate.vocal_coverage > config.maximum_vocal_coverage
         or candidate.vocal_boundary_risk > config.maximum_vocal_boundary_risk
     ):
-        return (
-            f"vocals {candidate.vocal_coverage:.0%}, boundary risk "
-            f"{candidate.vocal_boundary_risk:.0%}"
-        )
+        return f"vocals {candidate.vocal_coverage:.0%}, boundary risk {candidate.vocal_boundary_risk:.0%}"
     if candidate.buildup_risk > config.maximum_buildup_risk:
         return f"buildup risk {candidate.buildup_risk:.0%}"
     if candidate.bass_reset_risk > config.maximum_bass_reset_risk:
@@ -75,26 +72,16 @@ def candidate_safety_issue(
         return f"section {candidate.section_label}, fit {candidate.arrangement_fit:+.0%}"
     if (
         position == "intro"
-        and candidate.rhythmic_strength
-        < MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH
-        and candidate.instrumentalness
-        < MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO
+        and candidate.rhythmic_strength < MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH
+        and candidate.instrumentalness < MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO
     ):
-        return (
-            "exposed melodic phrase without a stable rhythmic bed "
-            f"(rhythm {candidate.rhythmic_strength:.0%})"
-        )
+        return f"exposed melodic phrase without a stable rhythmic bed (rhythm {candidate.rhythmic_strength:.0%})"
     quality_floor = max(
         config.minimum_loop_quality,
-        config.minimum_intro_loop_quality
-        if position == "intro"
-        else config.minimum_outro_loop_quality,
+        config.minimum_intro_loop_quality if position == "intro" else config.minimum_outro_loop_quality,
     )
     if round(candidate.loop_quality) < quality_floor:
-        return (
-            f"quality {candidate.loop_quality:.0f}% below "
-            f"{quality_floor:.0f}%"
-        )
+        return f"quality {candidate.loop_quality:.0f}% below {quality_floor:.0f}%"
     return None
 
 
@@ -116,9 +103,7 @@ class SelectionCoordinator:
         prefer_instrumental: bool = False,
     ) -> SideSelectionResult:
         if request.bars == 0:
-            return SideSelectionResult(
-                None, None, (), None, None, False, False
-            )
+            return SideSelectionResult(None, None, (), None, None, False, False)
 
         maximum_end = request.maximum_end
         minimum_start = request.minimum_start
@@ -127,8 +112,13 @@ class SelectionCoordinator:
 
         try:
             ranked = self._rank(
-                analysis, duration, vocal_energy, request, maximum_end,
-                minimum_start, automatic_length,
+                analysis,
+                duration,
+                vocal_energy,
+                request,
+                maximum_end,
+                minimum_start,
+                automatic_length,
             )
         except RuntimeError:
             if not automatic_boundary:
@@ -138,31 +128,35 @@ class SelectionCoordinator:
                         "leaving intro selection available for percussion fallback"
                     )
                     return SideSelectionResult(
-                        None, None, (), maximum_end, minimum_start,
-                        False, automatic_length,
+                        None,
+                        None,
+                        (),
+                        maximum_end,
+                        minimum_start,
+                        False,
+                        automatic_length,
                         "no complete full-mix phrase before protected boundary",
                     )
                 raise
             boundary_name = "vocal entrance" if request.position == "intro" else "vocal release"
-            progress.log(
-                f"Automatic {boundary_name} left no complete loop; using normal "
-                f"{request.position} search"
-            )
+            progress.log(f"Automatic {boundary_name} left no complete loop; using normal {request.position} search")
             if request.position == "intro":
                 maximum_end = None
             else:
                 minimum_start = None
             automatic_boundary = False
             ranked = self._rank(
-                analysis, duration, vocal_energy, request, maximum_end,
-                minimum_start, automatic_length,
+                analysis,
+                duration,
+                vocal_energy,
+                request,
+                maximum_end,
+                minimum_start,
+                automatic_length,
             )
 
         if ranked.reason:
-            progress.log(
-                f"Automatic {request.position} length: {ranked.bars} bars "
-                f"({ranked.reason})"
-            )
+            progress.log(f"Automatic {request.position} length: {ranked.bars} bars ({ranked.reason})")
         options = self._prefer_instrumental(list(ranked.candidates), prefer_instrumental)
         options = rerank_candidates(options, request.position, config.preset_name)
         chosen, rank = chooser(options, request.position, request.requested_rank)
@@ -173,26 +167,34 @@ class SelectionCoordinator:
             and not config.choose_candidates
             and not config.manual_candidate_selection
             and request.requested_rank == 1
-            and (
-                issue := candidate_safety_issue(
-                    chosen, config, request.position
-                )
-            ) is not None
+            and (issue := candidate_safety_issue(chosen, config, request.position)) is not None
         ):
             fallback = self._safe_fallback(
-                chosen, options, analysis, duration, vocal_energy, config,
-                request, maximum_end, minimum_start, automatic_length,
+                chosen,
+                options,
+                analysis,
+                duration,
+                vocal_energy,
+                config,
+                request,
+                maximum_end,
+                minimum_start,
+                automatic_length,
             )
             if fallback is not None:
                 chosen, rank, description = fallback
                 fallback_description = f"rejected {issue}; {description}"
-                progress.log(
-                    f"{request.position.title()} fallback: {fallback_description}"
-                )
+                progress.log(f"{request.position.title()} fallback: {fallback_description}")
 
         return SideSelectionResult(
-            chosen, rank, tuple(options), maximum_end, minimum_start,
-            automatic_boundary, automatic_length, fallback_description,
+            chosen,
+            rank,
+            tuple(options),
+            maximum_end,
+            minimum_start,
+            automatic_boundary,
+            automatic_length,
+            fallback_description,
         )
 
     def _rank(
@@ -221,9 +223,7 @@ class SelectionCoordinator:
         )
 
     @staticmethod
-    def _prefer_instrumental(
-        candidates: list[SectionCandidate], enabled: bool
-    ) -> list[SectionCandidate]:
+    def _prefer_instrumental(candidates: list[SectionCandidate], enabled: bool) -> list[SectionCandidate]:
         if not enabled:
             return candidates
         return sorted(
@@ -278,8 +278,13 @@ class SelectionCoordinator:
             )
             try:
                 ranked = self._rank(
-                    analysis, duration, vocal_energy, shorter, maximum_end,
-                    minimum_start, False,
+                    analysis,
+                    duration,
+                    vocal_energy,
+                    shorter,
+                    maximum_end,
+                    minimum_start,
+                    False,
                 )
             except RuntimeError:
                 continue

@@ -96,9 +96,8 @@ class SectionCandidate:
     @property
     def instrumental_loop_quality(self) -> float:
         """Loop quality after removing penalties caused only by vocal content."""
-        vocal_factor = (
-            (1.0 - 0.55 * np.clip(self.vocal_phrase_penalty, 0.0, 1.0))
-            * (1.0 - 0.45 * np.clip(self.vocal_boundary_risk, 0.0, 1.0))
+        vocal_factor = (1.0 - 0.55 * np.clip(self.vocal_phrase_penalty, 0.0, 1.0)) * (
+            1.0 - 0.45 * np.clip(self.vocal_boundary_risk, 0.0, 1.0)
         )
         return float(np.clip(self.loop_quality / max(float(vocal_factor), 0.10), 0.0, 100.0))
 

@@ -122,9 +122,7 @@ class EditConfig:
         )
         if any(value is not None for value in insert_values):
             if any(value is None for value in insert_values):
-                raise ConfigurationError(
-                    "section insertion requires source start, source end, and destination"
-                )
+                raise ConfigurationError("section insertion requires source start, source end, and destination")
             assert self.insert_source_start is not None
             assert self.insert_source_end is not None
             assert self.insert_destination is not None

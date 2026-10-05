@@ -18,9 +18,7 @@ from audioextender.infrastructure.batch_operations import BatchContext, BatchOpe
 
 
 class IntegrityRepairRequest(BaseModel):
-    action: Literal[
-        "remove-missing", "catalog-uncataloged", "delete-stale-sidecars", "retag-mismatches"
-    ]
+    action: Literal["remove-missing", "catalog-uncataloged", "delete-stale-sidecars", "retag-mismatches"]
     item_ids: list[str] = Field(default_factory=list, max_length=5000)
 
 
@@ -52,7 +50,8 @@ class LibraryMaintenanceService:
         def publish(result: dict[str, int]) -> None:
             context.check_canceled()
             context.progress(
-                processed=result["processed"], total=result["total"],
+                processed=result["processed"],
+                total=result["total"],
                 stage=f"Checking source records {result['processed']} of {result['total']}",
                 counters={**result, "succeeded": int(result.get("updated") or 0)},
             )
@@ -64,8 +63,11 @@ class LibraryMaintenanceService:
     def start_catalog_reconcile(self) -> dict:
         self.dependencies.require_library_online()
         return self.dependencies.metadata_batches.start(
-            "catalog-propagation", [None], self.run_catalog_reconcile,
-            stage="Indexing source records", counters={"updated": 0},
+            "catalog-propagation",
+            [None],
+            self.run_catalog_reconcile,
+            stage="Indexing source records",
+            counters={"updated": 0},
             requested="Reconcile source records with the downloaded-track catalog",
             written_to=[str(self.dependencies.music_library_root())],
             durability="Catalog and sidecar updates are persisted and survive restart.",
@@ -108,9 +110,7 @@ class LibraryMaintenanceService:
                     "artist": group[0].get("artist"),
                     "track_ids": [item["id"] for item in group],
                     "paths": [item["file_path"] for item in group],
-                    "identities": [
-                        f'{item["recording_code"]}-{item["version_code"]}' for item in group
-                    ],
+                    "identities": [f"{item['recording_code']}-{item['version_code']}" for item in group],
                     "reason": candidate["reason"],
                     "confidence": candidate["confidence"],
                 }
@@ -122,9 +122,7 @@ class LibraryMaintenanceService:
                 and resolved not in catalog_paths
                 and not repository.downloaded_track_is_excluded(path)
             ):
-                findings["uncataloged_files"].append(
-                    {"id": resolved, "title": path.stem, "path": resolved}
-                )
+                findings["uncataloged_files"].append({"id": resolved, "title": path.stem, "path": resolved})
         sidecar_root = root / ".audioextender" / "sources"
         if sidecar_root.exists():
             for sidecar in sidecar_root.glob("*.json"):
@@ -212,8 +210,7 @@ class LibraryMaintenanceService:
                     failures=[],
                     survives_restart=False,
                     durability=(
-                        f"Found {finding_count} issues. Scan results are read-only and are "
-                        "recomputed after restart."
+                        f"Found {finding_count} issues. Scan results are read-only and are recomputed after restart."
                     ),
                 ),
             )
@@ -223,9 +220,7 @@ class LibraryMaintenanceService:
         repository = self.repository
         if request.action == "remove-missing":
             updated = sum(repository.delete_downloaded_track(int(item)) for item in request.item_ids)
-            return self._repair_result(
-                request, updated, [str(getattr(repository, "path", "catalog database"))]
-            )
+            return self._repair_result(request, updated, [str(getattr(repository, "path", "catalog database"))])
         if request.action == "retag-mismatches":
             wanted = {int(item) for item in request.item_ids}
             updated = 0
@@ -258,9 +253,7 @@ class LibraryMaintenanceService:
             if not path.is_file() or path.suffix.casefold() != ".wav":
                 continue
             metadata = self.dependencies.probe_local_audio(path)
-            category = self.dependencies.catalog_genre_category(
-                path, "", str(metadata.get("genre") or "")
-            )
+            category = self.dependencies.catalog_genre_category(path, "", str(metadata.get("genre") or ""))
             repository.upsert_downloaded_track(
                 title=str(metadata.get("title") or path.stem),
                 artist=str(metadata.get("artist") or ""),
@@ -271,14 +264,10 @@ class LibraryMaintenanceService:
                 playlist_name="Recovered files",
             )
             added += 1
-        return self._repair_result(
-            request, added, [str(getattr(repository, "path", "catalog database"))]
-        )
+        return self._repair_result(request, added, [str(getattr(repository, "path", "catalog database"))])
 
     @staticmethod
-    def _repair_result(
-        request: IntegrityRepairRequest, updated: int, written_to: list[str]
-    ) -> dict:
+    def _repair_result(request: IntegrityRepairRequest, updated: int, written_to: list[str]) -> dict:
         return {
             "updated": updated,
             "receipt": operation_receipt(

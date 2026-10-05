@@ -19,8 +19,11 @@ class EditPreset:
 def _load_presets() -> dict[str, EditPreset]:
     presets: dict[str, EditPreset] = {}
     required = {
-        "intro_bars", "outro_bars", "use_stems",
-        "minimum_loop_quality", "maximum_repetitions",
+        "intro_bars",
+        "outro_bars",
+        "use_stems",
+        "minimum_loop_quality",
+        "maximum_repetitions",
     }
     for name, values in PRESET_DEFINITIONS.items():
         if not isinstance(name, str) or not name:

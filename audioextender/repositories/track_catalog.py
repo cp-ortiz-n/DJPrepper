@@ -8,6 +8,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+from audioextender.library.identity_inference import unknown_playlist_signals
 from audioextender.library.recording_identity import (
     audio_fingerprint,
     base_title,
@@ -17,7 +18,6 @@ from audioextender.library.recording_identity import (
     normalize_identity_text,
     version_kind,
 )
-from audioextender.library.identity_inference import unknown_playlist_signals
 from audioextender.repositories.base import RepositoryMixinBase
 
 
@@ -37,8 +37,14 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         return [dict(row) for row in rows]
 
     def save_identity_vocabulary_rule(
-        self, *, signal: str, category: str = "", value: str = "",
-        status: str = "approved", source: str = "manual", confidence: float = 1.0,
+        self,
+        *,
+        signal: str,
+        category: str = "",
+        value: str = "",
+        status: str = "approved",
+        source: str = "manual",
+        confidence: float = 1.0,
     ) -> dict[str, Any]:
         signal = signal.strip().casefold()
         with self._lock, closing(self._connect()) as connection, connection:
@@ -48,8 +54,15 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 VALUES (?,?,?,?,?,?,?) ON CONFLICT(signal) DO UPDATE SET
                 category=excluded.category,value=excluded.value,status=excluded.status,
                 source=excluded.source,confidence=excluded.confidence,updated_at=excluded.updated_at""",
-                (signal, category.strip().casefold(), value.strip().casefold(), status,
-                 source, max(0.0, min(1.0, confidence)), _now()),
+                (
+                    signal,
+                    category.strip().casefold(),
+                    value.strip().casefold(),
+                    status,
+                    source,
+                    max(0.0, min(1.0, confidence)),
+                    _now(),
+                ),
             )
         return next(rule for rule in self.identity_vocabulary_rules() if rule["signal"] == signal)
 
@@ -77,7 +90,9 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             rows = connection.execute(
                 "SELECT track_id,playlist_name FROM downloaded_track_playlists ORDER BY track_id"
             ).fetchall()
-        return sorted({int(row["track_id"]) for row in rows if signal in unknown_playlist_signals([str(row["playlist_name"])])})
+        return sorted(
+            {int(row["track_id"]) for row in rows if signal in unknown_playlist_signals([str(row["playlist_name"])])}
+        )
 
     def track_ids_missing_inferred_identity(self) -> list[int]:
         """Return tracks missing identity or carrying descriptors from an older inference model."""
@@ -118,29 +133,36 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 """SELECT tracks.identity_inference_locked,
                 EXISTS(SELECT 1 FROM downloaded_track_descriptors descriptors
                     WHERE descriptors.track_id=tracks.id AND descriptors.provenance='manual') has_manual
-                FROM downloaded_tracks tracks WHERE tracks.id=?""", (track_id,)
+                FROM downloaded_tracks tracks WHERE tracks.id=?""",
+                (track_id,),
             ).fetchone()
         if row is None:
             return None
-        return {"protected_from_inference": bool(row["identity_inference_locked"]),
-                "has_manual_descriptors": bool(row["has_manual"])}
+        return {
+            "protected_from_inference": bool(row["identity_inference_locked"]),
+            "has_manual_descriptors": bool(row["has_manual"]),
+        }
 
     def set_track_identity_inference_protection(self, track_ids: list[int], protected: bool) -> dict[str, Any]:
         wanted = list(dict.fromkeys(int(track_id) for track_id in track_ids))
         with self._lock, closing(self._connect()) as connection, connection:
-            existing = {int(row[0]) for row in connection.execute(
-                f"SELECT id FROM downloaded_tracks WHERE id IN ({','.join('?' for _ in wanted)})", wanted
-            ).fetchall()} if wanted else set()
+            existing = (
+                {
+                    int(row[0])
+                    for row in connection.execute(
+                        f"SELECT id FROM downloaded_tracks WHERE id IN ({','.join('?' for _ in wanted)})", wanted
+                    ).fetchall()
+                }
+                if wanted
+                else set()
+            )
             connection.executemany(
                 "UPDATE downloaded_tracks SET identity_inference_locked=?,updated_at=? WHERE id=?",
                 [(int(protected), _now(), track_id) for track_id in existing],
             )
-        return {"requested": len(wanted), "updated": len(existing),
-                "missing": sorted(set(wanted) - existing)}
+        return {"requested": len(wanted), "updated": len(existing), "missing": sorted(set(wanted) - existing)}
 
-    def replace_inferred_track_descriptors(
-        self, track_id: int, descriptors: list[dict[str, Any]]
-    ) -> dict[str, Any]:
+    def replace_inferred_track_descriptors(self, track_id: int, descriptors: list[dict[str, Any]]) -> dict[str, Any]:
         """Refresh machine/crate descriptors unless this track is manually protected."""
         status = self.track_identity_inference_status(track_id)
         if status is None:
@@ -152,8 +174,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 "DELETE FROM downloaded_track_descriptors WHERE track_id=? AND provenance!='manual'",
                 (track_id,),
             )
-        return {**self.update_track_descriptors([track_id], descriptors, mode="add"),
-                "skipped_protected": False}
+        return {**self.update_track_descriptors([track_id], descriptors, mode="add"), "skipped_protected": False}
 
     def track_identity_inference_context(self, track_id: int) -> dict[str, Any] | None:
         """Collect catalog, playlist, and latest analysis evidence for inference."""
@@ -208,13 +229,17 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 normalized.append((category, value, provenance, confidence))
         now = _now()
         with self._lock, closing(self._connect()) as connection, connection:
-            existing = {
-                int(row[0])
-                for row in connection.execute(
-                    f"SELECT id FROM downloaded_tracks WHERE id IN ({','.join('?' for _ in wanted)})",
-                    wanted,
-                ).fetchall()
-            } if wanted else set()
+            existing = (
+                {
+                    int(row[0])
+                    for row in connection.execute(
+                        f"SELECT id FROM downloaded_tracks WHERE id IN ({','.join('?' for _ in wanted)})",
+                        wanted,
+                    ).fetchall()
+                }
+                if wanted
+                else set()
+            )
             if mode == "replace":
                 connection.executemany(
                     "DELETE FROM downloaded_track_descriptors WHERE track_id=?",
@@ -223,11 +248,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             elif mode == "remove" and normalized:
                 connection.executemany(
                     "DELETE FROM downloaded_track_descriptors WHERE track_id=? AND category=? AND value=?",
-                    [
-                        (track_id, category, value)
-                        for track_id in existing
-                        for category, value, _, _ in normalized
-                    ],
+                    [(track_id, category, value) for track_id in existing for category, value, _, _ in normalized],
                 )
             if mode in {"replace", "add"} and normalized:
                 connection.executemany(
@@ -255,6 +276,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             "descriptors": len(normalized),
             "survives_restart": True,
         }
+
     def upsert_downloaded_track(
         self,
         *,
@@ -311,9 +333,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             if family_row:
                 recording_code = str(family_row["recording_code"])
             else:
-                recording_code = format_family_code(
-                    self._next_recording_number(connection), genre_category
-                )
+                recording_code = format_family_code(self._next_recording_number(connection), genre_category)
             existing_versions = {
                 str(row[0])
                 for row in connection.execute(
@@ -369,9 +389,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     fingerprint,
                 ),
             )
-            row = connection.execute(
-                "SELECT id FROM downloaded_tracks WHERE file_path = ?", (resolved,)
-            ).fetchone()
+            row = connection.execute("SELECT id FROM downloaded_tracks WHERE file_path = ?", (resolved,)).fetchone()
             if row is None:
                 raise RuntimeError("Downloaded track could not be cataloged")
             track_id = int(row["id"])
@@ -398,9 +416,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         results = []
         for row in rows:
             item = dict(row)
-            item["playlists"] = [
-                value for value in str(item.get("playlists") or "").split("||") if value
-            ]
+            item["playlists"] = [value for value in str(item.get("playlists") or "").split("||") if value]
             results.append(item)
         return results
 
@@ -421,12 +437,8 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     second_kind = re.sub(r"\d+$", "", str(second.get("version_code") or "ORG"))
                     if first_kind != second_kind:
                         continue
-                    same_spotify = bool(first.get("spotify_uri")) and first[
-                        "spotify_uri"
-                    ] == second.get("spotify_uri")
-                    same_youtube = bool(first.get("youtube_id")) and first[
-                        "youtube_id"
-                    ] == second.get("youtube_id")
+                    same_spotify = bool(first.get("spotify_uri")) and first["spotify_uri"] == second.get("spotify_uri")
+                    same_youtube = bool(first.get("youtube_id")) and first["youtube_id"] == second.get("youtube_id")
                     durations = (first.get("duration_seconds"), second.get("duration_seconds"))
                     close_duration = (
                         durations[0] is not None
@@ -505,9 +517,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
     def separate_recording(self, track_id: int) -> dict[str, Any]:
         """Move a false-positive match into its own permanent recording family."""
         with self._lock, closing(self._connect()) as connection, connection:
-            row = connection.execute(
-                "SELECT * FROM downloaded_tracks WHERE id=?", (track_id,)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM downloaded_tracks WHERE id=?", (track_id,)).fetchone()
             if row is None:
                 raise KeyError(track_id)
             recording_code = format_family_code(
@@ -556,9 +566,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 ).fetchone()
         return int(row[0]) if row else None
 
-    def link_recording_version(
-        self, track_id: int, target_track_id: int, kind: str
-    ) -> dict[str, Any]:
+    def link_recording_version(self, track_id: int, target_track_id: int, kind: str) -> dict[str, Any]:
         """Link a track to another track's family without merging files or history."""
         if track_id == target_track_id:
             raise ValueError("Choose a different track as the recording family")
@@ -567,12 +575,8 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         if kind not in allowed:
             raise ValueError("Unsupported recording relationship")
         with self._lock, closing(self._connect()) as connection, connection:
-            track = connection.execute(
-                "SELECT * FROM downloaded_tracks WHERE id=?", (track_id,)
-            ).fetchone()
-            target = connection.execute(
-                "SELECT * FROM downloaded_tracks WHERE id=?", (target_track_id,)
-            ).fetchone()
+            track = connection.execute("SELECT * FROM downloaded_tracks WHERE id=?", (track_id,)).fetchone()
+            target = connection.execute("SELECT * FROM downloaded_tracks WHERE id=?", (target_track_id,)).fetchone()
             if track is None or target is None:
                 raise KeyError("One or more tracks were not found")
             recording_code = str(target["recording_code"] or "")
@@ -610,17 +614,11 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         source_duration = float(source.get("duration_seconds") or 0)
         candidates: list[dict[str, Any]] = []
         for candidate in self.list_downloaded_tracks():
-            if candidate["id"] == track_id or candidate.get("recording_code") == source.get(
-                "recording_code"
-            ):
+            if candidate["id"] == track_id or candidate.get("recording_code") == source.get("recording_code"):
                 continue
-            candidate_title = base_title(
-                str(candidate.get("title") or candidate.get("filename") or "")
-            )
+            candidate_title = base_title(str(candidate.get("title") or candidate.get("filename") or ""))
             title_score = (
-                SequenceMatcher(None, source_title, candidate_title).ratio()
-                if source_title and candidate_title
-                else 0
+                SequenceMatcher(None, source_title, candidate_title).ratio() if source_title and candidate_title else 0
             )
             candidate_artist = normalize_identity_text(str(candidate.get("artist") or ""))
             artist_score = (
@@ -630,14 +628,12 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             )
             duration = float(candidate.get("duration_seconds") or 0)
             duration_score = (
-                max(0.0, 1.0 - abs(source_duration - duration) / 120.0)
-                if source_duration and duration
-                else 0.35
+                max(0.0, 1.0 - abs(source_duration - duration) / 120.0) if source_duration and duration else 0.35
             )
             score = round(100 * (title_score * 0.62 + artist_score * 0.23 + duration_score * 0.15))
-            exact_audio = bool(source.get("audio_fingerprint")) and source.get(
+            exact_audio = bool(source.get("audio_fingerprint")) and source.get("audio_fingerprint") == candidate.get(
                 "audio_fingerprint"
-            ) == candidate.get("audio_fingerprint")
+            )
             if exact_audio:
                 score = max(score, 98)
             if score < 38:
@@ -651,9 +647,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 reasons.append("matching artist")
             if source_duration and duration and abs(source_duration - duration) <= 45:
                 reasons.append("similar duration")
-            candidates.append(
-                {"score": score, "reasons": reasons or ["metadata similarity"], "track": candidate}
-            )
+            candidates.append({"score": score, "reasons": reasons or ["metadata similarity"], "track": candidate})
         candidates.sort(key=lambda item: (-item["score"], str(item["track"].get("title") or "")))
         return candidates[: max(1, min(limit, 20))]
 
@@ -662,12 +656,8 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         if survivor_id == duplicate_id:
             raise ValueError("Choose two different tracks")
         with self._lock, closing(self._connect()) as connection, connection:
-            survivor = connection.execute(
-                "SELECT * FROM downloaded_tracks WHERE id=?", (survivor_id,)
-            ).fetchone()
-            duplicate = connection.execute(
-                "SELECT * FROM downloaded_tracks WHERE id=?", (duplicate_id,)
-            ).fetchone()
+            survivor = connection.execute("SELECT * FROM downloaded_tracks WHERE id=?", (survivor_id,)).fetchone()
+            duplicate = connection.execute("SELECT * FROM downloaded_tracks WHERE id=?", (duplicate_id,)).fetchone()
             if survivor is None or duplicate is None:
                 raise KeyError("One or more tracks were not found")
             now = _now()
@@ -735,9 +725,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     survivor_id,
                 ),
             )
-            connection.execute(
-                "DELETE FROM downloaded_track_playlists WHERE track_id=?", (duplicate_id,)
-            )
+            connection.execute("DELETE FROM downloaded_track_playlists WHERE track_id=?", (duplicate_id,))
             connection.execute(
                 """INSERT OR IGNORE INTO downloaded_track_descriptors
                 (track_id,category,value,provenance,confidence,updated_at)
@@ -745,9 +733,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 FROM downloaded_track_descriptors WHERE track_id=?""",
                 (survivor_id, duplicate_id),
             )
-            connection.execute(
-                "DELETE FROM downloaded_track_descriptors WHERE track_id=?", (duplicate_id,)
-            )
+            connection.execute("DELETE FROM downloaded_track_descriptors WHERE track_id=?", (duplicate_id,))
             connection.execute(
                 """INSERT OR REPLACE INTO downloaded_track_exclusions
                     (file_path,excluded_at) VALUES (?,?)""",
@@ -800,9 +786,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         results = []
         for row in rows:
             item = dict(row)
-            item["playlists"] = [
-                value for value in str(item.get("playlists") or "").split("||") if value
-            ]
+            item["playlists"] = [value for value in str(item.get("playlists") or "").split("||") if value]
             results.append(item)
         return results
 
@@ -836,25 +820,21 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 "WHERE search_descriptor.track_id = tracks.id AND LOWER(search_descriptor.value) LIKE ?))"
             )
             parameters.extend([value] * 7)
-        missing_title = "TRIM(COALESCE(tracks.title, '')) = '' OR LOWER(TRIM(tracks.title)) IN ('unknown title','untitled')"
+        missing_title = (
+            "TRIM(COALESCE(tracks.title, '')) = '' OR LOWER(TRIM(tracks.title)) IN ('unknown title','untitled')"
+        )
         missing_artist = "TRIM(COALESCE(tracks.artist, '')) = '' OR LOWER(TRIM(tracks.artist)) IN ('unknown artist','unknown','unavailable')"
         missing_genre = "TRIM(COALESCE(tracks.genre, '')) = ''"
         missing_artwork = "TRIM(COALESCE(tracks.artwork_path, '')) = ''"
-        unmapped_genre = (
-            "TRIM(COALESCE(tracks.genre, '')) != '' AND tracks.genre_category = 'Other'"
-        )
-        broad_genre = (
-            "(tracks.genre_category LIKE '% / General' OR tracks.genre_category LIKE '% / Other')"
-        )
+        unmapped_genre = "TRIM(COALESCE(tracks.genre, '')) != '' AND tracks.genre_category = 'Other'"
+        broad_genre = "(tracks.genre_category LIKE '% / General' OR tracks.genre_category LIKE '% / Other')"
         if genre != "all":
             aliases = {
                 "Electronic / General": "Electronic / Electronic / Electronic",
                 "Latin / General": "Latin / Other",
             }
             stored_genre = aliases.get(genre, genre)
-            conditions.append(
-                "(tracks.genre_category = ? OR tracks.genre_category LIKE ? ESCAPE '\\')"
-            )
+            conditions.append("(tracks.genre_category = ? OR tracks.genre_category LIKE ? ESCAPE '\\')")
             escaped = stored_genre.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             parameters.extend((stored_genre, f"{escaped} / %"))
         if detailed_genre != "all":
@@ -921,11 +901,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 LEFT JOIN latest_complete ON latest_complete.source_path = tracks.file_path
                 LEFT JOIN jobs AS completed_job ON completed_job.id = latest_complete.job_id"""
         with closing(self._connect()) as connection:
-            total = int(
-                connection.execute(
-                    f"{ctes} SELECT COUNT(*) {joins} {where}", parameters
-                ).fetchone()[0]
-            )
+            total = int(connection.execute(f"{ctes} SELECT COUNT(*) {joins} {where}", parameters).fetchone()[0])
             rows = connection.execute(
                 f"""{ctes} SELECT tracks.id, tracks.title, tracks.artist,
                     tracks.filename, tracks.genre, tracks.genre_category,
@@ -954,9 +930,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         results = []
         for row in rows:
             item = dict(row)
-            item["playlists"] = [
-                value for value in str(item.get("playlists") or "").split("||") if value
-            ]
+            item["playlists"] = [value for value in str(item.get("playlists") or "").split("||") if value]
             results.append(item)
         return results, total
 
@@ -1012,9 +986,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             for category, raw_genres in connection.execute(
                 "SELECT genre_category, genre FROM downloaded_tracks WHERE TRIM(COALESCE(genre, '')) != ''"
             ).fetchall():
-                category_genres = detailed_genres_by_category.setdefault(
-                    str(category or "Other"), {}
-                )
+                category_genres = detailed_genres_by_category.setdefault(str(category or "Other"), {})
                 seen: set[str] = set()
                 for raw_tag in str(raw_genres or "").split(","):
                     tag = raw_tag.strip()
@@ -1034,11 +1006,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 "broad_genre": "genre_category LIKE '% / General' OR genre_category LIKE '% / Other'",
             }
             review_states = {
-                name: int(
-                    connection.execute(
-                        f"SELECT COUNT(*) FROM downloaded_tracks WHERE {condition}"
-                    ).fetchone()[0]
-                )
+                name: int(connection.execute(f"SELECT COUNT(*) FROM downloaded_tracks WHERE {condition}").fetchone()[0])
                 for name, condition in issue_conditions.items()
             }
             review_states["needs_attention"] = int(
@@ -1077,18 +1045,13 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         if row is None:
             return None
         item = dict(row)
-        item["playlists"] = [
-            value for value in str(item.get("playlists") or "").split("||") if value
-        ]
+        item["playlists"] = [value for value in str(item.get("playlists") or "").split("||") if value]
         return item
 
-    def update_downloaded_track_artwork(
-        self, track_id: int, *, artwork_url: str, artwork_path: str
-    ) -> None:
+    def update_downloaded_track_artwork(self, track_id: int, *, artwork_url: str, artwork_path: str) -> None:
         with self._lock, closing(self._connect()) as connection, connection:
             connection.execute(
-                "UPDATE downloaded_tracks SET artwork_url=?, artwork_path=?, updated_at=? "
-                "WHERE id=?",
+                "UPDATE downloaded_tracks SET artwork_url=?, artwork_path=?, updated_at=? WHERE id=?",
                 (artwork_url, artwork_path, _now(), track_id),
             )
 
@@ -1176,9 +1139,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         if row is None:
             return None
         item = dict(row)
-        item["playlists"] = [
-            value for value in str(item.get("playlists") or "").split("||") if value
-        ]
+        item["playlists"] = [value for value in str(item.get("playlists") or "").split("||") if value]
         return item
 
     def relocate_downloaded_tracks(self, moves: list[tuple[int, Path, Path, str]]) -> None:
@@ -1241,8 +1202,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                 existing_versions = {
                     str(row[0])
                     for row in connection.execute(
-                        "SELECT version_code FROM downloaded_tracks "
-                        "WHERE recording_code=? AND id!=?",
+                        "SELECT version_code FROM downloaded_tracks WHERE recording_code=? AND id!=?",
                         (current["recording_code"], track_id),
                     )
                 }
@@ -1267,9 +1227,7 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             )
             if cursor.rowcount != 1:
                 raise KeyError(track_id)
-            connection.execute(
-                "DELETE FROM downloaded_track_playlists WHERE track_id=?", (track_id,)
-            )
+            connection.execute("DELETE FROM downloaded_track_playlists WHERE track_id=?", (track_id,))
             connection.execute(
                 """INSERT INTO downloaded_track_playlists
                     (track_id, playlist_name, added_at) VALUES (?, ?, ?)""",
@@ -1293,22 +1251,15 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
 
     def delete_downloaded_track(self, track_id: int) -> bool:
         with self._lock, closing(self._connect()) as connection, connection:
-            row = connection.execute(
-                "SELECT file_path FROM downloaded_tracks WHERE id = ?", (track_id,)
-            ).fetchone()
+            row = connection.execute("SELECT file_path FROM downloaded_tracks WHERE id = ?", (track_id,)).fetchone()
             if row is None:
                 return False
             connection.execute(
-                "INSERT OR REPLACE INTO downloaded_track_exclusions "
-                "(file_path, excluded_at) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO downloaded_track_exclusions (file_path, excluded_at) VALUES (?, ?)",
                 (row["file_path"], _now()),
             )
-            connection.execute(
-                "DELETE FROM downloaded_track_playlists WHERE track_id = ?", (track_id,)
-            )
-            connection.execute(
-                "DELETE FROM downloaded_track_descriptors WHERE track_id = ?", (track_id,)
-            )
+            connection.execute("DELETE FROM downloaded_track_playlists WHERE track_id = ?", (track_id,))
+            connection.execute("DELETE FROM downloaded_track_descriptors WHERE track_id = ?", (track_id,))
             cursor = connection.execute("DELETE FROM downloaded_tracks WHERE id = ?", (track_id,))
         return cursor.rowcount > 0
 

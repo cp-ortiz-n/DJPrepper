@@ -30,9 +30,7 @@ def classify_track_sections(
     return tuple(profiles)
 
 
-def detect_editing_style(
-    analysis: TrackAnalysis, vocal_energy: np.ndarray | None = None
-) -> StyleDecision:
+def detect_editing_style(analysis: TrackAnalysis, vocal_energy: np.ndarray | None = None) -> StyleDecision:
     """Choose a conservative preset from normalized whole-track features."""
     percussion = float(np.clip(np.mean(analysis.percussion_rms), 0.0, 1.0))
     low, high = np.percentile(analysis.rms, [10, 90])
@@ -70,35 +68,21 @@ def detect_editing_style(
             f"tempo drift {analysis.tempo_drift_percent:.1f}%, percussion {percussion:.2f}, grid {grid:.0f}%",
         )
 
-    if (
-        percussion < 0.24
-        or grid < 48.0
-        or (dynamic_range > 0.72 and percussion < 0.40)
-    ):
+    if percussion < 0.24 or grid < 48.0 or (dynamic_range > 0.72 and percussion < 0.40):
         return StyleDecision(
             "slow/dynamic",
             "slow-song",
             f"percussion {percussion:.2f}, grid {grid:.0f}%, dynamics {dynamic_range:.2f}",
         )
 
-    if (
-        analysis.bpm >= 128.0
-        and percussion >= 0.48
-        and grid >= 65.0
-        and dynamic_range <= 0.75
-        and onset_mean >= 0.28
-    ):
+    if analysis.bpm >= 128.0 and percussion >= 0.48 and grid >= 65.0 and dynamic_range <= 0.75 and onset_mean >= 0.28:
         return StyleDecision(
             "peak-energy",
             "peak-time",
             f"{analysis.bpm:.1f} BPM, percussion {percussion:.2f}, onset activity {onset_mean:.2f}",
         )
 
-    if (
-        "syncopated" in analysis.groove_label
-        and percussion >= 0.32
-        and grid >= 48.0
-    ):
+    if "syncopated" in analysis.groove_label and percussion >= 0.32 and grid >= 48.0:
         return StyleDecision(
             "breakbeat/syncopated",
             "breakbeat",

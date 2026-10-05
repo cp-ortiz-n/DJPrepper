@@ -48,9 +48,7 @@ def preflight_paths(request: SetExportPreflightRequest) -> dict:
             {
                 "path": str(path) if path else value,
                 "exists": exists,
-                "reason": ""
-                if exists
-                else ("No file path is available" if not value else "File is missing from disk"),
+                "reason": "" if exists else ("No file path is available" if not value else "File is missing from disk"),
             }
         )
     valid = sum(1 for item in items if item["exists"])
@@ -69,9 +67,7 @@ def save_playlist_file(
     safe_folder_name: Callable[[str], str],
 ) -> dict:
     """Persist a created set beside the organized music library."""
-    missing = [
-        track.path for track in request.tracks if not Path(track.path).expanduser().is_file()
-    ]
+    missing = [track.path for track in request.tracks if not Path(track.path).expanduser().is_file()]
     if missing:
         raise HTTPException(
             409,
@@ -106,9 +102,7 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
         deps.ensure_catalog_current()
         cache_current = False
         try:
-            cache_current = (
-                json.loads(deps.catalog_cache_path.read_text(encoding="utf-8")).get("version") == 3
-            )
+            cache_current = json.loads(deps.catalog_cache_path.read_text(encoding="utf-8")).get("version") == 3
         except (OSError, ValueError):
             pass
         if not cache_current:

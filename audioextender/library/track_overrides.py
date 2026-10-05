@@ -33,11 +33,7 @@ def load_track_overrides(path: Path) -> dict[str, TrackOverride]:
         values: dict[str, float | None] = {}
         for key in ("intro_before", "outro_after", "outro_before"):
             value = settings.get(key)
-            if value is not None and (
-                not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or value <= 0
-            ):
+            if value is not None and (not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0):
                 raise ValueError(f"{key} for {filename!r} must be a positive number")
             values[key] = float(value) if value is not None else None
         result[filename.casefold()] = TrackOverride(**values)

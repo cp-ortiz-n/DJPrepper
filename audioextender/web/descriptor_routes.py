@@ -11,10 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from audioextender.library.identity_inference import infer_identity_descriptors
 
-
-DESCRIPTOR_CATEGORIES = {
-    "cultural", "rhythm", "sound", "vocal", "role", "context", "familiarity"
-}
+DESCRIPTOR_CATEGORIES = {"cultural", "rhythm", "sound", "vocal", "role", "context", "familiarity"}
 
 
 class TrackDescriptor(BaseModel):
@@ -91,8 +88,11 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
         repository = deps.repository()
         if not repository.get_downloaded_track(track_id):
             raise HTTPException(404, "Track not found")
-        return {"track_id": track_id, "descriptors": repository.track_descriptors(track_id),
-                **repository.track_identity_inference_status(track_id)}
+        return {
+            "track_id": track_id,
+            "descriptors": repository.track_descriptors(track_id),
+            **repository.track_identity_inference_status(track_id),
+        }
 
     @router.put("/tracks/{track_id}/descriptors")
     def update_descriptors(track_id: int, request: DescriptorUpdateRequest) -> dict[str, Any]:
@@ -117,19 +117,17 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
         }
 
     @router.put("/tracks/{track_id}/inference-protection")
-    def update_inference_protection(
-        track_id: int, request: InferenceProtectionRequest
-    ) -> dict[str, Any]:
+    def update_inference_protection(track_id: int, request: InferenceProtectionRequest) -> dict[str, Any]:
         repository = deps.repository()
-        result = repository.set_track_identity_inference_protection(
-            [track_id], request.protected
-        )
+        result = repository.set_track_identity_inference_protection([track_id], request.protected)
         if result["missing"]:
             raise HTTPException(404, "Track not found")
         return {
-            **result, **repository.track_identity_inference_status(track_id),
+            **result,
+            **repository.track_identity_inference_status(track_id),
             "requested_action": "Protect manual identity from inference"
-            if request.protected else "Allow identity re-inference",
+            if request.protected
+            else "Allow identity re-inference",
             "written_to": "AudioExtender track catalog",
             "survives_restart": True,
         }
@@ -157,7 +155,8 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
             raise HTTPException(404, "Track not found")
         suggestions = infer_identity_descriptors(context)
         return {
-            "track_id": track_id, "suggestions": suggestions,
+            "track_id": track_id,
+            "suggestions": suggestions,
             "playlists_considered": context.get("playlists", []),
             "applied": False,
         }
@@ -181,16 +180,22 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
                     skipped_protected.append(track_id)
                 else:
                     applied += 1
-            tracks.append({
-                "track_id": track_id, "suggestions": suggestions,
-                "playlists_considered": context.get("playlists", []),
-            })
+            tracks.append(
+                {
+                    "track_id": track_id,
+                    "suggestions": suggestions,
+                    "playlists_considered": context.get("playlists", []),
+                }
+            )
         if request.apply:
             deps.invalidate_set_catalog()
         return {
-            "requested": len(set(request.track_ids)), "processed": len(tracks),
-            "applied": applied, "missing": missing,
-            "skipped_protected": skipped_protected, "tracks": tracks,
+            "requested": len(set(request.track_ids)),
+            "processed": len(tracks),
+            "applied": applied,
+            "missing": missing,
+            "skipped_protected": skipped_protected,
+            "tracks": tracks,
             "survives_restart": request.apply,
             "written_to": "AudioExtender track catalog" if request.apply else "Preview only",
         }
@@ -215,9 +220,13 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
         if applied:
             deps.invalidate_set_catalog()
         return {
-            "requested": len(track_ids), "processed": len(track_ids), "applied": applied,
-            "suggestions_added": suggestions_added, "no_suggestions": no_suggestions,
-            "failed": 0, "survives_restart": True,
+            "requested": len(track_ids),
+            "processed": len(track_ids),
+            "applied": applied,
+            "suggestions_added": suggestions_added,
+            "no_suggestions": no_suggestions,
+            "failed": 0,
+            "survives_restart": True,
             "written_to": "AudioExtender track catalog",
             "requested_action": "Infer identity for every track without inferred descriptors",
         }
@@ -242,9 +251,13 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
         if updated:
             deps.invalidate_set_catalog()
         return {
-            "requested": len(track_ids), "processed": len(track_ids), "updated": updated,
-            "suggestions_added": suggestions_added, "no_suggestions": no_suggestions,
-            "failed": 0, "survives_restart": True,
+            "requested": len(track_ids),
+            "processed": len(track_ids),
+            "updated": updated,
+            "suggestions_added": suggestions_added,
+            "no_suggestions": no_suggestions,
+            "failed": 0,
+            "survives_restart": True,
             "written_to": "AudioExtender track catalog",
             "requested_action": "Re-infer every track not manually approved",
         }
@@ -268,29 +281,38 @@ def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:
         if request.status == "approved" and (not request.category or not request.value.strip()):
             raise HTTPException(422, "Approved vocabulary requires a category and normalized value")
         if request.status == "approved" and request.value.strip().casefold() in {
-            "context / crate", "context or personal crate", "cultural / regional",
-            "rhythmic influence", "sound character", "vocal identity",
-            "energy / dj role", "audience familiarity",
+            "context / crate",
+            "context or personal crate",
+            "cultural / regional",
+            "rhythmic influence",
+            "sound character",
+            "vocal identity",
+            "energy / dj role",
+            "audience familiarity",
         }:
             raise HTTPException(422, "Choose a specific musical meaning, not a field label")
         repository = deps.repository()
         rule = repository.save_identity_vocabulary_rule(
-            signal=request.signal, category=request.category, value=request.value,
-            status=request.status, source="manual", confidence=1.0,
+            signal=request.signal,
+            category=request.category,
+            value=request.value,
+            status=request.status,
+            source="manual",
+            confidence=1.0,
         )
         affected = repository.track_ids_for_vocabulary_signal(rule["signal"])
         updated = 0
         for track_id in affected:
             context = inference_context(repository, track_id)
-            result = repository.replace_inferred_track_descriptors(
-                track_id, infer_identity_descriptors(context or {})
-            )
+            result = repository.replace_inferred_track_descriptors(track_id, infer_identity_descriptors(context or {}))
             if not result.get("skipped_protected"):
                 updated += 1
         if updated:
             deps.invalidate_set_catalog()
         return {
-            "rule": rule, "affected_tracks": len(affected), "updated_tracks": updated,
+            "rule": rule,
+            "affected_tracks": len(affected),
+            "updated_tracks": updated,
             "requested_action": f"{request.status.title()} identity vocabulary signal",
             "written_to": "AudioExtender identity vocabulary and track catalog",
             "survives_restart": True,

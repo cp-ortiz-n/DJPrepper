@@ -16,8 +16,8 @@ import web_app as web_module
 from audioextender.core.config import EditConfig
 from audioextender.core.exceptions import ConfigurationError
 from audioextender.imports.service import LibraryOfflineError
-from audioextender.repositories.facade import JobRepository
 from audioextender.processing.web_jobs import DatabaseProgress, WebJobService
+from audioextender.repositories.facade import JobRepository
 from web_app import (
     AuthorizedImportRequest,
     BatchDownloadRequest,
@@ -38,11 +38,17 @@ class JobRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "Track.wav"
             path.touch()
-            payload = _downloaded_track_payload({
-                "id": 1, "title": "Track", "artist": "Artist",
-                "file_path": str(path), "artwork_path": "", "genre": "house",
-                "genre_category": "Electronic / House / House",
-            })
+            payload = _downloaded_track_payload(
+                {
+                    "id": 1,
+                    "title": "Track",
+                    "artist": "Artist",
+                    "file_path": str(path),
+                    "artwork_path": "",
+                    "genre": "house",
+                    "genre_category": "Electronic / House / House",
+                }
+            )
             self.assertEqual(payload["absolute_path"], str(path.resolve()))
             self.assertNotIn("file_path", payload)
 
@@ -65,8 +71,11 @@ class JobRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
             saved = repository.set_key_verification(
-                "Song.wav", "G major", "B minor",
-                [{"key": "G major", "detectors": "harmonic, CQT"}], "checked",
+                "Song.wav",
+                "G major",
+                "B minor",
+                [{"key": "G major", "detectors": "harmonic, CQT"}],
+                "checked",
             )
             self.assertEqual(saved["verified_key"], "G major")
             self.assertEqual(saved["candidates"][0]["key"], "G major")
@@ -80,8 +89,10 @@ class JobRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
             values = {
-                "playlist_name": "Party List", "title": "Missing Song",
-                "artist": "Artist", "spotify_uri": "spotify:track:123",
+                "playlist_name": "Party List",
+                "title": "Missing Song",
+                "artist": "Artist",
+                "spotify_uri": "spotify:track:123",
                 "youtube_url": "https://youtube.com/watch?v=abc",
             }
             repository.record_import_failure(**values, error="network error")
@@ -92,66 +103,93 @@ class JobRepositoryTests(unittest.TestCase):
             self.assertEqual(failures[0]["attempts"], 2)
             self.assertEqual(failures[0]["error"], "video unavailable")
 
-            repository.resolve_import_failure(
-                playlist_name="Party List", title="Missing Song", artist="Artist"
-            )
+            repository.resolve_import_failure(playlist_name="Party List", title="Missing Song", artist="Artist")
             self.assertEqual(repository.list_import_failures(), [])
 
     def test_library_search_index_filters_sorts_and_pages_in_sql(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             catalog = JobRepository(Path(temporary) / "jobs.sqlite3")
             entries = []
-            for index, (title, category, bpm, role) in enumerate((
-                ("Opening Track", "Electronic / House / Deep House", 112.0, "warm-up"),
-                ("Peak Track", "Electronic / Techno / Hard Techno", 145.0, "peak-time"),
-                ("Closing Track", "Latin / Salsa", 124.0, "closing"),
-            ), start=1):
+            for index, (title, category, bpm, role) in enumerate(
+                (
+                    ("Opening Track", "Electronic / House / Deep House", 112.0, "warm-up"),
+                    ("Peak Track", "Electronic / Techno / Hard Techno", 145.0, "peak-time"),
+                    ("Closing Track", "Latin / Salsa", 124.0, "closing"),
+                ),
+                start=1,
+            ):
                 source = Path(temporary) / f"{title}.wav"
                 job_id = catalog.create(source.name, source, "auto", 8, 8, False)
                 catalog.update(job_id, status="complete", bpm=bpm)
-                entries.append({
-                    "job_id": job_id, "source_name": source.name, "title": title,
-                    "artist": "Test Artist", "downloaded_id": None, "category": category,
-                    "detail_genre": category.split(" / ")[-1].casefold(),
-                    "roles": f"|{role}|", "preset": "default", "requested_preset": "auto",
-                    "result": "preserved", "bpm": bpm, "musical_key": "A minor",
-                    "camelot": "8A", "energy": .8 if role == "peak-time" else .4,
-                    "energy_band": "high" if role == "peak-time" else "medium",
-                    "vocals": "mixed", "timing": "steady", "updated_at": f"2026-01-0{index}T00:00:00+00:00",
-                    "analysis_json": json.dumps({"source_name": source.name, "bpm": bpm}),
-                })
+                entries.append(
+                    {
+                        "job_id": job_id,
+                        "source_name": source.name,
+                        "title": title,
+                        "artist": "Test Artist",
+                        "downloaded_id": None,
+                        "category": category,
+                        "detail_genre": category.split(" / ")[-1].casefold(),
+                        "roles": f"|{role}|",
+                        "preset": "default",
+                        "requested_preset": "auto",
+                        "result": "preserved",
+                        "bpm": bpm,
+                        "musical_key": "A minor",
+                        "camelot": "8A",
+                        "energy": 0.8 if role == "peak-time" else 0.4,
+                        "energy_band": "high" if role == "peak-time" else "medium",
+                        "vocals": "mixed",
+                        "timing": "steady",
+                        "updated_at": f"2026-01-0{index}T00:00:00+00:00",
+                        "analysis_json": json.dumps({"source_name": source.name, "bpm": bpm}),
+                    }
+                )
             organized_path = Path(temporary) / "Library" / "Opening Track.wav"
             organized_path.parent.mkdir()
             organized_path.touch()
             entries[0]["downloaded_id"] = catalog.upsert_downloaded_track(
-                title="Opening Track", artist="Test Artist", file_path=organized_path,
+                title="Opening Track",
+                artist="Test Artist",
+                file_path=organized_path,
             )
             catalog.replace_library_search_index(entries)
             identity = catalog.list_downloaded_tracks()[0]
             full_track_id = f"{identity['recording_code']}-{identity['version_code']}"
             tracks, total = catalog.page_library_tracks(
-                page=1, page_size=10, search=full_track_id,
+                page=1,
+                page_size=10,
+                search=full_track_id,
             )
             self.assertEqual(total, 1)
             self.assertEqual(tracks[0]["library_title"], "Opening Track")
             downloaded, total = catalog.page_downloaded_tracks(
-                page=1, page_size=10, search=identity["recording_code"].split("-")[-1],
+                page=1,
+                page_size=10,
+                search=identity["recording_code"].split("-")[-1],
             )
             self.assertEqual(total, 1)
             self.assertEqual(downloaded[0]["title"], "Opening Track")
             tracks, total = catalog.page_library_tracks(
-                page=1, page_size=10, category="electronic", role="peak-time",
+                page=1,
+                page_size=10,
+                category="electronic",
+                role="peak-time",
             )
             self.assertEqual(total, 1)
             self.assertEqual(tracks[0]["library_title"], "Peak Track")
             tracks, total = catalog.page_library_tracks(
-                page=1, page_size=10, category="electronic / house",
+                page=1,
+                page_size=10,
+                category="electronic / house",
                 detail_genre="deep house",
             )
             self.assertEqual(total, 1)
             self.assertEqual(tracks[0]["library_title"], "Opening Track")
             tracks, total = catalog.page_library_tracks(
-                page=1, page_size=2, sort="bpm-down",
+                page=1,
+                page_size=2,
+                sort="bpm-down",
             )
             self.assertEqual(total, 3)
             self.assertEqual([track["library_title"] for track in tracks], ["Peak Track", "Closing Track"])
@@ -180,16 +218,21 @@ class JobRepositoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             catalog = JobRepository(Path(temporary) / "jobs.sqlite3")
             catalog.set_system_state("migration", "3")
-            catalog.upsert_catalog_source_signatures([
-                ("/music/one.json", 123, 456),
-                ("/music/two.json", 789, 12),
-            ])
+            catalog.upsert_catalog_source_signatures(
+                [
+                    ("/music/one.json", 123, 456),
+                    ("/music/two.json", 789, 12),
+                ]
+            )
             reopened = JobRepository(Path(temporary) / "jobs.sqlite3")
             self.assertEqual(reopened.get_system_state("migration"), "3")
-            self.assertEqual(reopened.catalog_source_signatures(), {
-                "/music/one.json": (123, 456),
-                "/music/two.json": (789, 12),
-            })
+            self.assertEqual(
+                reopened.catalog_source_signatures(),
+                {
+                    "/music/one.json": (123, 456),
+                    "/music/two.json": (789, 12),
+                },
+            )
 
     def test_catalog_migration_checkpoint_skips_restart_scan(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -197,9 +240,10 @@ class JobRepositoryTests(unittest.TestCase):
             original = web_module.downloaded_catalog_migrated
             try:
                 web_module.downloaded_catalog_migrated = False
-                with patch.object(web_module, "repository", catalog), patch.object(
-                    web_module, "_migrate_downloaded_catalog", return_value={}
-                ) as migrate:
+                with (
+                    patch.object(web_module, "repository", catalog),
+                    patch.object(web_module, "_migrate_downloaded_catalog", return_value={}) as migrate,
+                ):
                     web_module._ensure_downloaded_catalog_migrated()
                     migrate.assert_called_once_with()
                     self.assertEqual(
@@ -222,18 +266,32 @@ class JobRepositoryTests(unittest.TestCase):
             tracked.touch()
             extra.touch()
             track_id = catalog.upsert_downloaded_track(
-                title="Tracked", artist="Artist", file_path=tracked,
-                genre_category="Other", playlist_name="Inbox",
+                title="Tracked",
+                artist="Artist",
+                file_path=tracked,
+                genre_category="Other",
+                playlist_name="Inbox",
             )
             batch_id = "integrity-test"
             web_module.integrity_scan_batches[batch_id] = {
-                "status":"processing", "processed":0, "total":1,
+                "status": "processing",
+                "processed": 0,
+                "total": 1,
             }
-            with patch.object(web_module, "repository", catalog), patch.object(
-                web_module, "_music_library_root", return_value=root
-            ), patch.object(web_module, "read_wav_metadata", return_value={
-                "title":"Tracked", "artist":"Artist", "genre":"Other", "album":"Inbox",
-            }):
+            with (
+                patch.object(web_module, "repository", catalog),
+                patch.object(web_module, "_music_library_root", return_value=root),
+                patch.object(
+                    web_module,
+                    "read_wav_metadata",
+                    return_value={
+                        "title": "Tracked",
+                        "artist": "Artist",
+                        "genre": "Other",
+                        "album": "Inbox",
+                    },
+                ),
+            ):
                 web_module._run_integrity_scan(batch_id)
             batch = web_module.integrity_scan_batches.pop(batch_id)
             self.assertEqual(batch["status"], "complete")
@@ -248,13 +306,19 @@ class JobRepositoryTests(unittest.TestCase):
             wav = root / "Artist - Song.wav"
             wav.touch()
             first = catalog.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=wav,
-                genre="hard techno", genre_category="Techno",
+                title="Song",
+                artist="Artist",
+                file_path=wav,
+                genre="hard techno",
+                genre_category="Techno",
                 playlist_name="Warehouse Set",
             )
             second = catalog.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=wav,
-                genre="hard techno", genre_category="Techno",
+                title="Song",
+                artist="Artist",
+                file_path=wav,
+                genre="hard techno",
+                genre_category="Techno",
                 playlist_name="Peak Time",
             )
             self.assertEqual(first, second)
@@ -280,12 +344,16 @@ class JobRepositoryTests(unittest.TestCase):
             wav.parent.mkdir(parents=True)
             wav.touch()
             catalog.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=wav,
+                title="Song",
+                artist="Artist",
+                file_path=wav,
                 artwork_url="https://i.scdn.co/image/cover",
                 artwork_path=str(root / "cover.jpg"),
             )
             catalog.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=wav,
+                title="Song",
+                artist="Artist",
+                file_path=wav,
                 genre_category="Electronic / House / House",
             )
             track = catalog.list_downloaded_tracks()[0]
@@ -295,9 +363,7 @@ class JobRepositoryTests(unittest.TestCase):
     def test_job_lifecycle_is_persistent(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
-            job_id = repository.create(
-                "Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 4, False
-            )
+            job_id = repository.create("Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 4, False)
             repository.update(job_id, status="processing", progress=42, stage="Analysis")
             job = repository.get(job_id)
             assert job is not None
@@ -317,9 +383,7 @@ class JobRepositoryTests(unittest.TestCase):
             repository.update(newest, status="complete")
             queued = repository.create("Second.wav", second_source, "auto", 0, 0, False)
 
-            rows, total = repository.list_jobs_page(
-                page=1, page_size=1, statuses=("complete",)
-            )
+            rows, total = repository.list_jobs_page(page=1, page_size=1, statuses=("complete",))
             self.assertEqual(total, 2)
             self.assertEqual([row["id"] for row in rows], [newest])
             latest = repository.list_latest_completed_jobs()
@@ -341,14 +405,14 @@ class JobRepositoryTests(unittest.TestCase):
             old_path.parent.mkdir()
             old_path.touch()
             track_id = repository.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=old_path,
+                title="Song",
+                artist="Artist",
+                file_path=old_path,
                 genre_category="Other",
             )
             job_id = repository.create("Song.wav", old_path, "auto", 0, 0, False)
             repository.update(job_id, wav_path=str(old_path), status="complete")
-            repository.relocate_downloaded_tracks(
-                [(track_id, old_path, new_path, "House")]
-            )
+            repository.relocate_downloaded_tracks([(track_id, old_path, new_path, "House")])
             track = repository.get_downloaded_track(track_id)
             job = repository.get(job_id)
             assert track is not None and job is not None
@@ -363,15 +427,24 @@ class JobRepositoryTests(unittest.TestCase):
             old_path.parent.mkdir(parents=True)
             old_path.touch()
             track_id = repository.upsert_downloaded_track(
-                title="Unknown", artist="", file_path=old_path,
-                genre="", genre_category="Other", playlist_name="Inbox",
+                title="Unknown",
+                artist="",
+                file_path=old_path,
+                genre="",
+                genre_category="Other",
+                playlist_name="Inbox",
             )
             job_id = repository.create("Unknown.wav", old_path, "auto", 0, 0, False)
             repository.update(job_id, wav_path=str(old_path), status="complete")
             repository.update_downloaded_track_metadata(
-                track_id=track_id, old_path=old_path, new_path=new_path,
-                title="Song", artist="Artist", genre="salsa, timba",
-                genre_category="Latin / Salsa", playlist_name="Latin Set",
+                track_id=track_id,
+                old_path=old_path,
+                new_path=new_path,
+                title="Song",
+                artist="Artist",
+                genre="salsa, timba",
+                genre_category="Latin / Salsa",
+                playlist_name="Latin Set",
             )
             track = repository.get_downloaded_track(track_id)
             job = repository.get(job_id)
@@ -394,8 +467,11 @@ class JobRepositoryTests(unittest.TestCase):
             wav = root / "Artist - Song.wav"
             wav.touch()
             repository.upsert_downloaded_track(
-                title="Song", artist="Artist", file_path=wav,
-                genre_category="House", playlist_name="Night Set",
+                title="Song",
+                artist="Artist",
+                file_path=wav,
+                genre_category="House",
+                playlist_name="Night Set",
             )
             completed_id = repository.create("Song.wav", wav, "auto", 0, 0, False)
             repository.update(completed_id, status="complete")
@@ -420,16 +496,25 @@ class JobRepositoryTests(unittest.TestCase):
                 path = root / f"{artist} - {title}.wav"
                 path.touch()
                 repository.upsert_downloaded_track(
-                    title=title, artist=artist, file_path=path,
-                    genre_category=genre, playlist_name=playlist,
+                    title=title,
+                    artist=artist,
+                    file_path=path,
+                    genre_category=genre,
+                    playlist_name=playlist,
                 )
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=1, genre="House", sort="title",
+                page=1,
+                page_size=1,
+                genre="House",
+                sort="title",
             )
             self.assertEqual(total, 2)
             self.assertEqual([track["title"] for track in tracks], ["Alpha"])
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=10, search="alpha", playlist="Peak",
+                page=1,
+                page_size=10,
+                search="alpha",
+                playlist="Peak",
             )
             self.assertEqual(total, 1)
             self.assertEqual(tracks[0]["title"], "Middle")
@@ -439,7 +524,9 @@ class JobRepositoryTests(unittest.TestCase):
             self.assertEqual(facets["playlists"]["Peak"], 2)
 
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=10, genre="House",
+                page=1,
+                page_size=10,
+                genre="House",
             )
             self.assertEqual(total, 2)
 
@@ -456,18 +543,24 @@ class JobRepositoryTests(unittest.TestCase):
                 path = root / f"{title}.wav"
                 path.touch()
                 track_id = repository.upsert_downloaded_track(
-                    title=title, artist="Artist", file_path=path,
+                    title=title,
+                    artist="Artist",
+                    file_path=path,
                     genre_category="House",
                 )
                 repository.update_audio_quality(track_id, {"score": score, "label": label})
 
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=10, quality="good",
+                page=1,
+                page_size=10,
+                quality="good",
             )
             self.assertEqual(total, 1)
             self.assertEqual(tracks[0]["title"], "Good")
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=10, quality="below-target",
+                page=1,
+                page_size=10,
+                quality="below-target",
             )
             self.assertEqual(total, 2)
             self.assertEqual({track["title"] for track in tracks}, {"Review", "Poor"})
@@ -485,16 +578,23 @@ class JobRepositoryTests(unittest.TestCase):
                 path = root / f"{title}.wav"
                 path.touch()
                 repository.upsert_downloaded_track(
-                    title=title, artist="Artist", file_path=path,
-                    genre=detailed_genre, genre_category="Hip-Hop & Rap",
+                    title=title,
+                    artist="Artist",
+                    file_path=path,
+                    genre=detailed_genre,
+                    genre_category="Hip-Hop & Rap",
                 )
 
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=10, detailed_genre="hip hop",
+                page=1,
+                page_size=10,
+                detailed_genre="hip hop",
             )
             self.assertEqual(total, 0)
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=10, detailed_genre="arabic hip hop",
+                page=1,
+                page_size=10,
+                detailed_genre="arabic hip hop",
             )
             self.assertEqual(total, 1)
             self.assertEqual(tracks[0]["title"], "Arabic")
@@ -517,15 +617,21 @@ class JobRepositoryTests(unittest.TestCase):
                 wav = root / f"{title}.wav"
                 wav.touch()
                 repository.upsert_downloaded_track(
-                    title=title, artist="Artist", file_path=wav,
+                    title=title,
+                    artist="Artist",
+                    file_path=wav,
                     artwork_path=artwork_path,
                 )
 
             missing, missing_total = repository.page_downloaded_tracks(
-                page=1, page_size=10, artwork="missing",
+                page=1,
+                page_size=10,
+                artwork="missing",
             )
             available, available_total = repository.page_downloaded_tracks(
-                page=1, page_size=10, artwork="available",
+                page=1,
+                page_size=10,
+                artwork="available",
             )
 
             self.assertEqual(missing_total, 1)
@@ -561,13 +667,17 @@ class JobRepositoryTests(unittest.TestCase):
             }
             for analysis_filter, title in expected.items():
                 tracks, total = repository.page_downloaded_tracks(
-                    page=1, page_size=10, analysis=analysis_filter,
+                    page=1,
+                    page_size=10,
+                    analysis=analysis_filter,
                 )
                 self.assertEqual(total, 1)
                 self.assertEqual(tracks[0]["title"], title)
 
             tracks, total = repository.page_downloaded_tracks(
-                page=1, page_size=10, genre="Electronic",
+                page=1,
+                page_size=10,
+                genre="Electronic",
             )
             self.assertEqual(total, 1)
             self.assertEqual(tracks[0]["title"], "Ready")
@@ -581,9 +691,7 @@ class JobRepositoryTests(unittest.TestCase):
     def test_recover_interrupted_jobs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
-            job_id = repository.create(
-                "Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False
-            )
+            job_id = repository.create("Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False)
             repository.update(job_id, status="processing")
             repository.recover_interrupted()
             job = repository.get(job_id)
@@ -604,12 +712,8 @@ class JobRepositoryTests(unittest.TestCase):
     def test_candidate_feedback_is_persisted(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
-            job_id = repository.create(
-                "Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False
-            )
-            feedback_id = repository.add_feedback(
-                job_id, "intro", 2, False, "buildup,bass reset", "Wrong energy arc"
-            )
+            job_id = repository.create("Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False)
+            feedback_id = repository.add_feedback(job_id, "intro", 2, False, "buildup,bass reset", "Wrong energy arc")
             self.assertGreater(feedback_id, 0)
             feedback = repository.feedback(job_id)[0]
             self.assertEqual(feedback["candidate_rank"], 2)
@@ -649,9 +753,7 @@ class JobRepositoryTests(unittest.TestCase):
     def test_candidate_feedback_replaces_the_previous_decision(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
-            job_id = repository.create(
-                "Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False
-            )
+            job_id = repository.create("Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False)
             repository.add_feedback(job_id, "intro", 1, True, "smooth", "Good")
             repository.add_feedback(job_id, "intro", 1, False, "choppy", "Changed")
             feedback = repository.feedback(job_id)
@@ -662,9 +764,7 @@ class JobRepositoryTests(unittest.TestCase):
     def test_accepting_another_candidate_keeps_one_choice_per_side(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
-            job_id = repository.create(
-                "Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False
-            )
+            job_id = repository.create("Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False)
             repository.add_feedback(job_id, "intro", 1, True, "", "First")
             repository.add_feedback(job_id, "intro", 3, True, "", "Third")
             feedback = repository.feedback(job_id)
@@ -674,9 +774,7 @@ class JobRepositoryTests(unittest.TestCase):
     def test_track_feedback_supports_cli_only_reports(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
-            feedback_id = repository.add_track_feedback(
-                "Song.mp3", "overall", True, "smooth", "Ready for a set"
-            )
+            feedback_id = repository.add_track_feedback("Song.mp3", "overall", True, "smooth", "Ready for a set")
             self.assertGreater(feedback_id, 0)
             feedback = repository.track_feedback("song.mp3")[0]
             self.assertEqual(feedback["position"], "overall")
@@ -846,18 +944,20 @@ class WebApiTests(unittest.TestCase):
 
     def test_import_failures_can_be_retried_as_a_background_batch(self) -> None:
         failure = {
-            "id": 91, "playlist_name": "House", "title": "Retry Me",
-            "artist": "Artist", "spotify_uri": "spotify:track:123",
-            "youtube_url": "https://youtube.com/watch?v=old", "error": "403 Forbidden",
+            "id": 91,
+            "playlist_name": "House",
+            "title": "Retry Me",
+            "artist": "Artist",
+            "spotify_uri": "spotify:track:123",
+            "youtube_url": "https://youtube.com/watch?v=old",
+            "error": "403 Forbidden",
         }
         with (
             patch.object(web_module.repository, "list_import_failures", return_value=[failure]),
             patch.object(web_module.creative_commons_service, "_require_library_online"),
             patch.object(web_module.creative_commons_service, "_thread_factory") as thread,
         ):
-            response = self.client.post(
-                "/api/imports/failures/retry", json={"failure_ids": [91]}
-            )
+            response = self.client.post("/api/imports/failures/retry", json={"failure_ids": [91]})
         self.assertEqual(response.status_code, 202)
         payload = response.json()
         self.assertEqual(payload["retry_count"], 1)
@@ -889,9 +989,16 @@ class WebApiTests(unittest.TestCase):
             with patch("web_app._music_library_root", return_value=root):
                 response = self.client.post(
                     "/api/set-builder/save-playlist",
-                    json={"name": "Friday Set", "tracks": [{
-                        "path": str(audio), "title": "Artist - Track", "duration_seconds": 180,
-                    }]},
+                    json={
+                        "name": "Friday Set",
+                        "tracks": [
+                            {
+                                "path": str(audio),
+                                "title": "Artist - Track",
+                                "duration_seconds": 180,
+                            }
+                        ],
+                    },
                 )
             self.assertEqual(response.status_code, 200)
             playlist = root / "_Playlist" / "Friday Set.m3u8"
@@ -916,7 +1023,12 @@ class WebApiTests(unittest.TestCase):
             available.write_bytes(b"audio")
             jobs = [
                 {"id": 1, "source_name": "Available.wav", "wav_path": str(available), "extended_path": ""},
-                {"id": 2, "source_name": "Missing.wav", "wav_path": str(Path(temporary) / "Missing.wav"), "extended_path": ""},
+                {
+                    "id": 2,
+                    "source_name": "Missing.wav",
+                    "wav_path": str(Path(temporary) / "Missing.wav"),
+                    "extended_path": "",
+                },
             ]
             with patch.object(web_module.repository, "list_report_audio_jobs", return_value=jobs):
                 response = self.client.get("/api/report-audio-index")
@@ -928,9 +1040,7 @@ class WebApiTests(unittest.TestCase):
         self.assertNotIn("wav_path", payload[0])
 
     def test_analyze_download_rejects_unknown_catalog_track(self) -> None:
-        response = self.client.post(
-            "/api/downloaded-library/analyze", json={"track_ids": [999_999_999]}
-        )
+        response = self.client.post("/api/downloaded-library/analyze", json={"track_ids": [999_999_999]})
         self.assertEqual(response.status_code, 404)
 
     def test_analyze_all_matching_queues_tracks_beyond_one_page(self) -> None:
@@ -941,14 +1051,21 @@ class WebApiTests(unittest.TestCase):
                 path = root / f"Track {index}.wav"
                 path.write_bytes(b"audio")
                 catalog.upsert_downloaded_track(
-                    title=f"Track {index}", artist="Artist", file_path=path,
-                    genre_category="Electronic / House", playlist_name="Bulk Test",
+                    title=f"Track {index}",
+                    artist="Artist",
+                    file_path=path,
+                    genre_category="Electronic / House",
+                    playlist_name="Bulk Test",
                 )
             queue = Mock()
             with patch.object(web_module, "repository", catalog), patch.object(web_module, "service", queue):
-                response = self.client.post("/api/downloaded-library/analyze-matching", json={
-                    "playlist": "Bulk Test", "analysis": "needs",
-                })
+                response = self.client.post(
+                    "/api/downloaded-library/analyze-matching",
+                    json={
+                        "playlist": "Bulk Test",
+                        "analysis": "needs",
+                    },
+                )
             self.assertEqual(response.status_code, 202)
             self.assertEqual(response.json()["matched"], 3)
             self.assertEqual(len(response.json()["job_ids"]), 3)
@@ -961,16 +1078,17 @@ class WebApiTests(unittest.TestCase):
             path = root / "Track.wav"
             path.write_bytes(b"audio")
             track_id = catalog.upsert_downloaded_track(
-                title="Track", artist="Artist", file_path=path,
-                genre_category="Electronic / House", playlist_name="Test",
+                title="Track",
+                artist="Artist",
+                file_path=path,
+                genre_category="Electronic / House",
+                playlist_name="Test",
             )
             previous = catalog.create(path.name, path, "auto", 0, 0, False, {"analysis_only": True})
             catalog.update(previous, status="complete")
             queue = Mock()
             with patch.object(web_module, "repository", catalog), patch.object(web_module, "service", queue):
-                response = self.client.post(
-                    "/api/downloaded-library/reanalyze", json={"track_ids": [track_id]}
-                )
+                response = self.client.post("/api/downloaded-library/reanalyze", json={"track_ids": [track_id]})
             self.assertEqual(response.status_code, 202)
             created = response.json()["job_ids"]
             self.assertEqual(len(created), 1)
@@ -989,11 +1107,18 @@ class WebApiTests(unittest.TestCase):
             wav.write_bytes(b"RIFF-test-audio")
             batch_id = "on-demand-zip-test"
             web_module.creative_commons_batches[batch_id] = {
-                "status": "complete", "playlist_name": "Test Playlist",
-                "report": {"downloaded": [{
-                    "filename": wav.name, "genre_category": "Electronic / House",
-                    "youtube_id": "",
-                }], "already_downloaded": []},
+                "status": "complete",
+                "playlist_name": "Test Playlist",
+                "report": {
+                    "downloaded": [
+                        {
+                            "filename": wav.name,
+                            "genre_category": "Electronic / House",
+                            "youtube_id": "",
+                        }
+                    ],
+                    "already_downloaded": [],
+                },
             }
             with patch.object(web_module, "_music_library_root", return_value=root):
                 response = self.client.get(f"/api/imports/creative-commons/{batch_id}/download")
@@ -1005,9 +1130,7 @@ class WebApiTests(unittest.TestCase):
 
     def test_settings_fall_back_to_application_defaults_after_reset(self) -> None:
         production_repository = web_module.repository
-        production_library_path = production_repository.get_system_state(
-            "music_library_path"
-        )
+        production_library_path = production_repository.get_system_state("music_library_path")
         with tempfile.TemporaryDirectory() as temporary:
             catalog = JobRepository(Path(temporary) / "settings.sqlite3")
             library_path = str((Path(temporary) / "External Library").resolve())
@@ -1059,9 +1182,7 @@ class WebApiTests(unittest.TestCase):
         self.assertEqual(request.file_types, ["extended"])
 
     def test_batch_download_requires_at_least_one_file_type(self) -> None:
-        response = self.client.post(
-            "/api/library/download", json={"job_ids": [1], "file_types": []}
-        )
+        response = self.client.post("/api/library/download", json={"job_ids": [1], "file_types": []})
         self.assertEqual(response.status_code, 422)
 
     def test_authorized_import_rejects_unsupported_sources(self) -> None:
@@ -1115,9 +1236,7 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("offline", response.json()["detail"])
 
     def test_soundcloud_download_uses_scdl_and_blocks_playlists(self) -> None:
-        command = _scdl_download_command(
-            "https://soundcloud.com/example/authorized-mix", Path("/tmp/soundcloud-test")
-        )
+        command = _scdl_download_command("https://soundcloud.com/example/authorized-mix", Path("/tmp/soundcloud-test"))
         self.assertTrue(command[0].endswith("scdl"))
         self.assertIn("--no-playlist", command)
         self.assertIn("--original-art", command)
@@ -1143,9 +1262,7 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("Unsupported audio file", response.json()["detail"])
 
     def test_application_cleanup_requires_exact_confirmation(self) -> None:
-        response = self.client.post(
-            "/api/settings/cleanup", json={"confirmation": "delete everything"}
-        )
+        response = self.client.post("/api/settings/cleanup", json={"confirmation": "delete everything"})
         self.assertEqual(response.status_code, 400)
 
     def test_settings_reject_relative_music_library_path(self) -> None:
@@ -1318,16 +1435,23 @@ class QueueControlTests(unittest.TestCase):
             for index in range(3):
                 source = root / f"Track {index}.wav"
                 source.write_bytes(b"audio")
-                job_ids.append(repository.create(
-                    source.name, source, "auto", 0, 0, False,
-                    {"analysis_only": True},
-                ))
+                job_ids.append(
+                    repository.create(
+                        source.name,
+                        source,
+                        "auto",
+                        0,
+                        0,
+                        False,
+                        {"analysis_only": True},
+                    )
+                )
             try:
                 with patch("audioextender.processing.web_jobs.choose_worker_count", return_value=(3, [], 16 * 1024**3)):
                     service.enqueue_many(job_ids)
                     deadline = time.time() + 1
                     while len(service.snapshot()["active_ids"]) < 3 and time.time() < deadline:
-                        time.sleep(.01)
+                        time.sleep(0.01)
                 self.assertEqual(set(service.snapshot()["active_ids"]), set(job_ids))
                 self.assertEqual(set(started), set(job_ids))
             finally:
@@ -1337,9 +1461,7 @@ class QueueControlTests(unittest.TestCase):
     def test_progress_waits_while_paused_and_resumes_at_checkpoint(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             repository = JobRepository(Path(temporary) / "jobs.sqlite3")
-            job_id = repository.create(
-                "Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False
-            )
+            job_id = repository.create("Song.mp3", Path(temporary) / "Song.mp3", "auto", 8, 8, False)
             gate = threading.Event()
             reporter = DatabaseProgress(repository, job_id, gate)
             worker = threading.Thread(target=reporter.update, args=(35.0, "Analysis"))

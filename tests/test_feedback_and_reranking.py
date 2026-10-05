@@ -42,9 +42,7 @@ class CandidateQualityTests(unittest.TestCase):
         self.assertIs(ranked[0], musical)
 
     def test_assessment_explains_risky_candidate(self) -> None:
-        assessment = assess_candidate(
-            candidate(buildup_risk=0.8, bass_reset_risk=0.7), "intro", "club"
-        )
+        assessment = assess_candidate(candidate(buildup_risk=0.8, bass_reset_risk=0.7), "intro", "club")
         self.assertIn("buildup may reset", assessment.warnings)
         self.assertIn("bass may disappear at repeat", assessment.warnings)
 

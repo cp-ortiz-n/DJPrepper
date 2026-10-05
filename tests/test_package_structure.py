@@ -24,11 +24,7 @@ DOMAIN_PACKAGES = {
 
 class PackageStructureTests(unittest.TestCase):
     def test_expected_domain_packages_exist(self) -> None:
-        present = {
-            path.name
-            for path in PACKAGE_ROOT.iterdir()
-            if path.is_dir() and (path / "__init__.py").is_file()
-        }
+        present = {path.name for path in PACKAGE_ROOT.iterdir() if path.is_dir() and (path / "__init__.py").is_file()}
         self.assertEqual(DOMAIN_PACKAGES, present)
 
     def test_legacy_helpers_contains_no_source_modules(self) -> None:

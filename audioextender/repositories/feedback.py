@@ -132,9 +132,7 @@ class FeedbackRepositoryMixin(RepositoryMixinBase):
 
     def key_verifications(self) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                "SELECT * FROM key_verifications ORDER BY updated_at DESC"
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM key_verifications ORDER BY updated_at DESC").fetchall()
         results = []
         for row in rows:
             item = dict(row)
