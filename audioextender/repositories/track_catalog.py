@@ -25,6 +25,57 @@ def _now() -> str:
 
 
 class TrackCatalogRepositoryMixin(RepositoryMixinBase):
+    def track_ids_missing_inferred_identity(self) -> list[int]:
+        """Return catalog tracks that have never received inferred/crate descriptors."""
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                """SELECT tracks.id FROM downloaded_tracks tracks
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM downloaded_track_descriptors descriptors
+                    WHERE descriptors.track_id=tracks.id
+                    AND descriptors.provenance IN ('inferred','crate'))
+                OR EXISTS (
+                    SELECT 1 FROM downloaded_track_descriptors stale
+                    WHERE stale.track_id=tracks.id AND stale.provenance='crate'
+                    AND (INSTR(stale.value, '_')>0 OR stale.value LIKE '% playlist'))
+                ORDER BY tracks.id"""
+            ).fetchall()
+        return [int(row[0]) for row in rows]
+
+    def replace_inferred_track_descriptors(
+        self, track_id: int, descriptors: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Refresh machine/crate descriptors while retaining all manual decisions."""
+        with self._lock, closing(self._connect()) as connection, connection:
+            connection.execute(
+                "DELETE FROM downloaded_track_descriptors WHERE track_id=? AND provenance!='manual'",
+                (track_id,),
+            )
+        return self.update_track_descriptors([track_id], descriptors, mode="add")
+
+    def track_identity_inference_context(self, track_id: int) -> dict[str, Any] | None:
+        """Collect catalog, playlist, and latest analysis evidence for inference."""
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                """SELECT tracks.id,tracks.title,tracks.artist,tracks.filename,tracks.genre,
+                    tracks.genre_category,
+                    (SELECT GROUP_CONCAT(p.playlist_name,'||') FROM downloaded_track_playlists p
+                     WHERE p.track_id=tracks.id) AS playlists,
+                    idx.category AS library_category,idx.detail_genre AS library_detail_genre,
+                    idx.roles AS library_roles,idx.energy_band,idx.vocals,idx.timing
+                    FROM downloaded_tracks tracks
+                    LEFT JOIN library_search_index idx ON idx.job_id=(
+                        SELECT MAX(latest.job_id) FROM library_search_index latest
+                        WHERE latest.downloaded_id=tracks.id)
+                    WHERE tracks.id=?""",
+                (track_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        result = dict(row)
+        result["playlists"] = [value for value in str(result.get("playlists") or "").split("||") if value]
+        return result
+
     def track_descriptors(self, track_id: int) -> list[dict[str, Any]]:
         """Return durable musical-identity descriptors and their provenance."""
         with closing(self._connect()) as connection:
@@ -81,7 +132,12 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     """INSERT INTO downloaded_track_descriptors
                     (track_id,category,value,provenance,confidence,updated_at)
                     VALUES (?,?,?,?,?,?) ON CONFLICT(track_id,category,value) DO UPDATE SET
-                    provenance=excluded.provenance,confidence=excluded.confidence,
+                    provenance=CASE WHEN downloaded_track_descriptors.provenance='manual'
+                        AND excluded.provenance!='manual' THEN downloaded_track_descriptors.provenance
+                        ELSE excluded.provenance END,
+                    confidence=CASE WHEN downloaded_track_descriptors.provenance='manual'
+                        AND excluded.provenance!='manual' THEN downloaded_track_descriptors.confidence
+                        ELSE excluded.confidence END,
                     updated_at=excluded.updated_at""",
                     [
                         (track_id, category, value, provenance, confidence, now)

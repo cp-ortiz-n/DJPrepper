@@ -124,8 +124,9 @@ export function createDjLibraryFeature({
   bindLazyAudio,
   syncControlUnlessEditing, captureTextFilter, operationReceiptText, loadAnalysis,
   jobAction, jobElement,
-  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor,
+  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor,
 }) {
+  const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied){notify(`Added inferred identity tags to ${result.applied} tracks. Manual tags were preserved.`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
   async function revealLibraryTrack(jobId, sourceName) {
     let card = document.querySelector(`.library-card[data-job-id="${jobId}"]`);
     if (!card) {
@@ -352,6 +353,7 @@ export function createDjLibraryFeature({
     });
     root.querySelectorAll('.library-card[data-downloaded-id]:not([data-downloaded-id=""]) .track-descriptor-editor').forEach(editor=>{
       const card=editor.closest('.library-card');
+      bindIdentityInference(editor,[Number(card.dataset.downloadedId)]);
       editor.querySelector('.cancel-descriptors').onclick=()=>{editor.hidden=true;};editor.querySelector('.close-descriptor-editor').onclick=()=>{editor.hidden=true;};
       editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(editor,[Number(card.dataset.downloadedId)]);card.querySelector('.library-row-title .track-descriptor-chips')?.remove();if(result.values?.length)card.querySelector('.library-row-title').insertAdjacentHTML('beforeend',descriptorChipsMarkup(result.values));card.querySelector('.library-identity-summary').innerHTML=descriptorChipsMarkup(result.values||[],{detailed:true});editor.hidden=true;invalidateMusicFiles();notify('Musical identity saved to the persistent catalog. It will survive restart.','success');}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent='Save changes';}};
     });
@@ -540,6 +542,7 @@ export function createDjLibraryFeature({
       const panel=document.createElement('section');panel.className='library-bulk-identity';panel.innerHTML=`<div><strong>Edit musical identity</strong><span>Apply descriptors to ${trackIds.length} selected track${trackIds.length===1?'':'s'}.</span></div>${descriptorEditorMarkup([],{bulk:true})}`;
       document.querySelector('.library-selection').after(panel);
       const editor=panel.querySelector('.track-descriptor-editor');editor.hidden=false;editor.querySelector('.cancel-descriptors').onclick=()=>panel.remove();editor.querySelector('.close-descriptor-editor').onclick=()=>panel.remove();editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(editor,trackIds);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');panel.remove();setLoadedAt(0);invalidateMusicFiles();await loadLibrary();}catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save identity';}};
+      bindIdentityInference(editor,trackIds,async()=>{setLoadedAt(0);invalidateMusicFiles();await loadLibrary();});
     };
     removeButton.onclick = async () => {
       const selectedCards = boxes.filter(box => box.checked).map(box => box.closest('.library-card'));

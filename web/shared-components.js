@@ -19,7 +19,23 @@ export function descriptorChipsMarkup(descriptors = [], {detailed = false} = {})
 
 export function descriptorEditorMarkup(descriptors = [], {bulk = false} = {}) {
   const grouped=Object.fromEntries(DESCRIPTOR_CATEGORIES.map(([category])=>[category,descriptors.filter(item=>item.category===category).map(item=>item.value).join(', ')]));
-  return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Edit musical identity'}</strong><small>Use short, specific tags. Separate multiple values with commas.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<label class="descriptor-operation">Operation<select class="descriptor-mode"><option value="add">Add these tags</option><option value="remove">Remove these tags</option><option value="replace">Replace all identity tags</option></select></label>':''}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label><span>${escapeHtml(label)}</span><input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Add tags…"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save changes'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
+  return `<section class="track-descriptor-editor" hidden><header><div><strong>${bulk?'Edit identity for selected tracks':'Edit musical identity'}</strong><small>Use short, specific tags. Separate multiple values with commas.</small></div><button type="button" class="close-descriptor-editor" aria-label="Close identity editor">×</button></header>${bulk?'<label class="descriptor-operation">Operation<select class="descriptor-mode"><option value="add">Add these tags</option><option value="remove">Remove these tags</option><option value="replace">Replace all identity tags</option></select></label>':''}<div class="track-descriptor-fields">${DESCRIPTOR_CATEGORIES.map(([category,label])=>`<label><span>${escapeHtml(label)}</span><input data-descriptor-category="${category}" value="${escapeHtml(grouped[category]||'')}" placeholder="Add tags…"></label>`).join('')}</div><div class="descriptor-editor-actions"><button type="button" class="button secondary infer-descriptors">${bulk?'Infer for selection':'Suggest tags'}</button><button type="button" class="save-descriptors">${bulk?'Apply to selection':'Save changes'}</button><button type="button" class="button secondary cancel-descriptors">Cancel</button></div><p class="descriptor-editor-status" role="status"></p></section>`;
+}
+
+export async function inferDescriptorEditor(editor, trackIds) {
+  const ids=[...new Set(trackIds.map(Number).filter(Boolean))],status=editor.querySelector('.descriptor-editor-status');
+  const bulkMode=Boolean(editor.querySelector('.descriptor-mode'));
+  if(ids.length===1&&!bulkMode){
+    const response=await fetch(`/api/downloaded-library/tracks/${ids[0]}/descriptor-suggestions`,{cache:'no-store'}),payload=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':payload.detail||'Identity suggestions could not be created.');
+    for(const suggestion of payload.suggestions||[]){const input=editor.querySelector(`[data-descriptor-category="${suggestion.category}"]`);if(!input)continue;const values=String(input.value||'').split(',').map(value=>value.trim()).filter(Boolean);if(!values.some(value=>value.toLowerCase()===suggestion.value.toLowerCase()))values.push(suggestion.value);input.value=values.join(', ');}
+    const crates=(payload.playlists_considered||[]).join(', ');status.textContent=`Suggested ${payload.suggestions?.length||0} tags from catalog, analysis${crates?`, and playlists: ${crates}`:''}. Review them, then save.`;
+    return {...payload,applied:false};
+  }
+  const response=await fetch('/api/downloaded-library/descriptors/infer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:ids,apply:true})}),payload=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':payload.detail||'Identity inference could not be applied.');
+  status.textContent=`Added inferred tags to ${payload.applied} of ${payload.processed} tracks. Manual tags were preserved.`;
+  return payload;
 }
 
 export async function saveDescriptorEditor(editor, trackIds) {

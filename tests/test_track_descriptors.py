@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from audioextender.repositories.facade import JobRepository
+from audioextender.library.identity_inference import infer_identity_descriptors
 from audioextender.web.descriptor_routes import DescriptorRouteDependencies, create_descriptor_router
 
 
@@ -22,6 +23,38 @@ def _wav(path: Path) -> None:
 
 
 class TrackDescriptorTests(unittest.TestCase):
+    def test_inference_uses_meaningful_playlist_names_and_ignores_import_buckets(self) -> None:
+        suggestions = infer_identity_descriptors({
+            "title": "Techno Edit", "genre_category": "Electronic / Techno",
+            "playlists": ["Ecuadorian Party", "SoundCloud Imports"],
+            "library_roles": "|peak-time|", "vocals": "mixed", "timing": "steady",
+        })
+        values = {(item["category"], item["value"]) for item in suggestions}
+        self.assertIn(("cultural", "ecuadorian"), values)
+        self.assertIn(("context", "ecuadorian party"), values)
+        self.assertIn(("role", "peak-time"), values)
+        self.assertNotIn(("context", "soundcloud imports"), values)
+
+    def test_playlist_names_are_interpreted_instead_of_copied_verbatim(self) -> None:
+        indian = infer_identity_descriptors({
+            "genre": "Bollywood, Indian Pop", "playlists": ["INDIAN_PARTY_HITS"]
+        })
+        indian_values = {(item["category"], item["value"]) for item in indian}
+        self.assertIn(("cultural", "indian / south asian"), indian_values)
+        self.assertIn(("sound", "bollywood pop"), indian_values)
+        self.assertIn(("role", "party-ready"), indian_values)
+        self.assertIn(("familiarity", "crowd-recognizable"), indian_values)
+        self.assertIn(("context", "indian party"), indian_values)
+        self.assertNotIn(("context", "indian_party_hits"), indian_values)
+
+        artists = infer_identity_descriptors({"playlists": ["skrillex_and_fred_again"]})
+        artist_values = {(item["category"], item["value"]) for item in artists}
+        self.assertIn(("sound", "bass-forward"), artist_values)
+        self.assertIn(("sound", "emotive electronic"), artist_values)
+        self.assertIn(("sound", "vocal-sample driven"), artist_values)
+        self.assertIn(("context", "contemporary electronic crossover"), artist_values)
+        self.assertIn(("context", "skrillex + fred again"), artist_values)
+
     def test_descriptor_api_reports_durability_and_returns_values(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -85,6 +118,28 @@ class TrackDescriptorTests(unittest.TestCase):
             self.assertEqual(result["missing"], [999999])
             repository.update_track_descriptors(ids, descriptor, mode="remove")
             self.assertTrue(all(repository.track_descriptors(track_id) == [] for track_id in ids))
+
+    def test_inferred_update_does_not_replace_manual_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); path = root / "Track.wav"; _wav(path)
+            repository = JobRepository(root / "catalog.sqlite3")
+            track_id = repository.upsert_downloaded_track(title="Track", artist="Artist", file_path=path)
+            repository.update_track_descriptors([track_id], [{"category":"role","value":"peak-time","provenance":"manual","confidence":1}], mode="add")
+            repository.update_track_descriptors([track_id], [{"category":"role","value":"peak-time","provenance":"inferred","confidence":.6}], mode="add")
+            saved = repository.track_descriptors(track_id)[0]
+            self.assertEqual(saved["provenance"], "manual")
+            self.assertEqual(saved["confidence"], 1)
+
+    def test_missing_inferred_identity_query_keeps_manual_only_tracks_eligible(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); first = root / "First.wav"; second = root / "Second.wav"
+            _wav(first); _wav(second)
+            repository = JobRepository(root / "catalog.sqlite3")
+            first_id = repository.upsert_downloaded_track(title="First", artist="Artist", file_path=first)
+            second_id = repository.upsert_downloaded_track(title="Second", artist="Artist", file_path=second)
+            repository.update_track_descriptors([first_id], [{"category":"context","value":"my crate","provenance":"manual"}], mode="add")
+            repository.update_track_descriptors([second_id], [{"category":"role","value":"warm-up","provenance":"inferred"}], mode="add")
+            self.assertEqual(repository.track_ids_missing_inferred_identity(), [first_id])
 
 
 if __name__ == "__main__":

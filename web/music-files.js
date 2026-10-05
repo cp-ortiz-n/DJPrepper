@@ -20,9 +20,10 @@ export function createMusicFilesFeature({
   bindGenreEditor, startKeyAnalysis, showView, loadJobs, closeDownloadedInspector,
   clock, stopNativeAudio, bindCompactAudio, bindLazyAudio, compactAudioIsWithin, stopCompactAudio,
   collapsedGenreFolders, bindGenreFolderState,
-  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor,
+  descriptorChipsMarkup, descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor,
 }) {
   let metadataReview = null;
+  const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied){notify(`Added inferred identity tags to ${result.applied} tracks. Manual tags were preserved.`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
   async function loadDownloadedLibrary() {
     const parameters = musicFilesQuery(downloadedUiState);
     try {
@@ -140,6 +141,7 @@ export function createMusicFilesFeature({
     sort.value = downloadedUiState.sort;
     const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const keyAnalyzeSelected=$('#downloaded-key-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const editIdentity=$('#downloaded-edit-identity'); const retagSelected = $('#downloaded-retag-selected');
     const rescanGenres = $('#downloaded-rescan-genres');
+    const inferMissingIdentities=$('#downloaded-infer-missing-identities');
     const reconcileFiles = $('#downloaded-reconcile-files');
     const retagAll = $('#downloaded-retag-all');
     const syncArtwork = $('#downloaded-sync-artwork');
@@ -185,6 +187,14 @@ export function createMusicFilesFeature({
     summary.querySelector('.sidebar-rescan').onclick = () => rescanGenres.click();
     summary.querySelector('.sidebar-reconcile').onclick = () => reconcileFiles.click();
     summary.querySelector('.sidebar-artwork').onclick = () => syncArtwork.click();
+    inferMissingIdentities.onclick=async()=>{
+      if(!paginationData.catalog_total||!await confirmAction(`Infer musical identity for every catalog track that has no inferred or playlist-derived tags? Existing manual tags will be preserved.`,{title:'Infer missing identities',acceptLabel:'Infer identities'}))return;
+      inferMissingIdentities.disabled=true;inferMissingIdentities.textContent='Inferring identities…';
+      renderMaintenanceProgress('Inferring missing identities',{total:paginationData.catalog_total,processed:0,status:'processing'},'Reading genre, playlist, title, vocal, energy, role, and timing evidence…');
+      try{const response=await fetch('/api/downloaded-library/descriptors/infer-missing',{method:'POST'}),result=await response.json();if(!response.ok)throw new Error(result.detail||'Identity inference failed.');renderMaintenanceProgress('Identity inference complete',{total:result.requested,processed:result.processed,status:'complete'},`${result.applied} tracks updated · ${result.suggestions_added} tags added · ${result.no_suggestions.length} had insufficient evidence · manual tags preserved · survives restart`);notify(`Identity inference complete: ${result.applied} tracks updated with ${result.suggestions_added} tags.`,'success',{timeout:9000});setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
+      catch(error){renderProgressError('Identity inference failed',error);notify(error.message,'danger');}
+      finally{inferMissingIdentities.disabled=false;inferMissingIdentities.textContent='Infer missing identities';}
+    };
     const watchGenreRescan = batchId => runBackgroundTask({
       key:'genre-rescan', url:`/api/downloaded-library/rescan-genres/${batchId}`, interval:500,
       update:batch => {
@@ -333,6 +343,7 @@ export function createMusicFilesFeature({
       document.querySelector('.downloaded-selection').after(panel);
       const editor=panel.querySelector('.track-descriptor-editor');
       editor.hidden=false; editor.querySelector('.cancel-descriptors').onclick=()=>panel.remove(); editor.querySelector('.close-descriptor-editor').onclick=()=>panel.remove();
+      bindIdentityInference(editor,()=>[...downloadedSelection.keys()],async()=>{setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();});
       editor.querySelector('.save-descriptors').onclick=async event=>{
         const action=event.currentTarget; action.disabled=true; action.textContent='Saving…';
         try{const result=await saveDescriptorEditor(editor,[...downloadedSelection.keys()]);notify(`Requested: update identity for ${result.requested} tracks. Changed: ${result.updated}. Written to: persistent track catalog. Failed: ${result.missing?.length||0}. Survives restart: Yes.`,'success');panel.remove();setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
@@ -573,6 +584,7 @@ export function createMusicFilesFeature({
       identitySection.innerHTML=`<div class="inspector-family-heading"><div><b>Musical identity</b><span>Culture, rhythm, sound, vocals, role, and context—separate from genre.</span></div><button type="button" class="button secondary inspector-edit-identity">Edit identity</button></div><div class="inspector-identity-chips">${descriptorChipsMarkup(track.descriptors||[],{detailed:true})}</div>${descriptorEditorMarkup(track.descriptors||[])}`;
       inspector.querySelector('.inspector-metrics').after(identitySection);
       const descriptorEditor=identitySection.querySelector('.track-descriptor-editor'); descriptorEditor.hidden=true;
+      bindIdentityInference(descriptorEditor,[Number(track.id)]);
       identitySection.querySelector('.inspector-edit-identity').onclick=()=>{descriptorEditor.hidden=false;descriptorEditor.querySelector('input')?.focus();};
       descriptorEditor.querySelector('.cancel-descriptors').onclick=()=>{descriptorEditor.hidden=true;}; descriptorEditor.querySelector('.close-descriptor-editor').onclick=()=>{descriptorEditor.hidden=true;};
       descriptorEditor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{const result=await saveDescriptorEditor(descriptorEditor,[Number(track.id)]);track.descriptors=result.values||[];identitySection.querySelector('.inspector-identity-chips').innerHTML=descriptorChipsMarkup(track.descriptors,{detailed:true});descriptorEditor.hidden=true;notify('Musical identity saved to the persistent catalog. It will survive restart.','success');setLoadedAt(0);invalidateLibrary();}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent='Save changes';}};
