@@ -690,6 +690,8 @@ const djLibraryFeature = createDjLibraryFeature({
   bindLazyAudio,
   syncControlUnlessEditing, captureTextFilter, operationReceiptText,
   loadAnalysis: (...args) => loadAnalysis(...args),
+  jobAction: (...args) => jobAction(...args),
+  jobElement: (...args) => jobElement(...args),
 });
 const {loadLibrary, renderLibraryIntelligence} = djLibraryFeature;
 const reportingFeature = createReportingFeature({
@@ -1240,8 +1242,9 @@ async function jobAction(id, action, body = null) {
   const options = { method:'POST' };
   if (body) { options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify(body); }
   const response = await fetch(`/api/jobs/${id}/${action}`, options);
-  if (!response.ok) alert((await response.json()).detail || `Could not ${action} job.`);
+  if (!response.ok) { alert((await response.json()).detail || `Could not ${action} job.`); return false; }
   await loadJobs();
+  return true;
 }
 async function removeJob(id) { if (!await confirmAction('Remove this queue entry? Audio files will remain in output.', {title:'Remove queue entry', acceptLabel:'Remove', danger:true})) return; await fetch(`/api/jobs/${id}`, {method:'DELETE'}); await loadJobs(); }
 $('#clear-queue').addEventListener('click', async () => {
@@ -1265,9 +1268,11 @@ async function moveJob(id, offset) {
 }
 
 async function hydrateCompletedJob(node, job) {
+  let jobConfig = {}; try { jobConfig = JSON.parse(job.config_json || '{}'); } catch (_) { jobConfig = {}; }
+  const hasExtendedAudio = !jobConfig.analysis_only && Boolean(job.extended_path);
   const [sourceWave, extendedWave, cues, override] = await Promise.all([
     fetch(`/api/jobs/${job.id}/waveform/wav`).then(r => r.ok ? r.json() : null),
-    fetch(`/api/jobs/${job.id}/waveform/extended`).then(r => r.ok ? r.json() : null),
+    hasExtendedAudio ? fetch(`/api/jobs/${job.id}/waveform/extended`).then(r => r.ok ? r.json() : null) : Promise.resolve(null),
     fetch(`/api/jobs/${job.id}/cues`).then(r => r.json()),
     fetch(`/api/overrides/${encodeURIComponent(job.source_name)}`).then(r => r.json()),
   ]);

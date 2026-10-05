@@ -50,6 +50,23 @@ test('DJ Library exposes stable musical compatibility helpers', () => {
   assert.equal(result.key, 'relative key');
 });
 
+test('DJ Library extraction keeps runtime actions and cross-page navigation wired', () => {
+  const modulePath = fileURLToPath(new URL('../web/dj-library.js', import.meta.url));
+  const appPath = fileURLToPath(new URL('../web/app.js', import.meta.url));
+  const source = readFileSync(modulePath, 'utf8');
+  const appSource = readFileSync(appPath, 'utf8');
+  const signature = source.slice(source.indexOf('createDjLibraryFeature({'), source.indexOf('}) {', source.indexOf('createDjLibraryFeature({')));
+  assert.match(signature, /jobAction/);
+  assert.match(signature, /jobElement/);
+  assert.match(appSource, /jobAction: \(\.\.\.args\) => jobAction\(\.\.\.args\)/);
+  assert.match(appSource, /jobElement: \(\.\.\.args\) => jobElement\(\.\.\.args\)/);
+  assert.match(appSource, /hasExtendedAudio \? fetch\(`\/api\/jobs\/\$\{job\.id\}\/waveform\/extended`/);
+  assert.match(source, /async function revealLibraryTrack/);
+  assert.match(source, /libraryRequestState\.update\(\{search:/);
+  assert.match(source, /data-closed-label/);
+  assert.match(source, /Survives restart: Yes/);
+});
+
 test('Set Builder creates isolated mutable state', () => {
   const left = setBuilder.createSetBuilderState();
   const right = setBuilder.createSetBuilderState();
