@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 
 globalThis.localStorage = {
   values: new Map(),
@@ -13,6 +15,18 @@ const setBuilder = await import('../web/set-builder.js');
 const settings = await import('../web/settings.js');
 const shared = await import('../web/shared-components.js');
 const requests = await import('../web/request-state-controller.js');
+
+test('app.js remains a feature composition root', () => {
+  const path = fileURLToPath(new URL('../web/app.js', import.meta.url));
+  const source = readFileSync(path, 'utf8');
+  assert.ok(source.split('\n').length < 1900, 'app.js exceeded the composition-root size ceiling');
+  for (const factory of ['createMusicFilesFeature', 'createDjLibraryFeature', 'createSetBuilderFeature', 'createSettingsFeature', 'createReportingFeature']) {
+    assert.match(source, new RegExp(`${factory}\\(`));
+  }
+  for (const extracted of ['function loadDownloadedLibrary(', 'function loadLibrary()', 'function loadReports()', "$('#settings-form').addEventListener"]) {
+    assert.equal(source.includes(extracted), false, `${extracted} belongs in its feature module`);
+  }
+});
 
 test('Music Files owns filter state and API serialization', () => {
   const state = musicFiles.createMusicFilesUiState(25);

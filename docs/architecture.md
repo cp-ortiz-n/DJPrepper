@@ -11,7 +11,7 @@ it to decide where a manual change belongs before editing.
 | `web_app.py` | Small compatibility launcher; never add feature logic here |
 | `audioextender/web/application.py` | FastAPI composition, shared service construction, dependency injection, and remaining legacy routes |
 | `web/index.html` | Browser shell and workspace markup |
-| `web/app.js` | Browser composition and remaining cross-feature UI behavior |
+| `web/app.js` | Browser composition, navigation, processing workspace, and import wiring |
 
 Run the app with `python3 web_app.py`.
 
@@ -149,15 +149,20 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | --- | --- |
 | `shared-components.js` | DOM helpers, messages, formatting, pagination |
 | `playback.js` | Single audio-preview owner |
-| `music-files.js` | Music Files filters and request serialization |
-| `dj-library.js` | DJ Library state and compatibility helpers |
-| `set-builder.js` | Set Builder state and proposal policy |
-| `settings.js` | Settings initialization and refresh coordination |
+| `music-files.js` | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector |
+| `dj-library.js` | DJ Library rendering, filtering, selection actions, and compatibility helpers |
+| `set-builder.js` | Set Builder rendering, mutable state, and proposal policy |
+| `settings.js` | Settings forms, library health, relocation, backups, storage, and refresh coordination |
+| `reporting.js` | Analysis & Feedback and key-verification rendering |
+| `request-state-controller.js` | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence |
 | `import-queue.js` | Pause/resume/cancel/retry/reorder import state |
 | `styles.css` | Shared visual system and responsive behavior |
 
 Do not create a second audio player, dropdown implementation, notification
 system, or pagination helper inside a feature. Extend the shared module first.
+`app.js` composes these features and owns global navigation; page-specific
+rendering, filters, inspectors, and maintenance actions belong in their feature
+module. `tests/frontend_modules.test.js` enforces this boundary and a size ceiling.
 
 ## Where to make common changes
 

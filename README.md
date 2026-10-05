@@ -58,6 +58,12 @@ to queued jobs, and a canceled entry can be reprocessed without uploading the
 song again. Closing the browser does not cancel a running job; closing the Python
 server does.
 
+The browser code is split by user-facing feature: Music Files, DJ Library, Set
+Builder, Settings, and Analysis & Feedback each own their rendering and state.
+`web/app.js` is the composition/navigation entry point; shared request state,
+audio playback, and reusable controls live in dedicated modules. See
+[`docs/architecture.md`](docs/architecture.md) before making frontend changes.
+
 The **Import** tab can convert an individually confirmed, authorized YouTube
 source to WAV. It can also read a Spotify playlist CSV and suggest a likely
 YouTube URL for every track without Spotify credentials. The importer directly
