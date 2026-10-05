@@ -1005,6 +1005,9 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .set-control-head small { display:block; max-width:520px; margin-top:5px; color:var(--muted); font-size:9px; line-height:1.4; }
 .set-basics { display:grid; grid-template-columns:1.4fr repeat(2,minmax(0,1fr)); gap:11px; margin-top:15px; }
 .set-basics .set-name-field { grid-column:span 2; }
+.set-result-name { background:transparent;border:1px solid transparent;border-radius:10px;color:var(--text);font:inherit;font-size:clamp(2rem,3.2vw,3.2rem);font-weight:800;letter-spacing:-.04em;margin:4px 0 6px;max-width:min(680px,100%);padding:4px 8px;width:100%; }
+.set-result-name:hover { border-color:var(--line); }
+.set-result-name:focus { background:var(--surface-2);border-color:var(--accent);outline:none; }
 .set-advanced { margin-top:13px; border:1px solid var(--line); border-radius:10px; background:#141614; }
 .set-advanced>summary { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:12px 14px; cursor:pointer; list-style:none; }
 .set-advanced>summary::-webkit-details-marker { display:none; }

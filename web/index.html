@@ -304,7 +304,7 @@
         </aside>
       </div>
       <section id="set-result" class="panel set-result" hidden>
-        <div class="set-result-head"><div><p class="eyebrow">GENERATED RUNNING ORDER</p><h2 id="set-result-name">New DJ Set</h2><p id="set-result-summary"></p></div><div class="set-result-actions"><label class="set-transition-length">Transition<select id="set-transition-bars"><option value="8">8 bars</option><option value="16" selected>16 bars</option><option value="32">32 bars</option></select></label><button id="set-undo" type="button" class="button secondary" disabled>↶ Undo</button><button id="set-redo" type="button" class="button secondary" disabled>↷ Redo</button><button id="set-compact" type="button" class="button secondary">Compact view</button><button id="add-set-track" type="button" class="button secondary">+ Add track</button><button id="save-set" type="button">Save set</button><button id="export-set-csv" type="button" class="button secondary">Export CSV</button><button id="export-set-m3u" type="button" class="button secondary">Export M3U8</button></div></div>
+        <div class="set-result-head"><div><p class="eyebrow">GENERATED RUNNING ORDER</p><input id="set-result-name" class="set-result-name" type="text" maxlength="100" value="New DJ Set" aria-label="Set name" title="Edit the set name"><p id="set-result-summary"></p></div><div class="set-result-actions"><label class="set-transition-length">Transition<select id="set-transition-bars"><option value="8">8 bars</option><option value="16" selected>16 bars</option><option value="32">32 bars</option></select></label><button id="set-undo" type="button" class="button secondary" disabled>↶ Undo</button><button id="set-redo" type="button" class="button secondary" disabled>↷ Redo</button><button id="set-compact" type="button" class="button secondary">Compact view</button><button id="add-set-track" type="button" class="button secondary">+ Add track</button><button id="save-set" type="button">Save set</button><button id="export-set-csv" type="button" class="button secondary">Export CSV</button><button id="export-set-m3u" type="button" class="button secondary">Export M3U8</button></div></div>
         <section class="set-proposal-picker" aria-labelledby="set-proposal-heading">
           <div><p class="eyebrow">THREE DIRECTIONS</p><h3 id="set-proposal-heading">Choose how the set should feel</h3><p>Switching directions keeps edits made to each version.</p></div>
           <div id="set-proposals" class="set-proposals" role="radiogroup" aria-label="Generated set directions"></div>
@@ -590,6 +590,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20261004-214" type="module"></script>
+  <script src="/assets/app.js?v=20261004-215" type="module"></script>
 </body>
 </html>

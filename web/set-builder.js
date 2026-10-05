@@ -276,7 +276,7 @@ export function createSetBuilderFeature({
     const activeProposal=setProposals.find(proposal=>proposal.id===activeSetProposal);if(activeProposal){activeProposal.snapshot=setPlanSnapshot();activeProposal.health=setHealth();}
     renderSetProposals();
     const brief = setBrief(); const runtime = setRuntime();
-    $('#set-result-name').textContent = brief.name;
+    const resultName=$('#set-result-name');if(document.activeElement!==resultName)resultName.value=brief.name;
     const genreSummary=(brief.detailedGenres||[]).length?brief.detailedGenres.join(' + '):brief.genres.length?brief.genres.join(' + '):'open genre mix';
     $('#set-result-summary').textContent = `${currentSetPlan.length} tracks · approximately ${Math.round(runtime/60)} minutes · ${genreSummary} · ${brief.genreFlow.replace('-', ' ')} · ${brief.curve.replace('-', ' ')}`;
     const exportStatus=$('#set-export-status');exportStatus.className='set-export-status';exportStatus.innerHTML='<span>Rekordbox paths will be checked before export.</span>';
@@ -362,6 +362,10 @@ export function createSetBuilderFeature({
   function bindSetBuilder() {
     if(setBuilderBound)return;setBuilderBound=true;
     $('#set-builder-form').onsubmit=event=>{event.preventDefault();const button=$('#set-generate');button.disabled=true;button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
+    const briefName=$('#set-name'),resultName=$('#set-result-name');
+    briefName.addEventListener('input',()=>{if(document.activeElement!==resultName)resultName.value=briefName.value;});
+    resultName.addEventListener('input',()=>{briefName.value=resultName.value;});
+    resultName.addEventListener('blur',()=>{const name=resultName.value.trim()||'New DJ Set';resultName.value=name;briefName.value=name;});
     $('#add-required-track').onclick=()=>{const id=$('#set-required').value;if(id){setRequiredIds.add(id);setExcludedIds.delete(id);renderSetRules();}};
     $('#add-excluded-track').onclick=()=>{const id=$('#set-excluded').value;if(id){setExcludedIds.add(id);setRequiredIds.delete(id);renderSetRules();}};
     $('#set-genre').addEventListener('change',()=>{const selected=selectedSetGenres();setGenreSelectionOrder=setGenreSelectionOrder.filter(value=>selected.includes(value)).concat(selected.filter(value=>!setGenreSelectionOrder.includes(value)));renderSetGenreMix();populateSetDetailedGenres();});
