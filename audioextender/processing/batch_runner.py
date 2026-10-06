@@ -65,9 +65,7 @@ class BatchRunner:
         return self._serial(jobs, config)
 
     @staticmethod
-    def _serial(
-        jobs: list[TrackJob], config: EditConfig
-    ) -> tuple[list[FileResult], list[tuple[Path, str]]]:
+    def _serial(jobs: list[TrackJob], config: EditConfig) -> tuple[list[FileResult], list[tuple[Path, str]]]:
         results: list[FileResult] = []
         failures: list[tuple[Path, str]] = []
         completed_durations: list[float] = []
@@ -119,16 +117,11 @@ class BatchRunner:
         with multiprocessing.Manager() as manager:
             events = manager.Queue()
             with ProcessPoolExecutor(max_workers=workers) as executor:
-                futures = {
-                    executor.submit(_process_job, job, config, events): job[0]
-                    for job in jobs
-                }
+                futures = {executor.submit(_process_job, job, config, events): job[0] for job in jobs}
                 remaining = set(futures)
                 while remaining:
                     BatchRunner._drain_events(events, states, results, jobs, progress)
-                    done, remaining = wait(
-                        remaining, timeout=0.10, return_when=FIRST_COMPLETED
-                    )
+                    done, remaining = wait(remaining, timeout=0.10, return_when=FIRST_COMPLETED)
                     for future in done:
                         source = futures[future]
                         try:
@@ -146,9 +139,7 @@ class BatchRunner:
                             progress.log(f"Failed — {source.name}: {error}")
                 BatchRunner._drain_events(events, states, results, jobs, progress)
 
-        progress.set_batch_state(
-            len(results), [result.elapsed for result in results], "Batch complete"
-        )
+        progress.set_batch_state(len(results), [result.elapsed for result in results], "Batch complete")
         progress.complete(f"{len(results)}/{len(jobs)} songs complete")
         return results, failures
 
@@ -162,9 +153,7 @@ class BatchRunner:
             if kind == "progress":
                 states[song] = value
                 label = rest[0] if rest else "Processing"
-                progress.set_batch_state(
-                    len(results), [result.elapsed for result in results], song
-                )
+                progress.set_batch_state(len(results), [result.elapsed for result in results], song)
                 progress.update(
                     sum(states.values()) / len(states),
                     f"{len(results)}/{len(jobs)} done · {label}",

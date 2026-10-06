@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from audioextender.audio.loading import AudioData
+from audioextender.audio.redrum import create_redrum_intro, redrum_added_seconds
 from audioextender.library.cue_export import build_cue_points
 from audioextender.processing.extended_edit import (
     _smooth_join,
@@ -13,7 +14,6 @@ from audioextender.processing.extended_edit import (
     insert_audio_region,
     optimize_candidate_boundaries,
 )
-from audioextender.audio.redrum import create_redrum_intro, redrum_added_seconds
 from tests.factories import candidate
 
 
@@ -48,10 +48,14 @@ class CandidateScoringTests(unittest.TestCase):
 
 class SpliceTests(unittest.TestCase):
     def test_redrum_cues_use_generated_output_timeline(self) -> None:
-        analysis = type("Analysis", (), {
-            "bar_grid_confidence": np.asarray([], dtype=float),
-            "bar_boundaries": np.asarray([], dtype=float),
-        })()
+        analysis = type(
+            "Analysis",
+            (),
+            {
+                "bar_grid_confidence": np.asarray([], dtype=float),
+                "bar_boundaries": np.asarray([], dtype=float),
+            },
+        )()
         redrum = candidate(
             start=57.0,
             end=65.0,
@@ -84,8 +88,13 @@ class SpliceTests(unittest.TestCase):
         samples = np.column_stack((np.sin(2 * np.pi * time), np.sin(2 * np.pi * time))).astype(np.float32)
         audio = AudioData(samples, sample_rate)
         result = insert_audio_region(
-            audio, audio, source_start=2.0, source_end=4.0,
-            destination=7.0, copies=2, crossfade_ms=10.0,
+            audio,
+            audio,
+            source_start=2.0,
+            source_end=4.0,
+            destination=7.0,
+            copies=2,
+            crossfade_ms=10.0,
         )
         self.assertEqual(result.samples.shape[1], 2)
         self.assertGreater(result.duration, 13.9)

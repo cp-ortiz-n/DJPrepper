@@ -88,11 +88,7 @@ def optimize_candidate_boundaries(
     # inexpensive even at 96 kHz.
     step = max(1, round(sample_rate * 0.00025))
     offsets = np.arange(low, high + 1, step, dtype=int)
-    duration_radius = (
-        round(sample_rate * 0.008)
-        if candidate.boundary_grid_confidence < 0.60
-        else 0
-    )
+    duration_radius = round(sample_rate * 0.008) if candidate.boundary_grid_confidence < 0.60 else 0
     duration_offsets = np.arange(-duration_radius, duration_radius + 1, step, dtype=int)
     best_score = float("inf")
     best_start_offset = 0
@@ -146,9 +142,7 @@ def adaptive_crossfade_ms(candidate: SectionCandidate, minimum_ms: float) -> flo
     return crossfade_duration_ms(candidate, minimum_ms)
 
 
-def _adaptive_fade_frames(
-    candidate: SectionCandidate, sample_rate: int, minimum_ms: float
-) -> int:
+def _adaptive_fade_frames(candidate: SectionCandidate, sample_rate: int, minimum_ms: float) -> int:
     fade_ms = adaptive_crossfade_ms(candidate, minimum_ms)
     return max(1, round(sample_rate * fade_ms / 1000.0))
 
@@ -194,10 +188,7 @@ def _preserve_harmonic_tail(
     incoming_percussive = incoming[:length] - incoming_harmonic
 
     phase = np.linspace(0.0, np.pi / 2.0, length, dtype=np.float32)[:, None]
-    harmonic_blend = (
-        continuation_harmonic * np.cos(phase) ** 2
-        + incoming_harmonic * np.sin(phase) ** 2
-    )
+    harmonic_blend = continuation_harmonic * np.cos(phase) ** 2 + incoming_harmonic * np.sin(phase) ** 2
     prepared = incoming.copy()
     prepared[:length] = incoming_percussive + harmonic_blend
     return prepared
@@ -225,17 +216,17 @@ def create_extended_edit(
         return AudioData(audio.samples.copy(), audio.sample_rate)
 
     intro_start = max(0, round(intro.start * audio.sample_rate)) if intro else 0
-    outro_end = (
-        min(len(audio.samples), round(outro.end * audio.sample_rate))
-        if outro else len(audio.samples)
-    )
+    outro_end = min(len(audio.samples), round(outro.end * audio.sample_rate)) if outro else len(audio.samples)
     if intro is not None and outro is not None and intro_start >= outro_end:
         raise ValueError("Selected intro must occur before the selected outro")
 
     def loop_source(candidate: SectionCandidate) -> AudioData:
         if should_use_instrumental(
-            candidate, instrumental_audio, stem_reliability,
-            minimum_stem_reliability, minimum_vocal_coverage,
+            candidate,
+            instrumental_audio,
+            stem_reliability,
+            minimum_stem_reliability,
+            minimum_vocal_coverage,
         ):
             assert instrumental_audio is not None
             return instrumental_audio
@@ -246,24 +237,15 @@ def create_extended_edit(
         intro_audio = _slice(intro_source, intro.start, intro.end)
         intro_fade_frames = _adaptive_fade_frames(intro, audio.sample_rate, crossfade_ms)
         intro_tail_frames = _tail_duration_frames(intro, audio.sample_rate)
-        intro_continuation = _slice(
-            intro_source, intro.end,
-            intro.end + intro_tail_frames / audio.sample_rate + 0.1
-        )
+        intro_continuation = _slice(intro_source, intro.end, intro.end + intro_tail_frames / audio.sample_rate + 0.1)
         before_intro_loop = np.concatenate((audio.samples[:intro_start], intro_audio), axis=0)
         for _repeat in range(1, intro.repetitions):
-            prepared_copy = _preserve_harmonic_tail(
-                intro_audio, intro_continuation, intro_tail_frames
-            )
-            before_intro_loop = _smooth_join(
-                before_intro_loop, prepared_copy, intro_fade_frames
-            )
+            prepared_copy = _preserve_harmonic_tail(intro_audio, intro_continuation, intro_tail_frames)
+            before_intro_loop = _smooth_join(before_intro_loop, prepared_copy, intro_fade_frames)
         through_original_outro = _preserve_harmonic_tail(
             audio.samples[intro_start:outro_end], intro_continuation, intro_tail_frames
         )
-        assembled = _smooth_join(
-            before_intro_loop, through_original_outro, intro_fade_frames
-        )
+        assembled = _smooth_join(before_intro_loop, through_original_outro, intro_fade_frames)
     else:
         assembled = audio.samples[:outro_end].copy()
 
@@ -272,14 +254,9 @@ def create_extended_edit(
         outro_audio = _slice(outro_source, outro.start, outro.end)
         outro_fade_frames = _adaptive_fade_frames(outro, audio.sample_rate, crossfade_ms)
         outro_tail_frames = _tail_duration_frames(outro, audio.sample_rate)
-        outro_continuation = _slice(
-            outro_source, outro.end,
-            outro.end + outro_tail_frames / audio.sample_rate + 0.1
-        )
+        outro_continuation = _slice(outro_source, outro.end, outro.end + outro_tail_frames / audio.sample_rate + 0.1)
         for _repeat in range(outro.repetitions):
-            prepared_outro = _preserve_harmonic_tail(
-                outro_audio, outro_continuation, outro_tail_frames
-            )
+            prepared_outro = _preserve_harmonic_tail(outro_audio, outro_continuation, outro_tail_frames)
             assembled = _smooth_join(assembled, prepared_outro, outro_fade_frames)
     completed = np.concatenate((assembled, audio.samples[outro_end:]), axis=0)
     return AudioData(np.asarray(completed, dtype=np.float32), audio.sample_rate)
@@ -315,9 +292,7 @@ def create_splice_previews(
     if intro is not None:
         if intro.splice_mode == "redrum":
             added = intro.repetitions * (intro.end - intro.start)
-            intro_preview = AudioData(
-                _slice(edited, 0.0, added + context_seconds), edited.sample_rate
-            )
+            intro_preview = AudioData(_slice(edited, 0.0, added + context_seconds), edited.sample_rate)
             intro_added = added
         else:
             fade = adaptive_crossfade_ms(intro, crossfade_ms) / 1000.0

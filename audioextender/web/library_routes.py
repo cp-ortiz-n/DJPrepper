@@ -70,9 +70,7 @@ def create_library_router(deps: LibraryRouteDependencies) -> APIRouter:
         )
         with deps.catalog_cache_lock:
             cached_facets = (
-                deps.catalog_cache.get("facets")
-                if deps.catalog_cache.get("facets_signature") == signature
-                else None
+                deps.catalog_cache.get("facets") if deps.catalog_cache.get("facets_signature") == signature else None
             )
         if cached_facets is None:
             facets = repository.library_search_facets()
@@ -163,13 +161,14 @@ def _catalog_track(row: dict[str, Any], generalized_genre: Callable[[str], str])
             "version_code": row.get("version_code") or "",
             "identity_confidence": row.get("identity_confidence") or "",
             "identity_reason": row.get("identity_reason") or "",
+            "identity_inference_locked": bool(row.get("identity_inference_locked")),
             "audio_quality_score": row.get("audio_quality_score"),
             "audio_quality_label": row.get("audio_quality_label") or "",
             "audio_quality": quality_details,
+            "descriptors": _descriptor_payload(row.get("descriptors_json")),
             "suggested_genre": generalized_genre(str(row.get("genre") or "")),
             "completed_library_job_id": row["job_id"],
-            "artwork_available": bool(row.get("artwork_path"))
-            and Path(str(row["artwork_path"])).is_file(),
+            "artwork_available": bool(row.get("artwork_path")) and Path(str(row["artwork_path"])).is_file(),
         }
     job_fields = (
         "id",
@@ -204,3 +203,11 @@ def _catalog_track(row: dict[str, Any], generalized_genre: Callable[[str], str])
         "analysis": analysis,
         "downloaded": downloaded,
     }
+
+
+def _descriptor_payload(raw: Any) -> list[dict[str, Any]]:
+    try:
+        value = json.loads(str(raw or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return value if isinstance(value, list) else []

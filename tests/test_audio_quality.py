@@ -14,9 +14,9 @@ class AudioQualityTests(unittest.TestCase):
             path = Path(directory) / "clean.wav"
             rate = 44100
             time = np.arange(rate * 3) / rate
-            signal = .15 * np.sin(2 * np.pi * 1000 * time) + .02 * np.sin(2 * np.pi * 19500 * time)
+            signal = 0.15 * np.sin(2 * np.pi * 1000 * time) + 0.02 * np.sin(2 * np.pi * 19500 * time)
             sf.write(path, np.column_stack((signal, signal)), rate, subtype="PCM_24")
-            result = analyze_audio_quality(path, window_seconds=.25)
+            result = analyze_audio_quality(path, window_seconds=0.25)
             self.assertGreaterEqual(result.score, 75)
             self.assertLess(result.score, 90)
             self.assertEqual(result.label, "good")
@@ -30,11 +30,9 @@ class AudioQualityTests(unittest.TestCase):
             path = Path(directory) / "converted.wav"
             rate = 48000
             time = np.arange(rate) / rate
-            signal = .15 * np.sin(2 * np.pi * 1000 * time)
+            signal = 0.15 * np.sin(2 * np.pi * 1000 * time)
             sf.write(path, signal, rate, subtype="PCM_16")
-            result = analyze_audio_quality(
-                path, window_seconds=.25, source_is_transcoded_lossy=True
-            )
+            result = analyze_audio_quality(path, window_seconds=0.25, source_is_transcoded_lossy=True)
             self.assertEqual(result.target_status, "unverified")
             self.assertIn("original encoded bitrate", result.target_reason)
 
@@ -45,7 +43,7 @@ class AudioQualityTests(unittest.TestCase):
             time = np.arange(rate * 3) / rate
             signal = np.clip(3 * np.sin(2 * np.pi * 500 * time), -1, 1)
             sf.write(path, signal, rate, subtype="PCM_16")
-            result = analyze_audio_quality(path, window_seconds=.25)
+            result = analyze_audio_quality(path, window_seconds=0.25)
             self.assertLess(result.score, 75)
             self.assertIn(result.label, {"review", "poor"})
 

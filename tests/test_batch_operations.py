@@ -46,7 +46,6 @@ class BatchOperationRegistryTests(unittest.TestCase):
         self.assertEqual(len(result["receipt"]["failures"]), 1)
         self.assertTrue(result["receipt"]["survives_restart"])
 
-
     def test_batch_cancel_is_cooperative_and_retry_keeps_the_original_link(self) -> None:
         registry = BatchOperationRegistry()
         reached_first = threading.Event()
@@ -74,7 +73,6 @@ class BatchOperationRegistryTests(unittest.TestCase):
         complete = wait_for_terminal(registry, retried["batch_id"])
         self.assertEqual(complete["status"], "complete")
         self.assertEqual(complete["retry_of"], started["batch_id"])
-
 
     def test_unknown_batch_operations_are_rejected(self) -> None:
         registry = BatchOperationRegistry()

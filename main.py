@@ -7,17 +7,17 @@ import sys
 import time
 from pathlib import Path
 
+from audioextender.analysis.resource_planner import GIB, choose_worker_count
 from audioextender.audio.loading import SUPPORTED_EXTENSIONS
-from audioextender.processing.batch_runner import BatchRunner, TrackJob
-from audioextender.infrastructure.cache import clear_cache
 from audioextender.core.config_factory import ConfigFactory
-from audioextender.library.cue_export import write_rekordbox_xml
-from audioextender.reporting.feedback import append_candidate_feedback
 from audioextender.core.models import FileResult
 from audioextender.core.presets import PRESETS
-from audioextender.reporting.processing import update_processing_report
-from audioextender.analysis.resource_planner import GIB, choose_worker_count
+from audioextender.infrastructure.cache import clear_cache
+from audioextender.library.cue_export import write_rekordbox_xml
 from audioextender.library.track_overrides import load_track_overrides
+from audioextender.processing.batch_runner import BatchRunner, TrackJob
+from audioextender.reporting.feedback import append_candidate_feedback
+from audioextender.reporting.processing import update_processing_report
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,
@@ -54,19 +54,26 @@ def _parser() -> argparse.ArgumentParser:
         )
     )
     parser.add_argument(
-        "inputs", nargs="*", type=Path,
+        "inputs",
+        nargs="*",
+        type=Path,
         help="Optional audio files; defaults to every supported file in ./input",
     )
     parser.add_argument(
-        "--intro-bars", type=int, choices=SUPPORTED_BAR_COUNTS,
+        "--intro-bars",
+        type=int,
+        choices=SUPPORTED_BAR_COUNTS,
         default=None,
     )
     parser.add_argument(
-        "--outro-bars", type=int, choices=SUPPORTED_BAR_COUNTS,
+        "--outro-bars",
+        type=int,
+        choices=SUPPORTED_BAR_COUNTS,
         default=None,
     )
     parser.add_argument(
-        "--auto-bars", action=argparse.BooleanOptionalAction,
+        "--auto-bars",
+        action=argparse.BooleanOptionalAction,
         default=DEFAULT_AUTO_BAR_SELECTION,
         help=(
             "Automatically choose 2/4/8/16/32 bars up to the configured "
@@ -74,99 +81,130 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--use-stems", action=argparse.BooleanOptionalAction, default=None,
+        "--use-stems",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help="Enable or disable Demucs vocal-energy scoring",
     )
     parser.add_argument(
-        "--preset", choices=("auto", *PRESETS), default=DEFAULT_PRESET,
+        "--preset",
+        choices=("auto", *PRESETS),
+        default=DEFAULT_PRESET,
         help="Editing strategy; explicit bar and stem options override it",
     )
     parser.add_argument(
-        "--input-dir", type=Path, default=DEFAULT_INPUT_DIRECTORY,
+        "--input-dir",
+        type=Path,
+        default=DEFAULT_INPUT_DIRECTORY,
         help="Batch input folder (default: ./input)",
     )
     parser.add_argument(
-        "--output-dir", type=Path, default=DEFAULT_OUTPUT_DIRECTORY,
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIRECTORY,
         help="Destination folder (default: ./output)",
     )
+    parser.add_argument("--bit-depth", type=int, choices=SUPPORTED_PCM_BITS, default=DEFAULT_PCM_BITS)
     parser.add_argument(
-        "--bit-depth", type=int, choices=SUPPORTED_PCM_BITS, default=DEFAULT_PCM_BITS
-    )
-    parser.add_argument(
-        "--overwrite", action="store_true", default=DEFAULT_OVERWRITE,
+        "--overwrite",
+        action="store_true",
+        default=DEFAULT_OVERWRITE,
         help="Replace existing extended edits instead of skipping them",
     )
     parser.add_argument(
-        "--workers", choices=SUPPORTED_WORKER_CHOICES, default=DEFAULT_WORKERS,
+        "--workers",
+        choices=SUPPORTED_WORKER_CHOICES,
+        default=DEFAULT_WORKERS,
         help="Concurrent songs (default: auto; Demucs auto mode uses one)",
     )
     parser.add_argument(
-        "--intro-before", type=float,
+        "--intro-before",
+        type=float,
         help="Hard latest source time, in seconds, for intro material",
     )
     parser.add_argument(
-        "--outro-after", type=float,
+        "--outro-after",
+        type=float,
         help="Hard earliest source time, in seconds, for outro material",
     )
     parser.add_argument(
-        "--outro-before", type=float,
+        "--outro-before",
+        type=float,
         help="Hard latest source time, in seconds, for outro material",
     )
     parser.add_argument(
-        "--overrides", type=Path, default=DEFAULT_OVERRIDES_FILE,
+        "--overrides",
+        type=Path,
+        default=DEFAULT_OVERRIDES_FILE,
         help="Per-track musical boundaries JSON (default: ./track_overrides.json)",
     )
     cache_group = parser.add_mutually_exclusive_group()
     cache_group.add_argument(
-        "--no-cache", action="store_true",
+        "--no-cache",
+        action="store_true",
         help="Do not read or write analysis cache files for this run",
     )
     cache_group.add_argument(
-        "--refresh-cache", action="store_true",
+        "--refresh-cache",
+        action="store_true",
         help="Recompute analysis and replace cache entries",
     )
     parser.add_argument(
-        "--clear-cache", action="store_true",
+        "--clear-cache",
+        action="store_true",
         help="Delete cached analysis files and exit",
     )
     parser.add_argument(
-        "--cache-dir", type=Path, default=DEFAULT_CACHE_DIRECTORY,
+        "--cache-dir",
+        type=Path,
+        default=DEFAULT_CACHE_DIRECTORY,
         help="Analysis cache folder (default: ./cache)",
     )
     preview_group = parser.add_mutually_exclusive_group()
     preview_group.add_argument(
-        "--previews", action="store_true",
+        "--previews",
+        action="store_true",
         help="Export short intro/outro splice previews with the full edit",
     )
     preview_group.add_argument(
-        "--preview-only", action="store_true",
+        "--preview-only",
+        action="store_true",
         help="Export splice previews without writing the full extended WAV",
     )
     parser.add_argument(
-        "--preview-seconds", type=float, default=DEFAULT_PREVIEW_SECONDS,
+        "--preview-seconds",
+        type=float,
+        default=DEFAULT_PREVIEW_SECONDS,
         help="Seconds included before and after each previewed splice",
     )
     parser.add_argument(
-        "--cues", action=argparse.BooleanOptionalAction,
+        "--cues",
+        action=argparse.BooleanOptionalAction,
         default=DEFAULT_EXPORT_CUES,
         help="Write JSON cue sheets and a rekordbox XML playlist (default: enabled)",
     )
     parser.add_argument(
-        "--intro-candidate", type=int,
-        choices=tuple(range(0, DEFAULT_CANDIDATE_COUNT + 1)), default=1,
+        "--intro-candidate",
+        type=int,
+        choices=tuple(range(0, DEFAULT_CANDIDATE_COUNT + 1)),
+        default=1,
         help="Use ranked intro candidate 1–3, or 0 for none (default: 1)",
     )
     parser.add_argument(
-        "--outro-candidate", type=int,
-        choices=tuple(range(0, DEFAULT_CANDIDATE_COUNT + 1)), default=1,
+        "--outro-candidate",
+        type=int,
+        choices=tuple(range(0, DEFAULT_CANDIDATE_COUNT + 1)),
+        default=1,
         help="Use ranked outro candidate 1–3, or 0 for none (default: 1)",
     )
     parser.add_argument(
-        "--choose-candidates", action="store_true",
+        "--choose-candidates",
+        action="store_true",
         help="Show ranked choices and ask which intro/outro to use",
     )
     parser.add_argument(
-        "--review", action="store_true",
+        "--review",
+        action="store_true",
         help=(
             "Audition candidates, choose interactively, and capture listening "
             "reasons/notes in the persistent feedback document"
@@ -188,9 +226,7 @@ def _discover_inputs(paths: list[Path], input_directory: Path) -> list[Path]:
     directory = input_directory.expanduser().resolve()
     directory.mkdir(parents=True, exist_ok=True)
     return sorted(
-        path.resolve()
-        for path in directory.iterdir()
-        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+        path.resolve() for path in directory.iterdir() if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
     )
 
 
@@ -284,16 +320,13 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     print(f"Found {len(sources)} song{'s' if len(sources) != 1 else ''} to process")
-    workers, estimates, physical_memory = choose_worker_count(
-        sources, args.workers, config.use_stems
-    )
+    workers, estimates, physical_memory = choose_worker_count(sources, args.workers, config.use_stems)
     if config.choose_candidates:
         workers = 1
     largest_gib = max((estimate.working_bytes for estimate in estimates), default=0) / GIB
     mode = "automatic" if args.workers == "auto" else "manual"
     print(
-        f"Workers: {workers} ({mode}; {physical_memory / GIB:.0f} GB RAM, "
-        f"largest estimated job {largest_gib:.1f} GB)"
+        f"Workers: {workers} ({mode}; {physical_memory / GIB:.0f} GB RAM, largest estimated job {largest_gib:.1f} GB)"
     )
     desired_workers = min(3, max(1, len(sources)))
     if args.workers == "auto" and not config.use_stems and workers < desired_workers:
@@ -313,14 +346,8 @@ def run(args: argparse.Namespace) -> int:
     for source in sources:
         output = _output_path(source, args.output_dir)
         wav_output = _wav_path(source, args.output_dir)
-        if (
-            output.exists() and wav_output.exists()
-            and not args.overwrite and not args.preview_only
-        ):
-            print(
-                f"Skipping existing outputs: {source.stem} "
-                "(use --overwrite to replace them)"
-            )
+        if output.exists() and wav_output.exists() and not args.overwrite and not args.preview_only:
+            print(f"Skipping existing outputs: {source.stem} (use --overwrite to replace them)")
             skipped += 1
             skipped_items.append((source, output))
             continue
@@ -344,9 +371,7 @@ def run(args: argparse.Namespace) -> int:
     if config.export_cues and results and not config.preview_only:
         rekordbox_xml_path = args.output_dir.expanduser().resolve() / REKORDBOX_XML_FILENAME
         write_rekordbox_xml(results, rekordbox_xml_path)
-    report_markdown, report_json = update_processing_report(
-        args.output_dir, results, skipped_items
-    )
+    report_markdown, report_json = update_processing_report(args.output_dir, results, skipped_items)
     feedback_path = append_candidate_feedback(args.output_dir, results)
     _print_compact_results(results, total_elapsed)
     print("\nBatch complete")

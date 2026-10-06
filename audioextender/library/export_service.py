@@ -62,11 +62,7 @@ class ExportService:
 
     @staticmethod
     def artifact_root(output: Path) -> Path:
-        return (
-            output.parent.parent
-            if output.parent.name == EXTENDED_OUTPUT_FOLDER_NAME
-            else output.parent
-        )
+        return output.parent.parent if output.parent.name == EXTENDED_OUTPUT_FOLDER_NAME else output.parent
 
     @staticmethod
     def preview_directory(source: Path, output: Path) -> Path:
@@ -74,9 +70,7 @@ class ExportService:
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 
-    def export(
-        self, request: ExportRequest, progress: ProgressReporter
-    ) -> ExportResult:
+    def export(self, request: ExportRequest, progress: ProgressReporter) -> ExportResult:
         intro_preview_path = None
         outro_preview_path = None
         cue_points: tuple[CuePoint, ...] = ()
@@ -102,15 +96,11 @@ class ExportService:
                     (directory / "Outro Preview.wav").unlink(missing_ok=True)
                 if intro_audio is not None:
                     intro_preview_path = directory / "Intro Preview.wav"
-                    self._audio_writer(
-                        intro_audio, intro_preview_path, request.config.pcm_bits
-                    )
+                    self._audio_writer(intro_audio, intro_preview_path, request.config.pcm_bits)
                     progress.log(f"Intro preview: {intro_preview_path}")
                 if outro_audio is not None:
                     outro_preview_path = directory / "Outro Preview.wav"
-                    self._audio_writer(
-                        outro_audio, outro_preview_path, request.config.pcm_bits
-                    )
+                    self._audio_writer(outro_audio, outro_preview_path, request.config.pcm_bits)
                     progress.log(f"Outro preview: {outro_preview_path}")
 
             if not request.config.preview_only:
@@ -122,9 +112,7 @@ class ExportService:
                 )
                 progress.log(f"Source WAV: {request.wav_output}")
                 progress.update(98, "Exporting extended WAV")
-                self._audio_writer(
-                    request.edited_audio, request.output, request.config.pcm_bits
-                )
+                self._audio_writer(request.edited_audio, request.output, request.config.pcm_bits)
                 progress.log(f"Export complete: {request.output}")
             else:
                 progress.log("Preview-only mode: full extended WAV not written")
@@ -141,8 +129,7 @@ class ExportService:
                     assert request.config.insert_source_end is not None
                     assert request.config.insert_destination is not None
                     raw_added = (
-                        request.config.insert_source_end
-                        - request.config.insert_source_start
+                        request.config.insert_source_end - request.config.insert_source_start
                     ) * request.config.insert_copies
                     fade = max(request.config.crossfade_ms, 10.0) / 1000.0
                     joins = request.config.insert_copies + 1
@@ -154,23 +141,26 @@ class ExportService:
                             start=cue.start + added,
                             end=cue.end + added if cue.end is not None else None,
                         )
-                        if cue.start >= destination else cue
+                        if cue.start >= destination
+                        else cue
                         for cue in cue_points
                     )
-                    cue_points = tuple(sorted(
-                        (*shifted, CuePoint(
-                            "Inserted Section",
-                            destination,
-                            destination + added,
-                            kind="loop",
-                            purpose="Custom arrangement insertion",
-                        )),
-                        key=lambda cue: cue.start,
-                    ))
-                cue_sheet_path = (
-                    self.artifact_root(request.output) / "cue_sheets" /
-                    f"{request.output.stem}.json"
-                )
+                    cue_points = tuple(
+                        sorted(
+                            (
+                                *shifted,
+                                CuePoint(
+                                    "Inserted Section",
+                                    destination,
+                                    destination + added,
+                                    kind="loop",
+                                    purpose="Custom arrangement insertion",
+                                ),
+                            ),
+                            key=lambda cue: cue.start,
+                        )
+                    )
+                cue_sheet_path = self.artifact_root(request.output) / "cue_sheets" / f"{request.output.stem}.json"
                 self._cue_writer(
                     cue_sheet_path,
                     request.source,
@@ -232,9 +222,7 @@ class ExportService:
                 self._audio_writer(preview, path, config.pcm_bits)
                 progress.log(f"Candidate audition {rank}: {path}")
         except (OSError, RuntimeError, ValueError) as error:
-            raise ExportError(
-                f"Could not export {position} candidate auditions: {error}"
-            ) from error
+            raise ExportError(f"Could not export {position} candidate auditions: {error}") from error
 
     @staticmethod
     def _metadata(request: ExportRequest) -> dict[str, object]:

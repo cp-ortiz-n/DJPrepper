@@ -52,12 +52,16 @@ class EndToEndBehaviorTests(unittest.TestCase):
             track = library / "House" / "Track.wav"
             repository = JobRepository(root / "state.sqlite3")
             repository.upsert_downloaded_track(
-                title="Track", artist="Artist", file_path=track,
-                genre="house", genre_category="Electronic / House / House",
+                title="Track",
+                artist="Artist",
+                file_path=track,
+                genre="house",
+                genre_category="Electronic / House / House",
             )
             web_module.library_status_cache.update(payload=None, expires_at=0.0)
-            with patch.object(web_module, "repository", repository), patch.object(
-                web_module, "_music_library_root", return_value=library
+            with (
+                patch.object(web_module, "repository", repository),
+                patch.object(web_module, "_music_library_root", return_value=library),
             ):
                 offline = self.client.get("/api/settings/library-status").json()
                 self.assertFalse(offline["online"])

@@ -7,10 +7,10 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from audioextender.processing.batch_runner import BatchRunner
 from audioextender.analysis.candidate_validator import CandidateValidator
 from audioextender.core.config import EditConfig
 from audioextender.core.config_factory import ConfigFactory
+from audioextender.processing.batch_runner import BatchRunner
 from main import _parser
 from tests.factories import candidate
 
@@ -72,17 +72,13 @@ class CandidateValidatorTests(unittest.TestCase):
         self.assertIsNotNone(result.candidate)
 
     def test_same_validator_rejects_buildup_for_either_side(self) -> None:
-        result = CandidateValidator().validate(
-            candidate(buildup_risk=0.9), EditConfig(), None, 0.0, False
-        )
+        result = CandidateValidator().validate(candidate(buildup_risk=0.9), EditConfig(), None, 0.0, False)
         self.assertIsNone(result.candidate)
         self.assertIn("buildup", result.rejection_reason or "")
 
     def test_repetition_cap_returns_adjusted_immutable_candidate(self) -> None:
         original = candidate(repetitions=5)
-        result = CandidateValidator().validate(
-            original, EditConfig(maximum_repetitions=2), None, 0.0, False
-        )
+        result = CandidateValidator().validate(original, EditConfig(maximum_repetitions=2), None, 0.0, False)
         self.assertEqual(original.repetitions, 5)
         self.assertIsNotNone(result.candidate)
         assert result.candidate is not None

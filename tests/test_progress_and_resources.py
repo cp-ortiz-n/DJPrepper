@@ -6,8 +6,8 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from audioextender.infrastructure.progress import ProgressBar
 from audioextender.analysis.resource_planner import GIB, WorkloadEstimate, choose_worker_count
+from audioextender.infrastructure.progress import ProgressBar
 
 
 class ProgressTests(unittest.TestCase):

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20261002-191">
+  <link rel="stylesheet" href="/assets/styles.css?v=20261005-199">
 </head>
 <body>
   <header class="topbar">
@@ -187,12 +187,13 @@
         <div class="downloaded-filter-summary"><div><small>Showing</small><strong id="downloaded-filter-count">0 tracks</strong></div><div class="downloaded-matching-actions"><button id="downloaded-reset-filters" type="button" class="button tertiary">Reset filters</button><button id="downloaded-review-matching" type="button" class="button secondary" hidden>Review metadata</button><button id="downloaded-analyze-matching" type="button" class="button secondary" disabled>Analyze matching</button><button id="downloaded-reanalyze-matching" type="button" class="button secondary">Reanalyze matching</button></div></div>
         <div class="downloaded-selection-anchor">
           <label><input id="downloaded-select-all" type="checkbox"> Select all visible</label>
-          <div class="downloaded-maintenance-actions"><span>Library tools</span><button id="downloaded-rescan-genres" type="button" class="button secondary">Rescan genres</button><button id="downloaded-reconcile-files" type="button" class="button secondary">Reconcile files</button><button id="downloaded-retag-all" type="button" class="button secondary">Sync WAV tags</button><button id="downloaded-sync-artwork" type="button" class="button secondary">Sync artwork</button></div>
+          <div class="downloaded-maintenance-actions"><span>Library tools</span><button id="downloaded-vocabulary-review" type="button" class="button secondary">Review identity vocabulary</button><button id="downloaded-infer-missing-identities" type="button" class="button secondary">Infer missing identities</button><button id="downloaded-reinfer-unprotected" type="button" class="button secondary">Re-infer unprotected</button><button id="downloaded-rescan-genres" type="button" class="button secondary">Rescan genres</button><button id="downloaded-reconcile-files" type="button" class="button secondary">Reconcile files</button><button id="downloaded-retag-all" type="button" class="button secondary">Sync WAV tags</button><button id="downloaded-sync-artwork" type="button" class="button secondary">Sync artwork</button></div>
         </div>
         <div class="downloaded-selection">
           <span id="downloaded-selection-count">0 selected</span>
           <button id="downloaded-clear-selection" type="button" class="button secondary">Clear</button>
           <button id="downloaded-change-genre" type="button" class="button secondary" disabled>Change genre</button>
+          <button id="downloaded-edit-identity" type="button" class="button secondary" disabled>Edit identity</button>
           <button id="downloaded-retag-selected" type="button" class="button secondary" disabled>Sync WAV tags</button>
           <button id="downloaded-analyze-selected" type="button" disabled>Analyze</button>
           <button id="downloaded-key-analyze-selected" type="button" class="button secondary" disabled>Analyze key</button>
@@ -255,6 +256,7 @@
         <div class="library-selection">
           <div class="library-selection-main"><label><input id="library-select-all" type="checkbox"> Select visible tracks</label><span id="library-selection-count">0 selected</span></div>
           <div class="library-bulk-actions"><div class="library-genre-editor"><input id="library-genre-value" list="library-genre-options" placeholder="Choose genre"><datalist id="library-genre-options"></datalist><button id="library-change-genre" class="button secondary" disabled>Move</button></div>
+            <button id="library-edit-identity" class="button secondary" disabled>Edit identity</button>
             <details class="library-export-options"><summary>File types</summary><div><label><input type="checkbox" value="extended" checked> Extended WAV</label><label><input type="checkbox" value="source"> Source WAV</label><label><input type="checkbox" value="cue-sheet"> Cue sheet</label><label><input type="checkbox" value="rekordbox"> Rekordbox XML</label><label><input type="checkbox" value="intro-preview"> Intro preview</label><label><input type="checkbox" value="outro-preview"> Outro preview</label><label><input type="checkbox" value="analysis"> Analysis report</label></div></details>
             <button id="library-download-selected" class="button secondary" disabled>Download</button>
             <button id="library-reanalyze-selected" class="button secondary" disabled>Reanalyze</button>
@@ -276,7 +278,22 @@
       </div>
       <div class="set-builder-layout">
         <form id="set-builder-form" class="panel set-controls">
-          <div class="set-control-head"><div><p class="eyebrow">SET BRIEF</p><h2>Plan the journey</h2><small>Start with the essentials. Refine constraints only when the set needs them.</small></div><button id="reset-set-brief" type="button" class="button secondary">Reset</button></div>
+          <div class="set-control-head"><div><p class="eyebrow">SET BRIEF</p><h2>Plan the journey</h2><small>Start with the essentials. Refine constraints only when the set needs them.</small></div><button id="reset-set-brief" type="button" class="button tertiary">Reset brief</button></div>
+          <section class="set-intention-card">
+            <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>Optional</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div></div>
+            <textarea id="set-intention" rows="4" maxlength="1200" placeholder="Example: Build a driving Latin electronic set with a Techno foundation, Spanish vocals, dembow or Latin percussion, and an Ecuadorian party feel. Allow Latin House and Cumbia edits as bridges."></textarea>
+            <div class="set-intention-actions"><small>We’ll turn this into editable preferences before generating.</small><button id="interpret-set-intention" type="button" class="button secondary">Interpret intention</button></div>
+            <div id="set-intention-interpretation" class="set-intention-interpretation" hidden>
+              <div class="set-intention-summary"><strong>Editable interpretation</strong><span id="set-intention-status">Review these preferences before generating.</span></div>
+              <div class="set-intention-fields">
+                <label>Hard requirements<input id="set-intention-required" type="text" placeholder="Comma-separated; never relaxed"></label>
+                <label>Weighted preferences<input id="set-intention-preferred" type="text" placeholder="Spanish vocals, Latin percussion, recognizable sample"></label>
+                <label>Limit or avoid<input id="set-intention-avoided" type="text" placeholder="Generic instrumental Techno"></label>
+                <label>Genre drift<select id="set-intention-drift"><option value="none">None · direct genres only</option><option value="low">Low · close variants</option><option value="moderate" selected>Moderate · musical bridges</option><option value="wide">Wide · context before genre</option></select></label>
+              </div>
+              <ol id="set-fallback-policy" class="set-fallback-policy"></ol>
+            </div>
+          </section>
           <div class="set-basics">
             <label class="set-name-field">Set name<input id="set-name" type="text" maxlength="100" value="New DJ Set"></label>
             <label>Target length<select id="set-length"><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60" selected>60 minutes</option><option value="90">90 minutes</option><option value="120">2 hours</option><option value="180">3 hours</option></select></label>
@@ -310,6 +327,7 @@
           <div id="set-proposals" class="set-proposals" role="radiogroup" aria-label="Generated set directions"></div>
         </section>
         <details id="set-health" class="set-health"></details>
+        <details id="set-selection-summary" class="set-selection-summary" open><summary>Selection summary</summary><div></div></details>
         <div id="set-export-status" class="set-export-status"><span>Rekordbox paths will be checked before export.</span></div>
         <div id="set-add-track-panel-host"></div>
         <details class="set-journey" open><summary>Energy and BPM journey</summary><div class="set-curves"><div><span>Energy journey</span><svg id="set-energy-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div><div><span>BPM journey</span><svg id="set-bpm-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div></div></details>
@@ -525,6 +543,11 @@
       <footer><button value="cancel" class="button secondary">Cancel</button><button id="app-confirm-accept" value="confirm">Continue</button></footer>
     </form>
   </dialog>
+  <dialog id="identity-vocabulary-dialog" class="identity-vocabulary-dialog" aria-labelledby="identity-vocabulary-title">
+    <header><div><p class="eyebrow">IDENTITY VOCABULARY</p><h2 id="identity-vocabulary-title">Review unknown signals</h2><span>Approve a reusable meaning, edit it, or ignore noise. Nothing changes until you approve it.</span></div><button type="button" class="identity-vocabulary-close" aria-label="Close vocabulary review">×</button></header>
+    <div class="identity-vocabulary-summary"></div>
+    <div class="identity-vocabulary-list"><p>Loading unknown vocabulary…</p></div>
+  </dialog>
 
   <template id="job-template">
     <article class="job-card">
@@ -590,6 +613,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20261004-215" type="module"></script>
+  <script src="/assets/app.js?v=20261005-237" type="module"></script>
 </body>
 </html>

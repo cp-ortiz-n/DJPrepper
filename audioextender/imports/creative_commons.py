@@ -76,9 +76,7 @@ class CreativeCommonsImportService:
         state = self.registry.get(batch_id)
         if state is None:
             raise CreativeCommonsNotFoundError("Creative Commons import not found")
-        return dict(state) if private else {
-            key: value for key, value in state.items() if not key.endswith("_path")
-        }
+        return dict(state) if private else {key: value for key, value in state.items() if not key.endswith("_path")}
 
     def has_active_imports(self) -> bool:
         return any(state.get("status") == "processing" for state in self.registry.values())

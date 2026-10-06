@@ -27,9 +27,7 @@ class SyntheticPipelineIntegrationTests(unittest.TestCase):
             start = int(beat_time * sample_rate)
             length = min(int(0.08 * sample_rate), frames - start)
             envelope = np.exp(-np.linspace(0, 8, length))
-            mono[start:start + length] += 0.8 * envelope * np.sin(
-                2 * np.pi * 60.0 * np.arange(length) / sample_rate
-            )
+            mono[start : start + length] += 0.8 * envelope * np.sin(2 * np.pi * 60.0 * np.arange(length) / sample_rate)
         stereo = np.column_stack((mono, mono)).astype(np.float32)
 
         with tempfile.TemporaryDirectory() as temporary:
@@ -38,9 +36,7 @@ class SyntheticPipelineIntegrationTests(unittest.TestCase):
             output = root / "synthetic (Extended Edit).wav"
             sf.write(source, stereo, sample_rate, subtype="PCM_16")
             with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore", message="Trying to estimate tuning from empty frequency set"
-                )
+                warnings.filterwarnings("ignore", message="Trying to estimate tuning from empty frequency set")
                 result = TrackProcessor().process(
                     source,
                     output,

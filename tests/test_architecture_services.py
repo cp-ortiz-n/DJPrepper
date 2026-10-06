@@ -9,10 +9,10 @@ from audioextender.analysis.candidate_selection import (
     RankedSelection,
     SelectionRequest,
 )
-from audioextender.core.config import EditConfig
-from audioextender.core.interfaces import NullProgressReporter, ProgressReporter
 from audioextender.analysis.selection_coordinator import SelectionCoordinator, SideSelectionRequest
 from audioextender.analysis.splice_policy import build_splice_plan
+from audioextender.core.config import EditConfig
+from audioextender.core.interfaces import NullProgressReporter, ProgressReporter
 from audioextender.processing.track_processor import TrackProcessor
 from tests.factories import candidate
 
@@ -63,9 +63,7 @@ class DependencyContractTests(unittest.TestCase):
         reporter.complete()
 
     def test_splice_plan_groups_all_policy_decisions(self) -> None:
-        plan = build_splice_plan(
-            candidate(rhythmic_strength=0.9, vocal_boundary_risk=0.0), 6.0
-        )
+        plan = build_splice_plan(candidate(rhythmic_strength=0.9, vocal_boundary_risk=0.0), 6.0)
         self.assertEqual(plan.mode, "percussion-priority")
         self.assertGreaterEqual(plan.crossfade_ms, 10.0)
         self.assertLessEqual(plan.crossfade_ms, 30.0)
@@ -85,9 +83,7 @@ class DependencyContractTests(unittest.TestCase):
         selection = Mock()
         exports = Mock()
         with self.assertRaises(FileNotFoundError):
-            TrackProcessor(stems, selection, exports).process(
-                Path("missing.mp3"), Path("output.wav"), EditConfig()
-            )
+            TrackProcessor(stems, selection, exports).process(Path("missing.mp3"), Path("output.wav"), EditConfig())
         stems.analyze.assert_not_called()
         selection.select.assert_not_called()
         exports.export.assert_not_called()
@@ -123,8 +119,13 @@ class SelectionCoordinatorTests(unittest.TestCase):
             None,
             EditConfig(intro_bars=4, intro_bars_locked=True),
             SideSelectionRequest(
-                "intro", 4, True, 60.0, 1,
-                maximum_end=12.0, automatic_boundary=True,
+                "intro",
+                4,
+                True,
+                60.0,
+                1,
+                maximum_end=12.0,
+                automatic_boundary=True,
             ),
             lambda options, _position, _rank: (options[0], 1),
             NullProgressReporter(),
@@ -146,8 +147,13 @@ class SelectionCoordinatorTests(unittest.TestCase):
             None,
             EditConfig(outro_bars=4, outro_bars_locked=True),
             SideSelectionRequest(
-                "outro", 4, True, 60.0, 1,
-                maximum_end=170.0, minimum_start=120.0,
+                "outro",
+                4,
+                True,
+                60.0,
+                1,
+                maximum_end=170.0,
+                minimum_start=120.0,
             ),
             lambda options, _position, _rank: (options[0], 1),
             NullProgressReporter(),

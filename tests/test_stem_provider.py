@@ -7,9 +7,9 @@ from unittest.mock import Mock
 import numpy as np
 
 from audioextender.audio.loading import AudioData
+from audioextender.audio.stem_provider import StemProvider
 from audioextender.core.config import EditConfig
 from audioextender.core.interfaces import NullProgressReporter
-from audioextender.audio.stem_provider import StemProvider
 
 
 class StemProviderTests(unittest.TestCase):

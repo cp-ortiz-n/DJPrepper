@@ -20,9 +20,7 @@ from audioextender.core.interfaces import ProgressReporter
 from audioextender.infrastructure.cache import AnalysisCache
 
 StemSeparator = Callable[..., StemResult]
-BoundaryDetector = Callable[
-    [np.ndarray, np.ndarray, float], tuple[float | None, float | None]
-]
+BoundaryDetector = Callable[[np.ndarray, np.ndarray, float], tuple[float | None, float | None]]
 
 
 @dataclass(frozen=True)
@@ -64,13 +62,8 @@ class StemProvider:
         vocal_energy = cache.load_vocals(source, config)
         cached_instrumental = cache.load_instrumental(source, config)
         cached_drums = cache.load_drums(source, config)
-        vocals_valid = vocal_energy is not None and len(vocal_energy) == len(
-            track.frame_times
-        )
-        cache_hit = (
-            vocals_valid and cached_instrumental is not None
-            and cached_drums is not None
-        )
+        vocals_valid = vocal_energy is not None and len(vocal_energy) == len(track.frame_times)
+        cache_hit = vocals_valid and cached_instrumental is not None and cached_drums is not None
 
         if cache_hit:
             assert vocal_energy is not None and cached_instrumental is not None
@@ -94,9 +87,7 @@ class StemProvider:
                 drums_audio = separated.drums_audio
                 reliability = separated.separation_reliability
                 cache.save_vocals(source, config, vocal_energy)
-                cache.save_instrumental(
-                    source, config, instrumental_audio, reliability
-                )
+                cache.save_instrumental(source, config, instrumental_audio, reliability)
                 cache.save_drums(source, config, drums_audio)
             finally:
                 # Returned arrays are in memory, so Demucs' temporary directory
@@ -108,9 +99,7 @@ class StemProvider:
         assert vocal_energy is not None
         progress.log("Using vocal-stem energy for phrase selection")
         progress.log(f"Stem construction reliability: {reliability:.0%}")
-        intro_boundary, outro_boundary = self._boundary_detector(
-            vocal_energy, track.frame_times, audio.duration
-        )
+        intro_boundary, outro_boundary = self._boundary_detector(vocal_energy, track.frame_times, audio.duration)
         return StemAnalysis(
             vocal_energy=vocal_energy,
             instrumental_audio=instrumental_audio,

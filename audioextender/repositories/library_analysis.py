@@ -17,25 +17,17 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
         """Return a stable logical signature unaffected by unrelated SQLite writes."""
         with closing(self._connect()) as connection:
             jobs = connection.execute(
-                "SELECT COUNT(*), COALESCE(MAX(id),0), COALESCE(MAX(updated_at),'') "
-                "FROM jobs WHERE status='complete'"
+                "SELECT COUNT(*), COALESCE(MAX(id),0), COALESCE(MAX(updated_at),'') FROM jobs WHERE status='complete'"
             ).fetchone()
             tracks = connection.execute(
-                "SELECT COUNT(*), COALESCE(MAX(id),0), COALESCE(MAX(updated_at),'') "
-                "FROM downloaded_tracks"
+                "SELECT COUNT(*), COALESCE(MAX(id),0), COALESCE(MAX(updated_at),'') FROM downloaded_tracks"
             ).fetchone()
-            indexed = int(
-                connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0]
-            )
-        return json.dumps(
-            {"jobs": list(jobs), "tracks": list(tracks), "indexed": indexed}, separators=(",", ":")
-        )
+            indexed = int(connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0])
+        return json.dumps({"jobs": list(jobs), "tracks": list(tracks), "indexed": indexed}, separators=(",", ":"))
 
     def catalog_source_signatures(self) -> dict[str, tuple[int, int]]:
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                "SELECT source_path,mtime_ns,size FROM catalog_source_index"
-            ).fetchall()
+            rows = connection.execute("SELECT source_path,mtime_ns,size FROM catalog_source_index").fetchall()
         return {str(row["source_path"]): (int(row["mtime_ns"]), int(row["size"])) for row in rows}
 
     def upsert_catalog_source_signatures(self, signatures: list[tuple[str, int, int]]) -> None:
@@ -81,8 +73,7 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
             connection.execute("DELETE FROM library_search_index")
             if entries:
                 connection.executemany(
-                    f"INSERT INTO library_search_index ({','.join(columns)}) "
-                    f"VALUES ({','.join('?' for _ in columns)})",
+                    f"INSERT INTO library_search_index ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
                     [
                         tuple(
                             entry.get(column, "{}")
@@ -127,9 +118,11 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                 "LOWER(idx.musical_key) LIKE ? OR LOWER(idx.camelot) LIKE ? OR "
                 "LOWER(COALESCE(tracks.recording_code, '')) LIKE ? OR "
                 "LOWER(COALESCE(tracks.recording_code, '') || '-' || "
-                "COALESCE(tracks.version_code, '')) LIKE ?)"
+                "COALESCE(tracks.version_code, '')) LIKE ? OR "
+                "EXISTS (SELECT 1 FROM downloaded_track_descriptors search_descriptor "
+                "WHERE search_descriptor.track_id = tracks.id AND LOWER(search_descriptor.value) LIKE ?))"
             )
-            parameters.extend([value] * 11)
+            parameters.extend([value] * 12)
         if role != "all":
             conditions.append("idx.roles LIKE ?")
             parameters.append(f"%|{role}|%")
@@ -207,6 +200,13 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                     tracks.version_code, tracks.identity_confidence, tracks.identity_reason,
                     tracks.audio_quality_score, tracks.audio_quality_label,
                     tracks.audio_quality_json, tracks.audio_quality_analyzed_at,
+                    (SELECT json_group_array(json_object(
+                        'category', descriptors.category, 'value', descriptors.value,
+                        'provenance', descriptors.provenance,
+                        'confidence', descriptors.confidence,
+                        'updated_at', descriptors.updated_at))
+                     FROM downloaded_track_descriptors descriptors
+                     WHERE descriptors.track_id=tracks.id) AS descriptors_json,
                     tracks.artwork_path, tracks.file_path AS downloaded_file_path
                     FROM library_search_index idx JOIN jobs ON jobs.id = idx.job_id
                     LEFT JOIN downloaded_tracks tracks ON tracks.id = idx.downloaded_id
@@ -217,13 +217,9 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
 
     def library_search_facets(self) -> dict[str, Any]:
         with closing(self._connect()) as connection:
-            total = int(
-                connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0]
-            )
+            total = int(connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0])
             categories = dict(
-                connection.execute(
-                    "SELECT category, COUNT(*) FROM library_search_index GROUP BY category"
-                ).fetchall()
+                connection.execute("SELECT category, COUNT(*) FROM library_search_index GROUP BY category").fetchall()
             )
             detail_rows = connection.execute(
                 "SELECT category, detail_genre, COUNT(*) FROM library_search_index "
@@ -238,8 +234,7 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
             keys = [
                 row[0]
                 for row in connection.execute(
-                    "SELECT DISTINCT musical_key FROM library_search_index "
-                    "WHERE musical_key != '' ORDER BY musical_key"
+                    "SELECT DISTINCT musical_key FROM library_search_index WHERE musical_key != '' ORDER BY musical_key"
                 ).fetchall()
             ]
             role_rows = connection.execute("SELECT roles FROM library_search_index").fetchall()
@@ -292,11 +287,18 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
         """Return every latest analyzed track using the compact Library index."""
         with closing(self._connect()) as connection:
             rows = connection.execute(
-                """SELECT idx.job_id, idx.source_name, idx.category, idx.detail_genre, idx.roles,
+                """SELECT idx.job_id, idx.downloaded_id, idx.source_name, idx.category, idx.detail_genre, idx.roles,
                     idx.energy, idx.vocals, idx.timing, idx.set_analysis_json,
                     jobs.source_path, jobs.wav_path,
                     jobs.extended_path, jobs.config_json,
-                    downloaded.file_path AS library_path
+                    downloaded.file_path AS library_path,
+                    (SELECT json_group_array(json_object(
+                        'category', descriptors.category, 'value', descriptors.value,
+                        'provenance', descriptors.provenance,
+                        'confidence', descriptors.confidence,
+                        'updated_at', descriptors.updated_at))
+                     FROM downloaded_track_descriptors descriptors
+                     WHERE descriptors.track_id=downloaded.id) AS descriptors_json
                     FROM library_search_index idx
                     JOIN jobs ON jobs.id = idx.job_id
                     LEFT JOIN downloaded_tracks downloaded ON downloaded.id = idx.downloaded_id
@@ -306,6 +308,4 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
 
     def library_index_count(self) -> int:
         with closing(self._connect()) as connection:
-            return int(
-                connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0]
-            )
+            return int(connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0])

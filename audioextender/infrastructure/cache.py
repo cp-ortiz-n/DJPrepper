@@ -20,10 +20,21 @@ from audioextender.core.config import EditConfig
 CACHE_VERSION = 10
 WAVEFORM_CACHE_VERSION = 2
 _ARRAY_FIELDS = (
-    "beat_times", "downbeat_indices", "bar_boundaries", "frame_times", "rms",
-    "onset", "percussion_rms", "harmonic_rms", "bass_rms",
-    "spectral_centroid", "spectral_flux", "chroma", "spectral_profile",
-    "bar_section_labels", "bar_section_confidence",
+    "beat_times",
+    "downbeat_indices",
+    "bar_boundaries",
+    "frame_times",
+    "rms",
+    "onset",
+    "percussion_rms",
+    "harmonic_rms",
+    "bass_rms",
+    "spectral_centroid",
+    "spectral_flux",
+    "chroma",
+    "spectral_profile",
+    "bar_section_labels",
+    "bar_section_confidence",
     "bar_grid_confidence",
 )
 
@@ -80,9 +91,7 @@ class AnalysisCache:
 
     @staticmethod
     def _atomic_save(path: Path, **values: Any) -> None:
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.stem}-", suffix=".tmp", dir=path.parent
-        )
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.stem}-", suffix=".tmp", dir=path.parent)
         try:
             with os.fdopen(descriptor, "wb") as handle:
                 np.savez_compressed(handle, **values)
@@ -118,9 +127,7 @@ class AnalysisCache:
         except (OSError, ValueError, KeyError, EOFError):
             return None
 
-    def save_analysis(
-        self, source: Path, config: EditConfig, analysis: TrackAnalysis
-    ) -> None:
+    def save_analysis(self, source: Path, config: EditConfig, analysis: TrackAnalysis) -> None:
         if not self.enabled:
             return
         path = self._path(source, config, "analysis")
@@ -155,18 +162,14 @@ class AnalysisCache:
         except (OSError, ValueError, KeyError, EOFError):
             return None
 
-    def save_vocals(
-        self, source: Path, config: EditConfig, vocal_energy: np.ndarray
-    ) -> None:
+    def save_vocals(self, source: Path, config: EditConfig, vocal_energy: np.ndarray) -> None:
         if self.enabled:
             self._atomic_save(
                 self._path(source, config, "vocals"),
                 vocal_energy=np.asarray(vocal_energy, dtype=np.float32),
             )
 
-    def load_waveform(
-        self, source: Path, target_points: int = 1100
-    ) -> tuple[float, np.ndarray] | None:
+    def load_waveform(self, source: Path, target_points: int = 1100) -> tuple[float, np.ndarray] | None:
         """Load display peaks keyed to the exact audio file revision."""
         if not self.enabled or self.refresh:
             return None
@@ -180,7 +183,10 @@ class AnalysisCache:
             return None
 
     def save_waveform(
-        self, source: Path, duration: float, peaks: np.ndarray,
+        self,
+        source: Path,
+        duration: float,
+        peaks: np.ndarray,
         target_points: int = 1100,
     ) -> None:
         """Persist compact display peaks for reuse across server restarts."""
@@ -192,9 +198,7 @@ class AnalysisCache:
             peaks=np.asarray(peaks, dtype=np.float32),
         )
 
-    def load_instrumental(
-        self, source: Path, config: EditConfig
-    ) -> tuple[AudioData, float] | None:
+    def load_instrumental(self, source: Path, config: EditConfig) -> tuple[AudioData, float] | None:
         if not self.enabled or self.refresh:
             return None
         audio_path = self._path(source, config, "instrumental").with_suffix(".instrumental.wav")
@@ -225,8 +229,11 @@ class AnalysisCache:
         os.close(descriptor)
         try:
             sf.write(
-                temporary_name, instrumental.samples, instrumental.sample_rate,
-                format="WAV", subtype="FLOAT",
+                temporary_name,
+                instrumental.samples,
+                instrumental.sample_rate,
+                format="WAV",
+                subtype="FLOAT",
             )
             os.replace(temporary_name, audio_path)
         finally:
@@ -249,20 +256,19 @@ class AnalysisCache:
         except (OSError, ValueError, EOFError, sf.LibsndfileError):
             return None
 
-    def save_drums(
-        self, source: Path, config: EditConfig, drums: AudioData
-    ) -> None:
+    def save_drums(self, source: Path, config: EditConfig, drums: AudioData) -> None:
         if not self.enabled:
             return
         path = self._path(source, config, "drums").with_suffix(".drums.wav")
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.stem}-", suffix=".wav", dir=path.parent
-        )
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.stem}-", suffix=".wav", dir=path.parent)
         os.close(descriptor)
         try:
             sf.write(
-                temporary_name, drums.samples, drums.sample_rate,
-                format="WAV", subtype="FLOAT",
+                temporary_name,
+                drums.samples,
+                drums.sample_rate,
+                format="WAV",
+                subtype="FLOAT",
             )
             os.replace(temporary_name, path)
         finally:

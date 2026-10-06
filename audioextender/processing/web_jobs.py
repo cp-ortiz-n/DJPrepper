@@ -83,9 +83,7 @@ class DatabaseProgress(ProgressReporter):
         if estimates and label not in {"Analysis complete", "Ready"}:
             estimate = sorted(estimates)[len(estimates) // 2]
             display = f"{label} · typically {_stage_duration(estimate)}"
-        self.repository.update(
-            self.job_id, progress=max(0.0, min(100.0, percent)), stage=display
-        )
+        self.repository.update(self.job_id, progress=max(0.0, min(100.0, percent)), stage=display)
 
     def log(self, message: str) -> None:
         return
@@ -191,9 +189,7 @@ class WebJobService:
                 "active_ids": sorted(self._active),
                 "paused_ids": sorted(job_id for job_id, gate in self._run_gates.items() if not gate.is_set()),
                 "pending": list(self._pending),
-                "pause_requested": bool(
-                    any(not gate.is_set() for gate in self._run_gates.values())
-                ),
+                "pause_requested": bool(any(not gate.is_set() for gate in self._run_gates.values())),
             }
 
     def pause(self, job_id: int) -> bool:
@@ -252,12 +248,8 @@ class WebJobService:
             create_previews=bool(overrides.get("review_candidates", False)),
             create_candidate_auditions=bool(overrides.get("review_candidates", False)),
             auto_select_bar_lengths=bool(overrides.get("auto_bars", True)),
-            minimum_intro_loop_quality=float(
-                overrides.get("minimum_intro_loop_quality", 65.0)
-            ),
-            minimum_outro_loop_quality=float(
-                overrides.get("minimum_outro_loop_quality", 65.0)
-            ),
+            minimum_intro_loop_quality=float(overrides.get("minimum_intro_loop_quality", 65.0)),
+            minimum_outro_loop_quality=float(overrides.get("minimum_outro_loop_quality", 65.0)),
             pcm_bits=int(overrides.get("pcm_bits", 24)),
             preview_seconds=float(overrides.get("preview_seconds", 8.0)),
             export_cues=bool(overrides.get("export_cues", True)),
@@ -271,12 +263,11 @@ class WebJobService:
             maximum_vocal_boundary_risk=float(overrides.get("maximum_vocal_boundary_risk_percent", 65.0)) / 100.0,
             maximum_buildup_risk=float(overrides.get("maximum_buildup_risk_percent", 60.0)) / 100.0,
             maximum_bass_reset_risk=float(overrides.get("maximum_bass_reset_risk_percent", 65.0)) / 100.0,
-            minimum_stem_construction_reliability=float(overrides.get("minimum_stem_reliability_percent", 65.0)) / 100.0,
+            minimum_stem_construction_reliability=float(overrides.get("minimum_stem_reliability_percent", 65.0))
+            / 100.0,
             intro_candidate=int(overrides.get("intro_candidate", 1)),
             outro_candidate=int(overrides.get("outro_candidate", 1)),
-            manual_candidate_selection=bool(
-                overrides.get("manual_candidate_selection", False)
-            ),
+            manual_candidate_selection=bool(overrides.get("manual_candidate_selection", False)),
             custom_intro_start=overrides.get("custom_intro_start"),
             custom_intro_end=overrides.get("custom_intro_end"),
             custom_intro_copies=int(overrides.get("custom_intro_copies", 1)),
@@ -316,9 +307,10 @@ class WebJobService:
             job_options = {}
         analysis_only = bool(job_options.get("analysis_only", False))
         output_root = self.project / OUTPUT_FOLDER_NAME
-        extended = output_root / EXTENDED_OUTPUT_FOLDER_NAME / (
-            f"{source.stem} (Analysis job {job_id}).wav"
-            if analysis_only else f"{source.stem} (Extended Edit).wav"
+        extended = (
+            output_root
+            / EXTENDED_OUTPUT_FOLDER_NAME
+            / (f"{source.stem} (Analysis job {job_id}).wav" if analysis_only else f"{source.stem} (Extended Edit).wav")
         )
         (output_root / EXTENDED_OUTPUT_FOLDER_NAME).mkdir(parents=True, exist_ok=True)
         (output_root / WAV_OUTPUT_FOLDER_NAME).mkdir(parents=True, exist_ok=True)
@@ -355,6 +347,7 @@ class WebJobService:
             rekordbox_path = output_root / "rekordbox" / f"job-{job_id}.xml"
             write_rekordbox_xml([result], rekordbox_path)
             archived = {} if analysis_only else self._archive_artifacts(job_id, source, result)
+
             def options(position: Position, candidates) -> list[dict]:
                 return [
                     {
@@ -367,12 +360,11 @@ class WebJobService:
                         "phrase": candidate.phrase_suitability,
                         "loop": candidate.loop_quality,
                         "transition": candidate.transition_quality,
-                        "warnings": list(
-                            assess_candidate(candidate, position, result.preset_name).warnings
-                        ),
+                        "warnings": list(assess_candidate(candidate, position, result.preset_name).warnings),
                     }
                     for rank, candidate in enumerate(candidates, start=1)
                 ]
+
             candidates = {
                 "intro": options("intro", result.intro_candidates),
                 "outro": options("outro", result.outro_candidates),
@@ -385,21 +377,10 @@ class WebJobService:
                 progress=100.0,
                 stage=("Analyzed · Added to Library" if analysis_only else "Ready"),
                 extended_path=(None if analysis_only else str(archived["extended"])),
-                wav_path=(
-                    str(source) if analysis_only
-                    else str(result.wav_output) if result.wav_output else None
-                ),
-                intro_preview_path=(
-                    str(archived["intro_preview"])
-                    if archived.get("intro_preview") else None
-                ),
-                outro_preview_path=(
-                    str(archived["outro_preview"])
-                    if archived.get("outro_preview") else None
-                ),
-                cue_sheet_path=(
-                    str(archived["cue_sheet"]) if archived.get("cue_sheet") else None
-                ),
+                wav_path=(str(source) if analysis_only else str(result.wav_output) if result.wav_output else None),
+                intro_preview_path=(str(archived["intro_preview"]) if archived.get("intro_preview") else None),
+                outro_preview_path=(str(archived["outro_preview"]) if archived.get("outro_preview") else None),
+                cue_sheet_path=(str(archived["cue_sheet"]) if archived.get("cue_sheet") else None),
                 rekordbox_path=str(rekordbox_path),
                 candidates_json=json.dumps(candidates),
                 cues_json=json.dumps([asdict(cue) for cue in result.cue_points]),
@@ -408,15 +389,11 @@ class WebJobService:
                 outro_quality=result.outro.loop_quality if result.outro else None,
             )
         except Exception as error:  # Job boundaries must retain unexpected failures.
-            self.repository.update(
-                job_id, status="failed", stage="Failed", error=str(error)
-            )
+            self.repository.update(job_id, status="failed", stage="Failed", error=str(error))
 
     def _archive_artifacts(self, job_id: int, source: Path, result) -> dict[str, Path]:
         """Give each web generation immutable files while retaining latest aliases."""
-        directory = (
-            self.project / OUTPUT_FOLDER_NAME / "versions" / source.stem / f"job-{job_id}"
-        )
+        directory = self.project / OUTPUT_FOLDER_NAME / "versions" / source.stem / f"job-{job_id}"
         directory.mkdir(parents=True, exist_ok=True)
         archived: dict[str, Path] = {}
 
@@ -439,12 +416,8 @@ class WebJobService:
                 shutil.copy2(audition, preview_target / audition.name)
         return archived
 
-    def _boundaries(
-        self, source: Path
-    ) -> tuple[float | None, float | None, float | None]:
-        override = load_track_overrides(self.project / "track_overrides.json").get(
-            source.name.casefold()
-        )
+    def _boundaries(self, source: Path) -> tuple[float | None, float | None, float | None]:
+        override = load_track_overrides(self.project / "track_overrides.json").get(source.name.casefold())
         if override is None:
             return None, None, None
         return override.intro_before, override.outro_after, override.outro_before

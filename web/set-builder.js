@@ -1,4 +1,12 @@
 export const SET_STORAGE_KEY = 'dj-library-studio-sets-v1';
+export const SET_IDENTITY_STORAGE_KEY = 'dj-library-track-identities-v1';
+export const DEFAULT_SET_FALLBACK_POLICY = [
+  'Direct genre and identity matches',
+  'Requested foundation with matching vocals, rhythm, samples, or cultural identity',
+  'Adjacent genres with compatible energy and structure',
+  'Neutral bridge tracks that preserve the progression',
+  'Pure foundation tracks only when needed for flow and runtime',
+];
 export const SET_PROPOSAL_STRATEGIES = [
   {id:'safe',label:'Safe Flow',summary:'Smooth, dependable transitions',detail:'Prioritizes tempo, harmony, vocal space, and consistent mixability.'},
   {id:'journey',label:'Energy Journey',summary:'A deliberate rise, peak, and release',detail:'Follows the requested energy curve while preserving workable transitions.'},
@@ -30,12 +38,96 @@ export function targetSetEnergy(index, count, brief) {
   return base;
 }
 
+export function genreAllocationTargets(genres, weights, count) {
+  const selected=[...(genres||[])]; if(!selected.length)return {};
+  const normalized=selected.map((genre,index)=>({genre,index,weight:Math.max(0,Number(weights?.[genre]||0))}));
+  let total=normalized.reduce((sum,item)=>sum+item.weight,0);
+  if(!total){normalized.forEach(item=>{item.weight=1;});total=normalized.length;}
+  const rows=normalized.map(item=>{const exact=item.weight/total*Math.max(0,count);return {...item,exact,target:Math.floor(exact),fraction:exact-Math.floor(exact)};});
+  let remaining=Math.max(0,count-rows.reduce((sum,item)=>sum+item.target,0));
+  [...rows].sort((a,b)=>b.fraction-a.fraction||a.index-b.index).forEach(item=>{if(remaining>0){item.target+=1;remaining-=1;}});
+  return Object.fromEntries(rows.map(item=>[item.genre,item.target]));
+}
+
+export function parseIdentityTerms(value) {
+  return [...new Set(String(value||'').split(',').map(term=>term.trim().toLowerCase()).filter(Boolean))];
+}
+
+const SET_GENRE_INTENT_PATTERNS = [
+  [/latin techno/, 'latin techno'], [/latin house/, 'latin house'], [/schranz/, 'schranz'],
+  [/reggaeton|perreo/, 'reggaeton'], [/dembow/, 'dembow'], [/bachata/, 'bachata'],
+  [/cumbia/, 'cumbia'], [/merengue/, 'merengue'], [/salsa/, 'salsa'], [/guaracha/, 'guaracha'],
+  [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'], [/hip[- ]?hop/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
+];
+
+function trackGenreSearchText(track) {
+  return normalizedIntentPhrase(`${track?._genre||track?.genre||''} ${track?._detailedGenre||track?.detailed_genre||''}`).trim();
+}
+
+export function trackMatchesIntendedGenre(track, term) {
+  const wanted=normalizedIntentPhrase(term).trim(),metadata=trackGenreSearchText(track);
+  if(!wanted)return false;
+  if(metadata.includes(wanted))return true;
+  return inferredTrackIdentity(track,track?._manualIdentity||[]).some(tag=>normalizedIntentPhrase(tag).trim()===wanted);
+}
+
+function normalizedIntentPhrase(value){return ` ${String(value||'').toLowerCase().replaceAll('&',' and ').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ')} `;}
+
+export function interpretSetIntention(value, catalogVocabulary = []) {
+  const text=String(value||'').trim(),lower=text.toLowerCase(),preferred=[],required=[],avoided=[],requestedGenres=[],genreSequence=[];
+  const rules=[
+    [/ecuador|ecuadorian/, 'ecuadorian party'], [/colombia|colombian/, 'colombian'], [/caribbean/, 'caribbean'], [/andean/, 'andean'],
+    [/spanish[- ]?(?:language )?vocal|vocals? in spanish|español/, 'spanish vocals'], [/dembow/, 'dembow'], [/latin percussion|latin rhythm/, 'latin percussion'],
+    [/guaracha/, 'guaracha'], [/cumbia/, 'cumbia'], [/reggaeton|perreo/, 'reggaeton'], [/tribal/, 'tribal'], [/techno/, 'techno foundation'],
+    [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'], [/(?:hip[- ]?hop)/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
+    [/(?:chill|kickback|laid[- ]?back|low[- ]?key)/, 'chill kickback'], [/(?:party|danc(?:e|ing))/, 'dance-friendly'],
+    [/recognizable|familiar|singalong|classic/, 'recognizable material'], [/peak[- ]?time|high energy|driving/, 'peak-time energy'],
+    [/dark/, 'dark'], [/industrial/, 'industrial'], [/melodic/, 'melodic'], [/hypnotic/, 'hypnotic'], [/euphoric/, 'euphoric'],
+  ];
+  rules.forEach(([pattern,term])=>{if(pattern.test(lower))preferred.push(term);});
+  SET_GENRE_INTENT_PATTERNS.forEach(([pattern,term])=>{const match=lower.match(pattern);if(match){requestedGenres.push(term);genreSequence.push({term,index:match.index??Number.MAX_SAFE_INTEGER});}});
+  const normalizedText=normalizedIntentPhrase(text),genericTerms=new Set(['all','any','general','music','other','unknown','unclassified']);
+  for(const rawTerm of catalogVocabulary){
+    const term=String(rawTerm||'').trim().toLowerCase(),normalized=normalizedIntentPhrase(term).trim();
+    if(normalized.length<3||genericTerms.has(normalized))continue;
+    if(normalizedText.includes(` ${normalized} `)){preferred.push(term);if(/techno|house|schranz|reggaeton|dembow|bachata|cumbia|merengue|salsa|guaracha|hip hop|r&b|\brap\b/.test(normalized)){requestedGenres.push(term);const index=normalizedText.indexOf(` ${normalized} `);genreSequence.push({term,index:index<0?Number.MAX_SAFE_INTEGER:index});}}
+  }
+  if(/(?:must|required|require)[^.]*spanish/.test(lower))required.push('spanish vocals');
+  if(/(?:must|required|require)[^.]*(?:latin percussion|dembow|latin rhythm)/.test(lower))required.push('latin rhythmic identity');
+  if(/avoid[^.]*(?:generic|instrumental)[^.]*techno|limit[^.]*generic[^.]*techno/.test(lower))avoided.push('generic instrumental techno');
+  const drift=/do not drift|no genre drift|strict genre/.test(lower)?'none':/small|slight|close genres only/.test(lower)?'low':/wide|open genre|context over genre/.test(lower)?'wide':'moderate';
+  const chill=/(?:chill|kickback|laid[- ]?back|low[- ]?key)/.test(lower),dance=/(?:party|danc(?:e|ing))/.test(lower);
+  const vibe=chill&&dance?'balanced':/warm[- ]?up/.test(lower)?'warm-up':dance?'dance-party':chill?'warm-up':null;
+  const curve=/varying waves|energy waves|wave(?:s|d)? of energy/.test(lower)?'waves':null;
+  const opening=/(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)?'melodic':null;
+  const orderedGenres=[...new Map(genreSequence.sort((a,b)=>a.index-b.index).map(item=>[item.term,item.term])).values()];
+  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),requestedGenres:parseIdentityTerms(requestedGenres.join(',')),genreSequence:orderedGenres,drift,vibe,curve,opening,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
+}
+
+export function intendedGenreForPosition(identity,index,count){
+  const sequence=[...new Set(identity?.genreSequence||[])].filter(Boolean);if(!sequence.length)return '';
+  const progress=(Math.max(0,index)+.5)/Math.max(1,count);return sequence[Math.min(sequence.length-1,Math.floor(progress*sequence.length))];
+}
+
+export function inferredTrackIdentity(track, manual=[]) {
+  const source=`${track.source_name||''} ${track.title||''} ${track.artist||''} ${track._genre||track.genre||''} ${track._detailedGenre||track.detailed_genre||''}`.toLowerCase();
+  const tags=[...manual.map(value=>String(value).toLowerCase())];
+  const add=(term,pattern)=>{if(pattern.test(source))tags.push(term);};
+  add('latin identity',/latin|reggaeton|dembow|cumbia|salsa|bachata|guaracha|merengue|perreo/);add('techno foundation',/techno/);add('house foundation',/house/);
+  add('spanish vocals',/spanish|español|vocal latino|reggaeton|salsa|bachata/);add('dembow',/dembow|reggaeton|perreo/);add('latin percussion',/latin|salsa|cumbia|guaracha|tribal/);
+  add('ecuadorian party',/ecuador|ecuadorian/);add('colombian',/colombia|colombian|cumbia/);add('caribbean',/caribbean|reggaeton|salsa|dembow/);add('andean',/andean/);
+  add('recognizable material',/remix|edit|bootleg|mashup|classic|anthem/);add('dark',/dark/);add('industrial',/industrial/);add('melodic',/melodic/);add('hypnotic',/hypnotic/);add('euphoric',/euphoric|anthem/);
+  add('r&b',/(?:r\s*&\s*b|rnb|rhythm and blues)/);add('hip hop',/hip[- ]?hop/);add('rap',/(?:^|\W)rap(?:\W|$)/);add('chill kickback',/chill|downtempo|lounge|warm-up|laid[- ]?back/);
+  return [...new Set(tags)];
+}
+
 export function createSetBuilderFeature({
   $, $$, option, escapeHtml, clock, confirmAction, decodedAudio, WaveSurfer,
   compatibility, harmonicCompatibility, camelotKey, formatLibraryKey,
   energyBand, songEnergy, LIBRARY_ROLE_INFO,
   libraryRoles, timingProfile, vocalProfile, bindCompactAudio, compactAudioMarkup,
   stopNativeAudio, stopCompactAudio, notify,
+  descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor,
 }) {
   const initialSetBuilderState = createSetBuilderState();
   let setBuilderLibrary = initialSetBuilderState.library;
@@ -60,6 +152,21 @@ export function createSetBuilderFeature({
   let proposalSwitchNonce = 0;
   let transitionEditorSurfaces = [];
   const transitionWaveCache = new Map();
+  function identityStore(){try{return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY)||'{}');}catch(_){return {};}}
+  function intentionVocabulary(){return [...new Set(setBuilderLibrary.flatMap(track=>[
+    ...String(track._genre||'').split('/').map(value=>value.trim()),
+    ...setTrackDetailedGenres(track),
+    ...(track._descriptors||[]).map(item=>item.value),
+  ]).filter(Boolean))];}
+  function manualTrackIdentity(track){return identityStore()[setTrackId(track)]||[];}
+  function saveManualTrackIdentity(track,terms){const store=identityStore();store[setTrackId(track)]=parseIdentityTerms(terms);localStorage.setItem(SET_IDENTITY_STORAGE_KEY,JSON.stringify(store));track._manualIdentity=store[setTrackId(track)];}
+  function trackIdentity(track){return inferredTrackIdentity(track,track._manualIdentity||manualTrackIdentity(track));}
+  function identityTermMatches(track,term){const normalized=String(term||'').toLowerCase(),tags=trackIdentity(track);if(normalized==='latin rhythmic identity')return tags.some(tag=>['dembow','latin percussion','latin identity'].includes(tag));if(normalized==='generic instrumental techno')return tags.includes('techno foundation')&&!tags.includes('spanish vocals')&&!tags.includes('latin percussion')&&!tags.includes('recognizable material');if(normalized==='dance-friendly')return songEnergy(track)>=.5;if(normalized==='chill kickback')return songEnergy(track)<=.68||tags.includes('chill kickback');return tags.some(tag=>tag===normalized||tag.includes(normalized)||normalized.includes(tag));}
+  function intentionEvaluation(track,brief){const identity=brief.identity||{required:[],preferred:[],avoided:[]};const required=(identity.required||[]).filter(term=>identityTermMatches(track,term)),preferred=(identity.preferred||[]).filter(term=>identityTermMatches(track,term)),avoided=(identity.avoided||[]).filter(term=>identityTermMatches(track,term));const missingRequired=(identity.required||[]).filter(term=>!required.includes(term));return {required,preferred,avoided,missingRequired,score:preferred.length*14+required.length*22-avoided.length*35-missingRequired.length*45};}
+  function currentIntention(){const text=$('#set-intention').value.trim(),panel=$('#set-intention-interpretation'),parsed=interpretSetIntention(text,intentionVocabulary());let interpreted={};try{if(panel.dataset.source===text)interpreted=JSON.parse(panel.dataset.interpretation||'{}');}catch(_){}return {text,required:parseIdentityTerms($('#set-intention-required').value),preferred:parseIdentityTerms($('#set-intention-preferred').value),avoided:parseIdentityTerms($('#set-intention-avoided').value),requestedGenres:interpreted.requestedGenres||parsed.requestedGenres||[],optionalGenres:interpreted.optionalGenres||[],genreSequence:interpreted.genreSequence||parsed.genreSequence||[],opening:interpreted.opening||parsed.opening||null,ending:interpreted.ending||null,provider:interpreted.provider||'offline',drift:$('#set-intention-drift').value,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}
+  function renderFallbackPolicy(policy=DEFAULT_SET_FALLBACK_POLICY){$('#set-fallback-policy').innerHTML=policy.map((step,index)=>`<li><strong>${index+1}.</strong> ${escapeHtml(step)}</li>`).join('');}
+  function applyIntentionInterpretation(interpreted,{announce=true}={}){const panel=$('#set-intention-interpretation');panel.hidden=false;panel.dataset.source=interpreted.text||'';panel.dataset.interpretation=JSON.stringify(interpreted);$('#set-intention-required').value=(interpreted.required||[]).join(', ');$('#set-intention-preferred').value=(interpreted.preferred||[]).join(', ');$('#set-intention-avoided').value=(interpreted.avoided||[]).join(', ');$('#set-intention-drift').value=interpreted.drift||'moderate';if(interpreted.vibe)$('#set-vibe').value=interpreted.vibe;if(interpreted.curve)$('#set-curve').value=interpreted.curve;renderFallbackPolicy(interpreted.fallbackPolicy||DEFAULT_SET_FALLBACK_POLICY);if(announce){const source=interpreted.provider==='ollama'?`Local AI · ${interpreted.model}`:interpreted.provider==='openai'?`Cloud AI · ${interpreted.model}`:'offline rules';$('#set-intention-status').textContent=`Interpreted with ${source}. Found ${(interpreted.required||[]).length} requirement${(interpreted.required||[]).length===1?'':'s'}, ${(interpreted.preferred||[]).length} preference${(interpreted.preferred||[]).length===1?'':'s'}, and ${(interpreted.avoided||[]).length} limit${(interpreted.avoided||[]).length===1?'':'s'}. Edit anything before generating.`;}}
+  async function interpretIntention(text){try{const response=await fetch('/api/set-builder/interpret-intention',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:text,catalog_vocabulary:intentionVocabulary()})});if(!response.ok)throw new Error('AI provider unavailable');const result=await response.json();return {...result,text,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}catch(_){return {...interpretSetIntention(text,intentionVocabulary()),provider:'offline'};}}
   function selectedSetGenres() { return [...$('#set-genre').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
   function selectedSetDetailedGenres() { return [...$('#set-detailed-genres').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
   function selectedExcludedSetGenres() { return [...$('#set-excluded-genres').selectedOptions].map(option=>option.value).filter(Boolean); }
@@ -73,12 +180,12 @@ export function createSetBuilderFeature({
     chips.replaceChildren(); weights.replaceChildren(); weights.hidden=!genres.length;
     genres.forEach(genre=>{
       const chip=document.createElement('button');chip.type='button';chip.textContent=`${genre} ×`;chip.onclick=()=>{const option=[...$('#set-genre').options].find(item=>item.value===genre);if(option)option.selected=false;setGenreSelectionOrder=setGenreSelectionOrder.filter(value=>value!==genre);if(!selectedSetGenres().length)$('#set-genre').querySelector('option[value="all"]').selected=true;$('#set-genre').dispatchEvent(new Event('change',{bubbles:true}));};chips.append(chip);
-      const row=document.createElement('label');const input=document.createElement('input');input.type='number';input.min='0';input.max='100';input.step='5';input.value=!countChanged&&existing.has(genre)?existing.get(genre):String(Math.round(100/genres.length));input.dataset.genre=genre;row.append(document.createTextNode(genre),input);const suffix=document.createElement('span');suffix.textContent='%';row.append(suffix);weights.append(row);
+      const row=document.createElement('label');const input=document.createElement('input');input.type='number';input.min='0';input.max='100';input.step='1';input.value=!countChanged&&existing.has(genre)?existing.get(genre):String(Math.round(100/genres.length));input.dataset.genre=genre;row.append(document.createTextNode(genre),input);const suffix=document.createElement('span');suffix.textContent='%';row.append(suffix);weights.append(row);
     });
   }
   function setBrief() {
     const genres=selectedSetGenres();const genreWeights=Object.fromEntries([...$('#set-genre-weights').querySelectorAll('input')].map(input=>[input.dataset.genre,Math.max(0,Number(input.value||0))]));
-    return {name:$('#set-name').value.trim() || 'New DJ Set',length:Number($('#set-length').value),genres,detailedGenres:selectedSetDetailedGenres(),excludedGenres:selectedExcludedSetGenres(),genreWeights,genreFlow:$('#set-genre-flow').value,vibe:$('#set-vibe').value,curve:$('#set-curve').value,bpmMin:Number($('#set-bpm-min').value || 0),bpmMax:Number($('#set-bpm-max').value || Infinity),keyStrictness:$('#set-key-strictness').value,vocals:$('#set-vocals').value,timing:$('#set-timing').value,edits:$('#set-edits').value,minimumHealth:Number($('#set-minimum-health').value || 65)};
+    return {name:$('#set-name').value.trim() || 'New DJ Set',length:Number($('#set-length').value),genres,detailedGenres:selectedSetDetailedGenres(),excludedGenres:selectedExcludedSetGenres(),genreWeights,genreFlow:$('#set-genre-flow').value,vibe:$('#set-vibe').value,curve:$('#set-curve').value,bpmMin:Number($('#set-bpm-min').value || 0),bpmMax:Number($('#set-bpm-max').value || Infinity),keyStrictness:$('#set-key-strictness').value,vocals:$('#set-vocals').value,timing:$('#set-timing').value,edits:$('#set-edits').value,minimumHealth:Number($('#set-minimum-health').value || 65),identity:currentIntention()};
   }
   function setCandidateScore(track, previous, index, count, brief, strategy='balanced', usedByOtherProposals=new Set()) {
     const energyFit = Math.max(0, 45 * (1 - Math.abs(songEnergy(track) - targetSetEnergy(index, count, brief)) / .7));
@@ -102,7 +209,11 @@ export function createSetBuilderFeature({
     if(strategy==='safe') strategyFit=(transition?.score||65)*.48+(setVocalProfile(track)==='vocal-forward'&&previous&&setVocalProfile(previous)==='vocal-forward'?-28:8)-Math.abs(songEnergy(track)-(previous?songEnergy(previous):songEnergy(track)))*18;
     if(strategy==='energy') strategyFit=energyFit*.8-Math.abs(songEnergy(track)-targetSetEnergy(index,count,brief))*34+(previous?Math.min(12,Math.abs(songEnergy(track)-songEnergy(previous))*14):0)-(usedByOtherProposals.has(setTrackId(track))?8:0);
     if(strategy==='adventurous') { const genreChange=previous&&track._genre!==previous._genre?18:0;const roleChange=previous?libraryRoles(track).filter(role=>!libraryRoles(previous).includes(role)).length*6:8;const harmonicColor=transition&&transition.components.key<31&&transition.components.key>=20?10:0;strategyFit=genreChange+roleChange+harmonicColor-(usedByOtherProposals.has(setTrackId(track))?18:0); }
-    return energyFit + vibeFit + transitionScore + editFit + genreFit + strategyFit;
+    const intentionFit=intentionEvaluation(track,brief).score;
+    const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const requestedGenreFit=intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?32:0;
+    const positionalGenre=intendedGenreForPosition(brief.identity,index,count);const positionalGenreFit=positionalGenre&&trackMatchesIntendedGenre(track,positionalGenre)?68:positionalGenre?-24:0;
+    const openingSection=index<Math.max(1,Math.ceil(count*.18));const openingFit=openingSection&&String(brief.identity?.opening||'').includes('melodic')?(identityTermMatches(track,'melodic')?42:-18):0;
+    return energyFit + vibeFit + transitionScore + editFit + genreFit + strategyFit + intentionFit + requestedGenreFit + positionalGenreFit + openingFit;
   }
   function setVocalProfile(track) {
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
@@ -110,8 +221,11 @@ export function createSetBuilderFeature({
   function eligibleSetTracks(brief) {
     return setBuilderLibrary.filter(track => {
       const bpm = Number(track.bpm || 0); const id = setTrackId(track);
+      const intention=intentionEvaluation(track,brief);const requestedGenres=brief.identity?.requestedGenres||[],optionalGenres=brief.identity?.optionalGenres||[],allIntendedGenres=[...requestedGenres,...optionalGenres];const requestedGenreMatch=!allIntendedGenres.length||allIntendedGenres.some(term=>trackMatchesIntendedGenre(track,term));const directGenre=!brief.genres.length||brief.genres.some(genre=>trackMatchesSetGenre(track,genre));const drift=brief.identity?.drift||'none';
+      const identityEligible=directGenre&&requestedGenreMatch||Boolean(brief.identity?.text)&&drift==='wide'&&intention.preferred.length>=1;
       return !setExcludedIds.has(id)
-        && (!brief.genres.length || brief.genres.some(genre=>trackMatchesSetGenre(track,genre)))
+        && identityEligible
+        && !intention.missingRequired.length
         && (!(brief.detailedGenres||[]).length || brief.detailedGenres.some(genre=>trackMatchesSetDetailedGenre(track,genre)))
         && !(brief.excludedGenres||[]).some(genre=>trackMatchesSetGenre(track,genre))
         && (!brief.bpmMin || bpm >= brief.bpmMin)
@@ -121,35 +235,50 @@ export function createSetBuilderFeature({
     });
   }
   async function generateSetPlan() {
-    const brief = setBrief(); const pool = eligibleSetTracks(brief);
+    const brief = setBrief(); const eligiblePool = eligibleSetTracks(brief);
+    const requiredIds=new Set(setRequiredIds);const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const coarseScore=track=>intentionEvaluation(track,brief).score+(intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?40:0)-Math.abs(songEnergy(track)-targetSetEnergy(0,2,brief))*12;
+    const shortlistLimit=800;const pool=eligiblePool.length<=shortlistLimit?eligiblePool:[...eligiblePool].sort((a,b)=>coarseScore(b)-coarseScore(a)).slice(0,shortlistLimit);
+    eligiblePool.filter(track=>requiredIds.has(setTrackId(track))&&!pool.includes(track)).forEach(track=>pool.push(track));
     if (pool.length < 2) { $('#set-builder-message').textContent = 'Not enough analyzed tracks match this brief. Relax a filter and try again.'; return; }
     const averageSeconds = pool.reduce((sum,track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
     const count = Math.max(2, Math.min(pool.length, Math.ceil(brief.length * 60 / averageSeconds)));
     const required = pool.filter(track => setRequiredIds.has(setTrackId(track)));
+    const genreTargets=genreAllocationTargets(brief.genres,brief.genreWeights,count);
     const previousPlan = currentSetPlan;
     const generatedTrackIds=new Set();
     const buildVariation = (strategy) => {
-      const remaining = new Map(pool.map(track => [setTrackId(track), track])); const nextPlan = []; let failed = false;
+      const remaining = new Map(pool.map(track => [setTrackId(track), track])); const nextPlan = []; const genreUsage=Object.fromEntries((brief.genres||[]).map(genre=>[genre,0])); const previousPlanIds=new Set(previousPlan.map(setTrackId)); let failed = false;
+      const recordGenre=track=>{const matches=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));if(!matches.length)return;const genre=matches.sort((a,b)=>((genreTargets[b]||0)-(genreUsage[b]||0))-((genreTargets[a]||0)-(genreUsage[a]||0)))[0];genreUsage[genre]=(genreUsage[genre]||0)+1;};
+      const nextGenre=()=>{const configuredOrder=setGenreSelectionOrder.filter(genre=>(brief.genres||[]).includes(genre)).concat((brief.genres||[]).filter(genre=>!setGenreSelectionOrder.includes(genre)));const open=configuredOrder.filter(genre=>(genreUsage[genre]||0)<(genreTargets[genre]||0)&&[...remaining.values()].some(track=>trackMatchesSetGenre(track,genre)));if(!open.length)return '';return open.sort((a,b)=>{const deficitA=(genreTargets[a]||0)-(genreUsage[a]||0),deficitB=(genreTargets[b]||0)-(genreUsage[b]||0);if(brief.genreFlow==='blend')return deficitB/Math.max(1,genreTargets[b]||0)-deficitA/Math.max(1,genreTargets[a]||0);return configuredOrder.indexOf(a)-configuredOrder.indexOf(b);})[0];};
       setGenerationNonce += 1;
       Array.from({length:count}, (_, index) => {
         if (failed) return;
         const locked = previousPlan[index];
-        if (locked && setLockedIds.has(setTrackId(locked)) && remaining.has(setTrackId(locked))) { remaining.delete(setTrackId(locked)); nextPlan.push(locked); return; }
+        if (locked && setLockedIds.has(setTrackId(locked)) && remaining.has(setTrackId(locked))) { remaining.delete(setTrackId(locked)); nextPlan.push(locked); recordGenre(locked); return; }
         const requiredIndex = required.length ? Math.round(index * (required.length + 1) / count) - 1 : -1;
         const forced = required[requiredIndex];
-        if (forced && remaining.has(setTrackId(forced))) { remaining.delete(setTrackId(forced)); nextPlan.push(forced); return; }
+        if (forced && remaining.has(setTrackId(forced))) { remaining.delete(setTrackId(forced)); nextPlan.push(forced); recordGenre(forced); return; }
         const previous = nextPlan[index - 1] || null;
-        const ranked = [...remaining.values()].map(track=>{const wasSamePosition=Boolean(previousPlan[index])&&setTrackId(previousPlan[index])===setTrackId(track),wasInPrevious=previousPlan.some(item=>setTrackId(item)===setTrackId(track));return {track,score:setCandidateScore(track,previous,index,count,brief,strategy,generatedTrackIds)-(wasSamePosition?12:wasInPrevious?3:0)};}).sort((a,b)=>b.score-a.score);
+        const targetGenre=nextGenre();const identityTarget=intendedGenreForPosition(brief.identity,index,count);const available=[...remaining.values()];const identityTargeted=identityTarget?available.filter(track=>trackMatchesIntendedGenre(track,identityTarget)):[];const targeted=targetGenre?available.filter(track=>trackMatchesSetGenre(track,targetGenre)):available;const candidatePool=identityTargeted.length?identityTargeted:targeted.length?targeted:available;
+        const ranked = candidatePool.map(track=>{const id=setTrackId(track),wasSamePosition=Boolean(previousPlan[index])&&setTrackId(previousPlan[index])===id,wasInPrevious=previousPlanIds.has(id);return {track,score:setCandidateScore(track,previous,index,count,brief,strategy,generatedTrackIds)-(wasSamePosition?12:wasInPrevious?3:0)};}).sort((a,b)=>b.score-a.score);
         if (!ranked.length) { failed = true; return; }
         const competitive=ranked.filter(item=>item.score>=ranked[0].score-18).slice(0,18);
         const weights=competitive.map(item=>Math.exp((item.score-competitive.at(-1).score)/5));const total=weights.reduce((sum,value)=>sum+value,0);let pick=(Math.abs(Math.sin(setGenerationNonce*9283+index*3343))*total),choice=competitive[0]?.track;for(let option=0;option<competitive.length;option+=1){pick-=weights[option];if(pick<=0){choice=competitive[option].track;break;}}
-        if (choice) { remaining.delete(setTrackId(choice)); nextPlan.push(choice); }
+        if (choice) { remaining.delete(setTrackId(choice)); nextPlan.push(choice); recordGenre(choice); }
       });
       required.forEach(track => { if (!nextPlan.some(item => setTrackId(item) === setTrackId(track))) nextPlan.push(track); });
+      intendedGenres.forEach(term=>{
+        if(nextPlan.some(track=>trackMatchesIntendedGenre(track,term)))return;
+        const replacement=[...remaining.values()].filter(track=>trackMatchesIntendedGenre(track,term)).sort((a,b)=>coarseScore(b)-coarseScore(a))[0];
+        if(!replacement)return;
+        const replaceIndex=nextPlan.map((track,index)=>({track,index,score:setCandidateScore(track,nextPlan[index-1]||null,index,count,brief,strategy,generatedTrackIds)})).filter(item=>item.index>0&&!setLockedIds.has(setTrackId(item.track))&&!setRequiredIds.has(setTrackId(item.track))).sort((a,b)=>a.score-b.score)[0]?.index;
+        if(replaceIndex==null)return;
+        remaining.set(setTrackId(nextPlan[replaceIndex]),nextPlan[replaceIndex]);remaining.delete(setTrackId(replacement));nextPlan[replaceIndex]=replacement;
+      });
       return failed ? [] : nextPlan;
     };
     const proposals=[];
-    for(const strategy of SET_PROPOSAL_STRATEGIES){let bestPlan=[],bestHealth={score:-1,transitions:[],vocalClashes:0},attempts=0;for(;attempts<24;attempts+=1){const candidate=buildVariation(strategy.id);if(candidate.length<count)continue;const repaired=improveSetOrder(candidate,brief);const health=setHealth(repaired);const overlap=repaired.filter(track=>generatedTrackIds.has(setTrackId(track))).length/Math.max(1,repaired.length);const distinctBonus=strategy.id==='adventurous'?(1-overlap)*12:0;const rank=health.score+distinctBonus;if(rank>(bestHealth.rank??-1)){bestPlan=repaired;bestHealth={...health,rank};}if(health.score>=brief.minimumHealth&&attempts>=5){attempts+=1;break;}}const accepted=bestPlan.length>=count&&bestHealth.score>=brief.minimumHealth;if(accepted)bestPlan.forEach(track=>generatedTrackIds.add(setTrackId(track)));proposals.push({...strategy,accepted,attempts,health:bestHealth,snapshot:{tracks:bestPlan.map(setTrackId),locked:[...setLockedIds],transitions:{}}});}
+    for(const strategy of SET_PROPOSAL_STRATEGIES){await new Promise(resolve=>requestAnimationFrame(()=>resolve()));let bestPlan=[],bestHealth={score:-1,transitions:[],vocalClashes:0},attempts=0;for(;attempts<10;attempts+=1){const candidate=buildVariation(strategy.id);if(candidate.length<count)continue;const repaired=improveSetOrder(candidate,brief);const health=setHealth(repaired);const overlap=repaired.filter(track=>generatedTrackIds.has(setTrackId(track))).length/Math.max(1,repaired.length);const distinctBonus=strategy.id==='adventurous'?(1-overlap)*12:0;const rank=health.score+distinctBonus;if(rank>(bestHealth.rank??-1)){bestPlan=repaired;bestHealth={...health,rank};}if(health.score>=brief.minimumHealth&&attempts>=3){attempts+=1;break;}}const accepted=bestPlan.length>=count&&bestHealth.score>=brief.minimumHealth;if(accepted)bestPlan.forEach(track=>generatedTrackIds.add(setTrackId(track)));proposals.push({...strategy,accepted,attempts,health:bestHealth,snapshot:{tracks:bestPlan.map(setTrackId),locked:[...setLockedIds],transitions:{}}});}
     const accepted=proposals.filter(proposal=>proposal.accepted);if(!accepted.length){const best=proposals.sort((a,b)=>b.health.score-a.health.score)[0];const issues=setHealthIssues(best.health,brief.minimumHealth);$('#set-builder-message').textContent=`No direction was applied. The best search reached ${best.health.score}/100, below your ${brief.minimumHealth} target. ${issues.slice(0,2).join(' · ')||'Relax a constraint or lower the health floor.'}`;return;}
     if(currentSetPlan.length)pushSetHistory();setProposals=proposals;const preferred=proposals.find(proposal=>proposal.id==='safe'&&proposal.accepted)||accepted.sort((a,b)=>b.health.score-a.health.score)[0];activeSetProposal=preferred.id;restoreSetSnapshot(preferred.snapshot,false);$('#set-builder-message').textContent=`Built ${accepted.length} distinct direction${accepted.length===1?'':'s'}. Optimizing transition techniques for ${preferred.label}…`;await autoOptimizeSetTransitions();preferred.snapshot=setPlanSnapshot();preferred.health=setHealth();renderSetPlan();$('#set-builder-message').textContent=`${accepted.length} distinct direction${accepted.length===1?'':'s'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
   }
@@ -184,7 +313,7 @@ export function createSetBuilderFeature({
   function setTransitionOverlap(left,right) { const duration=Number(left?.duration_seconds||0);const tail=Number.isFinite(Number(left?.mix_out))&&Number(left.mix_out)>0&&duration>Number(left.mix_out)?duration-Number(left.mix_out):0;const lead=Number(right?.mix_in||0);const bpm=Math.max(60,Number(left?.bpm||right?.bpm||120));const bars=Math.min(Number(left?.outro?.mixable_bars||left?.dj_readiness?.outro_mixable_bars||0),Number(right?.intro?.mixable_bars||right?.dj_readiness?.intro_mixable_bars||0));const musical=bars>0?bars*4*60/bpm:0;return Math.max(8,Math.min(90,Math.max(tail,lead,musical,30))); }
   function setRuntime(plan=currentSetPlan) { return plan.reduce((sum,track,index) => sum + Number(track.duration_seconds || 210) - (index ? setTransitionOverlap(plan[index-1],track) : 0), 0); }
   function setHealth(plan=currentSetPlan) { if(plan.length<2)return {score:100,transitions:[],vocalClashes:0};const transitions=plan.slice(1).map((track,index)=>({...compatibility(plan[index],track),from:index,to:index+1}));const average=transitions.reduce((sum,item)=>sum+item.score,0)/transitions.length;const vocalClashes=plan.slice(1).filter((track,index)=>setVocalProfile(plan[index])==='vocal-forward'&&setVocalProfile(track)==='vocal-forward').length;const score=Math.max(0,Math.min(100,Math.round(average-vocalClashes*3)));return {score,transitions,vocalClashes}; }
-  function setOrderFitness(plan,brief) { const health=setHealth(plan);const energyPenalty=plan.reduce((sum,track,index)=>sum+Math.abs(songEnergy(track)-targetSetEnergy(index,plan.length,brief)),0)*3;return health.score*5-energyPenalty; }
+  function setOrderFitness(plan,brief) { const health=setHealth(plan);const energyPenalty=plan.reduce((sum,track,index)=>sum+Math.abs(songEnergy(track)-targetSetEnergy(index,plan.length,brief)),0)*3;const journeyFit=plan.reduce((sum,track,index)=>{const target=intendedGenreForPosition(brief.identity,index,plan.length);return sum+(target&&trackMatchesIntendedGenre(track,target)?16:0);},0);const openingCount=Math.max(1,Math.ceil(plan.length*.18));const openingFit=String(brief.identity?.opening||'').includes('melodic')?plan.slice(0,openingCount).filter(track=>identityTermMatches(track,'melodic')).length*12:0;return health.score*5-energyPenalty+journeyFit+openingFit; }
   function improveSetOrder(plan,brief) { const improved=[...plan];const fixed=new Set(improved.map((track,index)=>setLockedIds.has(setTrackId(track))?index:null).filter(index=>index!=null));let current=setOrderFitness(improved,brief);for(let pass=0;pass<5;pass+=1){let best=current,bestSwap=null;for(let left=0;left<improved.length-1;left+=1){if(fixed.has(left))continue;for(let right=left+1;right<improved.length;right+=1){if(fixed.has(right))continue;[improved[left],improved[right]]=[improved[right],improved[left]];const score=setOrderFitness(improved,brief);[improved[left],improved[right]]=[improved[right],improved[left]];if(score>best+.01){best=score;bestSwap=[left,right];}}}if(!bestSwap)break;[improved[bestSwap[0]],improved[bestSwap[1]]]=[improved[bestSwap[1]],improved[bestSwap[0]]];current=best;}return improved; }
   function setHealthIssues(health, threshold) { const issues=[];health.transitions.filter(item=>item.score<threshold).sort((a,b)=>a.score-b.score).slice(0,4).forEach(item=>{const weakest=Object.entries(item.components).sort((a,b)=>a[1]-b[1])[0]?.[0]||'compatibility';issues.push(`${item.from+1}→${item.to+1} ${item.score}% (${weakest}${item.key==='distant key'?', distant keys':''})`);});if(health.vocalClashes)issues.push(`${health.vocalClashes} vocal clash${health.vocalClashes===1?'':'es'}`);return issues; }
   function transitionSettingKey(left,right) { return `${setTrackId(left)}→${setTrackId(right)}`; }
@@ -269,6 +398,39 @@ export function createSetBuilderFeature({
     const match = compatibility(previous,track); const tempo = match.difference <= .02 ? 'tempo locked' : `${(match.difference*100).toFixed(1)}% tempo move`;
     return {score:match.score,text:`${tempo} · ${match.key} · energy ${match.components.energy}/10`};
   }
+  function setSelectionExplanation(track, index, brief) {
+    const reasons=[]; const id=setTrackId(track); const previous=currentSetPlan[index-1]; const next=currentSetPlan[index+1];
+    const energy=songEnergy(track); const target=targetSetEnergy(index,currentSetPlan.length,brief); const energyDelta=energy-target;
+    const matchingGenres=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));
+    const matchingDetailed=(brief.detailedGenres||[]).filter(genre=>trackMatchesSetDetailedGenre(track,genre));
+    if(setRequiredIds.has(id))reasons.push({kind:'required',text:'Selected because it is a must-play track.'});
+    const intention=intentionEvaluation(track,brief);if(intention.required.length)reasons.push({kind:'identity',text:`Meets the hard identity requirement: ${intention.required.join(' + ')}.`});else if(intention.preferred.length)reasons.push({kind:'identity',text:`Matches the requested identity through ${intention.preferred.slice(0,2).join(' + ')}.`});if(intention.avoided.length)reasons.push({kind:'relaxed',text:`Uses a limited characteristic (${intention.avoided.join(' + ')}) only to preserve runtime or flow.`});
+    if(matchingDetailed.length)reasons.push({kind:'genre',text:`Direct detailed-genre match: ${matchingDetailed.slice(0,2).join(' + ')}.`});
+    else if(matchingGenres.length)reasons.push({kind:'genre',text:`Fits the requested ${matchingGenres.slice(0,2).join(' + ')} direction.`});
+    if(Math.abs(energyDelta)<=.1)reasons.push({kind:'energy',text:`Matches the ${energyBand(target)} target energy for this point in the set.`});
+    else if(energyDelta>0)reasons.push({kind:'energy',text:`Adds an intentional energy lift toward ${energyBand(energy)}.`});
+    else reasons.push({kind:'energy',text:`Creates an energy reset before the next build.`});
+    if(previous){
+      const incoming=compatibility(previous,track); const fromBpm=Number(previous.bpm||0),toBpm=Number(track.bpm||0);
+      reasons.push({kind:'tempo',text:Math.abs(fromBpm-toBpm)<.6?`Keeps the tempo steady near ${toBpm.toFixed(1)} BPM.`:`Moves from ${fromBpm.toFixed(1)} to ${toBpm.toFixed(1)} BPM.`});
+      if(incoming.components.key>=20)reasons.push({kind:'key',text:`Compatible key: ${formatLibraryKey(previous.key)} → ${formatLibraryKey(track.key)} (${incoming.key}).`});
+      if(setVocalProfile(previous)==='vocal-forward'&&setVocalProfile(track)!=='vocal-forward')reasons.push({kind:'vocals',text:'Restores vocal space after a vocal-forward track.'});
+    } else reasons.push({kind:'opening',text:`Opens with ${energyBand(energy)} energy and establishes the set direction.`});
+    if(next){const outgoing=compatibility(track,next);if(outgoing.score>=70)reasons.push({kind:'neighbor',text:`Also sets up the next track with a ${outgoing.score}% transition match.`});}
+    if(timingProfile(track)==='steady'&&reasons.length<5)reasons.push({kind:'timing',text:'Steady timing supports a longer, dependable blend.'});
+    return reasons.slice(0,5);
+  }
+  function setFallbackTier(track,brief){if((brief.genres||[]).some(genre=>trackMatchesSetGenre(track,genre)))return 0;const evaluation=intentionEvaluation(track,brief),tags=trackIdentity(track);if(evaluation.preferred.length>=2)return 1;if(evaluation.preferred.length||tags.includes('latin identity'))return 2;if(libraryRoles(track).includes('bridge')||evaluation.score>=0)return 3;return 4;}
+  function renderSetSelectionSummary(brief) {
+    const root=$('#set-selection-summary');if(!root)return;
+    const targets=genreAllocationTargets(brief.genres,brief.genreWeights,currentSetPlan.length),usage=Object.fromEntries((brief.genres||[]).map(genre=>[genre,0])),groups=Object.fromEntries((brief.genres||[]).map(genre=>[genre,[]])),unassigned=[];
+    currentSetPlan.forEach(track=>{const matches=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));if(!matches.length){unassigned.push(track);return;}const genre=matches.sort((a,b)=>((targets[b]||0)-(usage[b]||0))-((targets[a]||0)-(usage[a]||0)))[0];usage[genre]=(usage[genre]||0)+1;groups[genre].push(track);});
+    const totalWeight=Math.max(1,Object.values(brief.genreWeights||{}).reduce((sum,value)=>sum+Math.max(0,Number(value||0)),0));
+    const genreRows=(brief.genres||[]).map(genre=>{const requested=Math.round(Math.max(0,Number(brief.genreWeights?.[genre]||0))/totalWeight*1000)/10,actual=usage[genre]||0,names=(groups[genre]||[]).map(track=>track.source_name.replace(/\.[^.]+$/,'')).join(', ');return `<article class="${actual===(targets[genre]||0)?'met':'adjusted'}"><div><strong>${escapeHtml(genre)}</strong><span>${requested}% requested · ${targets[genre]||0} target · ${actual} chosen</span></div><p>${names?escapeHtml(names):'No track selected for this allocation.'}</p></article>`;}).join('');
+    const mustPlays=currentSetPlan.filter(track=>setRequiredIds.has(setTrackId(track)));const tierLabels=['Direct matches','Identity matches','Adjacent genres','Neutral bridges','Flow-only foundations'];const tierCounts=currentSetPlan.reduce((counts,track)=>{const tier=setFallbackTier(track,brief);counts[tier]=(counts[tier]||0)+1;return counts;},{});const relaxed=currentSetPlan.filter(track=>intentionEvaluation(track,brief).avoided.length);const intentionRows=brief.identity?.text?`<section class="set-intention-outcome"><strong>Intention fulfillment</strong><p>${escapeHtml(brief.identity.text)}</p><div>${tierLabels.map((label,index)=>`<span class="${index>1&&tierCounts[index]?'adjusted':''}"><b>${tierCounts[index]||0}</b>${label}</span>`).join('')}</div>${relaxed.length?`<p class="set-relaxation-warning">${relaxed.length} track${relaxed.length===1?'':'s'} relaxed a “limit or avoid” preference to preserve runtime or transition flow. No hard requirement was relaxed.</p>`:'<p>No stated preference was relaxed.</p>'}</section>`:'';
+    const fallback=unassigned.length?`<article class="adjusted"><div><strong>Manual or bridge tracks</strong><span>${unassigned.length} outside the weighted genres</span></div><p>${escapeHtml(unassigned.map(track=>track.source_name.replace(/\.[^.]+$/,'')).join(', '))}</p></article>`:'';
+    root.querySelector('div').innerHTML=`<p class="set-selection-overview">${currentSetPlan.length} songs chosen by allocating the requested genre balance first, then ranking candidates for musical identity, energy shape, BPM and key compatibility, vocal spacing, timing, and transition health.${mustPlays.length?` ${mustPlays.length} must-play track${mustPlays.length===1?' was':'s were'} preserved.`:''}</p>${intentionRows}<div class="set-selection-groups">${genreRows}${fallback}</div><p class="set-selection-note">Open “Why this track” on any song for its position-specific explanation. Counts may differ only when a locked, required, manually added, or unavailable genre track prevents the requested allocation. Any expansion beyond direct matches is disclosed above.</p>`;
+  }
   function renderSetPlan() {
     const result = $('#set-result'); result.hidden = !currentSetPlan.length; if (!currentSetPlan.length) return;
     transitionEditorSurfaces.forEach(surface=>surface.destroy());transitionEditorSurfaces=[];
@@ -279,13 +441,14 @@ export function createSetBuilderFeature({
     const resultName=$('#set-result-name');if(document.activeElement!==resultName)resultName.value=brief.name;
     const genreSummary=(brief.detailedGenres||[]).length?brief.detailedGenres.join(' + '):brief.genres.length?brief.genres.join(' + '):'open genre mix';
     $('#set-result-summary').textContent = `${currentSetPlan.length} tracks · approximately ${Math.round(runtime/60)} minutes · ${genreSummary} · ${brief.genreFlow.replace('-', ' ')} · ${brief.curve.replace('-', ' ')}`;
+    renderSetSelectionSummary(brief);
     const exportStatus=$('#set-export-status');exportStatus.className='set-export-status';exportStatus.innerHTML='<span>Rekordbox paths will be checked before export.</span>';
     const health=setHealth();const healthThreshold=brief.minimumHealth;const healthAccepted=health.score>=healthThreshold;const weak=health.transitions.filter(item=>item.score<healthThreshold).sort((a,b)=>a.score-b.score);const healthDetail=weak.length?weak.slice(0,8).map(item=>`<button type="button" data-transition="${item.to}"><b>${item.from+1} → ${item.to+1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`).join(''):healthAccepted?`<p>Health target met. No transitions fall below ${healthThreshold}.</p>`:`<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes===1?' is':'s are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;$('#set-health').className=`set-health ${healthAccepted?'good':health.score>=healthThreshold-10?'fair':'weak'}`;$('#set-health').innerHTML=`<summary><strong>${health.score}</strong><span>Set health</span><small>${healthAccepted?'target met':'below target · regenerate required'} · target ${healthThreshold} · ${weak.length} transition${weak.length===1?'':'s'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes===1?'':'es'}</small></summary><div>${healthDetail}</div>`;$('#set-health').querySelectorAll('[data-transition]').forEach(button=>button.onclick=()=>document.querySelector(`.set-track-card[data-index="${button.dataset.transition}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}));
     ['#save-set','#export-set-csv','#export-set-m3u'].forEach(selector=>{const button=$(selector);button.disabled=!healthAccepted;button.title=healthAccepted?'':`Set health must reach ${healthThreshold} before saving or exporting.`;});
     $('#set-track-list').innerHTML = currentSetPlan.map((track,index) => {
-      const transition = transitionExplanation(currentSetPlan[index-1],track); const id = setTrackId(track); const locked = setLockedIds.has(id);
+      const transition = transitionExplanation(currentSetPlan[index-1],track); const id = setTrackId(track); const locked = setLockedIds.has(id); const selectionReasons=setSelectionExplanation(track,index,brief);
       const preview=track._job?.id?compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`,track.duration_seconds,true):'';
-      return `<article class="set-track-card${locked?' locked':''}" draggable="${locked?'false':'true'}" data-index="${index}"><span class="set-position">${index+1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(track).map(role => LIBRARY_ROLE_INFO[role]?.[0] || role).join(', ')}</span>${preview}</div><div class="set-track-meta"><strong>${Number(track.bpm||0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended?'Extended edit available':'Original analyzed track'}</span></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold?'warning':'good'}"><b>${transition.score == null?'OPEN':`${transition.score}% match`}</b><span><i>Why:</i> ${escapeHtml(transition.text)}</span>${index?'<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button>':''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index===0?'disabled':''}>↑ Earlier</button><button type="button" class="set-move-down" ${index===currentSetPlan.length-1?'disabled':''}>↓ Later</button><button type="button" class="set-lock">${locked?'Unlock':'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">Find alternative</button></div></article>`;
+      return `<article class="set-track-card${locked?' locked':''}" draggable="${locked?'false':'true'}" data-index="${index}"><span class="set-position">${index+1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(track).map(role => LIBRARY_ROLE_INFO[role]?.[0] || role).join(', ')}</span>${preview}</div><div class="set-track-meta"><strong>${Number(track.bpm||0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended?'Extended edit available':'Original analyzed track'}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons.map(reason=>`<li data-reason="${reason.kind}">${escapeHtml(reason.text)}</li>`).join('')}</ul></details></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold?'warning':'good'}"><b>${transition.score == null?'OPEN':`${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index?'<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button>':''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index===0?'disabled':''}>↑ Earlier</button><button type="button" class="set-move-down" ${index===currentSetPlan.length-1?'disabled':''}>↓ Later</button><button type="button" class="set-lock">${locked?'Unlock':'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">Find alternative</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
     }).join('');
     bindSetRows();
     bindCompactAudio($('#set-track-list'));
@@ -305,11 +468,13 @@ export function createSetBuilderFeature({
       card.querySelector('.set-remove').onclick=()=>{pushSetHistory();setLockedIds.delete(setTrackId(currentSetPlan[index]));currentSetPlan.splice(index,1);renderSetPlan();};
       card.querySelector('.set-add-after').onclick=()=>addSetTrack(index+1,card);
       card.querySelector('.set-alternative').onclick=()=>replaceSetTrack(index);
+      card.querySelector('.set-identity').onclick=()=>openTrackIdentityEditor(index,card);
       card.querySelector('.set-audition')?.addEventListener('click',event=>auditionTransition(index,event.currentTarget));
       card.querySelector('.edit-transition')?.addEventListener('click',()=>openTransitionEditor(index,card));
       card.ondragstart=event=>{if(event.target.closest('input,select,button,audio,.transition-editor,.set-compact-audio')){event.preventDefault();return;}dragging=index;card.classList.add('dragging');}; card.ondragend=()=>card.classList.remove('dragging'); card.ondragover=event=>event.preventDefault(); card.ondrop=event=>{event.preventDefault();moveSetTrack(dragging,index);};
     });
   }
+  function openTrackIdentityEditor(index,card){card.querySelector('.set-identity-editor')?.remove();const track=currentSetPlan[index],host=document.createElement('section');host.className='set-identity-editor';host.innerHTML=descriptorEditorMarkup(track._descriptors||[]);card.append(host);const editor=host.querySelector('.track-descriptor-editor');editor.hidden=false;const close=()=>host.remove();editor.querySelector('.cancel-descriptors').onclick=close;editor.querySelector('.close-descriptor-editor').onclick=close;editor.querySelector('.infer-descriptors').onclick=async event=>{if(!track._downloadedId){notify('Catalog this track before inferring identity tags.','danger');return;}const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{await inferDescriptorEditor(editor,[track._downloadedId]);}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{if(track._downloadedId){const result=await saveDescriptorEditor(editor,[track._downloadedId]);track._descriptors=result.values||[];track._manualIdentity=track._descriptors.map(item=>item.value);const store=identityStore();delete store[setTrackId(track)];localStorage.setItem(SET_IDENTITY_STORAGE_KEY,JSON.stringify(store));}else{const terms=[...editor.querySelectorAll('[data-descriptor-category]')].flatMap(input=>parseIdentityTerms(input.value));saveManualTrackIdentity(track,terms);}renderSetPlan();$('#set-builder-message').textContent=`Identity tags saved for ${track.source_name.replace(/\.[^.]+$/,'')} in the persistent track catalog.`;}catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save changes';}};editor.querySelector('input')?.focus();}
   function addSetTrack(insertIndex=currentSetPlan.length, anchor=null) {
     document.querySelectorAll('.set-add-track-panel').forEach(item=>item.remove());
     const used=new Set(currentSetPlan.map(setTrackId));const brief=setBrief();const previous=currentSetPlan[insertIndex-1];const next=currentSetPlan[insertIndex];
@@ -340,7 +505,8 @@ export function createSetBuilderFeature({
   function recoveryScore(candidate,detail,previous) { const wanted=String(detail?.source_name||detail?.id||'').toLowerCase().replace(/\.[^.]+$/,'');const words=wanted.split(/\W+/).filter(word=>word.length>2);const haystack=`${candidate.source_name} ${candidate.artist||''}`.toLowerCase();const titleScore=words.length?words.filter(word=>haystack.includes(word)).length/words.length*45:0;const genreScore=detail?.genre&&trackMatchesSetGenre(candidate,detail.genre)?25:0;const bpmScore=detail?.bpm?Math.max(0,20-Math.abs(Number(candidate.bpm||0)-Number(detail.bpm))):0;return titleScore+genreScore+bpmScore+(previous?compatibility(previous,candidate).score*.15:0); }
   async function loadSavedSet(record) {
     if(!record)return;const byId=new Map(setBuilderLibrary.map(track=>[setTrackId(track),track]));const brief=record.brief||{};
-    Object.entries(brief).forEach(([key,value])=>{if(['genres','detailedGenres','excludedGenres','genreWeights'].includes(key))return;const element=$(`#set-${key.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}`);if(element&&value!==Infinity&&!Array.isArray(value))element.value=value;});
+    Object.entries(brief).forEach(([key,value])=>{if(['genres','detailedGenres','excludedGenres','genreWeights','identity'].includes(key))return;const element=$(`#set-${key.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}`);if(element&&value!==Infinity&&!Array.isArray(value))element.value=value;});
+    const savedIdentity=brief.identity||interpretSetIntention('');$('#set-intention').value=savedIdentity.text||'';if(savedIdentity.text||savedIdentity.required?.length||savedIdentity.preferred?.length||savedIdentity.avoided?.length)applyIntentionInterpretation(savedIdentity,{announce:false});else $('#set-intention-interpretation').hidden=true;
     const savedGenres=brief.genres||(brief.genre&&brief.genre!=='all'?[brief.genre]:[]);[...$('#set-genre').options].forEach(option=>{option.selected=savedGenres.length?savedGenres.includes(option.value):option.value==='all';});populateSetDetailedGenres(brief.detailedGenres||[]);[...$('#set-excluded-genres').options].forEach(option=>{option.selected=(brief.excludedGenres||[]).includes(option.value);});setGenreSelectionOrder=[...savedGenres];renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();Object.entries(brief.genreWeights||{}).forEach(([genre,value])=>{const input=[...$('#set-genre-weights').querySelectorAll('input')].find(item=>item.dataset.genre===genre);if(input)input.value=value;});$('#set-genre').dispatchEvent(new Event('change',{bubbles:true}));$('#set-detailed-genres').dispatchEvent(new Event('change',{bubbles:true}));$('#set-excluded-genres').dispatchEvent(new Event('change',{bubbles:true}));
     const details=new Map((record.trackDetails||[]).map(item=>[item.id,item]));const used=new Set();const recoveredPlan=[];let recovered=0;
     (record.tracks||[]).forEach(id=>{let track=byId.get(id);if(!track){track=setBuilderLibrary.filter(candidate=>!used.has(setTrackId(candidate))).map(candidate=>({candidate,score:recoveryScore(candidate,details.get(id)||{id},recoveredPlan.at(-1))})).sort((a,b)=>b.score-a.score)[0]?.candidate;if(track)recovered+=1;}if(track){used.add(setTrackId(track));recoveredPlan.push(track);}});
@@ -354,14 +520,15 @@ export function createSetBuilderFeature({
   async function exportSetM3u() { const button=$('#export-set-m3u');const status=$('#set-export-status');const entries=setM3uEntries();button.disabled=true;button.textContent='Checking paths…';status.className='set-export-status checking';status.innerHTML=`<span>Checking ${entries.length} tracks on disk…</span>`;try{const response=await fetch('/api/set-builder/export-preflight',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:entries.map(entry=>entry.path||'')})});if(!response.ok)throw new Error(await response.text());const result=await response.json();const validEntries=entries.filter((entry,index)=>result.items[index]?.exists);if(result.ready){status.className='set-export-status ready';status.innerHTML=`<strong>Ready for Rekordbox: ${result.valid}/${result.total} tracks</strong><span>All audio files were found. Downloading the playlist now.</span>`;downloadSetM3uEntries(validEntries);}else{const missing=entries.filter((entry,index)=>!result.items[index]?.exists);status.className='set-export-status warning';status.innerHTML=`<strong>${result.missing} of ${result.total} tracks need attention</strong><span>The playlist was not downloaded because these files are unavailable:</span><ul>${missing.map(({track,path})=>`<li><b>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</b><small>${escapeHtml(path||'No file path')}</small></li>`).join('')}</ul>${validEntries.length?'<button type="button" class="button secondary export-valid-only">Export valid tracks only</button>':''}`;status.querySelector('.export-valid-only')?.addEventListener('click',()=>downloadSetM3uEntries(validEntries));}}catch(error){status.className='set-export-status warning';status.innerHTML=`<strong>Could not validate the playlist</strong><span>${escapeHtml(error.message||String(error))}</span>`;}finally{button.disabled=false;button.textContent='Export M3U8';} }
   async function loadSetBuilder() {
     const catalog=await fetch('/api/set-builder/catalog',{cache:'no-store'}).then(response=>{if(!response.ok)throw new Error('Set Builder catalog could not be loaded.');return response.json();});
-    setBuilderLibrary=(catalog.tracks||[]).map(item=>{const song=item.analysis||{};const job=item.job||{};const hasExtended=Boolean(job.extended_path)&&!JSON.parse(job.config_json||'{}').analysis_only;const preferred=$('#set-edits').value;const libraryPath=job.library_path||song.file_path||song.wav_path||job.wav_path;return {...song,_job:job,_genre:item.genre||song.detected_style||'Other',_detailedGenre:item.detailed_genre||'',_hasExtended:hasExtended,_libraryPath:libraryPath,_selectedPath:preferred==='original'?libraryPath:(hasExtended?job.extended_path:libraryPath)};});
+    const identities=identityStore();setBuilderLibrary=(catalog.tracks||[]).map(item=>{const song=item.analysis||{};const job=item.job||{};const hasExtended=Boolean(job.extended_path)&&!JSON.parse(job.config_json||'{}').analysis_only;const preferred=$('#set-edits').value;const libraryPath=job.library_path||song.file_path||song.wav_path||job.wav_path;const track={...song,_job:job,_genre:item.genre||song.detected_style||'Other',_detailedGenre:item.detailed_genre||'',_hasExtended:hasExtended,_libraryPath:libraryPath,_selectedPath:preferred==='original'?libraryPath:(hasExtended?job.extended_path:libraryPath),_downloadedId:item.downloaded_id||null,_descriptors:item.descriptors||[]};track._manualIdentity=[...new Set([...(track._descriptors||[]).map(descriptor=>descriptor.value),...(identities[setTrackId(track)]||[])])];return track;});
     const names=setBuilderLibrary.slice().sort((a,b)=>a.source_name.localeCompare(b.source_name)); const trackOptions=names.map(track=>option(setTrackId(track),track.source_name.replace(/\.[^.]+$/,''))); $('#set-required').replaceChildren(option('','Choose a track'),...trackOptions.map(item=>item.cloneNode(true)));$('#set-excluded').replaceChildren(option('','Choose a track'),...trackOptions);
     const leafGenres=[...new Set(setBuilderLibrary.map(track=>track._genre))].sort();const genre=$('#set-genre');const excluded=$('#set-excluded-genres');const current=selectedSetGenres();const currentDetailed=selectedSetDetailedGenres();const currentExcluded=selectedExcludedSetGenres();const choices=new Map();leafGenres.forEach(name=>{const parts=name.split(' / ');for(let index=1;index<parts.length;index+=1){const parent=parts.slice(0,index).join(' / ');choices.set(parent,`All ${parent}`);}choices.set(name,name);});const sortedChoices=[...choices].sort((a,b)=>a[0].localeCompare(b[0]));genre.replaceChildren(option('all','Any parent genre'),...sortedChoices.map(([value,label])=>option(value,label)));excluded.replaceChildren(...sortedChoices.map(([value,label])=>option(value,label)));[...genre.options].forEach(item=>{item.selected=current.length?current.includes(item.value):item.value==='all';});populateSetDetailedGenres(currentDetailed);[...excluded.options].forEach(item=>{item.selected=currentExcluded.includes(item.value);});if(current.length)setGenreSelectionOrder=setGenreSelectionOrder.filter(value=>current.includes(value)).concat(current.filter(value=>!setGenreSelectionOrder.includes(value)));
-    bindSetBuilder();renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();renderSavedSets();renderSetRules();if(currentSetPlan.length)renderSetPlan();
+    bindSetBuilder();renderFallbackPolicy();renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();renderSavedSets();renderSetRules();if(currentSetPlan.length)renderSetPlan();
   }
   function bindSetBuilder() {
     if(setBuilderBound)return;setBuilderBound=true;
-    $('#set-builder-form').onsubmit=event=>{event.preventDefault();const button=$('#set-generate');button.disabled=true;button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
+    $('#set-builder-form').onsubmit=async event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation'),button=$('#set-generate');button.disabled=true;if(intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText)){button.textContent='Understanding brief…';applyIntentionInterpretation(await interpretIntention(intentionText));}button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
+    $('#interpret-set-intention').onclick=async event=>{const text=$('#set-intention').value.trim(),button=event.currentTarget;if(!text){$('#set-intention-interpretation').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}button.disabled=true;button.textContent='Understanding…';try{applyIntentionInterpretation(await interpretIntention(text));}finally{button.disabled=false;button.textContent='Interpret intention';}};
     const briefName=$('#set-name'),resultName=$('#set-result-name');
     briefName.addEventListener('input',()=>{if(document.activeElement!==resultName)resultName.value=briefName.value;});
     resultName.addEventListener('input',()=>{briefName.value=resultName.value;});
@@ -371,7 +538,7 @@ export function createSetBuilderFeature({
     $('#set-genre').addEventListener('change',()=>{const selected=selectedSetGenres();setGenreSelectionOrder=setGenreSelectionOrder.filter(value=>selected.includes(value)).concat(selected.filter(value=>!setGenreSelectionOrder.includes(value)));renderSetGenreMix();populateSetDetailedGenres();});
     $('#set-detailed-genres').addEventListener('change',renderSetDetailedGenres);
     $('#set-excluded-genres').addEventListener('change',renderExcludedSetGenres);
-    $('#reset-set-brief').onclick=()=>{$('#set-builder-form').reset();[...$('#set-genre').options].forEach(option=>{option.selected=option.value==='all';});populateSetDetailedGenres();[...$('#set-excluded-genres').options].forEach(option=>{option.selected=false;});setGenreSelectionOrder=[];renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();setRequiredIds.clear();setExcludedIds.clear();setLockedIds.clear();setProposals=[];activeSetProposal='';renderSetRules();renderSetProposals();$('#set-builder-message').textContent='Set brief reset.';};
+    $('#reset-set-brief').onclick=()=>{$('#set-builder-form').reset();$('#set-intention-interpretation').hidden=true;renderFallbackPolicy();[...$('#set-genre').options].forEach(option=>{option.selected=option.value==='all';});populateSetDetailedGenres();[...$('#set-excluded-genres').options].forEach(option=>{option.selected=false;});setGenreSelectionOrder=[];renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();setRequiredIds.clear();setExcludedIds.clear();setLockedIds.clear();setProposals=[];activeSetProposal='';renderSetRules();renderSetProposals();$('#set-builder-message').textContent='Set brief reset.';};
     $('#set-undo').onclick=undoSetEdit;$('#set-redo').onclick=redoSetEdit;$('#set-compact').onclick=()=>{setCompactMode=!setCompactMode;localStorage.setItem('set-builder-compact',String(setCompactMode));renderSetPlan();};$('#add-set-track').onclick=()=>addSetTrack();$('#save-set').onclick=saveCurrentSet;$('#export-set-csv').onclick=exportSetCsv;$('#export-set-m3u').onclick=exportSetM3u;
     document.addEventListener('keydown',event=>{if(!$('#set-builder-view').classList.contains('active')||!(event.metaKey||event.ctrlKey)||event.key.toLowerCase()!=='z')return;event.preventDefault();event.shiftKey?redoSetEdit():undoSetEdit();});
     $('#load-set').onclick=()=>loadSavedSet(savedSets().find(set=>set.id===$('#saved-set-select').value));

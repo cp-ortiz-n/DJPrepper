@@ -34,9 +34,11 @@ def base_title(title: str) -> str:
     detected_kind = version_kind(title)
     value = re.sub(
         r"\([^)]*\)|\[[^]]*\]",
-        lambda match: " " if version_kind(match.group(0)) != "ORG"
-        or re.search(r"\b(?:version|edit)\b", match.group(0), re.I)
-        else match.group(0),
+        lambda match: (
+            " "
+            if version_kind(match.group(0)) != "ORG" or re.search(r"\b(?:version|edit)\b", match.group(0), re.I)
+            else match.group(0)
+        ),
         title,
     )
     for _, pattern in _VERSION_PATTERNS:
@@ -56,11 +58,21 @@ def genre_family_code(genre_category: str) -> str:
     if value.startswith("afro") or value.startswith("amapiano"):
         return "AFR"
     rules = (
-        ("drum bass", "DNB"), ("hip hop", "HIP"), ("r b", "RNB"),
-        ("disco", "DSC"), ("house", "HOU"), ("funk", "DSC"), ("latin", "LAT"),
-        ("reggae", "REG"), ("dancehall", "REG"), ("ambient", "AMB"),
-        ("chill", "AMB"), ("techno", "TEC"),
-        ("electronic", "ELC"), ("pop", "POP"), ("rock", "RCK"),
+        ("drum bass", "DNB"),
+        ("hip hop", "HIP"),
+        ("r b", "RNB"),
+        ("disco", "DSC"),
+        ("house", "HOU"),
+        ("funk", "DSC"),
+        ("latin", "LAT"),
+        ("reggae", "REG"),
+        ("dancehall", "REG"),
+        ("ambient", "AMB"),
+        ("chill", "AMB"),
+        ("techno", "TEC"),
+        ("electronic", "ELC"),
+        ("pop", "POP"),
+        ("rock", "RCK"),
         ("alternative", "RCK"),
     )
     return next((code for phrase, code in rules if phrase in value), "OTH")

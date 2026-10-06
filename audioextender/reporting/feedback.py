@@ -50,10 +50,12 @@ def _side(result: Any, position: Position) -> list[str]:
     if not candidates:
         lines.extend(["No candidates were generated for this side.", ""])
     else:
-        lines.extend([
-            "| Rank | Source | Bars | Phrase | Loop | Transition | Checks |",
-            "|---:|---|---:|---:|---:|---:|---|",
-        ])
+        lines.extend(
+            [
+                "| Rank | Source | Bars | Phrase | Loop | Transition | Checks |",
+                "|---:|---|---:|---:|---:|---:|---|",
+            ]
+        )
         for rank, candidate in enumerate(candidates, start=1):
             assessment = assess_candidate(candidate, position, result.preset_name)
             checks = "; ".join(assessment.warnings) or "pass"
@@ -65,16 +67,18 @@ def _side(result: Any, position: Position) -> list[str]:
             )
         lines.append("")
     chosen = "None" if selected is None else str(selected)
-    lines.extend([
-        f"- Generated selection: **{chosen}**",
-        f"- Review reason captured by CLI: {reason or '—'}",
-        f"- Review notes captured by CLI: {notes or '—'}",
-        "- My final selection: ",
-        "- Accepted? [ ] Yes  [ ] No",
-        "- Problem tags: ",
-        "- Listening notes: ",
-        "",
-    ])
+    lines.extend(
+        [
+            f"- Generated selection: **{chosen}**",
+            f"- Review reason captured by CLI: {reason or '—'}",
+            f"- Review notes captured by CLI: {notes or '—'}",
+            "- My final selection: ",
+            "- Accepted? [ ] Yes  [ ] No",
+            "- Problem tags: ",
+            "- Listening notes: ",
+            "",
+        ]
+    )
     return lines
 
 
@@ -91,33 +95,37 @@ def _append_candidate_feedback_locked(output_directory: Path, results: Iterable[
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
     blocks: list[str] = []
     if not existing:
-        blocks.extend([
-            "# Candidate Feedback",
-            "",
-            "This is an append-only listening log. Edit the `My final selection`, "
-            "checkboxes, tags, and notes directly. DJ Library Studio will not rewrite "
-            "existing sections. A changed candidate set creates a new generation.",
-            "",
-            "Suggested tags: `good`, `chopped`, `wrong phrase`, `vocals`, "
-            "`buildup`, `bass reset`, `too repetitive`, `other`.",
-            "",
-        ])
+        blocks.extend(
+            [
+                "# Candidate Feedback",
+                "",
+                "This is an append-only listening log. Edit the `My final selection`, "
+                "checkboxes, tags, and notes directly. DJ Library Studio will not rewrite "
+                "existing sections. A changed candidate set creates a new generation.",
+                "",
+                "Suggested tags: `good`, `chopped`, `wrong phrase`, `vocals`, "
+                "`buildup`, `bass reset`, `too repetitive`, `other`.",
+                "",
+            ]
+        )
     for result in results:
         token = _fingerprint(result)
         marker = f"<!-- generation:{token} -->"
         if marker in existing:
             continue
-        blocks.extend([
-            marker,
-            f"## {result.source_name} — {datetime.now().astimezone().isoformat(timespec='minutes')}",
-            "",
-            f"Style/preset: {result.detected_style or '—'} / {result.preset_name or 'default'}",
-            "",
-            *_side(result, "intro"),
-            *_side(result, "outro"),
-            "---",
-            "",
-        ])
+        blocks.extend(
+            [
+                marker,
+                f"## {result.source_name} — {datetime.now().astimezone().isoformat(timespec='minutes')}",
+                "",
+                f"Style/preset: {result.detected_style or '—'} / {result.preset_name or 'default'}",
+                "",
+                *_side(result, "intro"),
+                *_side(result, "outro"),
+                "---",
+                "",
+            ]
+        )
     if blocks:
         with path.open("a", encoding="utf-8") as handle:
             if existing and not existing.endswith("\n"):

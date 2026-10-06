@@ -98,9 +98,7 @@ class JobQueueRepositoryMixin(RepositoryMixinBase):
 
     def list_jobs(self, limit: int = 100) -> list[dict[str, Any]]:
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                "SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,)
-            ).fetchall()
+            rows = connection.execute("SELECT * FROM jobs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [dict(row) for row in rows]
 
     def list_storage_job_references(self) -> list[dict[str, Any]]:
@@ -245,9 +243,7 @@ class JobQueueRepositoryMixin(RepositoryMixinBase):
 
     def fail_stalled_jobs(self, minutes: int = 30) -> int:
         """Close processing records that have stopped reporting progress."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(
-            timespec="seconds"
-        )
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
         with self._lock, closing(self._connect()) as connection, connection:
             cursor = connection.execute(
                 """UPDATE jobs SET status='failed', stage='Processing stalled',

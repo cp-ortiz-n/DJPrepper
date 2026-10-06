@@ -28,6 +28,7 @@ Run the app with `python3 web_app.py`.
 | `repositories` | SQLite persistence grouped by business capability |
 | `infrastructure` | Caching, progress adapters, persistent background-task state |
 | `reporting` | Processing and listening-feedback reports |
+| `set_builder` | Natural-language intention planning and local/cloud provider fallback |
 | `web` | FastAPI request/response models, routers, and dependency adapters |
 
 The normal dependency direction is:
@@ -40,6 +41,7 @@ processing · imports · library
 analysis · audio · core
 
 web/services → repositories → SQLite
+Set Builder UI → set-builder routes → intention planner → optional model provider
 ```
 
 Lower layers must not import `audioextender.web.application`. Routers receive
@@ -56,13 +58,54 @@ globals.
 | `web/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs |
 | `web/metadata_batch_routes.py` | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches |
 | `web/reporting_routes.py` | Track feedback and manual key verification |
-| `web/set_builder_routes.py` | Set Builder catalog, preflight, playlist exports |
+| `web/set_builder_routes.py` | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
 | `imports/routes.py` | Authorized source, local-file, and playlist import delivery |
 
 Router factories accept explicit dependencies. Wire new dependencies in
 `application.py`; never make a router import `application.py`. Repository
 providers are normally lambdas so tests can replace the active repository.
+
+## Set Builder intention planning
+
+Set Builder uses an optional language-model boundary to understand a DJ's
+natural-language brief. The model does not build the set and does not inspect
+audio. It returns a small structured plan used by the existing deterministic
+selection engine.
+
+```text
+Natural-language brief
+        ↓
+POST /api/set-builder/interpret-intention
+        ↓
+IntentionPlanner
+   ├── Ollama qwen3:4b (default local provider)
+   ├── OpenAI (optional configured fallback)
+   └── browser offline rules (final fallback)
+        ↓
+JSON schema validation + catalog-vocabulary sanitization
+        ↓
+Editable requirements, preferences, genre drift, vibe, energy curve,
+opening traits, ending traits, and explanation
+        ↓
+Local deterministic filtering, scoring, ordering, and rendering
+```
+
+The route surface is:
+
+- `GET /api/set-builder/intention-provider` for provider and model status.
+- `POST /api/set-builder/interpret-intention` for structured interpretation.
+
+Provider selection defaults to `auto`: Ollama first, OpenAI only when
+configured, then deterministic offline rules in the browser. Configuration is
+controlled by `AUDIOEXTENDER_LLM_PROVIDER`, `OLLAMA_HOST`,
+`OLLAMA_SET_BUILDER_MODEL`, `OPENAI_API_KEY`, and
+`OPENAI_SET_BUILDER_MODEL`.
+
+Only the text brief and a bounded catalog vocabulary list cross this boundary;
+audio never does. OpenAI requests use `store: false`. Returned genres are
+canonicalized against catalog vocabulary, schema labels and placeholders are
+removed, and malformed or unavailable provider responses fall through safely.
 
 ## Browser request state
 
@@ -179,6 +222,7 @@ module. `tests/frontend_modules.test.js` enforces this boundary and a size ceili
 | DJ Library filtering | `web/library_routes.py`, `repositories/library_analysis.py` |
 | Integrity scan/repair | `web/library_maintenance_routes.py` |
 | Browser cards/filters | Corresponding `web/*.js` module plus `web/styles.css` |
+| Set Builder language interpretation/provider policy | `set_builder/intention_planner.py`, `web/set_builder_routes.py` |
 | Persistent setting | `web/settings_routes.py`, `repositories/system_state.py`; `settings.py` only for shipped defaults |
 
 ## Safe manual-change workflow
@@ -203,6 +247,11 @@ module. `tests/frontend_modules.test.js` enforces this boundary and a size ceili
 
 `tests/test_package_structure.py` guards package/composition boundaries and
 module size. `tests/frontend_modules.test.js` guards shared frontend behavior.
+`tests/test_intention_planner.py` covers provider ordering, schema enforcement,
+fallback, hallucination cleanup, and catalog normalization without a live
+model. `tests/test_local_intention_acceptance.py` is an opt-in Ollama suite for
+chill Latin kickbacks, Latin Techno/House with optional Schranz, Afro House
+lounge warmups, and peak-time Techno journeys.
 
 ## Project hygiene
 

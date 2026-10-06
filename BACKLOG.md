@@ -8,6 +8,15 @@
   progress reporting, retry/error state, existing API contracts, and background
   batch behavior. Completed with a shared cancellable/retryable batch lifecycle,
   focused metadata routes, atomic mutation service, and relocation state parity.
+- [ ] **Harden intent-driven set generation against realistic catalogs.** Use
+  the new structured Set Builder interpretation to improve scarcity expansion,
+  prevent irrelevant genre leakage, keep generation responsive on large
+  catalogs, and make the final proposal summary distinguish direct matches,
+  optional genres, bridge tracks, and relaxed preferences.
+- [ ] **Complete musical-identity inference and review.** Add richer
+  audio-derived evidence, improve the unknown-term review loop, and validate
+  inferred descriptors at catalog scale while always preserving tracks marked
+  as manually tagged.
 
 ## Implementation audit — September 21, 2026
 
@@ -48,6 +57,11 @@ Status definitions:
   duration, BPM, energy curve, key strictness, vocal profile, timing, and edit
   preferences. Plans are explainable, manually reorderable, saveable, and
   exportable as CSV or M3U8.
+- [x] **Local-first Set Builder intention interpreter.** Natural-language DJ
+  briefs are converted into a schema-constrained, editable plan through local
+  Ollama by default, optional OpenAI fallback when explicitly configured, and
+  deterministic offline rules when no model is available. The model interprets
+  language only; catalog scoring, ordering, and audio remain local.
 - [x] **Required, excluded, locked, and alternate set tracks.** Set Builder
   preserves locked positions, supports required/excluded rules, and can replace
   a track with an unused alternative.
@@ -133,6 +147,169 @@ Status definitions:
   restart/retry end-to-end coverage and performance fixtures remain part of the
   milestone gate. Integrity-checked backup/restore, retention, restore preview,
   pre-restore snapshots, and recovery documentation are complete.
+
+## Intent-driven Set Builder and musical identity
+
+Status: **In progress — local-first language interpretation is complete.** Set
+Builder accepts a natural-language intention and translates it into editable
+hard requirements, weighted preferences, limits, requested and optional genres,
+genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
+policy. It uses local Ollama (`qwen3:4b`) by default, can use OpenAI only when it
+is explicitly configured, and falls back to deterministic browser rules. Model
+output is schema-constrained, cleaned of placeholder/schema labels, and
+canonicalized against catalog vocabulary. The original brief remains intact.
+
+The generator uses the structured plan during local candidate retrieval and
+scoring, never relaxes hard identity requirements, discloses direct versus
+expanded matches, and saves the interpreted brief with the set. Track-level
+identity descriptors persist with category, provenance, confidence, and update
+time; participate in scoring; are searchable; and can be edited individually
+or in bulk from Music Files and DJ Library. Browser storage remains only as a
+compatibility fallback for uncataloged tracks. Remaining work is richer
+audio-derived identity inference, catalog-scale review, stronger scarcity
+handling, and proposal-quality/performance hardening.
+
+### Problem
+
+A request such as “Latin Techno” is often simultaneously too narrow and too
+ambiguous. A track may be cataloged as Techno, Latin House, Guaracha, Cumbia,
+Reggaeton, or Other while still being appropriate for a Latin electronic set
+because of its percussion, Spanish vocals, recognizable samples, production
+style, cultural association, energy, or ability to bridge into Techno. Forcing
+all of those ideas into the folder genre taxonomy would make metadata less
+accurate and still fail to express briefs such as “Ecuadorian party with a
+Techno progression.”
+
+### Product direction
+
+Add a natural-language **Set intention** field alongside structured controls.
+For example:
+
+> Build a driving Latin electronic set with a Techno foundation. Favor Spanish
+> vocals, recognizable Latin samples, dembow or Latin percussion, and tracks
+> that would connect with an Ecuadorian party crowd. Allow Reggaeton, Latin
+> House, Guaracha, Cumbia edits, and tribal tracks when they can bridge
+> naturally into Techno. Avoid long stretches of generic instrumental Techno.
+
+Translate the brief into a visible, editable weighted interpretation rather
+than treating it as an opaque prompt:
+
+- Techno foundation: high priority.
+- Latin rhythmic or vocal identity: required for most tracks.
+- Ecuadorian-party crate or cultural-context tag: strongly preferred.
+- Genre drift: moderate.
+- Recognizable samples or familiar material: medium priority.
+- Peak-time energy: high.
+- Generic Techno without Latin characteristics: limited.
+
+The DJ must be able to correct the interpretation before generation and see
+which preferences are hard requirements, weighted preferences, or permitted
+fallbacks.
+
+### Multidimensional track description
+
+Keep physical folder genre and existing parent/detailed genre metadata as the
+catalog authority, but add independent, many-to-many descriptors for Set
+Builder. Do not turn cultural context or a personal crate into a fake genre.
+
+- **Core genre:** Techno, House, Reggaeton, Cumbia, and similar catalog genres.
+- **Regional or cultural influence:** Ecuadorian, Colombian, Caribbean,
+  Brazilian, Andean, and user-defined values.
+- **Rhythmic influence:** dembow, Latin percussion, tribal, salsa, cumbia,
+  syncopated, four-on-the-floor.
+- **Sound character:** dark, industrial, melodic, hypnotic, percussive,
+  euphoric, raw.
+- **Vocal identity:** Spanish vocals, vocal chops, chant-heavy, instrumental,
+  singalong, language where known.
+- **Energy and DJ role:** warm-up, driving, tension builder, peak-time, reset,
+  bridge, anthem, closing.
+- **Context or personal crate:** Ecuadorian Party, Latin Warehouse, Perreo to
+  Techno, Spanish Vocal Techno, Familiar Latin Samples, and other user-created
+  collections.
+- **Familiarity:** underground, recognizable sample, classic, crossover, or
+  crowd singalong.
+
+Descriptors need provenance and confidence: manually assigned, imported,
+inferred from audio/metadata, or inherited from a user crate. Manual values
+must survive rescans, reanalysis, relocation, and metadata synchronization.
+
+### Scarcity-aware expansion
+
+When direct matches cannot satisfy duration, track count, or transition
+quality, expand the candidate pool through an explicit ordered ladder:
+
+1. Literal Latin Techno matches.
+2. Techno with Spanish vocals, Latin samples, or Latin percussion.
+3. Latin House and Guaracha with Techno-compatible energy and structure.
+4. Reggaeton or Cumbia edits that bridge through BPM, key, rhythm, or
+   production style.
+5. Neutral bridge tracks that preserve the requested progression.
+6. Pure Techno only where needed to maintain flow and runtime.
+
+The expansion policy must be configurable per brief. Hard exclusions and
+must-play tracks always take precedence; the system must never silently relax a
+hard rule.
+
+### Explainability and disclosure
+
+Every generated proposal must report both the requested intention and what was
+actually available. Example:
+
+> Only six direct Latin Techno matches were available. Four Latin House edits,
+> three Spanish-vocal Techno tracks, and two neutral bridge tracks were added.
+
+For every fallback track, explain the relevant musical evidence, such as
+“Spanish vocal and Latin percussion over a Techno-compatible 128 BPM grid” or
+“Cumbia edit used as a bridge between Latin House and driving Techno.” Show
+which preference was relaxed, why it was necessary, and whether an alternative
+exists. Proposal health must separate intention match from transition quality
+and analysis confidence.
+
+### Suggested implementation boundary
+
+- Store genre taxonomy separately from freeform descriptors, cultural/context
+  tags, and crate membership.
+- Introduce a normalized Set Builder brief model containing requirements,
+  weighted preferences, exclusions, and an ordered fallback policy.
+- Keep brief interpretation, candidate retrieval, candidate scoring, transition
+  scoring, and proposal rendering as separate services.
+- Keep natural-language interpretation behind the current structured planner:
+  local Ollama first, explicitly configured OpenAI second, and deterministic
+  browser rules last. Never allow provider output to bypass schema validation,
+  vocabulary canonicalization, or the editable interpretation screen.
+- Reuse existing genre weights, detailed genres, exclusions, must-play tracks,
+  energy curves, vocal profiles, roles, and proposal strategies instead of
+  creating a parallel generator.
+- Save the original description and interpreted weights with every saved set so
+  the result can be reproduced after restart.
+
+### Acceptance criteria
+
+- A DJ can request a culturally or contextually specific set without inventing
+  a catalog genre.
+- The interpreted brief is visible and editable before generation.
+- Direct matches are preferred and fallback expansion follows the displayed
+  order.
+- Hard requirements are never relaxed silently.
+- Every non-direct match explains why it belongs and which gap it fills.
+- The proposal summarizes direct matches, expanded matches, bridge tracks, and
+  relaxed preferences.
+- Manual descriptors and saved briefs survive restart, reanalysis, genre moves,
+  and library relocation.
+- Existing genre folders and track IDs remain stable when contextual tags or
+  crate membership change.
+
+### Implemented intention-planner verification
+
+- Unit coverage verifies provider ordering, strict structured output,
+  Ollama-to-OpenAI fallback, hallucination cleanup, and catalog normalization.
+- An opt-in live Ollama acceptance suite covers a chill Reggaeton/Dembow
+  kickback with melodic opening, Latin Techno/House with optional Schranz and
+  energy waves, an Afro House lounge warmup, and a peak-time Techno journey.
+- The provider-status endpoint reports the active local/cloud model so the UI
+  can truthfully label Local AI, Cloud AI, or offline-rule results.
+- No audio crosses the model boundary; only the text brief and bounded catalog
+  vocabulary are supplied for interpretation.
 
 ## Feedback-informed candidate ranking
 

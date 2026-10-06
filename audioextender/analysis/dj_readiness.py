@@ -42,18 +42,18 @@ def detect_dj_readiness(analysis: TrackAnalysis) -> DJReadiness:
             continue
         loudness = float(np.mean(analysis.rms[mask]))
         percussion = float(np.mean(analysis.percussion_rms[mask]))
-        ratio = float(np.mean(
-            analysis.percussion_rms[mask] / (analysis.rms[mask] + 1e-5)
-        ))
+        ratio = float(np.mean(analysis.percussion_rms[mask] / (analysis.rms[mask] + 1e-5)))
         grid = float(analysis.bar_grid_confidence[index])
-        quality = float(np.clip(
-            0.35 * grid
-            + 0.30 * min(1.0, percussion / DJ_READY_MINIMUM_PERCUSSION)
-            + 0.20 * min(1.0, ratio / DJ_READY_MINIMUM_PERCUSSIVE_RATIO)
-            + 0.15 * min(1.0, loudness / DJ_READY_MINIMUM_LOUDNESS),
-            0.0,
-            1.0,
-        ))
+        quality = float(
+            np.clip(
+                0.35 * grid
+                + 0.30 * min(1.0, percussion / DJ_READY_MINIMUM_PERCUSSION)
+                + 0.20 * min(1.0, ratio / DJ_READY_MINIMUM_PERCUSSIVE_RATIO)
+                + 0.15 * min(1.0, loudness / DJ_READY_MINIMUM_LOUDNESS),
+                0.0,
+                1.0,
+            )
+        )
         qualities.append(quality)
         safe.append(
             grid >= DJ_READY_GRID_THRESHOLD
@@ -71,9 +71,7 @@ def detect_dj_readiness(analysis: TrackAnalysis) -> DJReadiness:
             if not safe[index] or role not in accepted_roles:
                 break
             selected.append(qualities[index])
-        return SideReadiness(
-            len(selected), float(np.mean(selected)) if selected else 0.0
-        )
+        return SideReadiness(len(selected), float(np.mean(selected)) if selected else 0.0)
 
     return DJReadiness(
         consecutive(range(min(bar_count, 16)), {"intro"}),

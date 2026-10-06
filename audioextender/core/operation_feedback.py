@@ -21,10 +21,7 @@ def operation_receipt(
 ) -> dict[str, Any]:
     """Return one predictable account of what a mutation actually accomplished."""
 
-    failure_items = [
-        dict(item) if isinstance(item, Mapping) else {"error": str(item)}
-        for item in failures
-    ]
+    failure_items = [dict(item) if isinstance(item, Mapping) else {"error": str(item)} for item in failures]
     targets = list(dict.fromkeys(str(path) for path in written_to if str(path).strip()))
     resolved_status = status or ("partial" if failure_items else "complete")
     return {
@@ -37,4 +34,3 @@ def operation_receipt(
         "survives_restart": bool(survives_restart),
         "durability": durability,
     }
-

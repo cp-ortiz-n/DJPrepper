@@ -24,18 +24,24 @@ class ConfigFactory:
         preset = get_preset(args.preset)
         config = EditConfig(
             intro_bars=(
-                args.intro_bars if args.intro_bars is not None
-                else preset.intro_bars if preset is not None
+                args.intro_bars
+                if args.intro_bars is not None
+                else preset.intro_bars
+                if preset is not None
                 else DEFAULT_INTRO_BARS
             ),
             outro_bars=(
-                args.outro_bars if args.outro_bars is not None
-                else preset.outro_bars if preset is not None
+                args.outro_bars
+                if args.outro_bars is not None
+                else preset.outro_bars
+                if preset is not None
                 else DEFAULT_OUTRO_BARS
             ),
             use_stems=(
-                args.use_stems if args.use_stems is not None
-                else preset.use_stems if preset is not None
+                args.use_stems
+                if args.use_stems is not None
+                else preset.use_stems
+                if preset is not None
                 else DEFAULT_USE_STEMS
             ),
             pcm_bits=args.bit_depth,
@@ -46,16 +52,12 @@ class ConfigFactory:
             outro_bars_locked=args.outro_bars is not None,
             stems_locked=args.use_stems is not None,
             cache_directory=str(args.cache_dir.expanduser().resolve()),
-            cache_enabled=(DEFAULT_CACHE_ENABLED and not args.no_cache)
-            or args.refresh_cache,
+            cache_enabled=(DEFAULT_CACHE_ENABLED and not args.no_cache) or args.refresh_cache,
             refresh_cache=args.refresh_cache,
             create_previews=args.previews or args.preview_only or args.review,
             preview_only=args.preview_only,
             preview_seconds=args.preview_seconds,
-            candidate_count=(
-                INTERACTIVE_CANDIDATE_POOL
-                if args.choose_candidates else DEFAULT_CANDIDATE_COUNT
-            ),
+            candidate_count=(INTERACTIVE_CANDIDATE_POOL if args.choose_candidates else DEFAULT_CANDIDATE_COUNT),
             intro_candidate=args.intro_candidate,
             outro_candidate=args.outro_candidate,
             choose_candidates=args.choose_candidates or args.review,
@@ -72,6 +74,4 @@ class ConfigFactory:
         for option in ("intro_before", "outro_after", "outro_before"):
             value = getattr(args, option)
             if value is not None and value <= 0:
-                raise ValueError(
-                    f"--{option.replace('_', '-')} must be greater than zero"
-                )
+                raise ValueError(f"--{option.replace('_', '-')} must be greater than zero")

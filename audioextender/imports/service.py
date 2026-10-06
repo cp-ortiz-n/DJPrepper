@@ -115,9 +115,7 @@ class ImportService:
         """Resolve the configured root without ever creating a missing mount path."""
         root = self._library_root()
         if not root.is_dir():
-            raise LibraryOfflineError(
-                "Music library is offline. Connect the configured drive before importing audio."
-            )
+            raise LibraryOfflineError("Music library is offline. Connect the configured drive before importing audio.")
         return root
 
     def start(self, request: AuthorizedImport) -> str:
@@ -199,9 +197,7 @@ class ImportService:
                 try:
                     import yt_dlp
                 except ImportError as error:
-                    raise RuntimeError(
-                        "yt-dlp is not installed. Run pip install -r requirements.txt."
-                    ) from error
+                    raise RuntimeError("yt-dlp is not installed. Run pip install -r requirements.txt.") from error
             with tempfile.TemporaryDirectory(prefix="audioextender-import-") as temporary:
                 temporary_path = Path(temporary)
                 template = str(temporary_path / "%(title).180B.%(ext)s")
@@ -242,12 +238,17 @@ class ImportService:
                             raise RuntimeError("Import canceled")
                     stdout, stderr = process.communicate()
                     if process.returncode:
-                        raise subprocess.CalledProcessError(
-                            process.returncode, process.args, stdout, stderr
-                        )
+                        raise subprocess.CalledProcessError(process.returncode, process.args, stdout, stderr)
                     extensions = {
-                        ".mp3", ".m4a", ".aac", ".opus", ".ogg", ".flac",
-                        ".wav", ".aif", ".aiff",
+                        ".mp3",
+                        ".m4a",
+                        ".aac",
+                        ".opus",
+                        ".ogg",
+                        ".flac",
+                        ".wav",
+                        ".aif",
+                        ".aiff",
                     }
                     downloaded_audio = next(
                         (
@@ -259,15 +260,20 @@ class ImportService:
                     )
                     if downloaded_audio is None:
                         detail = (stderr or stdout or "").strip()
-                        raise RuntimeError(
-                            detail[-1000:] or "scdl did not produce an audio file"
-                        )
+                        raise RuntimeError(detail[-1000:] or "scdl did not produce an audio file")
                     source_metadata = self._probe_audio(downloaded_audio)
                     converted = temporary_path / "soundcloud-import.wav"
                     subprocess.run(
                         [
-                            "ffmpeg", "-y", "-v", "error", "-i",
-                            str(downloaded_audio), "-vn", "-c:a", "pcm_s24le",
+                            "ffmpeg",
+                            "-y",
+                            "-v",
+                            "error",
+                            "-i",
+                            str(downloaded_audio),
+                            "-vn",
+                            "-c:a",
+                            "pcm_s24le",
                             str(converted),
                         ],
                         check=True,
@@ -295,9 +301,7 @@ class ImportService:
                         "noplaylist": True,
                         "restrictfilenames": True,
                         "progress_hooks": [progress],
-                        "postprocessors": [
-                            {"key": "FFmpegExtractAudio", "preferredcodec": "wav"}
-                        ],
+                        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
                         "quiet": True,
                         "no_warnings": True,
                     }
@@ -311,21 +315,16 @@ class ImportService:
                 title = str(request.title or info.get("title") or wavs[0].stem).strip()
                 title = title or "Imported Audio"
                 safe_name = (
-                    "".join(character for character in title if character not in '<>:"/\\|?*')
-                    .strip()[:180]
+                    "".join(character for character in title if character not in '<>:"/\\|?*').strip()[:180]
                     or "Imported Audio"
                 )
                 raw_source_id = str(info.get("id") or "").strip()
-                catalog_source_id = (
-                    raw_source_id if provider == "youtube" else f"{provider}:{raw_source_id}"
-                )
+                catalog_source_id = raw_source_id if provider == "youtube" else f"{provider}:{raw_source_id}"
                 existing_download = self._duplicate_lookup(catalog_source_id)
                 # Revalidate immediately before writing. Never mkdir the configured
                 # root, because doing so can silently recreate a missing mountpoint.
                 if not library_root.is_dir() or self.require_library_online() != library_root:
-                    raise LibraryOfflineError(
-                        "Music library disconnected before the import could be saved."
-                    )
+                    raise LibraryOfflineError("Music library disconnected before the import could be saved.")
                 destination_dir = library_root / "Other"
                 destination_dir.mkdir(parents=True, exist_ok=True)
                 if existing_download:
@@ -337,9 +336,7 @@ class ImportService:
                         destination = destination_dir / f"{safe_name} ({counter}).wav"
                         counter += 1
                     shutil.move(str(wavs[0]), destination)
-            artist = str(
-                request.artist or info.get("artist") or info.get("uploader") or ""
-            ).strip()
+            artist = str(request.artist or info.get("artist") or info.get("uploader") or "").strip()
             artwork_url = str(request.artwork_url or info.get("thumbnail") or "")
             artwork_path = self._cache_artwork(artwork_url, destination)
             self._repository.upsert_downloaded_track(
@@ -352,9 +349,7 @@ class ImportService:
                 artwork_url=artwork_url,
                 artwork_path=artwork_path,
                 duration_seconds=float(info.get("duration") or 0) or None,
-                playlist_name=(
-                    "SoundCloud Imports" if provider == "soundcloud" else "Imported Singles"
-                ),
+                playlist_name=("SoundCloud Imports" if provider == "soundcloud" else "Imported Singles"),
             )
             if not request.process_with_extender:
                 self._update(
