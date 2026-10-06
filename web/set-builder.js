@@ -56,7 +56,7 @@ export function parseIdentityTerms(value) {
 const SET_GENRE_INTENT_PATTERNS = [
   [/latin techno/, 'latin techno'], [/latin house/, 'latin house'], [/schranz/, 'schranz'],
   [/reggaeton|perreo/, 'reggaeton'], [/dembow/, 'dembow'], [/bachata/, 'bachata'],
-  [/cumbia/, 'cumbia'], [/salsa/, 'salsa'], [/guaracha/, 'guaracha'],
+  [/cumbia/, 'cumbia'], [/merengue/, 'merengue'], [/salsa/, 'salsa'], [/guaracha/, 'guaracha'],
   [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'], [/hip[- ]?hop/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
 ];
 
@@ -74,7 +74,7 @@ export function trackMatchesIntendedGenre(track, term) {
 function normalizedIntentPhrase(value){return ` ${String(value||'').toLowerCase().replaceAll('&',' and ').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ')} `;}
 
 export function interpretSetIntention(value, catalogVocabulary = []) {
-  const text=String(value||'').trim(),lower=text.toLowerCase(),preferred=[],required=[],avoided=[],requestedGenres=[];
+  const text=String(value||'').trim(),lower=text.toLowerCase(),preferred=[],required=[],avoided=[],requestedGenres=[],genreSequence=[];
   const rules=[
     [/ecuador|ecuadorian/, 'ecuadorian party'], [/colombia|colombian/, 'colombian'], [/caribbean/, 'caribbean'], [/andean/, 'andean'],
     [/spanish[- ]?(?:language )?vocal|vocals? in spanish|español/, 'spanish vocals'], [/dembow/, 'dembow'], [/latin percussion|latin rhythm/, 'latin percussion'],
@@ -85,12 +85,12 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
     [/dark/, 'dark'], [/industrial/, 'industrial'], [/melodic/, 'melodic'], [/hypnotic/, 'hypnotic'], [/euphoric/, 'euphoric'],
   ];
   rules.forEach(([pattern,term])=>{if(pattern.test(lower))preferred.push(term);});
-  SET_GENRE_INTENT_PATTERNS.forEach(([pattern,term])=>{if(pattern.test(lower))requestedGenres.push(term);});
+  SET_GENRE_INTENT_PATTERNS.forEach(([pattern,term])=>{const match=lower.match(pattern);if(match){requestedGenres.push(term);genreSequence.push({term,index:match.index??Number.MAX_SAFE_INTEGER});}});
   const normalizedText=normalizedIntentPhrase(text),genericTerms=new Set(['all','any','general','music','other','unknown','unclassified']);
   for(const rawTerm of catalogVocabulary){
     const term=String(rawTerm||'').trim().toLowerCase(),normalized=normalizedIntentPhrase(term).trim();
     if(normalized.length<3||genericTerms.has(normalized))continue;
-    if(normalizedText.includes(` ${normalized} `)){preferred.push(term);if(/techno|house|schranz|reggaeton|dembow|bachata|cumbia|salsa|guaracha|hip hop|r&b|\brap\b/.test(normalized))requestedGenres.push(term);}
+    if(normalizedText.includes(` ${normalized} `)){preferred.push(term);if(/techno|house|schranz|reggaeton|dembow|bachata|cumbia|merengue|salsa|guaracha|hip hop|r&b|\brap\b/.test(normalized)){requestedGenres.push(term);const index=normalizedText.indexOf(` ${normalized} `);genreSequence.push({term,index:index<0?Number.MAX_SAFE_INTEGER:index});}}
   }
   if(/(?:must|required|require)[^.]*spanish/.test(lower))required.push('spanish vocals');
   if(/(?:must|required|require)[^.]*(?:latin percussion|dembow|latin rhythm)/.test(lower))required.push('latin rhythmic identity');
@@ -100,7 +100,13 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
   const vibe=chill&&dance?'balanced':/warm[- ]?up/.test(lower)?'warm-up':dance?'dance-party':chill?'warm-up':null;
   const curve=/varying waves|energy waves|wave(?:s|d)? of energy/.test(lower)?'waves':null;
   const opening=/(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)?'melodic':null;
-  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),requestedGenres:parseIdentityTerms(requestedGenres.join(',')),drift,vibe,curve,opening,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
+  const orderedGenres=[...new Map(genreSequence.sort((a,b)=>a.index-b.index).map(item=>[item.term,item.term])).values()];
+  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),requestedGenres:parseIdentityTerms(requestedGenres.join(',')),genreSequence:orderedGenres,drift,vibe,curve,opening,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
+}
+
+export function intendedGenreForPosition(identity,index,count){
+  const sequence=[...new Set(identity?.genreSequence||[])].filter(Boolean);if(!sequence.length)return '';
+  const progress=(Math.max(0,index)+.5)/Math.max(1,count);return sequence[Math.min(sequence.length-1,Math.floor(progress*sequence.length))];
 }
 
 export function inferredTrackIdentity(track, manual=[]) {
@@ -157,7 +163,7 @@ export function createSetBuilderFeature({
   function trackIdentity(track){return inferredTrackIdentity(track,track._manualIdentity||manualTrackIdentity(track));}
   function identityTermMatches(track,term){const normalized=String(term||'').toLowerCase(),tags=trackIdentity(track);if(normalized==='latin rhythmic identity')return tags.some(tag=>['dembow','latin percussion','latin identity'].includes(tag));if(normalized==='generic instrumental techno')return tags.includes('techno foundation')&&!tags.includes('spanish vocals')&&!tags.includes('latin percussion')&&!tags.includes('recognizable material');if(normalized==='dance-friendly')return songEnergy(track)>=.5;if(normalized==='chill kickback')return songEnergy(track)<=.68||tags.includes('chill kickback');return tags.some(tag=>tag===normalized||tag.includes(normalized)||normalized.includes(tag));}
   function intentionEvaluation(track,brief){const identity=brief.identity||{required:[],preferred:[],avoided:[]};const required=(identity.required||[]).filter(term=>identityTermMatches(track,term)),preferred=(identity.preferred||[]).filter(term=>identityTermMatches(track,term)),avoided=(identity.avoided||[]).filter(term=>identityTermMatches(track,term));const missingRequired=(identity.required||[]).filter(term=>!required.includes(term));return {required,preferred,avoided,missingRequired,score:preferred.length*14+required.length*22-avoided.length*35-missingRequired.length*45};}
-  function currentIntention(){const text=$('#set-intention').value.trim(),panel=$('#set-intention-interpretation'),parsed=interpretSetIntention(text,intentionVocabulary());let interpreted={};try{if(panel.dataset.source===text)interpreted=JSON.parse(panel.dataset.interpretation||'{}');}catch(_){}return {text,required:parseIdentityTerms($('#set-intention-required').value),preferred:parseIdentityTerms($('#set-intention-preferred').value),avoided:parseIdentityTerms($('#set-intention-avoided').value),requestedGenres:interpreted.requestedGenres||parsed.requestedGenres||[],optionalGenres:interpreted.optionalGenres||[],opening:interpreted.opening||parsed.opening||null,ending:interpreted.ending||null,provider:interpreted.provider||'offline',drift:$('#set-intention-drift').value,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}
+  function currentIntention(){const text=$('#set-intention').value.trim(),panel=$('#set-intention-interpretation'),parsed=interpretSetIntention(text,intentionVocabulary());let interpreted={};try{if(panel.dataset.source===text)interpreted=JSON.parse(panel.dataset.interpretation||'{}');}catch(_){}return {text,required:parseIdentityTerms($('#set-intention-required').value),preferred:parseIdentityTerms($('#set-intention-preferred').value),avoided:parseIdentityTerms($('#set-intention-avoided').value),requestedGenres:interpreted.requestedGenres||parsed.requestedGenres||[],optionalGenres:interpreted.optionalGenres||[],genreSequence:interpreted.genreSequence||parsed.genreSequence||[],opening:interpreted.opening||parsed.opening||null,ending:interpreted.ending||null,provider:interpreted.provider||'offline',drift:$('#set-intention-drift').value,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}
   function renderFallbackPolicy(policy=DEFAULT_SET_FALLBACK_POLICY){$('#set-fallback-policy').innerHTML=policy.map((step,index)=>`<li><strong>${index+1}.</strong> ${escapeHtml(step)}</li>`).join('');}
   function applyIntentionInterpretation(interpreted,{announce=true}={}){const panel=$('#set-intention-interpretation');panel.hidden=false;panel.dataset.source=interpreted.text||'';panel.dataset.interpretation=JSON.stringify(interpreted);$('#set-intention-required').value=(interpreted.required||[]).join(', ');$('#set-intention-preferred').value=(interpreted.preferred||[]).join(', ');$('#set-intention-avoided').value=(interpreted.avoided||[]).join(', ');$('#set-intention-drift').value=interpreted.drift||'moderate';if(interpreted.vibe)$('#set-vibe').value=interpreted.vibe;if(interpreted.curve)$('#set-curve').value=interpreted.curve;renderFallbackPolicy(interpreted.fallbackPolicy||DEFAULT_SET_FALLBACK_POLICY);if(announce){const source=interpreted.provider==='ollama'?`Local AI · ${interpreted.model}`:interpreted.provider==='openai'?`Cloud AI · ${interpreted.model}`:'offline rules';$('#set-intention-status').textContent=`Interpreted with ${source}. Found ${(interpreted.required||[]).length} requirement${(interpreted.required||[]).length===1?'':'s'}, ${(interpreted.preferred||[]).length} preference${(interpreted.preferred||[]).length===1?'':'s'}, and ${(interpreted.avoided||[]).length} limit${(interpreted.avoided||[]).length===1?'':'s'}. Edit anything before generating.`;}}
   async function interpretIntention(text){try{const response=await fetch('/api/set-builder/interpret-intention',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:text,catalog_vocabulary:intentionVocabulary()})});if(!response.ok)throw new Error('AI provider unavailable');const result=await response.json();return {...result,text,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}catch(_){return {...interpretSetIntention(text,intentionVocabulary()),provider:'offline'};}}
@@ -205,8 +211,9 @@ export function createSetBuilderFeature({
     if(strategy==='adventurous') { const genreChange=previous&&track._genre!==previous._genre?18:0;const roleChange=previous?libraryRoles(track).filter(role=>!libraryRoles(previous).includes(role)).length*6:8;const harmonicColor=transition&&transition.components.key<31&&transition.components.key>=20?10:0;strategyFit=genreChange+roleChange+harmonicColor-(usedByOtherProposals.has(setTrackId(track))?18:0); }
     const intentionFit=intentionEvaluation(track,brief).score;
     const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const requestedGenreFit=intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?32:0;
-    const openingFit=index===0&&String(brief.identity?.opening||'').includes('melodic')&&identityTermMatches(track,'melodic')?45:0;
-    return energyFit + vibeFit + transitionScore + editFit + genreFit + strategyFit + intentionFit + requestedGenreFit + openingFit;
+    const positionalGenre=intendedGenreForPosition(brief.identity,index,count);const positionalGenreFit=positionalGenre&&trackMatchesIntendedGenre(track,positionalGenre)?68:positionalGenre?-24:0;
+    const openingSection=index<Math.max(1,Math.ceil(count*.18));const openingFit=openingSection&&String(brief.identity?.opening||'').includes('melodic')?(identityTermMatches(track,'melodic')?42:-18):0;
+    return energyFit + vibeFit + transitionScore + editFit + genreFit + strategyFit + intentionFit + requestedGenreFit + positionalGenreFit + openingFit;
   }
   function setVocalProfile(track) {
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
@@ -252,7 +259,7 @@ export function createSetBuilderFeature({
         const forced = required[requiredIndex];
         if (forced && remaining.has(setTrackId(forced))) { remaining.delete(setTrackId(forced)); nextPlan.push(forced); recordGenre(forced); return; }
         const previous = nextPlan[index - 1] || null;
-        const targetGenre=nextGenre();const available=[...remaining.values()];const targeted=targetGenre?available.filter(track=>trackMatchesSetGenre(track,targetGenre)):available;const candidatePool=targeted.length?targeted:available;
+        const targetGenre=nextGenre();const identityTarget=intendedGenreForPosition(brief.identity,index,count);const available=[...remaining.values()];const identityTargeted=identityTarget?available.filter(track=>trackMatchesIntendedGenre(track,identityTarget)):[];const targeted=targetGenre?available.filter(track=>trackMatchesSetGenre(track,targetGenre)):available;const candidatePool=identityTargeted.length?identityTargeted:targeted.length?targeted:available;
         const ranked = candidatePool.map(track=>{const id=setTrackId(track),wasSamePosition=Boolean(previousPlan[index])&&setTrackId(previousPlan[index])===id,wasInPrevious=previousPlanIds.has(id);return {track,score:setCandidateScore(track,previous,index,count,brief,strategy,generatedTrackIds)-(wasSamePosition?12:wasInPrevious?3:0)};}).sort((a,b)=>b.score-a.score);
         if (!ranked.length) { failed = true; return; }
         const competitive=ranked.filter(item=>item.score>=ranked[0].score-18).slice(0,18);
@@ -306,7 +313,7 @@ export function createSetBuilderFeature({
   function setTransitionOverlap(left,right) { const duration=Number(left?.duration_seconds||0);const tail=Number.isFinite(Number(left?.mix_out))&&Number(left.mix_out)>0&&duration>Number(left.mix_out)?duration-Number(left.mix_out):0;const lead=Number(right?.mix_in||0);const bpm=Math.max(60,Number(left?.bpm||right?.bpm||120));const bars=Math.min(Number(left?.outro?.mixable_bars||left?.dj_readiness?.outro_mixable_bars||0),Number(right?.intro?.mixable_bars||right?.dj_readiness?.intro_mixable_bars||0));const musical=bars>0?bars*4*60/bpm:0;return Math.max(8,Math.min(90,Math.max(tail,lead,musical,30))); }
   function setRuntime(plan=currentSetPlan) { return plan.reduce((sum,track,index) => sum + Number(track.duration_seconds || 210) - (index ? setTransitionOverlap(plan[index-1],track) : 0), 0); }
   function setHealth(plan=currentSetPlan) { if(plan.length<2)return {score:100,transitions:[],vocalClashes:0};const transitions=plan.slice(1).map((track,index)=>({...compatibility(plan[index],track),from:index,to:index+1}));const average=transitions.reduce((sum,item)=>sum+item.score,0)/transitions.length;const vocalClashes=plan.slice(1).filter((track,index)=>setVocalProfile(plan[index])==='vocal-forward'&&setVocalProfile(track)==='vocal-forward').length;const score=Math.max(0,Math.min(100,Math.round(average-vocalClashes*3)));return {score,transitions,vocalClashes}; }
-  function setOrderFitness(plan,brief) { const health=setHealth(plan);const energyPenalty=plan.reduce((sum,track,index)=>sum+Math.abs(songEnergy(track)-targetSetEnergy(index,plan.length,brief)),0)*3;return health.score*5-energyPenalty; }
+  function setOrderFitness(plan,brief) { const health=setHealth(plan);const energyPenalty=plan.reduce((sum,track,index)=>sum+Math.abs(songEnergy(track)-targetSetEnergy(index,plan.length,brief)),0)*3;const journeyFit=plan.reduce((sum,track,index)=>{const target=intendedGenreForPosition(brief.identity,index,plan.length);return sum+(target&&trackMatchesIntendedGenre(track,target)?16:0);},0);const openingCount=Math.max(1,Math.ceil(plan.length*.18));const openingFit=String(brief.identity?.opening||'').includes('melodic')?plan.slice(0,openingCount).filter(track=>identityTermMatches(track,'melodic')).length*12:0;return health.score*5-energyPenalty+journeyFit+openingFit; }
   function improveSetOrder(plan,brief) { const improved=[...plan];const fixed=new Set(improved.map((track,index)=>setLockedIds.has(setTrackId(track))?index:null).filter(index=>index!=null));let current=setOrderFitness(improved,brief);for(let pass=0;pass<5;pass+=1){let best=current,bestSwap=null;for(let left=0;left<improved.length-1;left+=1){if(fixed.has(left))continue;for(let right=left+1;right<improved.length;right+=1){if(fixed.has(right))continue;[improved[left],improved[right]]=[improved[right],improved[left]];const score=setOrderFitness(improved,brief);[improved[left],improved[right]]=[improved[right],improved[left]];if(score>best+.01){best=score;bestSwap=[left,right];}}}if(!bestSwap)break;[improved[bestSwap[0]],improved[bestSwap[1]]]=[improved[bestSwap[1]],improved[bestSwap[0]]];current=best;}return improved; }
   function setHealthIssues(health, threshold) { const issues=[];health.transitions.filter(item=>item.score<threshold).sort((a,b)=>a.score-b.score).slice(0,4).forEach(item=>{const weakest=Object.entries(item.components).sort((a,b)=>a[1]-b[1])[0]?.[0]||'compatibility';issues.push(`${item.from+1}→${item.to+1} ${item.score}% (${weakest}${item.key==='distant key'?', distant keys':''})`);});if(health.vocalClashes)issues.push(`${health.vocalClashes} vocal clash${health.vocalClashes===1?'':'es'}`);return issues; }
   function transitionSettingKey(left,right) { return `${setTrackId(left)}→${setTrackId(right)}`; }

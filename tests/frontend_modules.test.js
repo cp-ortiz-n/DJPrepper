@@ -189,6 +189,18 @@ test('Set Builder keeps Latin Techno, Latin House, and available Schranz distinc
   assert.equal(setBuilder.trackMatchesIntendedGenre({_genre:'Latin / Reggaeton',_detailedGenre:'Reggaeton'},'latin house'),false);
 });
 
+test('Set Builder preserves a multi-section Latin party journey in performance order', () => {
+  const result=setBuilder.interpretSetIntention(
+    'Start with melodic Latin songs. From there add cumbia and merengue. Then bachata and salsa. End with Latin Techno and Schranz.',
+    ['Cumbia','Merengue','Bachata','Salsa','Latin Techno','Schranz'],
+  );
+  assert.deepEqual(result.genreSequence,['cumbia','merengue','bachata','salsa','latin techno','schranz']);
+  assert.equal(result.opening,'melodic');
+  assert.equal(setBuilder.intendedGenreForPosition(result,0,12),'cumbia');
+  assert.equal(setBuilder.intendedGenreForPosition(result,5,12),'bachata');
+  assert.equal(setBuilder.intendedGenreForPosition(result,11,12),'schranz');
+});
+
 test('Set Builder recognizes future catalog vocabulary without another hard-coded parser rule', () => {
   const result=setBuilder.interpretSetIntention(
     'Start with jersey club, then bridge into something unfamiliar.',

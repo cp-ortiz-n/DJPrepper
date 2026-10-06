@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -22,6 +23,9 @@ INTENTION_SCHEMA: dict[str, Any] = {
                             "items": {"type": "string"}},
         "optionalGenres": {"type": "array", "description": "Genres qualified by if available, some, or a little.",
                            "items": {"type": "string"}},
+        "genreSequence": {"type": "array",
+                          "description": "Directly requested catalog genres in the order their sections should appear.",
+                          "items": {"type": "string"}},
         "drift": {"type": "string", "enum": ["none", "low", "moderate", "wide"]},
         "vibe": {"type": ["string", "null"],
                  "enum": ["balanced", "dance-party", "warm-up", "peak-time", "melodic", "vocal-safe",
@@ -33,8 +37,8 @@ INTENTION_SCHEMA: dict[str, Any] = {
                    "description": "All explicitly requested ending traits, comma-separated when there are several."},
         "explanation": {"type": "string"},
     },
-    "required": ["required", "preferred", "avoided", "requestedGenres", "optionalGenres", "drift", "vibe",
-                 "curve", "opening", "ending", "explanation"],
+    "required": ["required", "preferred", "avoided", "requestedGenres", "optionalGenres", "genreSequence",
+                 "drift", "vibe", "curve", "opening", "ending", "explanation"],
 }
 
 PLANNER_INSTRUCTIONS = (
@@ -50,6 +54,9 @@ PLANNER_INSTRUCTIONS = (
     "required=[], and ending=null. "
     "When the DJ requests multiple opening or ending traits, preserve every trait in that positional field, separated "
     "by commas; for example, 'begin organic and melodic' means opening='organic, melodic'. "
+    "When the brief uses ordering language such as 'start with', 'from there', 'then', or 'end with', put every "
+    "directly requested catalog genre in genreSequence in performance order. Genres joined by 'and' belong to the "
+    "same neighboring section but still appear individually and in stated order. Do not put non-genre traits there. "
     "Never invent catalog genres. Preserve cultural, rhythmic, vocal, energy, venue, and crowd intent as concise "
     "preferred descriptors. Return only the requested JSON schema."
 )
@@ -63,10 +70,10 @@ RESERVED_PLACEHOLDERS = {
 
 
 def _clean_term(value: Any) -> str:
-    return " ".join(str(value or "").strip().lower().replace("_", " ").replace("-", " ").split())
+    return " ".join(re.sub(r"[^a-z0-9&]+", " ", str(value or "").strip().lower()).split())
 
 
-def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str]) -> dict[str, Any]:
+def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief: str = "") -> dict[str, Any]:
     """Reject schema-label hallucinations and canonicalize genres against the local catalog."""
     cleaned = dict(result)
     for field in ("required", "preferred", "avoided"):
@@ -75,7 +82,7 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str]) -> di
             if term and term not in RESERVED_PLACEHOLDERS
         ]
     catalog = sorted({_clean_term(value) for value in vocabulary if _clean_term(value)}, key=len, reverse=True)
-    for field in ("requestedGenres", "optionalGenres"):
+    for field in ("requestedGenres", "optionalGenres", "genreSequence"):
         genres: list[str] = []
         for value in result.get(field, []):
             raw = _clean_term(value)
@@ -83,6 +90,15 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str]) -> di
             if match and match not in genres:
                 genres.append(match)
         cleaned[field] = genres
+    if brief:
+        normalized_brief = f" {_clean_term(brief)} "
+        explicit_genres = {
+            genre for genre in [*cleaned["requestedGenres"], *cleaned["optionalGenres"], *cleaned["genreSequence"]]
+            if f" {genre} " in normalized_brief
+        }
+        cleaned["genreSequence"] = sorted(
+            explicit_genres, key=lambda genre: normalized_brief.index(f" {genre} ")
+        )
     return cleaned
 
 
@@ -159,7 +175,7 @@ class IntentionPlanner:
         output_text = response.json().get("message", {}).get("content", "")
         if not output_text:
             raise RuntimeError("The local model returned no structured interpretation")
-        result = sanitize_interpretation(json.loads(output_text), vocabulary)
+        result = sanitize_interpretation(json.loads(output_text), vocabulary, brief)
         result.update(provider="ollama", model=self.ollama_model)
         return result
 
@@ -184,6 +200,6 @@ class IntentionPlanner:
                         break
         if not output_text:
             raise RuntimeError("The cloud model returned no structured interpretation")
-        result = sanitize_interpretation(json.loads(output_text), vocabulary)
+        result = sanitize_interpretation(json.loads(output_text), vocabulary, brief)
         result.update(provider="openai", model=self.model)
         return result

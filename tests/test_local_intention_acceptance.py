@@ -18,7 +18,7 @@ class LocalIntentionAcceptanceTests(unittest.TestCase):
         return self.planner.interpret(
             brief,
             ["Reggaeton", "Dembow", "R&B", "Hip Hop", "Latin House", "Latin Techno", "Schranz",
-             "Afro House", "Bachata", "Cumbia", "Salsa", "House", "Techno"],
+             "Afro House", "Bachata", "Cumbia", "Merengue", "Salsa", "House", "Techno"],
         )
 
     def test_chill_latin_kickback_with_melodic_beginning(self) -> None:
@@ -59,3 +59,12 @@ class LocalIntentionAcceptanceTests(unittest.TestCase):
         self.assertIn(result["curve"], {"rise", "peak-release"})
         self.assertIsNotNone(result["ending"])
         self.assertIn("techno", result["requestedGenres"])
+
+    def test_latin_party_sections_remain_in_performance_order(self) -> None:
+        result = self.interpret(
+            "Start with some melodic Latin songs to bring up the mood. From there add Cumbia and Merengue to get "
+            "people dancing, then Bachata and Salsa. End with fun Latin Techno and Schranz for a Latin party."
+        )
+        expected = ["cumbia", "merengue", "bachata", "salsa", "latin techno", "schranz"]
+        self.assertEqual(result["genreSequence"], expected)
+        self.assertIn("melodic", result["opening"])
