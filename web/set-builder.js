@@ -53,33 +53,54 @@ export function parseIdentityTerms(value) {
   return [...new Set(String(value||'').split(',').map(term=>term.trim().toLowerCase()).filter(Boolean))];
 }
 
+const SET_GENRE_INTENT_PATTERNS = [
+  [/latin techno/, 'latin techno'], [/latin house/, 'latin house'], [/schranz/, 'schranz'],
+  [/reggaeton|perreo/, 'reggaeton'], [/dembow/, 'dembow'], [/bachata/, 'bachata'],
+  [/cumbia/, 'cumbia'], [/salsa/, 'salsa'], [/guaracha/, 'guaracha'],
+  [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'], [/hip[- ]?hop/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
+];
+
+function trackGenreSearchText(track) {
+  return normalizedIntentPhrase(`${track?._genre||track?.genre||''} ${track?._detailedGenre||track?.detailed_genre||''}`).trim();
+}
+
+export function trackMatchesIntendedGenre(track, term) {
+  const wanted=normalizedIntentPhrase(term).trim(),metadata=trackGenreSearchText(track);
+  if(!wanted)return false;
+  if(metadata.includes(wanted))return true;
+  return inferredTrackIdentity(track,track?._manualIdentity||[]).some(tag=>normalizedIntentPhrase(tag).trim()===wanted);
+}
+
 function normalizedIntentPhrase(value){return ` ${String(value||'').toLowerCase().replaceAll('&',' and ').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ')} `;}
 
 export function interpretSetIntention(value, catalogVocabulary = []) {
-  const text=String(value||'').trim(),lower=text.toLowerCase(),preferred=[],required=[],avoided=[];
+  const text=String(value||'').trim(),lower=text.toLowerCase(),preferred=[],required=[],avoided=[],requestedGenres=[];
   const rules=[
     [/ecuador|ecuadorian/, 'ecuadorian party'], [/colombia|colombian/, 'colombian'], [/caribbean/, 'caribbean'], [/andean/, 'andean'],
     [/spanish[- ]?(?:language )?vocal|vocals? in spanish|español/, 'spanish vocals'], [/dembow/, 'dembow'], [/latin percussion|latin rhythm/, 'latin percussion'],
     [/guaracha/, 'guaracha'], [/cumbia/, 'cumbia'], [/reggaeton|perreo/, 'reggaeton'], [/tribal/, 'tribal'], [/techno/, 'techno foundation'],
-    [/(?:r\s*&\s*b|rnb|rhythm and blues)/, 'r&b'], [/(?:hip[- ]?hop)/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
+    [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'], [/(?:hip[- ]?hop)/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
     [/(?:chill|kickback|laid[- ]?back|low[- ]?key)/, 'chill kickback'], [/(?:party|danc(?:e|ing))/, 'dance-friendly'],
     [/recognizable|familiar|singalong|classic/, 'recognizable material'], [/peak[- ]?time|high energy|driving/, 'peak-time energy'],
     [/dark/, 'dark'], [/industrial/, 'industrial'], [/melodic/, 'melodic'], [/hypnotic/, 'hypnotic'], [/euphoric/, 'euphoric'],
   ];
   rules.forEach(([pattern,term])=>{if(pattern.test(lower))preferred.push(term);});
+  SET_GENRE_INTENT_PATTERNS.forEach(([pattern,term])=>{if(pattern.test(lower))requestedGenres.push(term);});
   const normalizedText=normalizedIntentPhrase(text),genericTerms=new Set(['all','any','general','music','other','unknown','unclassified']);
   for(const rawTerm of catalogVocabulary){
     const term=String(rawTerm||'').trim().toLowerCase(),normalized=normalizedIntentPhrase(term).trim();
     if(normalized.length<3||genericTerms.has(normalized))continue;
-    if(normalizedText.includes(` ${normalized} `))preferred.push(term);
+    if(normalizedText.includes(` ${normalized} `)){preferred.push(term);if(/techno|house|schranz|reggaeton|dembow|bachata|cumbia|salsa|guaracha|hip hop|r&b|\brap\b/.test(normalized))requestedGenres.push(term);}
   }
   if(/(?:must|required|require)[^.]*spanish/.test(lower))required.push('spanish vocals');
   if(/(?:must|required|require)[^.]*(?:latin percussion|dembow|latin rhythm)/.test(lower))required.push('latin rhythmic identity');
   if(/avoid[^.]*(?:generic|instrumental)[^.]*techno|limit[^.]*generic[^.]*techno/.test(lower))avoided.push('generic instrumental techno');
   const drift=/do not drift|no genre drift|strict genre/.test(lower)?'none':/small|slight|close genres only/.test(lower)?'low':/wide|open genre|context over genre/.test(lower)?'wide':'moderate';
   const chill=/(?:chill|kickback|laid[- ]?back|low[- ]?key)/.test(lower),dance=/(?:party|danc(?:e|ing))/.test(lower);
-  const vibe=chill&&dance?'balanced':dance?'dance-party':chill?'warm-up':null;
-  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),drift,vibe,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
+  const vibe=chill&&dance?'balanced':/warm[- ]?up/.test(lower)?'warm-up':dance?'dance-party':chill?'warm-up':null;
+  const curve=/varying waves|energy waves|wave(?:s|d)? of energy/.test(lower)?'waves':null;
+  const opening=/(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)?'melodic':null;
+  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),requestedGenres:parseIdentityTerms(requestedGenres.join(',')),drift,vibe,curve,opening,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
 }
 
 export function inferredTrackIdentity(track, manual=[]) {
@@ -136,9 +157,10 @@ export function createSetBuilderFeature({
   function trackIdentity(track){return inferredTrackIdentity(track,track._manualIdentity||manualTrackIdentity(track));}
   function identityTermMatches(track,term){const normalized=String(term||'').toLowerCase(),tags=trackIdentity(track);if(normalized==='latin rhythmic identity')return tags.some(tag=>['dembow','latin percussion','latin identity'].includes(tag));if(normalized==='generic instrumental techno')return tags.includes('techno foundation')&&!tags.includes('spanish vocals')&&!tags.includes('latin percussion')&&!tags.includes('recognizable material');if(normalized==='dance-friendly')return songEnergy(track)>=.5;if(normalized==='chill kickback')return songEnergy(track)<=.68||tags.includes('chill kickback');return tags.some(tag=>tag===normalized||tag.includes(normalized)||normalized.includes(tag));}
   function intentionEvaluation(track,brief){const identity=brief.identity||{required:[],preferred:[],avoided:[]};const required=(identity.required||[]).filter(term=>identityTermMatches(track,term)),preferred=(identity.preferred||[]).filter(term=>identityTermMatches(track,term)),avoided=(identity.avoided||[]).filter(term=>identityTermMatches(track,term));const missingRequired=(identity.required||[]).filter(term=>!required.includes(term));return {required,preferred,avoided,missingRequired,score:preferred.length*14+required.length*22-avoided.length*35-missingRequired.length*45};}
-  function currentIntention(){return {text:$('#set-intention').value.trim(),required:parseIdentityTerms($('#set-intention-required').value),preferred:parseIdentityTerms($('#set-intention-preferred').value),avoided:parseIdentityTerms($('#set-intention-avoided').value),drift:$('#set-intention-drift').value,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}
+  function currentIntention(){const text=$('#set-intention').value.trim(),panel=$('#set-intention-interpretation'),parsed=interpretSetIntention(text,intentionVocabulary());let interpreted={};try{if(panel.dataset.source===text)interpreted=JSON.parse(panel.dataset.interpretation||'{}');}catch(_){}return {text,required:parseIdentityTerms($('#set-intention-required').value),preferred:parseIdentityTerms($('#set-intention-preferred').value),avoided:parseIdentityTerms($('#set-intention-avoided').value),requestedGenres:interpreted.requestedGenres||parsed.requestedGenres||[],optionalGenres:interpreted.optionalGenres||[],opening:interpreted.opening||parsed.opening||null,ending:interpreted.ending||null,provider:interpreted.provider||'offline',drift:$('#set-intention-drift').value,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}
   function renderFallbackPolicy(policy=DEFAULT_SET_FALLBACK_POLICY){$('#set-fallback-policy').innerHTML=policy.map((step,index)=>`<li><strong>${index+1}.</strong> ${escapeHtml(step)}</li>`).join('');}
-  function applyIntentionInterpretation(interpreted,{announce=true}={}){const panel=$('#set-intention-interpretation');panel.hidden=false;panel.dataset.source=interpreted.text||'';$('#set-intention-required').value=(interpreted.required||[]).join(', ');$('#set-intention-preferred').value=(interpreted.preferred||[]).join(', ');$('#set-intention-avoided').value=(interpreted.avoided||[]).join(', ');$('#set-intention-drift').value=interpreted.drift||'moderate';if(interpreted.vibe)$('#set-vibe').value=interpreted.vibe;renderFallbackPolicy(interpreted.fallbackPolicy);if(announce)$('#set-intention-status').textContent=`Found ${(interpreted.required||[]).length} requirement${(interpreted.required||[]).length===1?'':'s'}, ${(interpreted.preferred||[]).length} preference${(interpreted.preferred||[]).length===1?'':'s'}, and ${(interpreted.avoided||[]).length} limit${(interpreted.avoided||[]).length===1?'':'s'}. Edit anything before generating.`;}
+  function applyIntentionInterpretation(interpreted,{announce=true}={}){const panel=$('#set-intention-interpretation');panel.hidden=false;panel.dataset.source=interpreted.text||'';panel.dataset.interpretation=JSON.stringify(interpreted);$('#set-intention-required').value=(interpreted.required||[]).join(', ');$('#set-intention-preferred').value=(interpreted.preferred||[]).join(', ');$('#set-intention-avoided').value=(interpreted.avoided||[]).join(', ');$('#set-intention-drift').value=interpreted.drift||'moderate';if(interpreted.vibe)$('#set-vibe').value=interpreted.vibe;if(interpreted.curve)$('#set-curve').value=interpreted.curve;renderFallbackPolicy(interpreted.fallbackPolicy||DEFAULT_SET_FALLBACK_POLICY);if(announce){const source=interpreted.provider==='ollama'?`Local AI · ${interpreted.model}`:interpreted.provider==='openai'?`Cloud AI · ${interpreted.model}`:'offline rules';$('#set-intention-status').textContent=`Interpreted with ${source}. Found ${(interpreted.required||[]).length} requirement${(interpreted.required||[]).length===1?'':'s'}, ${(interpreted.preferred||[]).length} preference${(interpreted.preferred||[]).length===1?'':'s'}, and ${(interpreted.avoided||[]).length} limit${(interpreted.avoided||[]).length===1?'':'s'}. Edit anything before generating.`;}}
+  async function interpretIntention(text){try{const response=await fetch('/api/set-builder/interpret-intention',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brief:text,catalog_vocabulary:intentionVocabulary()})});if(!response.ok)throw new Error('AI provider unavailable');const result=await response.json();return {...result,text,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}catch(_){return {...interpretSetIntention(text,intentionVocabulary()),provider:'offline'};}}
   function selectedSetGenres() { return [...$('#set-genre').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
   function selectedSetDetailedGenres() { return [...$('#set-detailed-genres').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
   function selectedExcludedSetGenres() { return [...$('#set-excluded-genres').selectedOptions].map(option=>option.value).filter(Boolean); }
@@ -182,7 +204,9 @@ export function createSetBuilderFeature({
     if(strategy==='energy') strategyFit=energyFit*.8-Math.abs(songEnergy(track)-targetSetEnergy(index,count,brief))*34+(previous?Math.min(12,Math.abs(songEnergy(track)-songEnergy(previous))*14):0)-(usedByOtherProposals.has(setTrackId(track))?8:0);
     if(strategy==='adventurous') { const genreChange=previous&&track._genre!==previous._genre?18:0;const roleChange=previous?libraryRoles(track).filter(role=>!libraryRoles(previous).includes(role)).length*6:8;const harmonicColor=transition&&transition.components.key<31&&transition.components.key>=20?10:0;strategyFit=genreChange+roleChange+harmonicColor-(usedByOtherProposals.has(setTrackId(track))?18:0); }
     const intentionFit=intentionEvaluation(track,brief).score;
-    return energyFit + vibeFit + transitionScore + editFit + genreFit + strategyFit + intentionFit;
+    const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const requestedGenreFit=intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?32:0;
+    const openingFit=index===0&&String(brief.identity?.opening||'').includes('melodic')&&identityTermMatches(track,'melodic')?45:0;
+    return energyFit + vibeFit + transitionScore + editFit + genreFit + strategyFit + intentionFit + requestedGenreFit + openingFit;
   }
   function setVocalProfile(track) {
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
@@ -190,8 +214,8 @@ export function createSetBuilderFeature({
   function eligibleSetTracks(brief) {
     return setBuilderLibrary.filter(track => {
       const bpm = Number(track.bpm || 0); const id = setTrackId(track);
-      const intention=intentionEvaluation(track,brief);const directGenre=!brief.genres.length||brief.genres.some(genre=>trackMatchesSetGenre(track,genre));const drift=brief.identity?.drift||'none';
-      const identityEligible=directGenre||Boolean(brief.identity?.text)&&(drift==='wide'||intention.preferred.length>=(drift==='low'?2:1));
+      const intention=intentionEvaluation(track,brief);const requestedGenres=brief.identity?.requestedGenres||[],optionalGenres=brief.identity?.optionalGenres||[],allIntendedGenres=[...requestedGenres,...optionalGenres];const requestedGenreMatch=!allIntendedGenres.length||allIntendedGenres.some(term=>trackMatchesIntendedGenre(track,term));const directGenre=!brief.genres.length||brief.genres.some(genre=>trackMatchesSetGenre(track,genre));const drift=brief.identity?.drift||'none';
+      const identityEligible=directGenre&&requestedGenreMatch||Boolean(brief.identity?.text)&&drift==='wide'&&intention.preferred.length>=1;
       return !setExcludedIds.has(id)
         && identityEligible
         && !intention.missingRequired.length
@@ -204,7 +228,10 @@ export function createSetBuilderFeature({
     });
   }
   async function generateSetPlan() {
-    const brief = setBrief(); const pool = eligibleSetTracks(brief);
+    const brief = setBrief(); const eligiblePool = eligibleSetTracks(brief);
+    const requiredIds=new Set(setRequiredIds);const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const coarseScore=track=>intentionEvaluation(track,brief).score+(intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?40:0)-Math.abs(songEnergy(track)-targetSetEnergy(0,2,brief))*12;
+    const shortlistLimit=800;const pool=eligiblePool.length<=shortlistLimit?eligiblePool:[...eligiblePool].sort((a,b)=>coarseScore(b)-coarseScore(a)).slice(0,shortlistLimit);
+    eligiblePool.filter(track=>requiredIds.has(setTrackId(track))&&!pool.includes(track)).forEach(track=>pool.push(track));
     if (pool.length < 2) { $('#set-builder-message').textContent = 'Not enough analyzed tracks match this brief. Relax a filter and try again.'; return; }
     const averageSeconds = pool.reduce((sum,track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
     const count = Math.max(2, Math.min(pool.length, Math.ceil(brief.length * 60 / averageSeconds)));
@@ -213,7 +240,7 @@ export function createSetBuilderFeature({
     const previousPlan = currentSetPlan;
     const generatedTrackIds=new Set();
     const buildVariation = (strategy) => {
-      const remaining = new Map(pool.map(track => [setTrackId(track), track])); const nextPlan = []; const genreUsage=Object.fromEntries((brief.genres||[]).map(genre=>[genre,0])); let failed = false;
+      const remaining = new Map(pool.map(track => [setTrackId(track), track])); const nextPlan = []; const genreUsage=Object.fromEntries((brief.genres||[]).map(genre=>[genre,0])); const previousPlanIds=new Set(previousPlan.map(setTrackId)); let failed = false;
       const recordGenre=track=>{const matches=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));if(!matches.length)return;const genre=matches.sort((a,b)=>((genreTargets[b]||0)-(genreUsage[b]||0))-((genreTargets[a]||0)-(genreUsage[a]||0)))[0];genreUsage[genre]=(genreUsage[genre]||0)+1;};
       const nextGenre=()=>{const configuredOrder=setGenreSelectionOrder.filter(genre=>(brief.genres||[]).includes(genre)).concat((brief.genres||[]).filter(genre=>!setGenreSelectionOrder.includes(genre)));const open=configuredOrder.filter(genre=>(genreUsage[genre]||0)<(genreTargets[genre]||0)&&[...remaining.values()].some(track=>trackMatchesSetGenre(track,genre)));if(!open.length)return '';return open.sort((a,b)=>{const deficitA=(genreTargets[a]||0)-(genreUsage[a]||0),deficitB=(genreTargets[b]||0)-(genreUsage[b]||0);if(brief.genreFlow==='blend')return deficitB/Math.max(1,genreTargets[b]||0)-deficitA/Math.max(1,genreTargets[a]||0);return configuredOrder.indexOf(a)-configuredOrder.indexOf(b);})[0];};
       setGenerationNonce += 1;
@@ -226,17 +253,25 @@ export function createSetBuilderFeature({
         if (forced && remaining.has(setTrackId(forced))) { remaining.delete(setTrackId(forced)); nextPlan.push(forced); recordGenre(forced); return; }
         const previous = nextPlan[index - 1] || null;
         const targetGenre=nextGenre();const available=[...remaining.values()];const targeted=targetGenre?available.filter(track=>trackMatchesSetGenre(track,targetGenre)):available;const candidatePool=targeted.length?targeted:available;
-        const ranked = candidatePool.map(track=>{const wasSamePosition=Boolean(previousPlan[index])&&setTrackId(previousPlan[index])===setTrackId(track),wasInPrevious=previousPlan.some(item=>setTrackId(item)===setTrackId(track));return {track,score:setCandidateScore(track,previous,index,count,brief,strategy,generatedTrackIds)-(wasSamePosition?12:wasInPrevious?3:0)};}).sort((a,b)=>b.score-a.score);
+        const ranked = candidatePool.map(track=>{const id=setTrackId(track),wasSamePosition=Boolean(previousPlan[index])&&setTrackId(previousPlan[index])===id,wasInPrevious=previousPlanIds.has(id);return {track,score:setCandidateScore(track,previous,index,count,brief,strategy,generatedTrackIds)-(wasSamePosition?12:wasInPrevious?3:0)};}).sort((a,b)=>b.score-a.score);
         if (!ranked.length) { failed = true; return; }
         const competitive=ranked.filter(item=>item.score>=ranked[0].score-18).slice(0,18);
         const weights=competitive.map(item=>Math.exp((item.score-competitive.at(-1).score)/5));const total=weights.reduce((sum,value)=>sum+value,0);let pick=(Math.abs(Math.sin(setGenerationNonce*9283+index*3343))*total),choice=competitive[0]?.track;for(let option=0;option<competitive.length;option+=1){pick-=weights[option];if(pick<=0){choice=competitive[option].track;break;}}
         if (choice) { remaining.delete(setTrackId(choice)); nextPlan.push(choice); recordGenre(choice); }
       });
       required.forEach(track => { if (!nextPlan.some(item => setTrackId(item) === setTrackId(track))) nextPlan.push(track); });
+      intendedGenres.forEach(term=>{
+        if(nextPlan.some(track=>trackMatchesIntendedGenre(track,term)))return;
+        const replacement=[...remaining.values()].filter(track=>trackMatchesIntendedGenre(track,term)).sort((a,b)=>coarseScore(b)-coarseScore(a))[0];
+        if(!replacement)return;
+        const replaceIndex=nextPlan.map((track,index)=>({track,index,score:setCandidateScore(track,nextPlan[index-1]||null,index,count,brief,strategy,generatedTrackIds)})).filter(item=>item.index>0&&!setLockedIds.has(setTrackId(item.track))&&!setRequiredIds.has(setTrackId(item.track))).sort((a,b)=>a.score-b.score)[0]?.index;
+        if(replaceIndex==null)return;
+        remaining.set(setTrackId(nextPlan[replaceIndex]),nextPlan[replaceIndex]);remaining.delete(setTrackId(replacement));nextPlan[replaceIndex]=replacement;
+      });
       return failed ? [] : nextPlan;
     };
     const proposals=[];
-    for(const strategy of SET_PROPOSAL_STRATEGIES){let bestPlan=[],bestHealth={score:-1,transitions:[],vocalClashes:0},attempts=0;for(;attempts<24;attempts+=1){const candidate=buildVariation(strategy.id);if(candidate.length<count)continue;const repaired=improveSetOrder(candidate,brief);const health=setHealth(repaired);const overlap=repaired.filter(track=>generatedTrackIds.has(setTrackId(track))).length/Math.max(1,repaired.length);const distinctBonus=strategy.id==='adventurous'?(1-overlap)*12:0;const rank=health.score+distinctBonus;if(rank>(bestHealth.rank??-1)){bestPlan=repaired;bestHealth={...health,rank};}if(health.score>=brief.minimumHealth&&attempts>=5){attempts+=1;break;}}const accepted=bestPlan.length>=count&&bestHealth.score>=brief.minimumHealth;if(accepted)bestPlan.forEach(track=>generatedTrackIds.add(setTrackId(track)));proposals.push({...strategy,accepted,attempts,health:bestHealth,snapshot:{tracks:bestPlan.map(setTrackId),locked:[...setLockedIds],transitions:{}}});}
+    for(const strategy of SET_PROPOSAL_STRATEGIES){await new Promise(resolve=>requestAnimationFrame(()=>resolve()));let bestPlan=[],bestHealth={score:-1,transitions:[],vocalClashes:0},attempts=0;for(;attempts<10;attempts+=1){const candidate=buildVariation(strategy.id);if(candidate.length<count)continue;const repaired=improveSetOrder(candidate,brief);const health=setHealth(repaired);const overlap=repaired.filter(track=>generatedTrackIds.has(setTrackId(track))).length/Math.max(1,repaired.length);const distinctBonus=strategy.id==='adventurous'?(1-overlap)*12:0;const rank=health.score+distinctBonus;if(rank>(bestHealth.rank??-1)){bestPlan=repaired;bestHealth={...health,rank};}if(health.score>=brief.minimumHealth&&attempts>=3){attempts+=1;break;}}const accepted=bestPlan.length>=count&&bestHealth.score>=brief.minimumHealth;if(accepted)bestPlan.forEach(track=>generatedTrackIds.add(setTrackId(track)));proposals.push({...strategy,accepted,attempts,health:bestHealth,snapshot:{tracks:bestPlan.map(setTrackId),locked:[...setLockedIds],transitions:{}}});}
     const accepted=proposals.filter(proposal=>proposal.accepted);if(!accepted.length){const best=proposals.sort((a,b)=>b.health.score-a.health.score)[0];const issues=setHealthIssues(best.health,brief.minimumHealth);$('#set-builder-message').textContent=`No direction was applied. The best search reached ${best.health.score}/100, below your ${brief.minimumHealth} target. ${issues.slice(0,2).join(' · ')||'Relax a constraint or lower the health floor.'}`;return;}
     if(currentSetPlan.length)pushSetHistory();setProposals=proposals;const preferred=proposals.find(proposal=>proposal.id==='safe'&&proposal.accepted)||accepted.sort((a,b)=>b.health.score-a.health.score)[0];activeSetProposal=preferred.id;restoreSetSnapshot(preferred.snapshot,false);$('#set-builder-message').textContent=`Built ${accepted.length} distinct direction${accepted.length===1?'':'s'}. Optimizing transition techniques for ${preferred.label}…`;await autoOptimizeSetTransitions();preferred.snapshot=setPlanSnapshot();preferred.health=setHealth();renderSetPlan();$('#set-builder-message').textContent=`${accepted.length} distinct direction${accepted.length===1?'':'s'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
   }
@@ -485,8 +520,8 @@ export function createSetBuilderFeature({
   }
   function bindSetBuilder() {
     if(setBuilderBound)return;setBuilderBound=true;
-    $('#set-builder-form').onsubmit=event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation');if(intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText))applyIntentionInterpretation(interpretSetIntention(intentionText,intentionVocabulary()));const button=$('#set-generate');button.disabled=true;button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
-    $('#interpret-set-intention').onclick=()=>{const text=$('#set-intention').value.trim();if(!text){$('#set-intention-interpretation').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}applyIntentionInterpretation(interpretSetIntention(text,intentionVocabulary()));};
+    $('#set-builder-form').onsubmit=async event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation'),button=$('#set-generate');button.disabled=true;if(intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText)){button.textContent='Understanding brief…';applyIntentionInterpretation(await interpretIntention(intentionText));}button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
+    $('#interpret-set-intention').onclick=async event=>{const text=$('#set-intention').value.trim(),button=event.currentTarget;if(!text){$('#set-intention-interpretation').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}button.disabled=true;button.textContent='Understanding…';try{applyIntentionInterpretation(await interpretIntention(text));}finally{button.disabled=false;button.textContent='Interpret intention';}};
     const briefName=$('#set-name'),resultName=$('#set-result-name');
     briefName.addEventListener('input',()=>{if(document.activeElement!==resultName)resultName.value=briefName.value;});
     resultName.addEventListener('input',()=>{briefName.value=resultName.value;});

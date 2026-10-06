@@ -221,16 +221,20 @@ class MetadataBatchService:
         return {**counters, "conflicts": conflicts, "stage": "Genre rescan complete"}
 
     def status(self, batch_id: str) -> dict:
+        """Return the current state of a metadata batch by identifier."""
         try:
             return self.dependencies.registry.status(batch_id)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
 
     def latest(self, kind: str) -> dict:
+        """Return the latest metadata batch of a given kind."""
         return self.dependencies.registry.latest(kind) or {"status": "none"}
 
 
 def create_metadata_batch_router(service: MetadataBatchService) -> APIRouter:
+    """Create and return an APIRouter for metadata batch operations."""
+
     router = APIRouter(tags=["metadata batches"])
 
     @router.post("/api/downloaded-library/retag-all", status_code=202)

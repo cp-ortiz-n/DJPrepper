@@ -16,6 +16,7 @@ analysis adds a penalty for vocal-heavy regions.
 - Python 3.10–3.12 recommended
 - FFmpeg (recommended for broad MP3 decoding support)
 - Enough free disk space for an uncompressed stereo WAV
+- Optional: Ollama and `qwen3:4b` for local Set Builder intention interpretation
 
 Install Homebrew and FFmpeg if needed:
 
@@ -63,6 +64,41 @@ Builder, Settings, and Analysis & Feedback each own their rendering and state.
 `web/app.js` is the composition/navigation entry point; shared request state,
 audio playback, and reusable controls live in dedicated modules. See
 [`docs/architecture.md`](docs/architecture.md) before making frontend changes.
+
+### Optional local AI for Set Builder
+
+Set Builder can translate a natural-language DJ brief into a structured,
+editable plan before it chooses any tracks. The default `auto` provider order
+is local Ollama, optional OpenAI, and finally deterministic browser rules.
+
+The model interprets language only. Track filtering, compatibility scoring,
+ordering, and audio processing remain deterministic and local. Ollama receives
+the text brief and a bounded list of catalog vocabulary; it never receives
+audio. When the optional OpenAI fallback is configured, only that text context
+is sent and request storage is disabled.
+
+Install the recommended local provider on macOS with:
+
+```bash
+brew install --cask ollama-app
+open -a Ollama
+ollama pull qwen3:4b
+```
+
+Set Builder continues to work without Ollama by using offline rules. Provider
+behavior can be configured with:
+
+```bash
+export AUDIOEXTENDER_LLM_PROVIDER=auto  # auto, ollama, openai, or offline
+export OLLAMA_SET_BUILDER_MODEL=qwen3:4b
+export OLLAMA_HOST=http://127.0.0.1:11434
+export OPENAI_SET_BUILDER_MODEL=gpt-5-mini
+export OPENAI_API_KEY=...                # optional cloud fallback
+```
+
+The UI identifies results as Local AI, Cloud AI, or offline rules. Model output
+is schema-constrained and sanitized against catalog vocabulary before the
+browser uses it.
 
 The **Import** tab can convert an individually confirmed, authorized YouTube
 source to WAV. It can also read a Spotify playlist CSV and suggest a likely
@@ -280,6 +316,7 @@ AudioExtender/
 │   ├── processing/      # Track, batch, and web-job orchestration
 │   ├── reporting/       # Feedback and processing reports
 │   ├── repositories/    # Jobs, catalog, analysis, feedback, and system-state persistence
+│   ├── set_builder/     # Natural-language intention planning and provider fallback
 │   └── web/
 │       ├── application.py               # FastAPI composition and legacy routes
 │       ├── job_routes.py                 # Queue lifecycle
@@ -331,6 +368,7 @@ Use this table before searching through the larger composition files:
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
 | Set Builder UI | `web/set-builder.js` and `web/styles.css` |
+| Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
 | Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
@@ -358,6 +396,13 @@ Before committing a manual change, run:
 npm run check
 .venv/bin/ruff check path/to/changed_python_file.py
 git diff --check
+```
+
+Provider fallback, schema, and sanitization tests do not require a running
+model. The live local-model acceptance suite is opt-in:
+
+```bash
+AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.test_local_intention_acceptance
 ```
 
 When moving modules or changing architectural relationships, also run:

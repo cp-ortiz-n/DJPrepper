@@ -8,9 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+from audioextender.set_builder.intention_planner import IntentionPlanner
 
 
 class SetExportPreflightRequest(BaseModel):
@@ -28,6 +31,11 @@ class SetPlaylistSaveRequest(BaseModel):
     tracks: list[SetPlaylistTrack] = Field(min_length=1, max_length=5000)
 
 
+class SetIntentionRequest(BaseModel):
+    brief: str = Field(min_length=1, max_length=4000)
+    catalog_vocabulary: list[str] = Field(default_factory=list, max_length=2000)
+
+
 @dataclass(frozen=True)
 class SetBuilderRouteDependencies:
     catalog_cache_path: Path
@@ -35,6 +43,7 @@ class SetBuilderRouteDependencies:
     write_catalog_cache: Callable[[], Any]
     music_library_root: Callable[[], Path]
     safe_folder_name: Callable[[str], str]
+    intention_planner: IntentionPlanner
 
 
 def preflight_paths(request: SetExportPreflightRequest) -> dict:
@@ -120,5 +129,16 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
     @router.post("/save-playlist")
     def save_playlist(request: SetPlaylistSaveRequest) -> dict:
         return save_playlist_file(request, deps.music_library_root(), deps.safe_folder_name)
+
+    @router.get("/intention-provider")
+    def intention_provider() -> dict:
+        return deps.intention_planner.status()
+
+    @router.post("/interpret-intention")
+    def interpret_intention(request: SetIntentionRequest) -> dict:
+        try:
+            return deps.intention_planner.interpret(request.brief, request.catalog_vocabulary)
+        except (httpx.HTTPError, ValueError, RuntimeError) as error:
+            raise HTTPException(502, f"AI interpretation failed: {error}") from error
 
     return router

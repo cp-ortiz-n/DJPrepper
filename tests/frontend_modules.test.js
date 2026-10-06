@@ -166,11 +166,27 @@ test('Set Builder derives identity separately from catalog genre', () => {
 
 test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {
   const result=setBuilder.interpretSetIntention(
-    'Build a latin reggaeton and dembow mix that also includes some r&b/rap, hip hop for a chill party, kickback. Some dancing will take place as well',
+    'Build a latin reggaeton and dembow mix that also includes some rab/rap, hip hop for a chill party, kickback. Some dancing will take place as well. Add something melodic in the beginning.',
   );
   for(const term of ['dembow','reggaeton','r&b','rap','hip hop','chill kickback','dance-friendly'])assert.ok(result.preferred.includes(term),term);
   assert.equal(result.vibe,'balanced');
+  assert.equal(result.opening,'melodic');
+  assert.deepEqual(result.requestedGenres,['reggaeton','dembow','r&b','hip hop','rap']);
   assert.deepEqual(result.avoided,[]);
+});
+
+test('Set Builder keeps Latin Techno, Latin House, and available Schranz distinct from generic Latin genres', () => {
+  const result=setBuilder.interpretSetIntention(
+    'We need a latin techno, latin house set that combines a bit of schranz if we have any. Start with something melodic to warm up and have varying waves',
+    ['Latin Techno','Latin House','Schranz','Bachata','Reggaeton'],
+  );
+  assert.deepEqual(result.requestedGenres,['latin techno','latin house','schranz']);
+  assert.equal(result.opening,'melodic');
+  assert.equal(result.vibe,'warm-up');
+  assert.equal(result.curve,'waves');
+  assert.equal(setBuilder.trackMatchesIntendedGenre({_genre:'Electronic / Techno',_detailedGenre:'Latin Techno'},'latin techno'),true);
+  assert.equal(setBuilder.trackMatchesIntendedGenre({_genre:'Latin / Bachata',_detailedGenre:'Bachata'},'latin techno'),false);
+  assert.equal(setBuilder.trackMatchesIntendedGenre({_genre:'Latin / Reggaeton',_detailedGenre:'Reggaeton'},'latin house'),false);
 });
 
 test('Set Builder recognizes future catalog vocabulary without another hard-coded parser rule', () => {
@@ -208,6 +224,8 @@ test('Set Builder feature declares every musical classifier used during generati
   assert.match(source, /function renderSetSelectionSummary/);
   assert.match(source, /allocating the requested genre balance first/);
   assert.match(source, /function intentionEvaluation/);
+  assert.match(source, /shortlistLimit=800/);
+  assert.match(source, /attempts<10/);
   assert.match(source, /function openTrackIdentityEditor/);
   assert.match(source, /applyIntentionInterpretation/);
 });

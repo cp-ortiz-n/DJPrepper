@@ -64,6 +64,7 @@ from audioextender.library.relocation import LibraryRelocationCoordinator
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.web_jobs import WebJobService
 from audioextender.reporting.feedback import append_web_feedback
+from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.repositories.facade import JobRepository
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
@@ -3568,6 +3569,7 @@ app.include_router(
             write_catalog_cache=_write_set_builder_catalog_cache,
             music_library_root=lambda: _music_library_root(),
             safe_folder_name=_safe_folder_name,
+            intention_planner=IntentionPlanner.from_environment(),
         )
     )
 )
