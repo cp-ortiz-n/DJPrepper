@@ -5,7 +5,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node --check web/app.js && node --check web/request-state-controller.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/set-planning-client.js && node --check web/settings.js && node --check web/reporting.js && node --check web/import-queue.js && node --test tests/*.test.js"
+    "check": "node --check web/app.js && node --check web/request-state-controller.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/set-planning-client.js && node --check web/settings.js && node --check web/reporting.js && node --check web/import-queue.js && node --test tests/*.test.js",
+    "coverage": "npm run coverage:js && npm run coverage:python",
+    "coverage:js": "c8 --all --include='web/**/*.js' --reporter=lcov --reporter=text-summary --reports-dir=coverage node --test tests/*.test.js",
+    "coverage:python": "python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report -m && python3 -m coverage lcov -o coverage/lcov-python.info"
   },
   "repository": {
     "type": "git",
@@ -20,5 +23,8 @@
   "homepage": "https://github.com/cp-ortiz-n/AudioExtender#readme",
   "dependencies": {
     "wavesurfer.js": "^7.12.12"
+  },
+  "devDependencies": {
+    "c8": "^12.0.0"
   }
 }

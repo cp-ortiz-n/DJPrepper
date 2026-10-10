@@ -12,7 +12,7 @@ function environment(saved = null) {
     removeItem: key => values.delete(key),
   };
   globalThis.window = {addEventListener: () => {}};
-  globalThis.navigator = {onLine:true};
+  Object.defineProperty(globalThis, 'navigator', {configurable:true, value:{onLine:true}});
   return values;
 }
 

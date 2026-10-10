@@ -1346,23 +1346,29 @@ manual key verification, listening feedback, relocated paths, and playlist
 exports survive reimport, application restart, and reanalysis. It never reads
 or modifies the user's music library.
 
-Optional coverage reporting is available with the development requirements:
+### Code coverage in VS Code
+
+Install the development requirements and JavaScript dependencies, then run
+coverage with the project virtual environment active:
 
 ```bash
 python3 -m pip install -r requirements-dev.txt
-python3 -m coverage run -m unittest discover -s tests
-python3 -m coverage report -m
+npm install
+npm run coverage
 ```
+
+This creates LCOV reports for all maintained Python application and script code
+and every JavaScript file under `web/`. The recommended **Code Coverage**
+extension by Markis Taylor is configured to load both reports automatically.
+Tests, dependencies, caches, and generated output are not coverage targets.
 
 Run the complete local quality gate after installing the development
 requirements:
 
 ```bash
-python3 -m unittest discover -s tests
 python3 -m ruff check .
 python3 -m mypy
-python3 -m coverage run -m unittest discover -s tests
-python3 -m coverage report
+npm run coverage
 ```
 
 The tests follow the same separation as the application modules: domain logic

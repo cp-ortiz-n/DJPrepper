@@ -17,9 +17,9 @@ warn_redundant_casts = true
 no_implicit_optional = true
 
 [tool.coverage.run]
-source = ["audioextender", "main", "web_app"]
+source = ["audioextender", "main", "web_app", "settings", "scripts"]
 branch = true
-omit = ["tests/*", ".venv/*", ".venv-intel-backup/*"]
+omit = ["tests/*", ".venv/*", ".venv-intel-backup/*", "node_modules/*"]
 
 [tool.coverage.report]
 show_missing = true
