@@ -59,6 +59,7 @@ globals.
 | `web/metadata_batch_routes.py` | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches |
 | `web/reporting_routes.py` | Track feedback and manual key verification |
 | `web/set_builder_routes.py` | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
+| `web/set_planning_routes.py` | Bounded Set Builder candidate retrieval and deterministic plan validation |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
 | `imports/routes.py` | Authorized source, local-file, and playlist import delivery |
 
@@ -90,7 +91,17 @@ POST /api/set-builder/plan-journey → JourneyPlanner
 Editable sections with runtime share, catalog genres, characteristics,
 purpose, and start/end energy
         ↓
+POST /api/set-builder/candidate-pool → SetCandidateRetriever
+   ├── bounded, diverse candidates per journey section
+   ├── stable catalog IDs and local file availability
+   └── direct, identity, bridge, and fallback scarcity tiers
+        ↓
 Local deterministic filtering, scoring, ordering, and rendering
+        ↓
+POST /api/set-builder/validate-plan → SetPlanValidator
+   ├── IDs, exclusions, required/locked tracks, duplicates, and files
+   ├── duration, track count, and journey-section coverage
+   └── BPM, Camelot-key, and vocal-transition warnings
 ```
 
 The route surface is:
@@ -98,6 +109,8 @@ The route surface is:
 - `GET /api/set-builder/intention-provider` for provider and model status.
 - `POST /api/set-builder/interpret-intention` for structured interpretation.
 - `POST /api/set-builder/plan-journey` for a validated, editable section plan.
+- `POST /api/set-builder/candidate-pool` for a bounded shortlist backed by real catalog IDs.
+- `POST /api/set-builder/validate-plan` for deterministic hard errors, musical warnings, and plan metrics.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is
@@ -112,7 +125,10 @@ removed, and malformed or unavailable provider responses fall through safely.
 Journey percentages are normalized to 100%, energy values are bounded to 1–10,
 unknown genres are rejected, and omission or reordering of required genre
 sequences triggers deterministic fallback. Edited journey sections directly
-control positional genre and energy targets in the existing generator.
+control positional genre and energy targets in the existing generator. The
+candidate and validator services are deliberately provider-independent, so a
+future AI track planner can only choose from known local IDs and cannot bypass
+availability, exclusion, duration, or journey-coverage checks.
 
 ## Browser request state
 

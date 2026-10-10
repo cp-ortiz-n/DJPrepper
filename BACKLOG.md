@@ -150,7 +150,7 @@ Status definitions:
 
 ## Intent-driven Set Builder and musical identity
 
-Status: **In progress — local-first language interpretation and Phase 1 journey planning are complete.** Set
+Status: **In progress — local-first interpretation, Phase 1 journey planning, and Phase 2A candidate safety are complete.** Set
 Builder accepts a natural-language intention and translates it into editable
 hard requirements, weighted preferences, limits, requested and optional genres,
 genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
@@ -163,8 +163,12 @@ The Journey Planner now converts that interpretation into editable musical
 sections with runtime shares, genres, characteristics, purposes, and energy
 boundaries. Invalid AI plans fall back deterministically, explicitly requested
 genre order is protected, and the edited journey drives positional genre and
-energy scoring. Phase 2 remains AI selection and ordering of real shortlisted
-catalog tracks followed by deterministic validation.
+energy scoring. Phase 2A now provides bounded, diverse candidate pools with
+stable catalog IDs, availability checks, scarcity tiers, and evidence labels,
+plus deterministic validation for invented IDs, duplicates, exclusions,
+required or locked tracks, duration, section coverage, BPM jumps, keys, and
+vocal collisions. Phase 2B remains AI selection and ordering from those
+shortlists, repair attempts for invalid model output, and deterministic fallback.
 
 The generator uses the structured plan during local candidate retrieval and
 scoring, never relaxes hard identity requirements, discloses direct versus

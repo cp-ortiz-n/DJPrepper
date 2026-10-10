@@ -287,8 +287,9 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
         """Return every latest analyzed track using the compact Library index."""
         with closing(self._connect()) as connection:
             rows = connection.execute(
-                """SELECT idx.job_id, idx.downloaded_id, idx.source_name, idx.category, idx.detail_genre, idx.roles,
-                    idx.energy, idx.vocals, idx.timing, idx.set_analysis_json,
+                """SELECT idx.job_id, idx.downloaded_id, idx.source_name, idx.title, idx.artist,
+                    idx.category, idx.detail_genre, idx.roles, idx.energy, idx.vocals, idx.timing,
+                    idx.camelot, idx.set_analysis_json,
                     jobs.source_path, jobs.wav_path,
                     jobs.extended_path, jobs.config_json,
                     downloaded.file_path AS library_path,

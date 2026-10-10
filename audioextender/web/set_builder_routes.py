@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from audioextender.set_builder.candidate_retriever import SET_BUILDER_CATALOG_VERSION
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
 
@@ -118,7 +119,10 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
         deps.ensure_catalog_current()
         cache_current = False
         try:
-            cache_current = json.loads(deps.catalog_cache_path.read_text(encoding="utf-8")).get("version") == 3
+            cache_current = (
+                json.loads(deps.catalog_cache_path.read_text(encoding="utf-8")).get("version")
+                == SET_BUILDER_CATALOG_VERSION
+            )
         except (OSError, ValueError):
             pass
         if not cache_current:

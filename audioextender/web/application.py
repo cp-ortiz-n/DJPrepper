@@ -66,8 +66,10 @@ from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.web_jobs import WebJobService
 from audioextender.reporting.feedback import append_web_feedback
 from audioextender.repositories.facade import JobRepository
+from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
+from audioextender.set_builder.plan_validator import SetPlanValidator
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
@@ -108,6 +110,7 @@ from audioextender.web.set_builder_routes import (
     preflight_paths,
     save_playlist_file,
 )
+from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
 from audioextender.web.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
@@ -3176,9 +3179,15 @@ def _build_set_builder_catalog_payload() -> dict:
             descriptors = json.loads(str(row.get("descriptors_json") or "[]"))
         except (TypeError, ValueError, json.JSONDecodeError):
             descriptors = []
+        analysis = json.loads(row.get("set_analysis_json") or "{}")
+        analysis.update(
+            title=row.get("title") or "",
+            artist=row.get("artist") or "",
+            _camelot=row.get("camelot") or "",
+        )
         tracks.append(
             {
-                "analysis": json.loads(row.get("set_analysis_json") or "{}"),
+                "analysis": analysis,
                 "genre": row.get("category") or "Other",
                 "detailed_genre": row.get("detail_genre") or "",
                 "downloaded_id": row.get("downloaded_id"),
@@ -3194,7 +3203,7 @@ def _build_set_builder_catalog_payload() -> dict:
                 },
             }
         )
-    return {"version": 3, "tracks": tracks, "total": len(tracks)}
+    return {"version": 4, "tracks": tracks, "total": len(tracks)}
 
 
 def _write_set_builder_catalog_cache() -> None:
@@ -3558,6 +3567,8 @@ app.include_router(
 )
 intention_planner = IntentionPlanner.from_environment()
 journey_planner = JourneyPlanner(intention_planner)
+candidate_retriever = SetCandidateRetriever()
+set_plan_validator = SetPlanValidator()
 
 
 def _log_intention_provider_status() -> None:
@@ -3585,6 +3596,17 @@ app.include_router(
             safe_folder_name=_safe_folder_name,
             intention_planner=intention_planner,
             journey_planner=journey_planner,
+        )
+    )
+)
+app.include_router(
+    create_set_planning_router(
+        SetPlanningRouteDependencies(
+            catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+            ensure_catalog_current=_ensure_library_search_index_current,
+            write_catalog_cache=_write_set_builder_catalog_cache,
+            candidate_retriever=candidate_retriever,
+            plan_validator=set_plan_validator,
         )
     )
 )

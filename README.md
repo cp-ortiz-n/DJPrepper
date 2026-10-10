@@ -79,8 +79,12 @@ journey made of named sections, runtime percentages, catalog genres, musical
 characteristics, purposes, and start/end energy targets. The default `auto`
 provider order is local Ollama, optional OpenAI, and finally deterministic rules.
 
-The model interprets language only. Track filtering, compatibility scoring,
-ordering, and audio processing remain deterministic and local. Ollama receives
+The model currently interprets language and plans the journey only. Track
+ordering and audio processing remain deterministic and local. Before future AI
+track selection is enabled, the backend now builds a bounded candidate pool for
+each journey section and validates proposed plans against real catalog IDs,
+available files, exclusions, required or locked tracks, duration, section
+coverage, BPM jumps, keys, and vocal collisions. Ollama receives
 the text brief and a bounded list of catalog vocabulary; it never receives
 audio. When the optional OpenAI fallback is configured, only that text context
 is sent and request storage is disabled.
@@ -384,6 +388,7 @@ Use this table before searching through the larger composition files:
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
 | Set Builder UI | `web/set-builder.js` and `web/styles.css` |
 | Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
+| Set Builder candidate shortlists or plan validation | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
 | Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
