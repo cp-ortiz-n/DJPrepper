@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 from audioextender.set_builder.candidate_retriever import SET_BUILDER_CATALOG_VERSION, SetCandidateRetriever
 from audioextender.set_builder.plan_validator import SetPlanValidator
 from audioextender.set_builder.planning_jobs import SetPlanningJobService
+from audioextender.set_builder.planning_store import JsonPlanningJobStore
 from audioextender.set_builder.track_planner import AITrackPlanner
 
 
@@ -67,6 +68,7 @@ class SetPlanningRouteDependencies:
     plan_validator: SetPlanValidator
     track_planner: AITrackPlanner
     planning_jobs: SetPlanningJobService | None = None
+    planning_job_store_path: Path | None = None
 
 
 def _read_catalog(deps: SetPlanningRouteDependencies) -> list[dict[str, Any]]:
@@ -89,6 +91,7 @@ def create_set_planning_router(deps: SetPlanningRouteDependencies) -> APIRouter:
         catalog_loader=lambda: _read_catalog(deps),
         candidate_retriever=deps.candidate_retriever,
         track_planner=deps.track_planner,
+        store=JsonPlanningJobStore(deps.planning_job_store_path) if deps.planning_job_store_path else None,
     )
 
     @router.post("/candidate-pool")

@@ -150,7 +150,7 @@ Status definitions:
 
 ## Intent-driven Set Builder and musical identity
 
-Status: **In progress — local-first interpretation, Phase 1 journey planning, Phase 2A candidate safety, and Phase 2B validated AI track planning are complete.** Set
+Status: **In progress — local-first interpretation, Phase 1 journey planning, Phase 2A candidate safety, Phase 2B validated AI track planning, and Phase 2C quality hardening are complete.** Set
 Builder accepts a natural-language intention and translates it into editable
 hard requirements, weighted preferences, limits, requested and optional genres,
 genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
@@ -172,6 +172,15 @@ shortlists, repairs invalid model output, runs through a cancellable asynchronou
 job, and falls back to a validated deterministic plan when the provider is
 offline, times out, or cannot produce a valid answer. The UI exposes AI Planned,
 AI Interpreted, and Classic modes rather than hiding which layer made a choice.
+Phase 2C adds deterministic proposal evaluation and disclosure, reproducible
+planning receipts in saved sets, persisted/retryable interrupted jobs, explicit
+planning duration, small/medium/large catalog performance budgets, and an
+opt-in live Ollama track-selection acceptance case. A repeatable catalog-scale
+evaluation harness now measures checked-in musical scenarios, compares each run
+with its prior report, and supports either the deterministic fallback or the
+configured model. Remaining Set Builder work is feedback-informed
+personalization and human review of real-library evaluation results, not
+another unvalidated model path.
 
 The generator uses the structured plan during local candidate retrieval and
 scoring, never relaxes hard identity requirements, discloses direct versus
@@ -181,7 +190,7 @@ time; participate in scoring; are searchable; and can be edited individually
 or in bulk from Music Files and DJ Library. Browser storage remains only as a
 compatibility fallback for uncataloged tracks. Remaining work is richer
 audio-derived identity inference, catalog-scale review, stronger scarcity
-handling, and proposal-quality/performance hardening.
+handling, and catalog-scale musical review.
 
 ### Problem
 

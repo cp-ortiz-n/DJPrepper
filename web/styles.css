@@ -1270,6 +1270,9 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .set-intention-outcome span { padding:6px; border:1px solid var(--line); border-radius:6px; color:var(--muted); font-size:7px; }
 .set-intention-outcome span b { display:block; color:var(--lime); font-size:13px; }.set-intention-outcome span.adjusted b { color:#ffcf72; }
 .set-intention-outcome .set-relaxation-warning { color:#ffcf72; }
+.set-planning-receipt { margin:9px 0; padding:10px; border:1px solid #526333; border-radius:8px; background:#111510; }
+.set-planning-receipt>strong { color:var(--lime); font-size:9px; }.set-planning-receipt>span { float:right; color:var(--muted); font-size:7px; }
+.set-planning-receipt>p { margin:5px 0 0; color:var(--muted); font-size:8px; line-height:1.4; }
 .set-selection-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:7px; margin:9px 0; }
 .set-selection-groups article { padding:8px 9px; border:1px solid #4b5837; border-radius:7px; background:#191d16; }
 .set-selection-groups article.adjusted { border-color:#6b5635; background:#1d1913; }

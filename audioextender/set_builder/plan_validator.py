@@ -2,23 +2,11 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-
-def _camelot(value: str) -> tuple[int, str] | None:
-    match = re.fullmatch(r"(1[0-2]|[1-9])([AB])", value.strip().upper())
-    return (int(match.group(1)), match.group(2)) if match else None
-
-
-def _harmonic_warning(left: dict[str, Any], right: dict[str, Any]) -> bool:
-    first = _camelot(str(left.get("camelot") or left.get("key") or ""))
-    second = _camelot(str(right.get("camelot") or right.get("key") or ""))
-    if not first or not second:
-        return False
-    distance = min((first[0] - second[0]) % 12, (second[0] - first[0]) % 12)
-    return distance > 1 or (first[1] != second[1] and first[0] != second[0])
+from audioextender.set_builder.transition_optimizer import bpm_distance_ratio, weak_harmonic_transition
 
 
 @dataclass(frozen=True)
@@ -59,7 +47,8 @@ class SetPlanValidator:
                 errors.append({"code": "duplicate-track", "trackId": track_id, "position": position})
             if track_id in excluded:
                 errors.append({"code": "excluded-track", "trackId": track_id, "position": position})
-            if not candidate.get("available"):
+            path = str(candidate.get("path") or "")
+            if not candidate.get("available") or (path and not Path(path).is_file()):
                 errors.append({"code": "unavailable-file", "trackId": track_id, "position": position})
             if section_id not in section_ids:
                 errors.append({"code": "unknown-section", "sectionId": section_id, "position": position})
@@ -106,10 +95,9 @@ class SetPlanValidator:
                 })
         for index, right in enumerate(chosen[1:], start=1):
             left = chosen[index - 1]
-            bpm_left, bpm_right = float(left.get("bpm") or 0), float(right.get("bpm") or 0)
-            if bpm_left and bpm_right and abs(bpm_left - bpm_right) / min(bpm_left, bpm_right) > 0.12:
+            if bpm_distance_ratio(left, right) > 0.12:
                 warnings.append({"code": "large-bpm-jump", "from": left["id"], "to": right["id"]})
-            if _harmonic_warning(left, right):
+            if weak_harmonic_transition(left, right):
                 warnings.append({"code": "weak-key-transition", "from": left["id"], "to": right["id"]})
             if left.get("vocals") == right.get("vocals") == "vocal-forward":
                 warnings.append({"code": "vocal-collision", "from": left["id"], "to": right["id"]})

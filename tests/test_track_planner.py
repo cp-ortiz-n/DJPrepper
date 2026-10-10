@@ -14,6 +14,7 @@ from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.plan_validator import SetPlanValidator
 from audioextender.set_builder.planning_jobs import PlanningCanceled, SetPlanningJobService
+from audioextender.set_builder.planning_store import JsonPlanningJobStore
 from audioextender.set_builder.track_planner import (
     TRACK_PLAN_SCHEMA,
     AITrackPlanner,
@@ -86,6 +87,7 @@ class AITrackPlannerTests(unittest.TestCase):
         self.assertEqual(result["attempts"], 1)
         self.assertEqual([track["id"] for track in result["plan"]], ["downloaded:1", "downloaded:2"])
         self.assertTrue(all("path" not in track for track in model.calls[0]["payload"]["candidates"]))
+        self.assertTrue(all("path" not in track for track in result["plan"]))
 
     def test_repairs_hallucinated_id_using_validation_errors(self) -> None:
         invalid = {"summary": "Invalid", "selections": [
@@ -161,6 +163,24 @@ class AITrackPlannerTests(unittest.TestCase):
         self.assertEqual(
             [selection["sectionId"] for selection in result["selections"]],
             ["section-1", "section-2"],
+        )
+
+    def test_deterministic_plan_balances_relevance_with_section_runtime(self) -> None:
+        candidates = [
+            {
+                "id": f"downloaded:{index}", "available": True,
+                "durationSeconds": duration, "relevanceScore": relevance,
+            }
+            for index, duration, relevance in (
+                (1, 600, 100), (2, 600, 99), (3, 240, 90), (4, 240, 89),
+            )
+        ]
+        pool = {"sections": [{"sectionId": "opening", "candidates": candidates}]}
+        set_journey = {"sections": [{"id": "opening", "durationPercent": 100}]}
+        result = deterministic_track_plan(pool, set_journey, 2, target_duration_minutes=8)
+        self.assertEqual(
+            [selection["trackId"] for selection in result["selections"]],
+            ["downloaded:3", "downloaded:4"],
         )
 
     def test_flattened_candidates_merge_multi_section_eligibility(self) -> None:
@@ -289,6 +309,29 @@ class SetPlanningJobServiceTests(unittest.TestCase):
         self.assertEqual(status.status_code, 200)
         self.assertEqual(status.json()["status"], "complete", status.json())
         self.assertTrue(status.json()["result"]["valid"])
+        self.assertIn("evaluation", status.json()["result"])
+        self.assertIn("planningDurationMs", status.json()["result"])
+
+    def test_persisted_inflight_job_becomes_retryable_after_restart(self) -> None:
+        with TemporaryDirectory() as temporary:
+            store = JsonPlanningJobStore(Path(temporary) / "planning.json")
+            request = self.request()
+            store.save({"interrupted": {
+                "jobId": "interrupted", "status": "processing", "stage": "Planning", "progress": 35,
+                "result": None, "error": None, "retryable": False, "retryOf": None,
+                "createdAt": "2026-01-01T00:00:00+00:00", "updatedAt": "2026-01-01T00:00:00+00:00",
+            }}, {"interrupted": request})
+            service = SetPlanningJobService(
+                lambda: [], SetCandidateRetriever(),
+                AITrackPlanner(FakeModel([], available=False), SetPlanValidator()),
+                store=store,
+            )
+            state = service.status("interrupted")
+            reloaded_states, _ = store.load()
+        self.assertEqual(state["status"], "failed")
+        self.assertTrue(state["retryable"])
+        self.assertIn("restarted", state["error"])
+        self.assertEqual(reloaded_states["interrupted"]["status"], "failed")
 
 
 if __name__ == "__main__":

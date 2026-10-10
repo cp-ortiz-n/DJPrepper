@@ -8,9 +8,12 @@ from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import Any, Protocol
 
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
+from audioextender.set_builder.plan_evaluator import SetPlanEvaluator
+from audioextender.set_builder.planning_store import PlanningJobStore
 from audioextender.set_builder.track_planner import AITrackPlanner
 
 
@@ -31,12 +34,36 @@ class SetPlanningJobService:
     catalog_loader: Callable[[], list[dict[str, Any]]]
     candidate_retriever: SetCandidateRetriever
     track_planner: AITrackPlanner
+    evaluator: SetPlanEvaluator = field(default_factory=SetPlanEvaluator)
+    store: PlanningJobStore | None = None
     thread_factory: Callable[..., StartableThread] = threading.Thread
     maximum_retained_jobs: int = 50
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
     _states: dict[str, dict[str, Any]] = field(default_factory=dict, init=False)
     _requests: dict[str, dict[str, Any]] = field(default_factory=dict, init=False)
     _cancel: dict[str, threading.Event] = field(default_factory=dict, init=False)
+
+    def __post_init__(self) -> None:
+        if self.store is None:
+            return
+        states, requests = self.store.load()
+        self._states = states
+        self._requests = requests
+        for job_id, state in self._states.items():
+            self._cancel[job_id] = threading.Event()
+            if state.get("status") in {"pending", "processing", "canceling"}:
+                state.update(
+                    status="failed",
+                    stage="Interrupted by application restart",
+                    error="Planning stopped when the application restarted. Retry to build a fresh validated plan.",
+                    retryable=True,
+                    updatedAt=_now(),
+                )
+        self._persist()
+
+    def _persist(self) -> None:
+        if self.store is not None:
+            self.store.save(self._states, self._requests)
 
     def start(self, request: dict[str, Any], *, retry_of: str | None = None) -> dict[str, Any]:
         with self._lock:
@@ -68,6 +95,7 @@ class SetPlanningJobService:
             }
             self._requests[job_id] = deepcopy(request)
             self._cancel[job_id] = threading.Event()
+            self._persist()
         self.thread_factory(
             target=self._run,
             args=(job_id,),
@@ -77,6 +105,7 @@ class SetPlanningJobService:
         return self.status(job_id)
 
     def _run(self, job_id: str) -> None:
+        started = perf_counter()
         try:
             self._update(job_id, status="processing", stage="Retrieving bounded catalog candidates", progress=10)
             self._check_canceled(job_id)
@@ -116,6 +145,13 @@ class SetPlanningJobService:
                     for section in pool["sections"]
                 ],
             }
+            result["evaluation"] = self.evaluator.evaluate(
+                result["plan"],
+                request["journey"],
+                result["warnings"],
+                target_duration_minutes=request["target_duration_minutes"],
+            )
+            result["planningDurationMs"] = round((perf_counter() - started) * 1000)
             self._update(
                 job_id,
                 status="complete",
@@ -148,6 +184,7 @@ class SetPlanningJobService:
     def _update(self, job_id: str, **changes: Any) -> None:
         with self._lock:
             self._states[job_id].update(changes, updatedAt=_now())
+            self._persist()
 
     def status(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -162,6 +199,7 @@ class SetPlanningJobService:
             if state["status"] not in {"complete", "failed", "canceled"}:
                 self._cancel[job_id].set()
                 self._states[job_id].update(status="canceling", stage="Canceling safely", updatedAt=_now())
+                self._persist()
             return deepcopy(self._states[job_id])
 
     def retry(self, job_id: str) -> dict[str, Any]:

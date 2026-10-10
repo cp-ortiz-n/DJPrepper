@@ -131,6 +131,10 @@ test('Set Builder exposes explicit safe planning modes and cancellation', () => 
   assert.match(moduleSource, /await generateAITrackPlan\(\)/);
   assert.match(moduleSource, /await generateDeterministicSetPlan\(\)/);
   assert.match(moduleSource, /track\._aiSelectionReason=item\.selectionReason/);
+  assert.match(moduleSource, /planningReceipt:currentPlanningReceipt/);
+  assert.match(moduleSource, /currentPlanningReceipt=record\.planningReceipt\|\|null/);
+  assert.match(moduleSource, /evaluation\?\.disclosures/);
+  assert.match(moduleSource, /currentPlanningReceipt\?\.warnings/);
 });
 
 test('Set Builder converts exact percentages into track allocations', () => {

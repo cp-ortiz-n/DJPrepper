@@ -12,6 +12,7 @@ import httpx
 
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.transition_optimizer import DeterministicTransitionOptimizer
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -49,6 +50,16 @@ TRACK_PLAN_INSTRUCTIONS = (
     "matches are scarce. Reasons must describe supplied facts or an explicit planning judgment; evidence must be "
     "ai-suggested. Do not claim to have heard audio."
 )
+
+
+def _public_validation(validation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **validation,
+        "plan": [
+            {key: value for key, value in track.items() if key != "path"}
+            for track in validation.get("plan", [])
+        ],
+    }
 
 
 class TrackPlanningModel(Protocol):
@@ -179,15 +190,23 @@ def _section_targets(journey: dict[str, Any], count: int) -> dict[str, int]:
 
 
 def deterministic_track_plan(
-    candidate_pool: dict[str, Any], journey: dict[str, Any], target_track_count: int
+    candidate_pool: dict[str, Any], journey: dict[str, Any], target_track_count: int,
+    target_duration_minutes: int | None = None,
 ) -> dict[str, Any]:
     """Select a stable, section-aware plan when a model cannot return a valid one."""
     targets = _section_targets(journey, target_track_count)
-    selections: list[dict[str, str]] = []
     used: set[str] = set()
+    journey_sections = {
+        str(section.get("id") or f"section-{index + 1}"): section
+        for index, section in enumerate(journey.get("sections", []))
+    }
+    chosen_sections: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
     for section in candidate_pool.get("sections", []):
         section_id = str(section.get("sectionId") or "")
-        candidates = [candidate for candidate in section.get("candidates", []) if candidate.get("available")]
+        candidates = [
+            candidate for candidate in section.get("candidates", [])
+            if candidate.get("available") and str(candidate.get("id") or "") not in used
+        ]
         candidates.sort(
             key=lambda candidate: (
                 not bool(candidate.get("required") or candidate.get("locked")),
@@ -197,19 +216,70 @@ def deterministic_track_plan(
             )
         )
         target = targets.get(section_id, 0)
-        for candidate in candidates:
-            if sum(item["sectionId"] == section_id for item in selections) >= target:
-                break
-            track_id = str(candidate.get("id") or "")
-            if track_id and track_id not in used:
-                used.add(track_id)
-                selections.append({
-                    "trackId": track_id,
-                    "sectionId": section_id,
-                    "reason": "Highest deterministic section relevance with a usable local file.",
-                    "evidence": "estimated",
-                })
+        section_definition = journey_sections.get(section_id, {})
+        duration_target = (
+            target_duration_minutes * 60 * float(section_definition.get("durationPercent") or 0) / 100
+            if target_duration_minutes else None
+        )
+        selected = _select_section_candidates(candidates, target, duration_target)
+        used.update(str(candidate.get("id") or "") for candidate in selected)
+        chosen_sections.append((section_definition, selected))
+    optimized = DeterministicTransitionOptimizer().optimize(chosen_sections)
+    selections = [{
+        "trackId": str(candidate.get("id") or ""),
+        "sectionId": section_id,
+        "reason": "Deterministic balance of section relevance, runtime, energy, BPM, key, and vocals.",
+        "evidence": "estimated",
+    } for section_id, candidate in optimized]
     return {"summary": "Deterministic catalog-backed fallback plan.", "selections": selections}
+
+
+def _select_section_candidates(
+    candidates: list[dict[str, Any]], target_count: int, target_duration_seconds: float | None
+) -> list[dict[str, Any]]:
+    if target_count <= 0 or not candidates:
+        return []
+    if target_duration_seconds is None:
+        return candidates[:target_count]
+    forced = [candidate for candidate in candidates if candidate.get("required") or candidate.get("locked")]
+    forced = forced[:target_count]
+    remaining_count = target_count - len(forced)
+    if remaining_count <= 0:
+        return forced
+    forced_ids = {str(candidate.get("id") or "") for candidate in forced}
+    optional = [candidate for candidate in candidates if str(candidate.get("id") or "") not in forced_ids]
+    # Dynamic programming keeps the strongest relevance combination for each
+    # track-count/runtime pair. Ten-second buckets make the bound small and
+    # stable even for the maximum 100-candidate server contract.
+    states: dict[tuple[int, int], tuple[float, tuple[dict[str, Any], ...]]] = {(0, 0): (0.0, ())}
+    for candidate in optional:
+        duration_bucket = max(1, round(float(candidate.get("durationSeconds") or 0) / 10))
+        relevance = float(candidate.get("relevanceScore") or 0)
+        additions: dict[tuple[int, int], tuple[float, tuple[dict[str, Any], ...]]] = {}
+        for (count, duration), (score, chosen) in states.items():
+            if count >= remaining_count:
+                continue
+            key = (count + 1, duration + duration_bucket)
+            proposal = (score + relevance, (*chosen, candidate))
+            current = states.get(key) or additions.get(key)
+            if current is None or proposal[0] > current[0]:
+                additions[key] = proposal
+        states.update(additions)
+    forced_duration = sum(float(candidate.get("durationSeconds") or 0) for candidate in forced)
+    complete = [
+        (duration * 10 + forced_duration, score, chosen)
+        for (count, duration), (score, chosen) in states.items()
+        if count == remaining_count
+    ]
+    if not complete:
+        return [*forced, *optional[:remaining_count]]
+    tolerance = target_duration_seconds * 0.15
+    within_tolerance = [state for state in complete if abs(state[0] - target_duration_seconds) <= tolerance]
+    if within_tolerance:
+        _, _, chosen = max(within_tolerance, key=lambda state: (state[1], -abs(state[0] - target_duration_seconds)))
+    else:
+        _, _, chosen = min(complete, key=lambda state: (abs(state[0] - target_duration_seconds), -state[1]))
+    return [*forced, *chosen]
 
 
 @dataclass(frozen=True)
@@ -278,7 +348,7 @@ class AITrackPlanner:
                     )
                     if validation["valid"]:
                         return {
-                            **validation,
+                            **_public_validation(validation),
                             "summary": str(proposal.get("summary") or "AI-planned running order."),
                             "mode": "ai-planned",
                             "provider": status.get("provider"),
@@ -292,7 +362,9 @@ class AITrackPlanner:
                     failures.append([{"code": "provider-error", "message": str(error)}])
                     previous = None
         cancel_check()
-        fallback = deterministic_track_plan(candidate_pool, journey, target_track_count)
+        fallback = deterministic_track_plan(
+            candidate_pool, journey, target_track_count, target_duration_minutes
+        )
         validation = self.validator.validate(
             fallback["selections"], candidates, journey,
             required_ids=required_ids, excluded_ids=excluded_ids, locked_ids=locked_ids,
@@ -301,7 +373,7 @@ class AITrackPlanner:
         if not validation["valid"]:
             raise RuntimeError(f"No valid track plan could be built: {validation['errors']}")
         return {
-            **validation,
+            **_public_validation(validation),
             "summary": fallback["summary"],
             "mode": "deterministic-fallback",
             "provider": "offline",

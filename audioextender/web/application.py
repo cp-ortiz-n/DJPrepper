@@ -3610,6 +3610,7 @@ app.include_router(
             candidate_retriever=candidate_retriever,
             plan_validator=set_plan_validator,
             track_planner=track_planner,
+            planning_job_store_path=SET_BUILDER_CATALOG_CACHE.with_name("set_planning_jobs.json"),
         )
     )
 )

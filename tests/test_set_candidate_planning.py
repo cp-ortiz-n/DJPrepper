@@ -4,6 +4,7 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import perf_counter
 from unittest.mock import Mock
 
 from fastapi import FastAPI
@@ -120,6 +121,19 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertEqual(result["candidateCount"], 2)
         self.assertEqual([len(section["candidates"]) for section in result["sections"]], [2, 2])
 
+    def test_large_catalog_retrieval_stays_bounded_and_responsive(self) -> None:
+        for size, budget in ((100, 1), (1000, 2.5), (3000, 5)):
+            with self.subTest(catalog_size=size):
+                tracks = [catalog_track(index, Path(f"/missing/{index}.wav"), artist=f"Artist {index}")
+                          for index in range(1, size + 1)]
+                started = perf_counter()
+                result = SetCandidateRetriever().retrieve(
+                    tracks, journey("Reggaeton", "Salsa", "House"), section_limit=30, total_limit=100
+                )
+                elapsed = perf_counter() - started
+                self.assertLessEqual(result["candidateCount"], 100)
+                self.assertLess(elapsed, budget, f"{size}-track retrieval took {elapsed:.2f}s")
+
     def test_applies_hard_brief_constraints_but_preserves_required_tracks(self) -> None:
         with TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -148,6 +162,21 @@ class SetCandidateRetrieverTests(unittest.TestCase):
 
 
 class SetPlanValidatorTests(unittest.TestCase):
+    def test_treats_half_time_bpm_as_compatible(self) -> None:
+        candidates = [
+            {"id": "one", "available": True, "bpm": 75, "eligibleSectionIds": ["one"]},
+            {"id": "two", "available": True, "bpm": 150, "eligibleSectionIds": ["one"]},
+        ]
+        result = SetPlanValidator().validate(
+            [
+                {"trackId": "one", "sectionId": "one", "evidence": "estimated"},
+                {"trackId": "two", "sectionId": "one", "evidence": "estimated"},
+            ],
+            candidates,
+            {"sections": [{"id": "one"}]},
+        )
+        self.assertNotIn("large-bpm-jump", {warning["code"] for warning in result["warnings"]})
+
     def setUp(self) -> None:
         self.journey = journey("Reggaeton", "Salsa")
         self.candidates = [
@@ -195,6 +224,17 @@ class SetPlanValidatorTests(unittest.TestCase):
             "track-count-mismatch", "duration-outside-tolerance", "candidate-section-mismatch",
             "invalid-evidence-label",
         }.issubset(codes))
+
+    def test_rechecks_a_candidate_file_at_validation_time(self) -> None:
+        candidate = {
+            "id": "downloaded:1", "available": True, "path": "/missing/disconnected.wav",
+            "durationSeconds": 240, "eligibleSectionIds": ["section-1"],
+        }
+        result = SetPlanValidator(duration_tolerance=1).validate(
+            [{"trackId": "downloaded:1", "sectionId": "section-1"}],
+            [candidate], journey("Reggaeton"), target_track_count=1, target_duration_minutes=4,
+        )
+        self.assertIn("unavailable-file", {error["code"] for error in result["errors"]})
 
 
 class SetCandidatePlanningRouteTests(unittest.TestCase):

@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "id": "latin-kickback",
+      "brief": {"vibe": "balanced", "identity": {"text": "Chill Reggaeton and Dembow kickback with a melodic opening."}},
+      "targetDurationMinutes": 45,
+      "targetTrackCount": 12,
+      "journey": {"sections": [
+        {"id": "opening", "name": "Melodic opening", "durationPercent": 25, "energyStart": 3, "energyEnd": 5, "genres": ["Reggaeton"], "characteristics": ["melodic"]},
+        {"id": "dance", "name": "Dance pocket", "durationPercent": 75, "energyStart": 5, "energyEnd": 7, "genres": ["Reggaeton", "Dembow"], "characteristics": ["party-ready"]}
+      ]}
+    },
+    {
+      "id": "latin-techno-waves",
+      "brief": {"vibe": "peak-time", "curve": "waves", "identity": {"text": "Latin House and Latin Techno with optional Schranz."}},
+      "targetDurationMinutes": 60,
+      "targetTrackCount": 16,
+      "journey": {"sections": [
+        {"id": "warmup", "name": "Latin House", "durationPercent": 35, "energyStart": 4, "energyEnd": 6, "genres": ["Latin House"], "characteristics": ["melodic"]},
+        {"id": "drive", "name": "Latin Techno", "durationPercent": 45, "energyStart": 6, "energyEnd": 8, "genres": ["Latin Techno"], "characteristics": ["driving"]},
+        {"id": "finish", "name": "Hard finish", "durationPercent": 20, "energyStart": 8, "energyEnd": 9, "genres": ["Schranz"], "characteristics": ["peak-time"]}
+      ]}
+    },
+    {
+      "id": "latin-party-journey",
+      "brief": {"vibe": "dance-party", "identity": {"text": "Cumbia and Merengue into Bachata and Salsa, ending with Latin Techno."}},
+      "targetDurationMinutes": 90,
+      "targetTrackCount": 24,
+      "expectations": {
+        "minimumQualityScore": 55,
+        "minimumGenreCoverage": 0.8,
+        "maximumWarnings": {"large-bpm-jump": 7}
+      },
+      "journey": {"sections": [
+        {"id": "arrival", "name": "Arrival", "durationPercent": 20, "energyStart": 3, "energyEnd": 5, "genres": ["Latin"], "characteristics": ["melodic"]},
+        {"id": "dance", "name": "Cumbia and Merengue", "durationPercent": 30, "energyStart": 5, "energyEnd": 7, "genres": ["Cumbia", "Merengue"], "characteristics": ["dance-friendly"]},
+        {"id": "partner", "name": "Bachata and Salsa", "durationPercent": 30, "energyStart": 6, "energyEnd": 7, "genres": ["Bachata", "Salsa"], "characteristics": ["vocal"]},
+        {"id": "electronic", "name": "Electronic finish", "durationPercent": 20, "energyStart": 7, "energyEnd": 9, "genres": ["Latin Techno", "Schranz"], "characteristics": ["peak-time"]}
+      ]}
+    },
+    {
+      "id": "afro-house-lounge",
+      "brief": {"vibe": "warm-up", "identity": {"text": "Organic Afro House lounge warm-up with a smooth ending."}},
+      "targetDurationMinutes": 45,
+      "targetTrackCount": 12,
+      "journey": {"sections": [
+        {"id": "organic", "name": "Organic opening", "durationPercent": 50, "energyStart": 2, "energyEnd": 4, "genres": ["Afro House"], "characteristics": ["organic", "melodic"]},
+        {"id": "lounge", "name": "Lounge close", "durationPercent": 50, "energyStart": 4, "energyEnd": 5, "genres": ["House"], "characteristics": ["smooth"]}
+      ]}
+    },
+    {
+      "id": "peak-techno",
+      "brief": {"vibe": "peak-time", "curve": "peak-release", "identity": {"text": "Peak-time Techno with a hard center and euphoric close."}},
+      "targetDurationMinutes": 60,
+      "targetTrackCount": 16,
+      "journey": {"sections": [
+        {"id": "rise", "name": "Rise", "durationPercent": 30, "energyStart": 5, "energyEnd": 7, "genres": ["Techno"], "characteristics": ["driving"]},
+        {"id": "peak", "name": "Peak", "durationPercent": 45, "energyStart": 8, "energyEnd": 9, "genres": ["Techno"], "characteristics": ["hard", "peak-time"]},
+        {"id": "release", "name": "Release", "durationPercent": 25, "energyStart": 8, "energyEnd": 7, "genres": ["Techno"], "characteristics": ["euphoric"]}
+      ]}
+    }
+  ]
+}

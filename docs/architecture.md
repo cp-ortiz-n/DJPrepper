@@ -106,6 +106,16 @@ SetPlanValidator
    ├── IDs, exclusions, required/locked tracks, duplicates, and files
    ├── duration, track count, and journey-section coverage
    └── BPM, Camelot-key, and vocal-transition warnings
+        ↓
+SetPlanEvaluator
+   ├── direct, identity, bridge, and fallback disclosure
+   ├── genre, journey, duration, repetition, and warning measurements
+   └── reproducible quality receipt returned with the validated plan
+        ↓
+DeterministicTransitionOptimizer (fallback plans)
+   ├── preserves chosen tracks, section allocation, and journey order
+   ├── bounded beam search across BPM, Camelot key, vocals, and energy
+   └── recognizes half/double-time BPM compatibility
 ```
 
 The route surface is:
@@ -137,9 +147,28 @@ sequences triggers deterministic fallback. Edited journey sections directly
 control positional genre and energy targets in either safe generator. The
 candidate and validator services are provider-independent. `track_planner.py`
 owns provider adaptation, repair, and fallback; `planning_jobs.py` owns lifecycle
-and cancellation; `set-planning-client.js` owns browser polling and abort
-semantics. The model cannot bypass availability, explicit brief constraints,
+and cancellation; `planning_store.py` atomically persists job/request state and
+turns interrupted jobs into explicit retryable failures after restart;
+`plan_evaluator.py` owns deterministic quality measurement; and
+`set-planning-client.js` owns browser polling and abort semantics. The model cannot bypass availability, explicit brief constraints,
 exclusions, duration, or journey-coverage checks.
+
+Completed set records store a planning receipt separately from the editable
+brief. That receipt includes mode, provider/model, evaluation, warnings,
+candidate scarcity, fallback reason, duration, and per-track selection evidence.
+Loading a saved set restores this provenance; manual edits remain possible but
+do not rewrite the historical generation receipt.
+
+`scripts/evaluate_set_builder.py` is the catalog-scale regression boundary. It
+runs the checked-in scenarios in `tests/fixtures/set_builder_eval_scenarios.json`
+through candidate retrieval, track planning, validation, and evaluation, then
+atomically writes a comparable report. `evaluation_harness.py` contains the
+provider-independent orchestration so tests can use synthetic catalogs while
+operators can use the exported real catalog. The harness never weakens runtime
+validation and records failed scenarios instead of hiding them from averages.
+Scenario expectations can enforce quality, genre-coverage, and warning-count
+floors; the Latin-party regression specifically guards against reintroducing
+the avoidable BPM discontinuities found during the first connected-drive run.
 
 ## Browser request state
 

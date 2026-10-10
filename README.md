@@ -91,6 +91,13 @@ plan. Planning runs as a cancellable background job so a stale response cannot
 replace the current set. Ollama receives the text brief and bounded catalog
 metadata; it never receives audio. When the optional OpenAI fallback is
 configured, only that text context is sent and request storage is disabled.
+Each completed AI plan now includes deterministic quality measurements for
+scarcity tiers, requested-genre and journey coverage, duration accuracy,
+repeated artists, and transition warnings. The generated-set screen shows this
+disclosure, and saved sets retain the planning mode, provider/model, validation
+warnings, evaluation, fallback reason, journey, and per-track selection reasons.
+Planning jobs persist locally; an app restart marks interrupted work as safely
+retryable instead of losing or silently applying it.
 
 Install the recommended local provider on macOS with:
 
@@ -121,6 +128,35 @@ provider and model. Every interpreted brief also logs the provider, model,
 response time, and vocabulary size without logging the brief or track metadata.
 The Set Builder card shows the same live state as **Local AI ready**, **Cloud AI
 ready**, or **Offline rules**.
+
+For an opt-in acceptance run against the installed Ollama model—including real
+structured track selection from controlled candidates—run:
+
+```bash
+AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.test_local_intention_acceptance
+```
+
+For a repeatable evaluation against the current exported catalog and the
+checked-in DJ-brief scenarios, run:
+
+```bash
+.venv/bin/python scripts/evaluate_set_builder.py
+```
+
+The harness writes `output/reports/set_builder_evaluation.json`, compares the
+new results with the prior run, and reports candidate scarcity, journey and
+genre coverage, duration accuracy, warnings, repeated artists, planning time,
+and the deterministic quality score. Set `AUDIOEXTENDER_LLM_PROVIDER=offline`
+to measure the deterministic fallback or leave the configured provider active
+to evaluate real AI track selection. The catalog and scenario paths can be
+overridden with `--catalog` and `--scenarios`.
+
+Deterministic fallback plans use bounded transition optimization after track
+selection. It cannot change selected tracks or their journey sections; it only
+orders them for smoother BPM—including half/double-time compatibility—Camelot
+key, vocal, and energy movement. Checked-in scenario thresholds cause the
+evaluation command to fail when quality, coverage, or transition warnings
+regress.
 
 The **Import** tab can convert an individually confirmed, authorized YouTube
 source to WAV. It can also read a Spotify playlist CSV and suggest a likely
@@ -392,7 +428,7 @@ Use this table before searching through the larger composition files:
 | Set Builder UI | `web/set-builder.js` and `web/styles.css` |
 | Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
 | Set Builder candidate shortlists or plan validation | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py` |
-| AI track ordering, repairs, fallback, or job lifecycle | `audioextender/set_builder/track_planner.py`, `audioextender/set_builder/planning_jobs.py`, `web/set-planning-client.js` |
+| AI track ordering, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
 | Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
