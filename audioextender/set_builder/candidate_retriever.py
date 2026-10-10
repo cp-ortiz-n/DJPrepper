@@ -96,12 +96,35 @@ def _match_score(track: dict[str, Any], section: dict[str, Any]) -> tuple[float,
     return score, tier, reasons
 
 
+def _matches_constraints(track: dict[str, Any], constraints: dict[str, Any]) -> bool:
+    bpm = float(track.get("bpm") or 0)
+    minimum_bpm = float(constraints.get("bpmMin") or 0)
+    maximum_bpm = float(constraints.get("bpmMax") or 0)
+    if minimum_bpm and bpm < minimum_bpm:
+        return False
+    if maximum_bpm and bpm > maximum_bpm:
+        return False
+    if constraints.get("vocals") not in {None, "", "all", track.get("vocals")}:
+        return False
+    if constraints.get("timing") not in {None, "", "all", track.get("timing")}:
+        return False
+    detailed = set(_terms(track.get("detailedGenres", [])))
+    required_details = set(_terms(constraints.get("detailedGenres", [])))
+    if required_details and not detailed.intersection(required_details):
+        return False
+    genre = str(track.get("genre") or "").strip().casefold()
+    excluded_genres = {
+        str(value).strip().casefold() for value in constraints.get("excludedGenres", []) if str(value).strip()
+    }
+    return not any(genre == excluded or genre.startswith(f"{excluded} /") for excluded in excluded_genres)
+
+
 @dataclass(frozen=True)
 class SetCandidateRetriever:
     """Retrieve small real-catalog pools without asking an AI to inspect the whole library."""
 
     default_section_limit: int = 16
-    maximum_section_limit: int = 30
+    maximum_section_limit: int = 100
     maximum_total: int = 100
 
     def retrieve(
@@ -112,6 +135,7 @@ class SetCandidateRetriever:
         required_ids: set[str] | None = None,
         excluded_ids: set[str] | None = None,
         locked_ids: set[str] | None = None,
+        constraints: dict[str, Any] | None = None,
         section_limit: int | None = None,
         total_limit: int | None = None,
     ) -> dict[str, Any]:
@@ -121,7 +145,12 @@ class SetCandidateRetriever:
         limit = max(1, min(section_limit or self.default_section_limit, self.maximum_section_limit))
         total_cap = max(1, min(total_limit or self.maximum_total, self.maximum_total))
         compact = [_compact_track(item) for item in catalog]
-        compact = [track for track in compact if track["id"] and track["id"] not in excluded]
+        compact = [
+            track for track in compact
+            if track["id"]
+            and track["id"] not in excluded
+            and (track["id"] in required | locked or _matches_constraints(track, constraints or {}))
+        ]
         known_ids = {track["id"] for track in compact}
         sections: list[dict[str, Any]] = []
         emitted: set[str] = set()
@@ -138,9 +167,9 @@ class SetCandidateRetriever:
             selected: list[dict[str, Any]] = []
             artist_counts: dict[str, int] = {}
             for score, tier, track, reasons in ranked:
-                if len(selected) >= limit or len(emitted) >= total_cap:
+                if len(selected) >= limit:
                     break
-                if track["id"] in emitted:
+                if track["id"] not in emitted and len(emitted) >= total_cap:
                     continue
                 artist = track["artist"].strip().casefold()
                 if artist and artist_counts.get(artist, 0) >= 2 and track["id"] not in required | locked:

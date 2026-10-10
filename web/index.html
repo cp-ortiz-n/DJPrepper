@@ -316,7 +316,12 @@
               <label>Minimum set health<select id="set-minimum-health"><option value="55">55 · Flexible</option><option value="65" selected>65 · Balanced</option><option value="75">75 · Strong</option><option value="85">85 · Strict</option></select></label>
           </div></details>
           <details class="set-advanced set-track-constraints"><summary><span><strong>Required and excluded tracks</strong><small>Pin must-play tracks or remove songs from consideration</small></span><b id="set-rule-count">0 rules</b></summary><div class="set-track-rules"><label>Required track<select id="set-required"><option value="">Choose a track</option></select></label><button id="add-required-track" type="button" class="button secondary">Add required</button><label>Exclude track<select id="set-excluded"><option value="">Choose a track</option></select></label><button id="add-excluded-track" type="button" class="button secondary">Exclude</button></div><div id="set-rule-chips" class="set-rule-chips"></div></details>
-          <div class="set-generate-row"><button id="set-generate" type="submit">Generate set plan</button><p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p></div>
+          <div class="set-generate-row">
+            <label class="set-planning-mode">Planning mode<select id="set-planning-mode"><option value="ai-planned" selected>AI Planned · chooses and orders tracks</option><option value="interpreted">AI Interpreted · rules choose tracks</option><option value="classic">Classic · rules only</option></select></label>
+            <button id="set-generate" type="submit">Generate set plan</button>
+            <button id="set-cancel-planning" type="button" class="button secondary" hidden>Cancel planning</button>
+            <p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p>
+          </div>
         </form>
         <aside class="panel saved-sets-panel">
           <p class="eyebrow">SAVED SETS</p><h2>Your plans</h2>

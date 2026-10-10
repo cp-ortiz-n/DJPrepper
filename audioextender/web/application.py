@@ -70,6 +70,7 @@ from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
 from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
@@ -3569,6 +3570,7 @@ intention_planner = IntentionPlanner.from_environment()
 journey_planner = JourneyPlanner(intention_planner)
 candidate_retriever = SetCandidateRetriever()
 set_plan_validator = SetPlanValidator()
+track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
 
 
 def _log_intention_provider_status() -> None:
@@ -3607,6 +3609,7 @@ app.include_router(
             write_catalog_cache=_write_set_builder_catalog_cache,
             candidate_retriever=candidate_retriever,
             plan_validator=set_plan_validator,
+            track_planner=track_planner,
         )
     )
 )

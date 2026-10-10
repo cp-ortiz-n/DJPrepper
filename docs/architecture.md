@@ -59,7 +59,7 @@ globals.
 | `web/metadata_batch_routes.py` | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches |
 | `web/reporting_routes.py` | Track feedback and manual key verification |
 | `web/set_builder_routes.py` | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
-| `web/set_planning_routes.py` | Bounded Set Builder candidate retrieval and deterministic plan validation |
+| `web/set_planning_routes.py` | Candidate retrieval, validation, and asynchronous AI track-planning jobs |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
 | `imports/routes.py` | Authorized source, local-file, and playlist import delivery |
 
@@ -69,10 +69,11 @@ providers are normally lambdas so tests can replace the active repository.
 
 ## Set Builder intention planning
 
-Set Builder uses an optional language-model boundary to understand a DJ's
-natural-language brief. The model does not build the set and does not inspect
-audio. It returns a small structured plan used by the existing deterministic
-selection engine.
+Set Builder uses optional language-model boundaries to understand a DJ's
+natural-language brief and, in AI Planned mode, choose a running order from a
+server-controlled shortlist. The model never inspects audio or the unrestricted
+catalog, and every proposed order passes deterministic validation before it can
+reach the browser.
 
 ```text
 Natural-language brief
@@ -96,9 +97,12 @@ POST /api/set-builder/candidate-pool → SetCandidateRetriever
    ├── stable catalog IDs and local file availability
    └── direct, identity, bridge, and fallback scarcity tiers
         ↓
-Local deterministic filtering, scoring, ordering, and rendering
+POST /api/set-builder/plan-tracks → SetPlanningJobService
+   ├── cancellable candidate retrieval and stale-job supersession
+   ├── AITrackPlanner with strict structured output and repair attempts
+   └── deterministic catalog-backed fallback
         ↓
-POST /api/set-builder/validate-plan → SetPlanValidator
+SetPlanValidator
    ├── IDs, exclusions, required/locked tracks, duplicates, and files
    ├── duration, track count, and journey-section coverage
    └── BPM, Camelot-key, and vocal-transition warnings
@@ -111,6 +115,10 @@ The route surface is:
 - `POST /api/set-builder/plan-journey` for a validated, editable section plan.
 - `POST /api/set-builder/candidate-pool` for a bounded shortlist backed by real catalog IDs.
 - `POST /api/set-builder/validate-plan` for deterministic hard errors, musical warnings, and plan metrics.
+- `POST /api/set-builder/plan-tracks` to start a bounded asynchronous track-planning job.
+- `GET /api/set-builder/plan-tracks/{job_id}` for progress and the validated result.
+- `POST /api/set-builder/plan-tracks/{job_id}/cancel` to cancel without changing the current set.
+- `POST /api/set-builder/plan-tracks/{job_id}/retry` to retry a failed or canceled request.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is
@@ -119,16 +127,19 @@ controlled by `AUDIOEXTENDER_LLM_PROVIDER`, `OLLAMA_HOST`,
 `OPENAI_SET_BUILDER_MODEL`.
 
 Only the text brief and a bounded catalog vocabulary list cross this boundary;
-audio never does. OpenAI requests use `store: false`. Returned genres are
+audio and filesystem paths never do. AI Planned mode adds only the bounded
+candidate metadata needed for selection. OpenAI requests use `store: false`. Returned genres are
 canonicalized against catalog vocabulary, schema labels and placeholders are
 removed, and malformed or unavailable provider responses fall through safely.
 Journey percentages are normalized to 100%, energy values are bounded to 1–10,
 unknown genres are rejected, and omission or reordering of required genre
 sequences triggers deterministic fallback. Edited journey sections directly
-control positional genre and energy targets in the existing generator. The
-candidate and validator services are deliberately provider-independent, so a
-future AI track planner can only choose from known local IDs and cannot bypass
-availability, exclusion, duration, or journey-coverage checks.
+control positional genre and energy targets in either safe generator. The
+candidate and validator services are provider-independent. `track_planner.py`
+owns provider adaptation, repair, and fallback; `planning_jobs.py` owns lifecycle
+and cancellation; `set-planning-client.js` owns browser polling and abort
+semantics. The model cannot bypass availability, explicit brief constraints,
+exclusions, duration, or journey-coverage checks.
 
 ## Browser request state
 

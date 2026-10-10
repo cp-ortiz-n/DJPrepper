@@ -1103,9 +1103,11 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .set-advanced[open]>summary { border-bottom:1px solid var(--line); }
 .set-advanced .set-control-grid,.set-advanced .set-track-rules { margin:0; padding:13px; }
 .set-advanced .set-rule-chips { margin:0; padding:0 13px 13px; }
-.set-generate-row { display:flex; align-items:center; gap:16px; margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
+.set-generate-row { display:flex; align-items:flex-end; gap:12px; margin-top:16px; padding-top:16px; border-top:1px solid var(--line); }
 .set-generate-row>button { width:auto; min-width:190px; height:44px; margin:0; }
 .set-generate-row .form-message { margin:0; color:var(--muted); font-size:9px; }
+.set-planning-mode { min-width:240px; color:var(--muted); font-size:8px; }
+.set-planning-mode select { margin-top:5px; }
 .set-journey { margin:15px 0 12px; border:1px solid var(--line); border-radius:10px; background:#111311; }
 .set-journey>summary { padding:10px 12px; cursor:pointer; list-style:none; color:var(--muted); font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
 .set-journey>summary::-webkit-details-marker { display:none; }
@@ -1291,6 +1293,7 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .set-selection-reasons summary { color:var(--lime); cursor:pointer; font-size:8px; font-weight:800; }
 .set-selection-reasons ul { display:grid; gap:4px; margin:6px 0 0; padding:0; list-style:none; }
 .set-selection-reasons li { color:var(--muted); font-size:8px; line-height:1.35; }
+.set-selection-reasons li em { display:inline-block; margin-right:5px; padding:2px 4px; border:1px solid #4d5c35; border-radius:999px; color:var(--lime); font-size:6px; font-style:normal; letter-spacing:.04em; text-transform:uppercase; }
 .set-selection-reasons li::before { content:'•'; margin-right:5px; color:#7f8777; }
 .set-selection-reasons li[data-reason="required"] { color:var(--ink); font-weight:800; }
 .set-selection-reasons li[data-reason="required"]::before { content:'★'; color:var(--lime); }

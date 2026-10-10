@@ -4,12 +4,14 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import Mock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.track_planner import AITrackPlanner
 from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
 
 
@@ -109,6 +111,41 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertEqual(len(candidates), 3)
         self.assertEqual(sum(candidate["artist"] == "Same" for candidate in candidates), 2)
 
+    def test_tracks_can_be_candidates_for_multiple_sections_without_duplicate_catalog_ids(self) -> None:
+        tracks = [
+            catalog_track(1, Path("/missing/one.wav"), genre="Latin / Reggaeton"),
+            catalog_track(2, Path("/missing/two.wav"), genre="Latin / Salsa"),
+        ]
+        result = SetCandidateRetriever().retrieve(tracks, journey("Reggaeton", "Salsa"), section_limit=2)
+        self.assertEqual(result["candidateCount"], 2)
+        self.assertEqual([len(section["candidates"]) for section in result["sections"]], [2, 2])
+
+    def test_applies_hard_brief_constraints_but_preserves_required_tracks(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            house = catalog_track(1, root / "house.wav", genre="Electronic / House")
+            techno = catalog_track(2, root / "techno.wav", genre="Electronic / Techno")
+            house["analysis"]["bpm"] = 120
+            techno["analysis"]["bpm"] = 140
+            Path(house["job"]["library_path"]).touch()
+            Path(techno["job"]["library_path"]).touch()
+            constrained = SetCandidateRetriever().retrieve(
+                [house, techno], journey("House"),
+                constraints={"bpmMax": 125, "excludedGenres": ["Electronic / Techno"]},
+            )
+            with_required = SetCandidateRetriever().retrieve(
+                [house, techno], journey("House"), required_ids={"downloaded:2"},
+                constraints={"bpmMax": 125, "excludedGenres": ["Electronic / Techno"]},
+            )
+        constrained_ids = {
+            track["id"] for section in constrained["sections"] for track in section["candidates"]
+        }
+        required_ids = {
+            track["id"] for section in with_required["sections"] for track in section["candidates"]
+        }
+        self.assertEqual(constrained_ids, {"downloaded:1"})
+        self.assertIn("downloaded:2", required_ids)
+
 
 class SetPlanValidatorTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -175,6 +212,7 @@ class SetCandidatePlanningRouteTests(unittest.TestCase):
                 write_catalog_cache=lambda: None,
                 candidate_retriever=SetCandidateRetriever(),
                 plan_validator=SetPlanValidator(duration_tolerance=0.5),
+                track_planner=AITrackPlanner(Mock(), SetPlanValidator()),
             )))
             client = TestClient(app)
             pool_response = client.post("/api/set-builder/candidate-pool", json={
@@ -201,6 +239,7 @@ class SetCandidatePlanningRouteTests(unittest.TestCase):
                 write_catalog_cache=lambda: None,
                 candidate_retriever=SetCandidateRetriever(),
                 plan_validator=SetPlanValidator(),
+                track_planner=AITrackPlanner(Mock(), SetPlanValidator()),
             )))
             response = TestClient(app).post("/api/set-builder/validate-plan", json={
                 "journey": journey("Reggaeton"),

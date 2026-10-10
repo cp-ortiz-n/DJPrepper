@@ -23,6 +23,10 @@ export function createSetBuilderState() {
 }
 
 export function setTrackId(track) { return String(track.source_name || '').toLowerCase(); }
+export function setCatalogTrackId(track) {
+  if (track?._downloadedId != null) return `downloaded:${track._downloadedId}`;
+  return track?._job?.id != null ? `job:${track._job.id}` : '';
+}
 export function trackMatchesSetGenre(track, genre) { return track._genre===genre || track._genre.startsWith(`${genre} / `); }
 export function setTrackDetailedGenres(track) { return String(track._detailedGenre||'').split(',').map(value=>value.trim()).filter(Boolean); }
 export function trackMatchesSetDetailedGenre(track, genre) {
@@ -158,8 +162,11 @@ export function createSetBuilderFeature({
   let setCompactMode = initialSetBuilderState.compactMode;
   let setTransitionSettings = initialSetBuilderState.transitionSettings;
   let proposalSwitchNonce = 0;
+  let activePlanningJobId = '';
+  let planningController = null;
   let transitionEditorSurfaces = [];
   const transitionWaveCache = new Map();
+  const planningClient = createSetPlanningClient();
   function identityStore(){try{return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY)||'{}');}catch(_){return {};}}
   function intentionVocabulary(){return [...new Set(setBuilderLibrary.flatMap(track=>[
     ...String(track._genre||'').split('/').map(value=>value.trim()),
@@ -248,7 +255,7 @@ export function createSetBuilderFeature({
         && (brief.timing === 'all' || timingProfile(track) === brief.timing);
     });
   }
-  async function generateSetPlan() {
+  async function generateDeterministicSetPlan() {
     const brief = setBrief(); const eligiblePool = eligibleSetTracks(brief);
     const requiredIds=new Set(setRequiredIds);const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const coarseScore=track=>intentionEvaluation(track,brief).score+(intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?40:0)-Math.abs(songEnergy(track)-targetSetEnergy(0,2,brief))*12;
     const shortlistLimit=800;const pool=eligiblePool.length<=shortlistLimit?eligiblePool:[...eligiblePool].sort((a,b)=>coarseScore(b)-coarseScore(a)).slice(0,shortlistLimit);
@@ -295,6 +302,68 @@ export function createSetBuilderFeature({
     for(const strategy of SET_PROPOSAL_STRATEGIES){await new Promise(resolve=>requestAnimationFrame(()=>resolve()));let bestPlan=[],bestHealth={score:-1,transitions:[],vocalClashes:0},attempts=0;for(;attempts<10;attempts+=1){const candidate=buildVariation(strategy.id);if(candidate.length<count)continue;const repaired=improveSetOrder(candidate,brief);const health=setHealth(repaired);const overlap=repaired.filter(track=>generatedTrackIds.has(setTrackId(track))).length/Math.max(1,repaired.length);const distinctBonus=strategy.id==='adventurous'?(1-overlap)*12:0;const rank=health.score+distinctBonus;if(rank>(bestHealth.rank??-1)){bestPlan=repaired;bestHealth={...health,rank};}if(health.score>=brief.minimumHealth&&attempts>=3){attempts+=1;break;}}const accepted=bestPlan.length>=count&&bestHealth.score>=brief.minimumHealth;if(accepted)bestPlan.forEach(track=>generatedTrackIds.add(setTrackId(track)));proposals.push({...strategy,accepted,attempts,health:bestHealth,snapshot:{tracks:bestPlan.map(setTrackId),locked:[...setLockedIds],transitions:{}}});}
     const accepted=proposals.filter(proposal=>proposal.accepted);if(!accepted.length){const best=proposals.sort((a,b)=>b.health.score-a.health.score)[0];const issues=setHealthIssues(best.health,brief.minimumHealth);$('#set-builder-message').textContent=`No direction was applied. The best search reached ${best.health.score}/100, below your ${brief.minimumHealth} target. ${issues.slice(0,2).join(' · ')||'Relax a constraint or lower the health floor.'}`;return;}
     if(currentSetPlan.length)pushSetHistory();setProposals=proposals;const preferred=proposals.find(proposal=>proposal.id==='safe'&&proposal.accepted)||accepted.sort((a,b)=>b.health.score-a.health.score)[0];activeSetProposal=preferred.id;restoreSetSnapshot(preferred.snapshot,false);$('#set-builder-message').textContent=`Built ${accepted.length} distinct direction${accepted.length===1?'':'s'}. Optimizing transition techniques for ${preferred.label}…`;await autoOptimizeSetTransitions();preferred.snapshot=setPlanSnapshot();preferred.health=setHealth();renderSetPlan();$('#set-builder-message').textContent=`${accepted.length} distinct direction${accepted.length===1?'':'s'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
+  }
+  function planningJourney(brief) {
+    if (brief.identity?.journey?.sections?.length) return brief.identity.journey;
+    const genres=[...brief.detailedGenres,...brief.genres];
+    const energy={rise:[3.5,7.5],'peak-release':[4,8],waves:[4.5,7],steady:[5.5,5.5]}[brief.curve]||[4.5,6.5];
+    return {
+      version:1,
+      summary:'Single editable journey derived from the structured set brief.',
+      durationMinutes:brief.length,
+      sections:[{
+        id:'section-1', name:'Full set', durationPercent:100,
+        energyStart:energy[0], energyEnd:energy[1], genres,
+        characteristics:[brief.vibe,brief.curve].filter(Boolean),
+        purpose:'Honor the structured brief while maintaining a playable flow.',
+      }],
+    };
+  }
+  function planningTrackCount(brief) {
+    const pool=eligibleSetTracks(brief);
+    if(pool.length<2)throw new Error('Not enough analyzed tracks match this brief. Relax a filter and try again.');
+    const averageSeconds=pool.reduce((sum,track)=>sum+Math.max(90,Number(track.duration_seconds||210)-30),0)/pool.length;
+    const protectedCount=new Set([...setRequiredIds,...setLockedIds]).size;
+    if(protectedCount>100)throw new Error('AI Planned mode supports at most 100 required or locked tracks.');
+    return Math.max(2,protectedCount,Math.min(pool.length,Math.ceil(brief.length*60/averageSeconds)));
+  }
+  function catalogIds(ids) {
+    const bySetId=new Map(setBuilderLibrary.map(track=>[setTrackId(track),setCatalogTrackId(track)]));
+    return [...ids].map(id=>bySetId.get(id)).filter(Boolean);
+  }
+  async function cancelAITrackPlan() {
+    planningController?.abort();
+    const jobId=activePlanningJobId;activePlanningJobId='';
+    if(jobId)await planningClient.cancel(jobId).catch(()=>null);
+  }
+  async function generateAITrackPlan() {
+    await cancelAITrackPlan();
+    const brief=setBrief(),journey=planningJourney(brief),targetTrackCount=planningTrackCount(brief);
+    planningController=new AbortController();
+    const started=await planningClient.start({
+      brief,journey,target_duration_minutes:brief.length,target_track_count:targetTrackCount,
+      required_track_ids:catalogIds(setRequiredIds),excluded_track_ids:catalogIds(setExcludedIds),
+      locked_track_ids:catalogIds(setLockedIds),per_section_limit:Math.min(100,Math.max(30,targetTrackCount)),total_limit:100,
+    });
+    activePlanningJobId=started.jobId;
+    $('#set-cancel-planning').hidden=false;
+    const result=await planningClient.wait(started.jobId,{
+      signal:planningController.signal,
+      onProgress:state=>{$('#set-builder-message').textContent=`${state.stage} · ${state.progress||0}%`;},
+    });
+    activePlanningJobId='';planningController=null;$('#set-cancel-planning').hidden=true;
+    const byCatalogId=new Map(setBuilderLibrary.map(track=>[setCatalogTrackId(track),track]));
+    const selected=result.plan.map(item=>{
+      const track=byCatalogId.get(item.id);if(!track)throw new Error(`Validated catalog track ${item.id} is not loaded in the browser.`);
+      track._aiSelectionReason=item.selectionReason;track._planSectionId=item.sectionId;return track;
+    });
+    if(currentSetPlan.length)pushSetHistory();
+    currentSetPlan=selected;setProposals=[];activeSetProposal='';setTransitionSettings={};
+    $('#set-builder-message').textContent='Validated track order ready. Optimizing transition techniques…';
+    await autoOptimizeSetTransitions();renderSetPlan();
+    const warningCount=result.warnings?.length||0;
+    const source=result.mode==='ai-planned'?`${result.provider} · ${result.model}`:'deterministic safety fallback';
+    $('#set-builder-message').textContent=`${result.summary} ${selected.length} tracks · ${source} · ${warningCount} validation warning${warningCount===1?'':'s'}.`;
   }
   function setPlanSnapshot() { return {tracks:currentSetPlan.map(setTrackId),locked:[...setLockedIds],transitions:JSON.parse(JSON.stringify(setTransitionSettings))}; }
   function restoreSetSnapshot(snapshot,render=true) { const byId=new Map(setBuilderLibrary.map(track=>[setTrackId(track),track]));currentSetPlan=(snapshot?.tracks||[]).map(id=>byId.get(id)).filter(Boolean);setLockedIds=new Set(snapshot?.locked||[]);setTransitionSettings=snapshot?.transitions||{};if(render)renderSetPlan(); }
@@ -417,6 +486,7 @@ export function createSetBuilderFeature({
     const energy=songEnergy(track); const target=targetSetEnergy(index,currentSetPlan.length,brief); const energyDelta=energy-target;
     const matchingGenres=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));
     const matchingDetailed=(brief.detailedGenres||[]).filter(genre=>trackMatchesSetDetailedGenre(track,genre));
+    if(track._aiSelectionReason?.text)reasons.push({kind:track._aiSelectionReason.evidence||'ai-suggested',text:track._aiSelectionReason.text});
     if(setRequiredIds.has(id))reasons.push({kind:'required',text:'Selected because it is a must-play track.'});
     const intention=intentionEvaluation(track,brief);if(intention.required.length)reasons.push({kind:'identity',text:`Meets the hard identity requirement: ${intention.required.join(' + ')}.`});else if(intention.preferred.length)reasons.push({kind:'identity',text:`Matches the requested identity through ${intention.preferred.slice(0,2).join(' + ')}.`});if(intention.avoided.length)reasons.push({kind:'relaxed',text:`Uses a limited characteristic (${intention.avoided.join(' + ')}) only to preserve runtime or flow.`});
     if(matchingDetailed.length)reasons.push({kind:'genre',text:`Direct detailed-genre match: ${matchingDetailed.slice(0,2).join(' + ')}.`});
@@ -462,7 +532,7 @@ export function createSetBuilderFeature({
     $('#set-track-list').innerHTML = currentSetPlan.map((track,index) => {
       const transition = transitionExplanation(currentSetPlan[index-1],track); const id = setTrackId(track); const locked = setLockedIds.has(id); const selectionReasons=setSelectionExplanation(track,index,brief);
       const preview=track._job?.id?compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`,track.duration_seconds,true):'';
-      return `<article class="set-track-card${locked?' locked':''}" draggable="${locked?'false':'true'}" data-index="${index}"><span class="set-position">${index+1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(track).map(role => LIBRARY_ROLE_INFO[role]?.[0] || role).join(', ')}</span>${preview}</div><div class="set-track-meta"><strong>${Number(track.bpm||0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended?'Extended edit available':'Original analyzed track'}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons.map(reason=>`<li data-reason="${reason.kind}">${escapeHtml(reason.text)}</li>`).join('')}</ul></details></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold?'warning':'good'}"><b>${transition.score == null?'OPEN':`${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index?'<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button>':''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index===0?'disabled':''}>↑ Earlier</button><button type="button" class="set-move-down" ${index===currentSetPlan.length-1?'disabled':''}>↓ Later</button><button type="button" class="set-lock">${locked?'Unlock':'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">Find alternative</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
+      return `<article class="set-track-card${locked?' locked':''}" draggable="${locked?'false':'true'}" data-index="${index}"><span class="set-position">${index+1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(track).map(role => LIBRARY_ROLE_INFO[role]?.[0] || role).join(', ')}</span>${preview}</div><div class="set-track-meta"><strong>${Number(track.bpm||0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended?'Extended edit available':'Original analyzed track'}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons.map(reason=>{const label=['verified','estimated','ai-suggested'].includes(reason.kind)?`<em>${escapeHtml(reason.kind)}</em>`:'';return `<li data-reason="${reason.kind}">${label}${escapeHtml(reason.text)}</li>`;}).join('')}</ul></details></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold?'warning':'good'}"><b>${transition.score == null?'OPEN':`${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index?'<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button>':''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index===0?'disabled':''}>↑ Earlier</button><button type="button" class="set-move-down" ${index===currentSetPlan.length-1?'disabled':''}>↓ Later</button><button type="button" class="set-lock">${locked?'Unlock':'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">Find alternative</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
     }).join('');
     bindSetRows();
     bindCompactAudio($('#set-track-list'));
@@ -542,7 +612,8 @@ export function createSetBuilderFeature({
   }
   function bindSetBuilder() {
     if(setBuilderBound)return;setBuilderBound=true;
-    $('#set-builder-form').onsubmit=async event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation'),button=$('#set-generate');button.disabled=true;if(intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText)){button.textContent='Planning journey…';applyIntentionInterpretation(await interpretAndPlan(intentionText));}button.textContent='Building and optimizing…';$('#set-builder-message').textContent='Ranking compatible tracks and shaping the energy journey…';requestAnimationFrame(()=>setTimeout(async()=>{try{await generateSetPlan();}catch(error){console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}finally{button.disabled=false;button.textContent='Generate set plan';}},0));};
+    $('#set-builder-form').onsubmit=async event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation'),button=$('#set-generate'),mode=$('#set-planning-mode').value;button.disabled=true;try{if(mode!=='classic'&&intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText)){button.textContent='Planning journey…';applyIntentionInterpretation(await interpretAndPlan(intentionText));}button.textContent=mode==='ai-planned'?'AI planning tracks…':'Building and optimizing…';$('#set-builder-message').textContent=mode==='ai-planned'?'Retrieving a safe catalog candidate pool…':'Ranking compatible tracks and shaping the energy journey…';await new Promise(resolve=>requestAnimationFrame(resolve));if(mode==='ai-planned')await generateAITrackPlan();else await generateDeterministicSetPlan();}catch(error){if(error instanceof SetPlanningCanceled){$('#set-builder-message').textContent='Set planning canceled. Your current set and brief were not changed.';}else{console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}}finally{button.disabled=false;button.textContent='Generate set plan';$('#set-cancel-planning').hidden=true;}};
+    $('#set-cancel-planning').onclick=async()=>{await cancelAITrackPlan();$('#set-builder-message').textContent='Cancel requested. Your current set will remain unchanged.';};
     $('#interpret-set-intention').onclick=async event=>{const text=$('#set-intention').value.trim(),button=event.currentTarget;if(!text){$('#set-intention-interpretation').hidden=true;$('#set-journey-preview').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}button.disabled=true;button.textContent='Planning journey…';try{applyIntentionInterpretation(await interpretAndPlan(text));}finally{button.disabled=false;button.textContent='Interpret intention';}};
     const briefName=$('#set-name'),resultName=$('#set-result-name');
     briefName.addEventListener('input',()=>{if(document.activeElement!==resultName)resultName.value=briefName.value;});
@@ -563,3 +634,4 @@ export function createSetBuilderFeature({
 
   return {loadSetBuilder};
 }
+import {SetPlanningCanceled, createSetPlanningClient} from './set-planning-client.js';

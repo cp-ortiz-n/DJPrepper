@@ -115,6 +115,22 @@ test('Set Builder creates isolated mutable state', () => {
   left.requiredIds.add('track-a');
   assert.equal(right.requiredIds.size, 0);
   assert.equal(setBuilder.setTrackId({source_name:'Track.WAV'}), 'track.wav');
+  assert.equal(setBuilder.setCatalogTrackId({_downloadedId:42}), 'downloaded:42');
+  assert.equal(setBuilder.setCatalogTrackId({_job:{id:7}}), 'job:7');
+});
+
+test('Set Builder exposes explicit safe planning modes and cancellation', () => {
+  const indexPath = fileURLToPath(new URL('../web/index.html', import.meta.url));
+  const modulePath = fileURLToPath(new URL('../web/set-builder.js', import.meta.url));
+  const indexSource = readFileSync(indexPath, 'utf8');
+  const moduleSource = readFileSync(modulePath, 'utf8');
+  assert.match(indexSource, /AI Planned · chooses and orders tracks/);
+  assert.match(indexSource, /AI Interpreted · rules choose tracks/);
+  assert.match(indexSource, /Classic · rules only/);
+  assert.match(indexSource, /id="set-cancel-planning"/);
+  assert.match(moduleSource, /await generateAITrackPlan\(\)/);
+  assert.match(moduleSource, /await generateDeterministicSetPlan\(\)/);
+  assert.match(moduleSource, /track\._aiSelectionReason=item\.selectionReason/);
 });
 
 test('Set Builder converts exact percentages into track allocations', () => {
