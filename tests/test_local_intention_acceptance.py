@@ -12,7 +12,7 @@ from audioextender.set_builder.intention_planner import IntentionPlanner
 class LocalIntentionAcceptanceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.planner = IntentionPlanner(provider="ollama", ollama_model="qwen3:4b")
+        cls.planner = IntentionPlanner(provider="ollama", ollama_model="qwen3.5:4b")
 
     def interpret(self, brief: str) -> dict:
         return self.planner.interpret(

@@ -154,7 +154,7 @@ Status: **In progress — local-first language interpretation is complete.** Set
 Builder accepts a natural-language intention and translates it into editable
 hard requirements, weighted preferences, limits, requested and optional genres,
 genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
-policy. It uses local Ollama (`qwen3:4b`) by default, can use OpenAI only when it
+policy. It uses local Ollama (`qwen3.5:4b`) by default, can use OpenAI only when it
 is explicitly configured, and falls back to deterministic browser rules. Model
 output is schema-constrained, cleaned of placeholder/schema labels, and
 canonicalized against catalog vocabulary. The original brief remains intact.

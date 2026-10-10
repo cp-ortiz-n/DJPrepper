@@ -16,7 +16,7 @@ analysis adds a penalty for vocal-heavy regions.
 - Python 3.10–3.12 recommended
 - FFmpeg (recommended for broad MP3 decoding support)
 - Enough free disk space for an uncompressed stereo WAV
-- Optional: Ollama and `qwen3:4b` for local Set Builder intention interpretation
+- Optional: Ollama and `qwen3.5:4b` for local Set Builder intention interpretation
 
 Install Homebrew and FFmpeg if needed:
 
@@ -46,6 +46,12 @@ Start it from the project folder:
 ```bash
 python3 web_app.py
 ```
+
+On macOS, you can instead double-click **Start AudioExtender.command** in the
+project folder. The launcher starts Ollama when necessary, downloads the
+configured local model on the first run, starts AudioExtender, and opens the
+browser. Closing its Terminal window stops AudioExtender; Ollama may remain
+available for the next launch.
 
 Then open [http://localhost:8765](http://localhost:8765). The dashboard supports
 multi-file drag and drop, edit settings, a persistent processing queue, live
@@ -82,7 +88,7 @@ Install the recommended local provider on macOS with:
 ```bash
 brew install --cask ollama-app
 open -a Ollama
-ollama pull qwen3:4b
+ollama pull qwen3.5:4b
 ```
 
 Set Builder continues to work without Ollama by using offline rules. Provider
@@ -90,7 +96,7 @@ behavior can be configured with:
 
 ```bash
 export AUDIOEXTENDER_LLM_PROVIDER=auto  # auto, ollama, openai, or offline
-export OLLAMA_SET_BUILDER_MODEL=qwen3:4b
+export OLLAMA_SET_BUILDER_MODEL=qwen3.5:4b
 export OLLAMA_HOST=http://127.0.0.1:11434
 export OPENAI_SET_BUILDER_MODEL=gpt-5-mini
 export OPENAI_API_KEY=...                # optional cloud fallback
@@ -99,6 +105,12 @@ export OPENAI_API_KEY=...                # optional cloud fallback
 The UI identifies results as Local AI, Cloud AI, or offline rules. Model output
 is schema-constrained and sanitized against catalog vocabulary before the
 browser uses it.
+
+When AudioExtender starts, its Terminal prints the detected Set Builder AI
+provider and model. Every interpreted brief also logs the provider, model,
+response time, and vocabulary size without logging the brief or track metadata.
+The Set Builder card shows the same live state as **Local AI ready**, **Cloud AI
+ready**, or **Offline rules**.
 
 The **Import** tab can convert an individually confirmed, authorized YouTube
 source to WAV. It can also read a Spotify playlist CSV and suggest a likely

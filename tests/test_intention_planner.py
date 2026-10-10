@@ -14,6 +14,9 @@ from audioextender.set_builder.intention_planner import (
 
 
 class IntentionPlannerTests(unittest.TestCase):
+    def test_default_local_model_matches_the_mac_launcher(self) -> None:
+        self.assertEqual(IntentionPlanner().ollama_model, "qwen3.5:4b")
+
     def test_planner_requires_server_side_key(self) -> None:
         planner = IntentionPlanner(provider="offline")
         self.assertFalse(planner.available)
@@ -33,7 +36,10 @@ class IntentionPlannerTests(unittest.TestCase):
         response.raise_for_status.return_value = None
         response.json.return_value = {"output_text": json.dumps(interpretation)}
         planner = IntentionPlanner(provider="openai", api_key="test-key", model="test-model")
-        with patch("audioextender.set_builder.intention_planner.httpx.post", return_value=response) as post:
+        with (
+            patch("audioextender.set_builder.intention_planner.httpx.post", return_value=response) as post,
+            self.assertLogs("uvicorn.error", level="INFO") as logs,
+        ):
             result = planner.interpret(
                 "Start melodic and use varying waves; add schranz if available", ["Latin House", "Schranz"]
             )
@@ -44,6 +50,7 @@ class IntentionPlannerTests(unittest.TestCase):
         request = post.call_args.kwargs["json"]
         self.assertFalse(request["store"])
         self.assertTrue(request["text"]["format"]["strict"])
+        self.assertIn("provider=openai model=test-model", " ".join(logs.output))
 
     def test_local_ollama_is_primary_and_uses_the_same_schema(self) -> None:
         interpretation = {
@@ -92,6 +99,18 @@ class IntentionPlannerTests(unittest.TestCase):
             "Start melodic, then Cumbia, and end with Latin Techno.",
         )
         self.assertEqual(result["genreSequence"], ["cumbia", "latin techno"])
+
+    def test_positional_descriptor_is_not_treated_as_a_genre(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [], "preferred": ["melodic"], "avoided": [],
+                "requestedGenres": ["Melodic", "Cumbia"], "optionalGenres": [],
+                "genreSequence": ["Melodic", "Cumbia"],
+            },
+            ["Melodic", "Cumbia"],
+            "Start melodic, then Cumbia.",
+        )
+        self.assertEqual(result["genreSequence"], ["cumbia"])
 
     def test_auto_provider_falls_back_from_local_to_cloud(self) -> None:
         cloud_result = {

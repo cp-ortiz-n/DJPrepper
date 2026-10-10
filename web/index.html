@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20261005-199">
+  <link rel="stylesheet" href="/assets/styles.css?v=20261009-200">
 </head>
 <body>
   <header class="topbar">
@@ -280,7 +280,7 @@
         <form id="set-builder-form" class="panel set-controls">
           <div class="set-control-head"><div><p class="eyebrow">SET BRIEF</p><h2>Plan the journey</h2><small>Start with the essentials. Refine constraints only when the set needs them.</small></div><button id="reset-set-brief" type="button" class="button tertiary">Reset brief</button></div>
           <section class="set-intention-card">
-            <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>Optional</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div></div>
+            <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>Optional</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div><span id="set-provider-status" class="set-provider-status checking">Checking local AI…</span></div>
             <textarea id="set-intention" rows="4" maxlength="1200" placeholder="Example: Build a driving Latin electronic set with a Techno foundation, Spanish vocals, dembow or Latin percussion, and an Ecuadorian party feel. Allow Latin House and Cumbia edits as bridges."></textarea>
             <div class="set-intention-actions"><small>We’ll turn this into editable preferences before generating.</small><button id="interpret-set-intention" type="button" class="button secondary">Interpret intention</button></div>
             <div id="set-intention-interpretation" class="set-intention-interpretation" hidden>
@@ -613,6 +613,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20261005-237" type="module"></script>
+  <script src="/assets/app.js?v=20261009-238" type="module"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import queue
 import re
 import shutil
@@ -64,27 +65,21 @@ from audioextender.library.relocation import LibraryRelocationCoordinator
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.web_jobs import WebJobService
 from audioextender.reporting.feedback import append_web_feedback
-from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.repositories.facade import JobRepository
+from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
 from audioextender.web.job_media_routes import (
-    BatchDownloadRequest,  # noqa: F401 - compatibility re-export
-    CueEdit,  # noqa: F401 - compatibility re-export
-    CueEditRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
-    TransitionScoreRequest,  # noqa: F401 - compatibility re-export
     create_job_media_router,
 )
 from audioextender.web.job_routes import (
     JobQueueService,
-    ReorderRequest,  # noqa: F401 - compatibility re-export
     create_job_router,
 )
 from audioextender.web.library_maintenance_routes import (
-    IntegrityRepairRequest,  # noqa: F401 - compatibility re-export
     LibraryMaintenanceDependencies,
     LibraryMaintenanceService,
     create_library_maintenance_router,
@@ -99,16 +94,13 @@ from audioextender.web.metadata_batch_routes import (
     create_metadata_batch_router,
 )
 from audioextender.web.reporting_routes import (
-    KeyVerificationRequest,  # noqa: F401 - compatibility re-export
     ReportingRouteDependencies,
-    TrackFeedbackRequest,  # noqa: F401 - compatibility re-export
     create_reporting_router,
 )
 from audioextender.web.set_builder_routes import (
     SetBuilderRouteDependencies,
     SetExportPreflightRequest,  # noqa: F401 - compatibility re-export
     SetPlaylistSaveRequest,  # noqa: F401 - compatibility re-export
-    SetPlaylistTrack,  # noqa: F401 - compatibility re-export
     create_set_builder_router,
     preflight_paths,
     save_playlist_file,
@@ -173,6 +165,7 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+logger = logging.getLogger("uvicorn.error")
 repository = JobRepository(DATABASE)
 library_relocation = LibraryRelocationCoordinator(repository, OUTPUT / "reports" / "library_relocation.json")
 pending_backup_restores: dict[str, Path] = {}
@@ -3561,6 +3554,24 @@ app.include_router(
         )
     )
 )
+intention_planner = IntentionPlanner.from_environment()
+
+
+def _log_intention_provider_status() -> None:
+    status = intention_planner.status()
+    if status["available"]:
+        logger.info(
+            "Set Builder AI ready: provider=%s model=%s local_runtime=%s",
+            status["provider"],
+            status["model"],
+            status["local_runtime"],
+        )
+    else:
+        logger.warning("Set Builder AI unavailable: deterministic offline rules will be used")
+
+
+app.router.add_event_handler("startup", _log_intention_provider_status)
+
 app.include_router(
     create_set_builder_router(
         SetBuilderRouteDependencies(
@@ -3569,7 +3580,7 @@ app.include_router(
             write_catalog_cache=_write_set_builder_catalog_cache,
             music_library_root=lambda: _music_library_root(),
             safe_folder_name=_safe_folder_name,
-            intention_planner=IntentionPlanner.from_environment(),
+            intention_planner=intention_planner,
         )
     )
 )

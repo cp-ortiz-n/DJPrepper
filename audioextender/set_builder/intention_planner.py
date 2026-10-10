@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 import httpx
+
+logger = logging.getLogger("uvicorn.error")
 
 INTENTION_SCHEMA: dict[str, Any] = {
     "type": "object", "additionalProperties": False,
@@ -67,6 +71,10 @@ RESERVED_PLACEHOLDERS = {
     "cultural context", "rhythmic variation", "vocal delivery", "energy transition", "venue specifics",
     "invented genres", "genre misinterpretation", "overly specific cultural references",
 }
+NON_GENRE_JOURNEY_TERMS = {
+    "ambient", "balanced", "closing", "dance party", "dark", "driving", "euphoric", "hypnotic",
+    "industrial", "melodic", "peak time", "party ready", "warm up", "vocal safe",
+}
 
 
 def _clean_term(value: Any) -> str:
@@ -94,7 +102,7 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief
         normalized_brief = f" {_clean_term(brief)} "
         explicit_genres = {
             genre for genre in [*cleaned["requestedGenres"], *cleaned["optionalGenres"], *cleaned["genreSequence"]]
-            if f" {genre} " in normalized_brief
+            if f" {genre} " in normalized_brief and genre not in NON_GENRE_JOURNEY_TERMS
         }
         cleaned["genreSequence"] = sorted(
             explicit_genres, key=lambda genre: normalized_brief.index(f" {genre} ")
@@ -105,7 +113,7 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief
 @dataclass(frozen=True)
 class IntentionPlanner:
     provider: str = "auto"
-    ollama_model: str = "qwen3:4b"
+    ollama_model: str = "qwen3.5:4b"
     ollama_endpoint: str = "http://127.0.0.1:11434"
     api_key: str = ""
     model: str = "gpt-5-mini"
@@ -115,7 +123,7 @@ class IntentionPlanner:
     def from_environment(cls) -> IntentionPlanner:
         return cls(
             provider=os.getenv("AUDIOEXTENDER_LLM_PROVIDER", "auto").strip().lower() or "auto",
-            ollama_model=os.getenv("OLLAMA_SET_BUILDER_MODEL", "qwen3:4b").strip() or "qwen3:4b",
+            ollama_model=os.getenv("OLLAMA_SET_BUILDER_MODEL", "qwen3.5:4b").strip() or "qwen3.5:4b",
             ollama_endpoint=os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/"),
             api_key=os.getenv("OPENAI_API_KEY", "").strip(),
             model=os.getenv("OPENAI_SET_BUILDER_MODEL", "gpt-5-mini").strip() or "gpt-5-mini",
@@ -147,18 +155,39 @@ class IntentionPlanner:
     def interpret(self, brief: str, catalog_vocabulary: list[str]) -> dict[str, Any]:
         vocabulary = sorted({str(value).strip() for value in catalog_vocabulary if str(value).strip()})[:800]
         errors: list[str] = []
+        started = perf_counter()
         if self.provider in {"auto", "ollama"}:
             try:
-                return self._interpret_ollama(brief, vocabulary)
+                result = self._interpret_ollama(brief, vocabulary)
+                logger.info(
+                    "Set Builder AI response: provider=ollama model=%s elapsed_ms=%d vocabulary_terms=%d",
+                    self.ollama_model,
+                    round((perf_counter() - started) * 1000),
+                    len(vocabulary),
+                )
+                return result
             except (httpx.HTTPError, ValueError, RuntimeError) as error:
                 errors.append(f"Ollama: {error}")
+                logger.warning(
+                    "Set Builder AI provider failed: provider=ollama model=%s error=%s",
+                    self.ollama_model,
+                    error,
+                )
                 if self.provider == "ollama":
                     raise RuntimeError(errors[-1]) from error
         if self.provider in {"auto", "openai"} and self.api_key:
             try:
-                return self._interpret_openai(brief, vocabulary)
+                result = self._interpret_openai(brief, vocabulary)
+                logger.info(
+                    "Set Builder AI response: provider=openai model=%s elapsed_ms=%d vocabulary_terms=%d",
+                    self.model,
+                    round((perf_counter() - started) * 1000),
+                    len(vocabulary),
+                )
+                return result
             except (httpx.HTTPError, ValueError, RuntimeError) as error:
                 errors.append(f"OpenAI: {error}")
+                logger.warning("Set Builder AI provider failed: provider=openai model=%s error=%s", self.model, error)
         raise RuntimeError("; ".join(errors) or "No local or cloud AI provider is configured")
 
     def _interpret_ollama(self, brief: str, vocabulary: list[str]) -> dict[str, Any]:

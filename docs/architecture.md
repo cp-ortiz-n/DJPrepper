@@ -79,7 +79,7 @@ Natural-language brief
 POST /api/set-builder/interpret-intention
         ↓
 IntentionPlanner
-   ├── Ollama qwen3:4b (default local provider)
+   ├── Ollama qwen3.5:4b (default local provider)
    ├── OpenAI (optional configured fallback)
    └── browser offline rules (final fallback)
         ↓

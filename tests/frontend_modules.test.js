@@ -224,6 +224,8 @@ test('Set Builder feature declares every musical classifier used during generati
   assert.match(source, /Transition preview failed/);
   assert.match(source, /renderSetPlan\(\);\s*\$\('#set-builder-message'\).*Optimizing its transitions in the background/);
   assert.match(source, /proposalSwitchNonce/);
+  assert.match(source, /\/api\/set-builder\/intention-provider/);
+  assert.match(source, /Local AI ready/);
   assert.match(source, /resultName\.addEventListener\('input'/);
   assert.match(source, /briefName\.value=resultName\.value/);
   assert.match(source, /function setSelectionExplanation/);
