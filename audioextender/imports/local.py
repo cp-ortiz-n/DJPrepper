@@ -28,7 +28,7 @@ class LocalAudioImportService:
         generalized_genre: Callable[[str], str],
         genre_directory: Callable[[str], Path],
         write_metadata: Callable[..., None],
-        write_source_metadata: Callable[[Path, dict[str, Any]], None],
+        write_source_metadata: Callable[[Path, dict[str, Any]], Any],
         safe_name: Callable[[str], str],
         thread_factory: Callable[..., threading.Thread] = threading.Thread,
     ) -> None:

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -274,7 +274,7 @@ def performance_diagnostics_report() -> dict:
 
     operations = []
     for operation, entries in grouped.items():
-        durations = sorted(float(entry["duration_ms"]) for entry in entries)
+        durations = sorted(float(cast(Any, entry["duration_ms"])) for entry in entries)
         percentile_index = round((len(durations) - 1) * 0.95)
         operations.append(
             {
@@ -283,13 +283,13 @@ def performance_diagnostics_report() -> dict:
                 "average_ms": round(sum(durations) / len(durations), 1),
                 "p95_ms": durations[percentile_index],
                 "maximum_ms": durations[-1],
-                "failures": sum(int(entry["status"]) >= 400 for entry in entries),
+                "failures": sum(int(cast(Any, entry["status"])) >= 400 for entry in entries),
                 "average_response_bytes": round(
-                    sum(int(entry.get("response_bytes") or 0) for entry in entries) / len(entries)
+                    sum(int(cast(Any, entry.get("response_bytes") or 0)) for entry in entries) / len(entries)
                 ),
             }
         )
-    operations.sort(key=lambda item: (-float(item["p95_ms"]), -int(item["count"])))
+    operations.sort(key=lambda item: (-float(cast(Any, item["p95_ms"])), -int(cast(Any, item["count"]))))
 
     cache = []
     for name, counters in cache_snapshot.items():
@@ -301,8 +301,8 @@ def performance_diagnostics_report() -> dict:
                 "hit_rate": round(counters["hits"] * 100 / total, 1) if total else None,
             }
         )
-    slow = [sample for sample in reversed(samples) if float(sample["duration_ms"]) >= 250][:20]
-    durations = [float(sample["duration_ms"]) for sample in samples]
+    slow = [sample for sample in reversed(samples) if float(cast(Any, sample["duration_ms"])) >= 250][:20]
+    durations = [float(cast(Any, sample["duration_ms"])) for sample in samples]
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "window_size": len(samples),
@@ -1967,8 +1967,8 @@ def downloaded_library(
         playlists = facets["playlists"]
     else:
         tracks = repository.list_downloaded_tracks_with_jobs()
-        genres: dict[str, int] = {}
-        playlists: dict[str, int] = {}
+        genres = {}
+        playlists = {}
         for track in tracks:
             track_genre = _normalize_genre_category(str(track.get("genre_category") or "Other"))
             genres[track_genre] = genres.get(track_genre, 0) + 1
@@ -3001,7 +3001,7 @@ def save_override(source_name: str, request: OverrideRequest) -> dict:
 def analytics() -> dict:
     now = perf_counter()
     with analytics_cache_lock:
-        if analytics_cache["payload"] is not None and now < float(analytics_cache["expires_at"]):
+        if analytics_cache["payload"] is not None and now < float(cast(Any, analytics_cache["expires_at"])):
             return analytics_cache["payload"]  # type: ignore[return-value]
     summary = repository.analytics_summary()
     feedback = summary["feedback"]
@@ -3054,7 +3054,7 @@ def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
         return {
             "songs": {
                 str(index): {key: value for key, value in song.items() if key in fields}
-                for index, song in enumerate(songs[:recent_count])
+                for index, song in enumerate(songs[:recent])
             }
         }
     except (OSError, ValueError) as error:
@@ -3276,7 +3276,6 @@ def _refresh_library_search_index() -> None:
         preset = (analyzed_preset.split("→")[-1].strip() if "→" in analyzed_preset else analyzed_preset.strip()) or str(
             job.get("preset") or "default"
         )
-        config = json.loads(job.get("config_json") or "{}")
         result = (
             "review"
             if job.get("review_status") == "pending"

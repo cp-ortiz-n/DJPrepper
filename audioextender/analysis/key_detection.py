@@ -167,7 +167,7 @@ def _ensemble_key_estimate(
         for label, _score in sorted(by_label.items(), key=lambda item: item[1], reverse=True)
         if label != selected[0]
     ]
-    candidates = tuple(
+    candidates: tuple[dict[str, float | str], ...] = tuple(
         {
             "key": label,
             "confidence": float(confidence if label == selected[0] else by_label[label]),

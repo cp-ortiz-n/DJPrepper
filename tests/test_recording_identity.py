@@ -78,8 +78,12 @@ class RecordingIdentityTests(unittest.TestCase):
 
             self.assertEqual(len(repository.list_downloaded_tracks()), 1)
             self.assertEqual(set(merged["playlists"]), {"First List", "Second List"})
-            self.assertEqual(repository.get(job_id)["source_path"], str(first.resolve()))
-            self.assertEqual(repository.key_verification(first.name)["verified_key"], "D minor")
+            merged_job = repository.get(job_id)
+            verification = repository.key_verification(first.name)
+            assert merged_job is not None
+            assert verification is not None
+            self.assertEqual(merged_job["source_path"], str(first.resolve()))
+            self.assertEqual(verification["verified_key"], "D minor")
             self.assertEqual(repository.track_feedback(first.name)[0]["notes"], "Keep this note")
             self.assertTrue(duplicate.is_file())
             self.assertTrue(repository.downloaded_track_is_excluded(duplicate))
@@ -129,6 +133,7 @@ class RecordingIdentityTests(unittest.TestCase):
             )
             before = repository.get_downloaded_track(second_id)
             separated = repository.separate_recording(second_id)
+            assert before is not None
             self.assertNotEqual(before["recording_code"], separated["recording_code"])
             self.assertEqual(separated["identity_confidence"], "manual")
             self.assertEqual(repository.duplicate_candidates(), [])
@@ -164,15 +169,16 @@ class RecordingIdentityTests(unittest.TestCase):
                 file_path=remix,
                 duration_seconds=270,
             )
-            self.assertNotEqual(
-                repository.get_downloaded_track(original_id)["recording_code"],
-                repository.get_downloaded_track(remix_id)["recording_code"],
-            )
+            original_track = repository.get_downloaded_track(original_id)
+            remix_track = repository.get_downloaded_track(remix_id)
+            assert original_track is not None
+            assert remix_track is not None
+            self.assertNotEqual(original_track["recording_code"], remix_track["recording_code"])
 
             linked = repository.link_recording_version(remix_id, original_id, "RMX")
             self.assertEqual(
                 linked["recording_code"],
-                repository.get_downloaded_track(original_id)["recording_code"],
+                original_track["recording_code"],
             )
             self.assertEqual(linked["version_code"], "RMX01")
             self.assertEqual(len(repository.recording_family(original_id)), 2)

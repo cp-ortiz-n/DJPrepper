@@ -10,6 +10,8 @@ from audioextender.set_builder.intention_planner import IntentionPlanner
 
 @unittest.skipUnless(os.getenv("AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS") == "1", "local LLM acceptance tests are opt-in")
 class LocalIntentionAcceptanceTests(unittest.TestCase):
+    planner: IntentionPlanner
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.planner = IntentionPlanner(provider="ollama", ollama_model="qwen3.5:4b")

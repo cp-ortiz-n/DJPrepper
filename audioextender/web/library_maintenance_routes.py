@@ -26,7 +26,7 @@ class IntegrityRepairRequest(BaseModel):
 class LibraryMaintenanceDependencies:
     repository: Callable[[], Any]
     music_library_root: Callable[[], Path]
-    require_library_online: Callable[[], None]
+    require_library_online: Callable[[], Any]
     migrate_catalog: Callable[..., dict]
     read_wav_metadata: Callable[[Path], dict]
     sync_wav_metadata: Callable[..., bool]

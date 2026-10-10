@@ -83,7 +83,8 @@ def _rebalance_percentages(values: list[float]) -> list[int]:
 
 def sanitize_journey(result: dict[str, Any], vocabulary: list[str], duration_minutes: int) -> dict[str, Any]:
     """Normalize a model proposal into a safe, contiguous, catalog-backed journey."""
-    raw_sections = result.get("sections") if isinstance(result.get("sections"), list) else []
+    raw_value = result.get("sections")
+    raw_sections: list[Any] = raw_value if isinstance(raw_value, list) else []
     sections: list[dict[str, Any]] = []
     for index, raw_section in enumerate(raw_sections[:10]):
         if not isinstance(raw_section, dict):
@@ -150,7 +151,7 @@ def offline_journey(interpreted: dict[str, Any], vocabulary: list[str], duration
         else:
             energy_start = 3 + round(progress * 4)
             energy_end = min(9, energy_start + 1)
-        characteristics = []
+        characteristics: list[str] = []
         if index == 0 and opening:
             characteristics.extend(term.strip() for term in opening.split(",") if term.strip())
         if index == len(groups) - 1 and ending:

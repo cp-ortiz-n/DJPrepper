@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 from __future__ import annotations
 
 import io
@@ -81,7 +82,9 @@ class JobRepositoryTests(unittest.TestCase):
             self.assertEqual(saved["candidates"][0]["key"], "G major")
 
             repository.set_key_verification("Song.wav", "A minor", "B minor", [], "")
-            self.assertEqual(repository.key_verification("song.wav")["verified_key"], "A minor")
+            verification = repository.key_verification("song.wav")
+            assert verification is not None
+            self.assertEqual(verification["verified_key"], "A minor")
             self.assertTrue(repository.delete_key_verification("SONG.WAV"))
             self.assertIsNone(repository.key_verification("Song.wav"))
 
@@ -297,7 +300,9 @@ class JobRepositoryTests(unittest.TestCase):
             self.assertEqual(batch["status"], "complete")
             self.assertEqual(batch["counts"]["uncataloged_files"], 1)
             self.assertEqual(batch["counts"]["tag_mismatches"], 0)
-            self.assertEqual(catalog.get_downloaded_track(track_id)["title"], "Tracked")
+            catalog_track = catalog.get_downloaded_track(track_id)
+            assert catalog_track is not None
+            self.assertEqual(catalog_track["title"], "Tracked")
 
     def test_downloaded_tracks_are_cataloged_separately_with_playlist_membership(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -394,7 +399,9 @@ class JobRepositoryTests(unittest.TestCase):
                 [row["id"] for row in repository.list_completed_versions(str(first_source.resolve()))],
                 [newest, first],
             )
-            self.assertEqual(repository.get(queued)["status"], "queued")
+            queued_job = repository.get(queued)
+            assert queued_job is not None
+            self.assertEqual(queued_job["status"], "queued")
 
     def test_downloaded_genre_relocation_updates_catalog_and_job_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1093,6 +1100,7 @@ class WebApiTests(unittest.TestCase):
             created = response.json()["job_ids"]
             self.assertEqual(len(created), 1)
             job = catalog.get(created[0])
+            assert job is not None
             config = json.loads(job["config_json"])
             self.assertTrue(config["analysis_only"])
             self.assertTrue(config["refresh_cache"])

@@ -17,7 +17,7 @@ class TrackMetadataMutationDependencies:
     music_library_root: Callable[[], Path]
     source_metadata_path: Callable[[Path], Path]
     write_wav_metadata: Callable[..., None]
-    write_source_metadata: Callable[[Path, dict], None]
+    write_source_metadata: Callable[[Path, dict], Any]
 
 
 class TrackMetadataMutationService:
