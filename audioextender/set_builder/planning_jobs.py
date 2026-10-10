@@ -14,6 +14,7 @@ from typing import Any, Protocol
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.plan_evaluator import SetPlanEvaluator
 from audioextender.set_builder.planning_store import PlanningJobStore
+from audioextender.set_builder.release_gate import summarize_planning_jobs
 from audioextender.set_builder.track_planner import AITrackPlanner
 
 
@@ -68,7 +69,8 @@ class SetPlanningJobService:
     def start(self, request: dict[str, Any], *, retry_of: str | None = None) -> dict[str, Any]:
         with self._lock:
             terminal = [
-                job_id for job_id, state in self._states.items()
+                job_id
+                for job_id, state in self._states.items()
                 if state["status"] in {"complete", "failed", "canceled"}
             ]
             while len(self._states) >= self.maximum_retained_jobs and terminal:
@@ -106,10 +108,12 @@ class SetPlanningJobService:
 
     def _run(self, job_id: str) -> None:
         started = perf_counter()
+        timings: dict[str, int] = {}
         try:
             self._update(job_id, status="processing", stage="Retrieving bounded catalog candidates", progress=10)
             self._check_canceled(job_id)
             request = self._requests[job_id]
+            phase_started = perf_counter()
             pool = self.candidate_retriever.retrieve(
                 self.catalog_loader(),
                 request["journey"],
@@ -120,12 +124,14 @@ class SetPlanningJobService:
                 section_limit=request["per_section_limit"],
                 total_limit=request["total_limit"],
             )
+            timings["candidateRetrievalMs"] = round((perf_counter() - phase_started) * 1000)
             if pool["missingRequiredIds"] or pool["unavailableRequiredIds"]:
                 raise ValueError(
                     "Required tracks are missing or unavailable: "
                     f"{pool['missingRequiredIds'] + pool['unavailableRequiredIds']}"
                 )
             self._update(job_id, stage="Planning and validating the running order", progress=35)
+            phase_started = perf_counter()
             result = self.track_planner.plan(
                 brief=request["brief"],
                 journey=request["journey"],
@@ -137,21 +143,29 @@ class SetPlanningJobService:
                 locked_ids=set(request["locked_track_ids"]),
                 cancel_check=lambda: self._check_canceled(job_id),
             )
+            timings["planningAndValidationMs"] = round((perf_counter() - phase_started) * 1000)
             self._check_canceled(job_id)
             result["candidatePool"] = {
                 "candidateCount": pool["candidateCount"],
                 "sections": [
-                    {"sectionId": section["sectionId"], "scarcity": section["scarcity"]}
-                    for section in pool["sections"]
+                    {"sectionId": section["sectionId"], "scarcity": section["scarcity"]} for section in pool["sections"]
                 ],
             }
+            phase_started = perf_counter()
             result["evaluation"] = self.evaluator.evaluate(
                 result["plan"],
                 request["journey"],
                 result["warnings"],
                 target_duration_minutes=request["target_duration_minutes"],
             )
+            timings["evaluationMs"] = round((perf_counter() - phase_started) * 1000)
             result["planningDurationMs"] = round((perf_counter() - started) * 1000)
+            result["observability"] = {
+                **timings,
+                **result.get("observability", {}),
+                "totalMs": result["planningDurationMs"],
+                "outcome": result["mode"],
+            }
             self._update(
                 job_id,
                 status="complete",
@@ -207,3 +221,7 @@ class SetPlanningJobService:
         if state["status"] not in {"failed", "canceled"}:
             raise ValueError("Only a failed or canceled planning job can be retried")
         return self.start(self._requests[job_id], retry_of=job_id)
+
+    def observability(self) -> dict[str, Any]:
+        with self._lock:
+            return summarize_planning_jobs(list(self._states.values()))

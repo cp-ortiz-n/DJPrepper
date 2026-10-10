@@ -355,6 +355,7 @@ export function createSetBuilderFeature({
     const jobId=activePlanningJobId;activePlanningJobId='';
     if(jobId)await planningClient.cancel(jobId).catch(()=>null);
   }
+  async function loadAIObservability(){const status=$('#set-ai-operations-status'),root=$('#set-ai-operations-summary');if(!status||!root)return;try{const report=await planningClient.observability();status.textContent=`${report.completedCount} completed · ${report.failedCount} failed · ${report.canceledCount} canceled`;root.innerHTML=[['AI selected',report.aiSelectedCount],['Safety fallback',`${Math.round((report.fallbackRate||0)*100)}%`],['Plans repaired',report.repairedCount],['Average time',report.averageDurationMs?`${(report.averageDurationMs/1000).toFixed(1)}s`:'—']].map(([label,value])=>`<article><b>${escapeHtml(String(value))}</b><small>${escapeHtml(label)}</small></article>`).join('');}catch(error){status.textContent=error.message||String(error);root.innerHTML='';}}
   async function generateAITrackPlan() {
     await cancelAITrackPlan();
     const brief=setBrief(),journey=planningJourney(brief),targetTrackCount=planningTrackCount(brief);
@@ -379,6 +380,7 @@ export function createSetBuilderFeature({
     if(currentSetPlan.length)pushSetHistory();
     currentSetPlan=selected;resetSetReviewDraft();setProposals=[];activeSetProposal='';setTransitionSettings={};
     currentPlanningReceipt={version:1,mode:result.mode,provider:result.provider,model:result.model,summary:result.summary,warnings:result.warnings||[],evaluation:result.evaluation||null,comparison:result.comparison||null,modelRepairs:result.modelRepairs||[],candidatePool:result.candidatePool||null,fallbackReason:result.fallbackReason||null,planningDurationMs:result.planningDurationMs??null,generatedAt:new Date().toISOString()};
+    currentPlanningReceipt.observability=result.observability||null;void loadAIObservability();
     $('#set-builder-message').textContent='Validated track order ready. Optimizing transition techniques…';
     await autoOptimizeSetTransitions();renderSetPlan();
     const warningCount=result.warnings?.length||0;
@@ -633,6 +635,7 @@ export function createSetBuilderFeature({
     refreshIntentionProviderStatus();
     await loadPreferenceProfile();
     await loadSetReviewReport();
+    await loadAIObservability();
     const catalog=await fetch('/api/set-builder/catalog',{cache:'no-store'}).then(response=>{if(!response.ok)throw new Error('Set Builder catalog could not be loaded.');return response.json();});
     const identities=identityStore();setBuilderLibrary=(catalog.tracks||[]).map(item=>{const song=item.analysis||{};const job=item.job||{};const hasExtended=Boolean(job.extended_path)&&!JSON.parse(job.config_json||'{}').analysis_only;const preferred=$('#set-edits').value;const libraryPath=job.library_path||song.file_path||song.wav_path||job.wav_path;const track={...song,_job:job,_genre:item.genre||song.detected_style||'Other',_detailedGenre:item.detailed_genre||'',_hasExtended:hasExtended,_libraryPath:libraryPath,_selectedPath:preferred==='original'?libraryPath:(hasExtended?job.extended_path:libraryPath),_downloadedId:item.downloaded_id||null,_descriptors:item.descriptors||[]};track._manualIdentity=[...new Set([...(track._descriptors||[]).map(descriptor=>descriptor.value),...(identities[setTrackId(track)]||[])])];return track;});
     const names=setBuilderLibrary.slice().sort((a,b)=>a.source_name.localeCompare(b.source_name)); const trackOptions=names.map(track=>option(setTrackId(track),track.source_name.replace(/\.[^.]+$/,''))); $('#set-required').replaceChildren(option('','Choose a track'),...trackOptions.map(item=>item.cloneNode(true)));$('#set-excluded').replaceChildren(option('','Choose a track'),...trackOptions);
@@ -643,6 +646,7 @@ export function createSetBuilderFeature({
     if(setBuilderBound)return;setBuilderBound=true;
     $('#set-builder-form').onsubmit=async event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation'),button=$('#set-generate'),mode=$('#set-planning-mode').value;button.disabled=true;try{if(mode!=='classic'&&intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText)){button.textContent='Planning journey…';applyIntentionInterpretation(await interpretAndPlan(intentionText));}button.textContent=mode==='ai-planned'?'AI planning tracks…':'Building and optimizing…';$('#set-builder-message').textContent=mode==='ai-planned'?'Retrieving a safe catalog candidate pool…':'Ranking compatible tracks and shaping the energy journey…';await new Promise(resolve=>requestAnimationFrame(resolve));if(mode==='ai-planned')await generateAITrackPlan();else await generateDeterministicSetPlan();}catch(error){if(error instanceof SetPlanningCanceled){$('#set-builder-message').textContent='Set planning canceled. Your current set and brief were not changed.';}else{console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}}finally{button.disabled=false;button.textContent='Generate set plan';$('#set-cancel-planning').hidden=true;}};
     $('#set-cancel-planning').onclick=async()=>{await cancelAITrackPlan();$('#set-builder-message').textContent='Cancel requested. Your current set will remain unchanged.';};
+    $('#refresh-set-ai-operations').onclick=()=>void loadAIObservability();
     $('#interpret-set-intention').onclick=async event=>{const text=$('#set-intention').value.trim(),button=event.currentTarget;if(!text){$('#set-intention-interpretation').hidden=true;$('#set-journey-preview').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}button.disabled=true;button.textContent='Planning journey…';try{applyIntentionInterpretation(await interpretAndPlan(text));}finally{button.disabled=false;button.textContent='Interpret intention';}};
     const briefName=$('#set-name'),resultName=$('#set-result-name');
     briefName.addEventListener('input',()=>{if(document.activeElement!==resultName)resultName.value=briefName.value;});

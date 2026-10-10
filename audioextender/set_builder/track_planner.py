@@ -6,6 +6,7 @@ import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from time import perf_counter
 from typing import Any, Protocol
 
 import httpx
@@ -62,14 +63,16 @@ def _schema_for_request(payload: dict[str, Any]) -> dict[str, Any]:
     selections["minItems"] = requested
     selections["maxItems"] = requested
     selections["uniqueItems"] = True
-    candidate_ids = sorted({
-        str(candidate.get("id") or "") for candidate in payload.get("candidates", []) if candidate.get("id")
-    })
-    section_ids = sorted({
-        str(section.get("id") or "")
-        for section in (payload.get("journey") or {}).get("sections", [])
-        if section.get("id")
-    })
+    candidate_ids = sorted(
+        {str(candidate.get("id") or "") for candidate in payload.get("candidates", []) if candidate.get("id")}
+    )
+    section_ids = sorted(
+        {
+            str(section.get("id") or "")
+            for section in (payload.get("journey") or {}).get("sections", [])
+            if section.get("id")
+        }
+    )
     properties = selections["items"]["properties"]
     if candidate_ids:
         properties["trackId"]["enum"] = candidate_ids
@@ -81,10 +84,7 @@ def _schema_for_request(payload: dict[str, Any]) -> dict[str, Any]:
 def _public_validation(validation: dict[str, Any]) -> dict[str, Any]:
     return {
         **validation,
-        "plan": [
-            {key: value for key, value in track.items() if key != "path"}
-            for track in validation.get("plan", [])
-        ],
+        "plan": [{key: value for key, value in track.items() if key != "path"} for track in validation.get("plan", [])],
     }
 
 
@@ -181,17 +181,23 @@ def flatten_candidates(candidate_pool: dict[str, Any]) -> list[dict[str, Any]]:
                 merged[track_id] = dict(candidate)
                 continue
             current = merged[track_id]
-            current["eligibleSectionIds"] = list(dict.fromkeys([
-                *current.get("eligibleSectionIds", []),
-                *candidate.get("eligibleSectionIds", []),
-            ]))
+            current["eligibleSectionIds"] = list(
+                dict.fromkeys(
+                    [
+                        *current.get("eligibleSectionIds", []),
+                        *candidate.get("eligibleSectionIds", []),
+                    ]
+                )
+            )
             if float(candidate.get("relevanceScore") or 0) > float(current.get("relevanceScore") or 0):
                 current["relevanceScore"] = candidate.get("relevanceScore")
                 current["matchTier"] = candidate.get("matchTier")
-            current["reasons"] = list(dict.fromkeys(
-                json.dumps(reason, sort_keys=True)
-                for reason in [*current.get("reasons", []), *candidate.get("reasons", [])]
-            ))
+            current["reasons"] = list(
+                dict.fromkeys(
+                    json.dumps(reason, sort_keys=True)
+                    for reason in [*current.get("reasons", []), *candidate.get("reasons", [])]
+                )
+            )
             current["reasons"] = [json.loads(reason) for reason in current["reasons"]]
     return list(merged.values())
 
@@ -210,14 +216,13 @@ def _section_targets(journey: dict[str, Any], count: int) -> dict[str, int]:
     while sum(targets) < count:
         index = max(range(len(targets)), key=lambda value: exact[value] - targets[value])
         targets[index] += 1
-    return {
-        str(section.get("id") or f"section-{index + 1}"): targets[index]
-        for index, section in enumerate(sections)
-    }
+    return {str(section.get("id") or f"section-{index + 1}"): targets[index] for index, section in enumerate(sections)}
 
 
 def deterministic_track_plan(
-    candidate_pool: dict[str, Any], journey: dict[str, Any], target_track_count: int,
+    candidate_pool: dict[str, Any],
+    journey: dict[str, Any],
+    target_track_count: int,
     target_duration_minutes: int | None = None,
 ) -> dict[str, Any]:
     """Select a stable, section-aware plan when a model cannot return a valid one."""
@@ -231,7 +236,8 @@ def deterministic_track_plan(
     for section in candidate_pool.get("sections", []):
         section_id = str(section.get("sectionId") or "")
         candidates = [
-            candidate for candidate in section.get("candidates", [])
+            candidate
+            for candidate in section.get("candidates", [])
             if candidate.get("available") and str(candidate.get("id") or "") not in used
         ]
         candidates.sort(
@@ -246,18 +252,22 @@ def deterministic_track_plan(
         section_definition = journey_sections.get(section_id, {})
         duration_target = (
             target_duration_minutes * 60 * float(section_definition.get("durationPercent") or 0) / 100
-            if target_duration_minutes else None
+            if target_duration_minutes
+            else None
         )
         selected = _select_section_candidates(candidates, target, duration_target)
         used.update(str(candidate.get("id") or "") for candidate in selected)
         chosen_sections.append((section_definition, selected))
     optimized = DeterministicTransitionOptimizer().optimize(chosen_sections)
-    selections = [{
-        "trackId": str(candidate.get("id") or ""),
-        "sectionId": section_id,
-        "reason": "Deterministic balance of section relevance, runtime, energy, BPM, key, and vocals.",
-        "evidence": "estimated",
-    } for section_id, candidate in optimized]
+    selections = [
+        {
+            "trackId": str(candidate.get("id") or ""),
+            "sectionId": section_id,
+            "reason": "Deterministic balance of section relevance, runtime, energy, BPM, key, and vocals.",
+            "evidence": "estimated",
+        }
+        for section_id, candidate in optimized
+    ]
     return {"summary": "Deterministic catalog-backed fallback plan.", "selections": selections}
 
 
@@ -315,7 +325,7 @@ class AITrackPlanner:
     validator: SetPlanValidator
     comparator: PlanQualityComparator = field(default_factory=PlanQualityComparator)
     repairer: PlanProposalRepairer = field(default_factory=PlanProposalRepairer)
-    maximum_attempts: int = 3
+    maximum_attempts: int = 1
     timeout_seconds: float = 90
 
     def plan(
@@ -331,10 +341,11 @@ class AITrackPlanner:
         locked_ids: set[str],
         cancel_check: Callable[[], None] = lambda: None,
     ) -> dict[str, Any]:
+        planning_started = perf_counter()
+        provider_status_started = perf_counter()
         candidates = flatten_candidates(candidate_pool)
         model_candidates = [
-            {key: value for key, value in candidate.items() if key != "path"}
-            for candidate in candidates
+            {key: value for key, value in candidate.items() if key != "path"} for candidate in candidates
         ]
         base_payload = {
             "brief": brief,
@@ -353,6 +364,8 @@ class AITrackPlanner:
         except (httpx.HTTPError, RuntimeError, ValueError) as error:
             status = {"available": False, "provider": "offline", "model": None}
             failures.append([{"code": "provider-status-error", "message": str(error)}])
+        provider_status_ms = round((perf_counter() - provider_status_started) * 1000)
+        attempt_telemetry: list[dict[str, Any]] = []
         if status.get("available"):
             previous: dict[str, Any] | None = None
             for attempt in range(1, self.maximum_attempts + 1):
@@ -361,10 +374,14 @@ class AITrackPlanner:
                 if previous is not None:
                     payload["repair"] = {"previousPlan": previous, "validationErrors": failures[-1]}
                 try:
+                    model_started = perf_counter()
                     proposal = self.model.complete(payload, timeout_seconds=self.timeout_seconds)
+                    model_ms = round((perf_counter() - model_started) * 1000)
                     if not isinstance(proposal, dict):
                         raise ValueError("The AI provider returned a non-object track plan")
                 except (httpx.HTTPError, json.JSONDecodeError, TypeError, ValueError, RuntimeError) as error:
+                    model_ms = round((perf_counter() - model_started) * 1000)
+                    attempt_telemetry.append({"attempt": attempt, "modelMs": model_ms, "outcome": "provider-error"})
                     failures.append([{"code": "provider-error", "message": str(error)}])
                     previous = None
                     if attempt >= self.maximum_attempts:
@@ -372,19 +389,29 @@ class AITrackPlanner:
                     continue
                 cancel_check()
                 try:
+                    validation_started = perf_counter()
                     proposal, model_repairs = self.repairer.repair(proposal, candidates, section_targets)
                     validation = self.validator.validate(
-                        proposal.get("selections", []), candidates, journey,
-                        required_ids=required_ids, excluded_ids=excluded_ids, locked_ids=locked_ids,
-                        target_duration_minutes=target_duration_minutes, target_track_count=target_track_count,
+                        proposal.get("selections", []),
+                        candidates,
+                        journey,
+                        required_ids=required_ids,
+                        excluded_ids=excluded_ids,
+                        locked_ids=locked_ids,
+                        target_duration_minutes=target_duration_minutes,
+                        target_track_count=target_track_count,
                     )
                     if validation["valid"]:
                         fallback = deterministic_track_plan(
                             candidate_pool, journey, target_track_count, target_duration_minutes
                         )
                         baseline_validation = self.validator.validate(
-                            fallback["selections"], candidates, journey,
-                            required_ids=required_ids, excluded_ids=excluded_ids, locked_ids=locked_ids,
+                            fallback["selections"],
+                            candidates,
+                            journey,
+                            required_ids=required_ids,
+                            excluded_ids=excluded_ids,
+                            locked_ids=locked_ids,
                             target_duration_minutes=target_duration_minutes,
                             target_track_count=target_track_count,
                         )
@@ -394,6 +421,20 @@ class AITrackPlanner:
                             journey,
                             target_duration_minutes=target_duration_minutes,
                         )
+                        attempt_telemetry.append(
+                            {
+                                "attempt": attempt,
+                                "modelMs": model_ms,
+                                "repairValidationComparisonMs": round((perf_counter() - validation_started) * 1000),
+                                "repairCount": len(model_repairs),
+                                "outcome": "ai-selected" if comparison["winner"] == "ai" else "deterministic-selected",
+                            }
+                        )
+                        observability = {
+                            "providerStatusMs": provider_status_ms,
+                            "attempts": attempt_telemetry,
+                            "plannerTotalMs": round((perf_counter() - planning_started) * 1000),
+                        }
                         if comparison["winner"] == "ai":
                             return {
                                 **_public_validation(validation),
@@ -405,6 +446,7 @@ class AITrackPlanner:
                                 "fallbackReason": None,
                                 "comparison": comparison,
                                 "modelRepairs": model_repairs,
+                                "observability": observability,
                             }
                         return {
                             **_public_validation(baseline_validation),
@@ -419,20 +461,41 @@ class AITrackPlanner:
                             },
                             "comparison": comparison,
                             "modelRepairs": model_repairs,
+                            "observability": observability,
                         }
                     failures.append(validation["errors"])
+                    attempt_telemetry.append(
+                        {
+                            "attempt": attempt,
+                            "modelMs": model_ms,
+                            "repairValidationComparisonMs": round((perf_counter() - validation_started) * 1000),
+                            "repairCount": len(model_repairs),
+                            "outcome": "validation-failed",
+                        }
+                    )
                     previous = proposal
                 except (TypeError, ValueError) as error:
+                    attempt_telemetry.append(
+                        {
+                            "attempt": attempt,
+                            "modelMs": model_ms,
+                            "repairValidationComparisonMs": round((perf_counter() - validation_started) * 1000),
+                            "outcome": "validation-error",
+                        }
+                    )
                     failures.append([{"code": "provider-error", "message": str(error)}])
                     previous = None
         cancel_check()
-        fallback = deterministic_track_plan(
-            candidate_pool, journey, target_track_count, target_duration_minutes
-        )
+        fallback = deterministic_track_plan(candidate_pool, journey, target_track_count, target_duration_minutes)
         validation = self.validator.validate(
-            fallback["selections"], candidates, journey,
-            required_ids=required_ids, excluded_ids=excluded_ids, locked_ids=locked_ids,
-            target_duration_minutes=target_duration_minutes, target_track_count=target_track_count,
+            fallback["selections"],
+            candidates,
+            journey,
+            required_ids=required_ids,
+            excluded_ids=excluded_ids,
+            locked_ids=locked_ids,
+            target_duration_minutes=target_duration_minutes,
+            target_track_count=target_track_count,
         )
         if not validation["valid"]:
             raise RuntimeError(f"No valid track plan could be built: {validation['errors']}")
@@ -446,4 +509,9 @@ class AITrackPlanner:
             "fallbackReason": failures[-1] if failures else "AI provider unavailable",
             "comparison": None,
             "modelRepairs": [],
+            "observability": {
+                "providerStatusMs": provider_status_ms,
+                "attempts": attempt_telemetry,
+                "plannerTotalMs": round((perf_counter() - planning_started) * 1000),
+            },
         }

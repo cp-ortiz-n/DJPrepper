@@ -64,44 +64,67 @@ class AITrackPlannerTests(unittest.TestCase):
     def test_valid_ai_plan_is_compared_before_acceptance(self) -> None:
         with TemporaryDirectory() as temporary:
             set_journey, pool = planning_candidates(Path(temporary))
-            model = FakeModel([{
-                "summary": "A validated rise",
-                "selections": [
+            model = FakeModel(
+                [
                     {
-                        "trackId": "downloaded:1", "sectionId": "section-1",
-                        "reason": "Direct opening", "evidence": "ai-suggested",
-                    },
-                    {
-                        "trackId": "downloaded:2", "sectionId": "section-2",
-                        "reason": "Direct finish", "evidence": "ai-suggested",
-                    },
-                ],
-            }])
+                        "summary": "A validated rise",
+                        "selections": [
+                            {
+                                "trackId": "downloaded:1",
+                                "sectionId": "section-1",
+                                "reason": "Direct opening",
+                                "evidence": "ai-suggested",
+                            },
+                            {
+                                "trackId": "downloaded:2",
+                                "sectionId": "section-2",
+                                "reason": "Direct finish",
+                                "evidence": "ai-suggested",
+                            },
+                        ],
+                    }
+                ]
+            )
             result = AITrackPlanner(model, SetPlanValidator(duration_tolerance=0.5)).plan(
-                brief={"vibe": "balanced"}, journey=set_journey, candidate_pool=pool,
-                target_track_count=2, target_duration_minutes=8,
-                required_ids=set(), excluded_ids=set(), locked_ids=set(),
+                brief={"vibe": "balanced"},
+                journey=set_journey,
+                candidate_pool=pool,
+                target_track_count=2,
+                target_duration_minutes=8,
+                required_ids=set(),
+                excluded_ids=set(),
+                locked_ids=set(),
             )
         self.assertEqual(result["mode"], "deterministic-fallback")
         self.assertEqual(result["provider"], "ollama")
         self.assertEqual(result["attempts"], 1)
         self.assertEqual(result["comparison"]["winner"], "deterministic")
         self.assertEqual(result["fallbackReason"]["code"], "ai-quality-below-baseline")
+        self.assertEqual(result["observability"]["attempts"][0]["outcome"], "deterministic-selected")
+        self.assertIn("plannerTotalMs", result["observability"])
         self.assertEqual([track["id"] for track in result["plan"]], ["downloaded:1", "downloaded:2"])
         self.assertTrue(all("path" not in track for track in model.calls[0]["payload"]["candidates"]))
         self.assertTrue(all("path" not in track for track in result["plan"]))
 
     def test_repairs_hallucinated_id_without_a_second_model_call(self) -> None:
-        invalid = {"summary": "Invalid", "selections": [
-            {"trackId": "invented:99", "sectionId": "section-1", "reason": "Invented", "evidence": "ai-suggested"}
-        ]}
+        invalid = {
+            "summary": "Invalid",
+            "selections": [
+                {"trackId": "invented:99", "sectionId": "section-1", "reason": "Invented", "evidence": "ai-suggested"}
+            ],
+        }
         with TemporaryDirectory() as temporary:
             set_journey, pool = planning_candidates(Path(temporary))
             model = FakeModel([invalid])
             result = AITrackPlanner(model, SetPlanValidator(duration_tolerance=0.5)).plan(
-                brief={}, journey=set_journey, candidate_pool=pool,
-                target_track_count=2, target_duration_minutes=8,
-                required_ids=set(), excluded_ids=set(), locked_ids=set(),
+                brief={},
+                journey=set_journey,
+                candidate_pool=pool,
+                target_track_count=2,
+                target_duration_minutes=8,
+                required_ids=set(),
+                excluded_ids=set(),
+                locked_ids=set(),
             )
         self.assertEqual(result["attempts"], 1)
         self.assertEqual(len(model.calls), 1)
@@ -115,9 +138,14 @@ class AITrackPlannerTests(unittest.TestCase):
             result = AITrackPlanner(
                 FakeModel(failures), SetPlanValidator(duration_tolerance=0.5), maximum_attempts=3
             ).plan(
-                brief={}, journey=set_journey, candidate_pool=pool,
-                target_track_count=2, target_duration_minutes=8,
-                required_ids=set(), excluded_ids=set(), locked_ids=set(),
+                brief={},
+                journey=set_journey,
+                candidate_pool=pool,
+                target_track_count=2,
+                target_duration_minutes=8,
+                required_ids=set(),
+                excluded_ids=set(),
+                locked_ids=set(),
             )
         self.assertEqual(result["mode"], "deterministic-fallback")
         self.assertTrue(result["valid"])
@@ -128,9 +156,14 @@ class AITrackPlannerTests(unittest.TestCase):
             set_journey, pool = planning_candidates(Path(temporary))
             model = FakeModel([], available=False)
             result = AITrackPlanner(model, SetPlanValidator(duration_tolerance=0.5)).plan(
-                brief={}, journey=set_journey, candidate_pool=pool,
-                target_track_count=2, target_duration_minutes=8,
-                required_ids=set(), excluded_ids=set(), locked_ids=set(),
+                brief={},
+                journey=set_journey,
+                candidate_pool=pool,
+                target_track_count=2,
+                target_duration_minutes=8,
+                required_ids=set(),
+                excluded_ids=set(),
+                locked_ids=set(),
             )
         self.assertEqual(result["mode"], "deterministic-fallback")
         self.assertEqual(model.calls, [])
@@ -149,9 +182,15 @@ class AITrackPlannerTests(unittest.TestCase):
 
             with self.assertRaises(PlanningCanceled):
                 AITrackPlanner(model, SetPlanValidator()).plan(
-                    brief={}, journey=set_journey, candidate_pool=pool,
-                    target_track_count=2, target_duration_minutes=8,
-                    required_ids=set(), excluded_ids=set(), locked_ids=set(), cancel_check=cancel,
+                    brief={},
+                    journey=set_journey,
+                    candidate_pool=pool,
+                    target_track_count=2,
+                    target_duration_minutes=8,
+                    required_ids=set(),
+                    excluded_ids=set(),
+                    locked_ids=set(),
+                    cancel_check=cancel,
                 )
 
     def test_deterministic_plan_preserves_section_order(self) -> None:
@@ -166,11 +205,16 @@ class AITrackPlannerTests(unittest.TestCase):
     def test_deterministic_plan_balances_relevance_with_section_runtime(self) -> None:
         candidates = [
             {
-                "id": f"downloaded:{index}", "available": True,
-                "durationSeconds": duration, "relevanceScore": relevance,
+                "id": f"downloaded:{index}",
+                "available": True,
+                "durationSeconds": duration,
+                "relevanceScore": relevance,
             }
             for index, duration, relevance in (
-                (1, 600, 100), (2, 600, 99), (3, 240, 90), (4, 240, 89),
+                (1, 600, 100),
+                (2, 600, 99),
+                (3, 240, 90),
+                (4, 240, 89),
             )
         ]
         pool = {"sections": [{"sectionId": "opening", "candidates": candidates}]}
@@ -182,10 +226,14 @@ class AITrackPlannerTests(unittest.TestCase):
         )
 
     def test_flattened_candidates_merge_multi_section_eligibility(self) -> None:
-        candidates = flatten_candidates({"sections": [
-            {"candidates": [{"id": "downloaded:1", "eligibleSectionIds": ["opening"]}]},
-            {"candidates": [{"id": "downloaded:1", "eligibleSectionIds": ["peak"]}]},
-        ]})
+        candidates = flatten_candidates(
+            {
+                "sections": [
+                    {"candidates": [{"id": "downloaded:1", "eligibleSectionIds": ["opening"]}]},
+                    {"candidates": [{"id": "downloaded:1", "eligibleSectionIds": ["peak"]}]},
+                ]
+            }
+        )
         self.assertEqual(len(candidates), 1)
         self.assertEqual(candidates[0]["eligibleSectionIds"], ["opening", "peak"])
 
@@ -201,11 +249,14 @@ class SetPlanningModelClientTests(unittest.TestCase):
             patch.object(IntentionPlanner, "status", return_value={"provider": "ollama", "model": "test"}),
             patch("audioextender.set_builder.track_planner.httpx.post", return_value=response) as post,
         ):
-            result = client.complete({
-                "candidates": [{"id": "downloaded:1"}, {"id": "downloaded:2"}],
-                "journey": {"sections": [{"id": "opening"}, {"id": "peak"}]},
-                "targetTrackCount": 12,
-            }, timeout_seconds=12)
+            result = client.complete(
+                {
+                    "candidates": [{"id": "downloaded:1"}, {"id": "downloaded:2"}],
+                    "journey": {"sections": [{"id": "opening"}, {"id": "peak"}]},
+                    "targetTrackCount": 12,
+                },
+                timeout_seconds=12,
+            )
         self.assertEqual(result["summary"], "ok")
         response_schema = post.call_args.kwargs["json"]["format"]
         self.assertEqual(response_schema["properties"]["selections"]["minItems"], 12)
@@ -249,10 +300,15 @@ class DeferredThread(ImmediateThread):
 class SetPlanningJobServiceTests(unittest.TestCase):
     def request(self) -> dict:
         return {
-            "brief": {}, "journey": journey("Reggaeton", "Salsa"),
-            "required_track_ids": [], "excluded_track_ids": [], "locked_track_ids": [],
-            "target_duration_minutes": 8, "target_track_count": 2,
-            "per_section_limit": 1, "total_limit": 2,
+            "brief": {},
+            "journey": journey("Reggaeton", "Salsa"),
+            "required_track_ids": [],
+            "excluded_track_ids": [],
+            "locked_track_ids": [],
+            "target_duration_minutes": 8,
+            "target_track_count": 2,
+            "per_section_limit": 1,
+            "total_limit": 2,
         }
 
     def test_job_runs_to_completion_without_blocking_route_contract(self) -> None:
@@ -298,39 +354,60 @@ class SetPlanningJobServiceTests(unittest.TestCase):
                 lambda: tracks, SetCandidateRetriever(), planner, thread_factory=ImmediateThread
             )
             app = FastAPI()
-            app.include_router(create_set_planning_router(SetPlanningRouteDependencies(
-                catalog_cache_path=root / "unused.json",
-                ensure_catalog_current=lambda: None,
-                write_catalog_cache=lambda: None,
-                candidate_retriever=SetCandidateRetriever(),
-                plan_validator=SetPlanValidator(duration_tolerance=0.5),
-                track_planner=planner,
-                planning_jobs=jobs,
-            )))
+            app.include_router(
+                create_set_planning_router(
+                    SetPlanningRouteDependencies(
+                        catalog_cache_path=root / "unused.json",
+                        ensure_catalog_current=lambda: None,
+                        write_catalog_cache=lambda: None,
+                        candidate_retriever=SetCandidateRetriever(),
+                        plan_validator=SetPlanValidator(duration_tolerance=0.5),
+                        track_planner=planner,
+                        planning_jobs=jobs,
+                    )
+                )
+            )
             client = TestClient(app)
             request = self.request()
             request["target_duration_minutes"] = 15
             request["per_section_limit"] = 2
             response = client.post("/api/set-builder/plan-tracks", json=request)
             status = client.get(f"/api/set-builder/plan-tracks/{response.json()['jobId']}")
+            telemetry = client.get("/api/set-builder/ai-observability")
         self.assertEqual(response.status_code, 202)
         self.assertEqual(status.status_code, 200)
         self.assertEqual(status.json()["status"], "complete", status.json())
         self.assertTrue(status.json()["result"]["valid"])
         self.assertIn("evaluation", status.json()["result"])
         self.assertIn("planningDurationMs", status.json()["result"])
+        self.assertIn("candidateRetrievalMs", status.json()["result"]["observability"])
+        self.assertEqual(telemetry.status_code, 200)
+        self.assertEqual(telemetry.json()["completedCount"], 1)
 
     def test_persisted_inflight_job_becomes_retryable_after_restart(self) -> None:
         with TemporaryDirectory() as temporary:
             store = JsonPlanningJobStore(Path(temporary) / "planning.json")
             request = self.request()
-            store.save({"interrupted": {
-                "jobId": "interrupted", "status": "processing", "stage": "Planning", "progress": 35,
-                "result": None, "error": None, "retryable": False, "retryOf": None,
-                "createdAt": "2026-01-01T00:00:00+00:00", "updatedAt": "2026-01-01T00:00:00+00:00",
-            }}, {"interrupted": request})
+            store.save(
+                {
+                    "interrupted": {
+                        "jobId": "interrupted",
+                        "status": "processing",
+                        "stage": "Planning",
+                        "progress": 35,
+                        "result": None,
+                        "error": None,
+                        "retryable": False,
+                        "retryOf": None,
+                        "createdAt": "2026-01-01T00:00:00+00:00",
+                        "updatedAt": "2026-01-01T00:00:00+00:00",
+                    }
+                },
+                {"interrupted": request},
+            )
             service = SetPlanningJobService(
-                lambda: [], SetCandidateRetriever(),
+                lambda: [],
+                SetCandidateRetriever(),
                 AITrackPlanner(FakeModel([], available=False), SetPlanValidator()),
                 store=store,
             )

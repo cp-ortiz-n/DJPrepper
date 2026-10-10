@@ -41,6 +41,15 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("submitSetReview", set_builder)
         self.assertIn("transitionPreferenceAdjustment", set_builder)
 
+    def test_set_builder_exposes_ai_operations_observability(self):
+        set_builder = (ROOT / "web" / "set-builder.js").read_text()
+        client = (ROOT / "web" / "set-planning-client.js").read_text()
+        page = (ROOT / "web" / "index.html").read_text()
+
+        self.assertIn('id="set-ai-operations-summary"', page)
+        self.assertIn("loadAIObservability", set_builder)
+        self.assertIn("/api/set-builder/ai-observability", client)
+
 
 if __name__ == "__main__":
     unittest.main()

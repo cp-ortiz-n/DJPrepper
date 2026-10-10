@@ -32,6 +32,12 @@ export function createSetPlanningClient({fetchImpl = fetch, pollInterval = 500} 
       }, 'The set-planning status could not be loaded.');
     },
 
+    observability() {
+      return request('/api/set-builder/ai-observability', {
+        cache: 'no-store',
+      }, 'AI planning telemetry could not be loaded.');
+    },
+
     cancel(jobId) {
       return request(`/api/set-builder/plan-tracks/${encodeURIComponent(jobId)}/cancel`, {
         method: 'POST',

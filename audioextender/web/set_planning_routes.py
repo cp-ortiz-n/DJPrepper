@@ -146,4 +146,8 @@ def create_set_planning_router(deps: SetPlanningRouteDependencies) -> APIRouter:
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
 
+    @router.get("/ai-observability")
+    def ai_observability() -> dict:
+        return jobs.observability()
+
     return router

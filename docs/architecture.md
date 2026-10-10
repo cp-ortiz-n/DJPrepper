@@ -103,7 +103,8 @@ POST /api/set-builder/candidate-pool → SetCandidateRetriever
 POST /api/set-builder/plan-tracks → SetPlanningJobService
    ├── cancellable candidate retrieval and stale-job supersession
    ├── AITrackPlanner with strict structured output and repair attempts
-   └── deterministic catalog-backed fallback
+   ├── deterministic catalog-backed fallback
+   └── phase timings and persisted outcome telemetry
         ↓
 SetPlanValidator
    ├── IDs, exclusions, required/locked tracks, duplicates, and files
@@ -137,6 +138,7 @@ The route surface is:
 - `GET /api/set-builder/plan-tracks/{job_id}` for progress and the validated result.
 - `POST /api/set-builder/plan-tracks/{job_id}/cancel` to cancel without changing the current set.
 - `POST /api/set-builder/plan-tracks/{job_id}/retry` to retry a failed or canceled request.
+- `GET /api/set-builder/ai-observability` for aggregate local outcomes, latency, repairs, and fallbacks.
 - `GET /api/set-builder/preferences` to inspect active and pending local signals.
 - `POST /api/set-builder/preferences/events` to record accepted or rejected track choices.
 - `PUT /api/set-builder/preferences/enabled` to pause or resume personalization.
@@ -157,6 +159,14 @@ neutral acceptance; detects contradictions and broad-signal dominance; and
 builds a transition preference profile only after three distinct track pairs.
 The review route translates explicit track accept/reject judgments into the
 existing preference event vocabulary, keeping capture separate from scoring.
+
+`release_gate.py` owns the final Phase 2G acceptance policy. It consumes the
+evaluation report rather than planning tracks itself, so release policy remains
+separate from retrieval and model orchestration. Valid plans, complete scenario
+coverage, and full requested-genre coverage form the automated gate. Manual DJ
+listening approval is a distinct required input and cannot be inferred from a
+quality score. `SetPlanningJobService.observability()` summarizes persisted job
+receipts without returning prompts, catalog rows, filesystem paths, or audio.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is

@@ -24,6 +24,7 @@ from audioextender.set_builder.preference_learning import (
     JsonPreferenceStore,
     PersonalizedCandidateRanker,
 )
+from audioextender.set_builder.release_gate import assess_ai_release
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
 
 
@@ -34,6 +35,11 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=Path("output/reports/set_builder_evaluation.json"))
     parser.add_argument("--preferences", type=Path, default=Path("output/reports/set_builder_preferences.json"))
     parser.add_argument("--scenario", action="append", default=[], help="Run only the named scenario; repeatable")
+    parser.add_argument(
+        "--manual-listening-approved",
+        action="store_true",
+        help="Record that the DJ listened to and approved every selected scenario.",
+    )
     return parser.parse_args()
 
 
@@ -69,6 +75,11 @@ def main() -> int:
     report["personalizationComparison"] = compare_planning_variants(report, baseline)
     report["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     report["comparison"] = compare_evaluation_reports(report, previous)
+    report["releaseGate"] = assess_ai_release(
+        report,
+        required_scenarios=5 if not options.scenario else len(scenarios),
+        manual_listening_approved=options.manual_listening_approved,
+    )
     options.output.parent.mkdir(parents=True, exist_ok=True)
     temporary = options.output.with_suffix(".pending.json")
     temporary.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -77,7 +88,14 @@ def main() -> int:
         f"Set Builder evaluation: {report['completedCount']}/{report['scenarioCount']} completed · "
         f"average quality {report['averageQualityScore']} · report {options.output}"
     )
-    return 0 if report["failedCount"] == 0 else 1
+    gate = report["releaseGate"]
+    print(
+        "AI Set Builder release gate: "
+        + ("PASSED" if gate["released"] else "NOT RELEASED")
+        + f" · automated={'ready' if gate['automatedReady'] else 'failed'}"
+        + f" · listening={'approved' if gate['manualListeningApproved'] else 'pending'}"
+    )
+    return 0 if gate["released"] else 1
 
 
 if __name__ == "__main__":

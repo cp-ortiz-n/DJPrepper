@@ -131,6 +131,19 @@ they influence automatic transition optimization. The catalog evaluation tool
 now runs the five checked-in musical scenarios with and without personalization
 and reports changed tracks, order changes, and quality deltas.
 
+Phase 2G is the production-acceptance boundary. Every planning receipt records
+candidate retrieval, model/planning, validation/comparison, evaluation, and
+total timing, together with provider attempts, repairs, outcome, model, and
+fallback reason. Set Builder exposes aggregate local AI operations without
+including audio or catalog contents. The evaluation command applies a strict
+release gate: all selected scenarios must complete with valid catalog-backed
+plans and full requested-genre coverage, and the DJ must explicitly confirm the
+listening review with `--manual-listening-approved`. Automated success alone
+can never mark AI Set Builder v1 released.
+The production planner makes one bounded model attempt before using its
+validated deterministic fallback; repeated slow retries cannot freeze a set
+generation or multiply a provider outage into several minutes of waiting.
+
 Install the recommended local provider on macOS with:
 
 ```bash
@@ -184,6 +197,10 @@ to evaluate real AI track selection. The catalog and scenario paths can be
 overridden with `--catalog` and `--scenarios`.
 Use `--scenario latin-kickback` to iterate on one checked-in case without
 running the complete model suite.
+After listening to and approving every result in the complete suite, rerun with
+`--manual-listening-approved`. A zero exit status then means the final Phase 2G
+release gate passed; without explicit listening approval the report remains
+truthfully pending even when every automated measurement succeeds.
 
 Deterministic fallback plans use bounded transition optimization after track
 selection. It cannot change selected tracks or their journey sections; it only

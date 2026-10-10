@@ -1275,6 +1275,11 @@ button { border: 0; cursor: pointer; background: var(--lime); color: #11140a; fo
 .set-transition-rating { display:grid; gap:4px; margin-top:7px; color:var(--muted); font-size:9px; }
 .set-calibration-summary { display:grid; gap:6px; margin-top:12px; }
 .set-calibration-summary p { margin:0; padding:8px; border-radius:8px; background:#191d19; font-size:10px; }
+.set-ai-operations-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin:12px 0; }
+.set-ai-operations-summary article { padding:9px; border:1px solid var(--line); border-radius:9px; background:#111511; }
+.set-ai-operations-summary b,.set-ai-operations-summary small { display:block; }
+.set-ai-operations-summary b { font-size:16px; }
+.set-ai-operations-summary small { color:var(--muted); font-size:9px; margin-top:2px; }
 .saved-set-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:9px; }.saved-set-actions button { width:100%; height:32px; margin:0; }.saved-set-actions button:last-child { grid-column:1/-1; }
 .danger-text { color:#e6a19b !important; }
 .set-result { margin-top:20px; }

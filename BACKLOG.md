@@ -360,7 +360,9 @@ without replacing the technical safety score.
 - [x] Let the DJ dismiss individual learned signals.
 - [x] Learn bounded transition preferences after three distinct track pairs.
 - [x] Compare personalized and baseline plans across five checked-in musical scenarios.
-- [ ] Complete hands-on acceptance review against the connected real library and tune weights only from that evidence.
+- [x] Add Phase 2G timing, outcome, fallback, repair, and aggregate AI operations telemetry.
+- [x] Add a strict release gate that cannot pass without valid five-scenario evidence and explicit DJ listening approval.
+- [ ] Complete the final hands-on acceptance review against the connected real library, pass `--manual-listening-approved`, and tune weights only from that evidence.
 
 ## Preflight analysis mode
 
