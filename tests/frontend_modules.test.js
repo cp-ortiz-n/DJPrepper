@@ -201,6 +201,18 @@ test('Set Builder preserves a multi-section Latin party journey in performance o
   assert.equal(setBuilder.intendedGenreForPosition(result,11,12),'schranz');
 });
 
+test('Set Builder follows editable journey sections for genre and energy placement', () => {
+  const identity={journey:{sections:[
+    {durationPercent:30,genres:['cumbia'],energyStart:3,energyEnd:4},
+    {durationPercent:40,genres:['salsa'],energyStart:5,energyEnd:7},
+    {durationPercent:30,genres:['latin techno'],energyStart:7,energyEnd:9},
+  ]}};
+  assert.equal(setBuilder.intendedGenreForPosition(identity,0,10),'cumbia');
+  assert.equal(setBuilder.intendedGenreForPosition(identity,4,10),'salsa');
+  assert.equal(setBuilder.intendedGenreForPosition(identity,9,10),'latin techno');
+  assert.ok(setBuilder.targetSetEnergy(9,10,{identity,vibe:'balanced',curve:'steady'})>.8);
+});
+
 test('Set Builder recognizes future catalog vocabulary without another hard-coded parser rule', () => {
   const result=setBuilder.interpretSetIntention(
     'Start with jersey club, then bridge into something unfamiliar.',
@@ -242,6 +254,9 @@ test('Set Builder feature declares every musical classifier used during generati
   assert.match(source, /attempts<10/);
   assert.match(source, /function openTrackIdentityEditor/);
   assert.match(source, /applyIntentionInterpretation/);
+  assert.match(source, /\/api\/set-builder\/plan-journey/);
+  assert.match(source, /function renderJourney/);
+  assert.match(source, /Journey section durations total/);
 });
 
 test('Settings controller preserves startup ordering', async () => {

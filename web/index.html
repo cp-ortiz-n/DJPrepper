@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20261009-200">
+  <link rel="stylesheet" href="/assets/styles.css?v=20261009-201">
 </head>
 <body>
   <header class="topbar">
@@ -291,6 +291,11 @@
                 <label>Limit or avoid<input id="set-intention-avoided" type="text" placeholder="Generic instrumental Techno"></label>
                 <label>Genre drift<select id="set-intention-drift"><option value="none">None · direct genres only</option><option value="low">Low · close variants</option><option value="moderate" selected>Moderate · musical bridges</option><option value="wide">Wide · context before genre</option></select></label>
               </div>
+              <section id="set-journey-preview" class="set-journey-preview" hidden>
+                <header><div><strong>Planned journey</strong><small id="set-journey-summary">Review the sections before generating tracks.</small></div><span id="set-journey-evidence"></span></header>
+                <div id="set-journey-sections" class="set-journey-sections"></div>
+                <p id="set-journey-total" class="set-journey-total"></p>
+              </section>
               <ol id="set-fallback-policy" class="set-fallback-policy"></ol>
             </div>
           </section>
@@ -613,6 +618,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20261009-238" type="module"></script>
+  <script src="/assets/app.js?v=20261009-239" type="module"></script>
 </body>
 </html>

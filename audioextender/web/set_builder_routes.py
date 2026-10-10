@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from audioextender.set_builder.intention_planner import IntentionPlanner
+from audioextender.set_builder.journey_planner import JourneyPlanner
 
 
 class SetExportPreflightRequest(BaseModel):
@@ -36,6 +37,11 @@ class SetIntentionRequest(BaseModel):
     catalog_vocabulary: list[str] = Field(default_factory=list, max_length=2000)
 
 
+class SetJourneyRequest(SetIntentionRequest):
+    interpreted_intention: dict[str, Any] = Field(default_factory=dict)
+    duration_minutes: int = Field(default=60, ge=15, le=480)
+
+
 @dataclass(frozen=True)
 class SetBuilderRouteDependencies:
     catalog_cache_path: Path
@@ -44,6 +50,7 @@ class SetBuilderRouteDependencies:
     music_library_root: Callable[[], Path]
     safe_folder_name: Callable[[str], str]
     intention_planner: IntentionPlanner
+    journey_planner: JourneyPlanner
 
 
 def preflight_paths(request: SetExportPreflightRequest) -> dict:
@@ -140,5 +147,14 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
             return deps.intention_planner.interpret(request.brief, request.catalog_vocabulary)
         except (httpx.HTTPError, ValueError, RuntimeError) as error:
             raise HTTPException(502, f"AI interpretation failed: {error}") from error
+
+    @router.post("/plan-journey")
+    def plan_journey(request: SetJourneyRequest) -> dict:
+        return deps.journey_planner.plan(
+            request.brief,
+            request.interpreted_intention,
+            request.catalog_vocabulary,
+            request.duration_minutes,
+        )
 
     return router

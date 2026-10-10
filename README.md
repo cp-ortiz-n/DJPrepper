@@ -74,8 +74,10 @@ audio playback, and reusable controls live in dedicated modules. See
 ### Optional local AI for Set Builder
 
 Set Builder can translate a natural-language DJ brief into a structured,
-editable plan before it chooses any tracks. The default `auto` provider order
-is local Ollama, optional OpenAI, and finally deterministic browser rules.
+editable plan before it chooses any tracks. It also creates an editable musical
+journey made of named sections, runtime percentages, catalog genres, musical
+characteristics, purposes, and start/end energy targets. The default `auto`
+provider order is local Ollama, optional OpenAI, and finally deterministic rules.
 
 The model interprets language only. Track filtering, compatibility scoring,
 ordering, and audio processing remain deterministic and local. Ollama receives
@@ -104,7 +106,8 @@ export OPENAI_API_KEY=...                # optional cloud fallback
 
 The UI identifies results as Local AI, Cloud AI, or offline rules. Model output
 is schema-constrained and sanitized against catalog vocabulary before the
-browser uses it.
+browser uses it. The journey must total 100% of the target runtime; edits to its
+section order, genres, and energy targets feed the deterministic track generator.
 
 When AudioExtender starts, its Terminal prints the detected Set Builder AI
 provider and model. Every interpreted brief also logs the provider, model,

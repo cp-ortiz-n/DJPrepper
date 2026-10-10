@@ -76,17 +76,19 @@ selection engine.
 ```text
 Natural-language brief
         ↓
-POST /api/set-builder/interpret-intention
-        ↓
-IntentionPlanner
+POST /api/set-builder/interpret-intention → IntentionPlanner
    ├── Ollama qwen3.5:4b (default local provider)
    ├── OpenAI (optional configured fallback)
    └── browser offline rules (final fallback)
         ↓
 JSON schema validation + catalog-vocabulary sanitization
         ↓
-Editable requirements, preferences, genre drift, vibe, energy curve,
-opening traits, ending traits, and explanation
+POST /api/set-builder/plan-journey → JourneyPlanner
+   ├── model-planned sections when a provider is available
+   └── deterministic section planning when unavailable or invalid
+        ↓
+Editable sections with runtime share, catalog genres, characteristics,
+purpose, and start/end energy
         ↓
 Local deterministic filtering, scoring, ordering, and rendering
 ```
@@ -95,6 +97,7 @@ The route surface is:
 
 - `GET /api/set-builder/intention-provider` for provider and model status.
 - `POST /api/set-builder/interpret-intention` for structured interpretation.
+- `POST /api/set-builder/plan-journey` for a validated, editable section plan.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is
@@ -106,6 +109,10 @@ Only the text brief and a bounded catalog vocabulary list cross this boundary;
 audio never does. OpenAI requests use `store: false`. Returned genres are
 canonicalized against catalog vocabulary, schema labels and placeholders are
 removed, and malformed or unavailable provider responses fall through safely.
+Journey percentages are normalized to 100%, energy values are bounded to 1–10,
+unknown genres are rejected, and omission or reordering of required genre
+sequences triggers deterministic fallback. Edited journey sections directly
+control positional genre and energy targets in the existing generator.
 
 ## Browser request state
 

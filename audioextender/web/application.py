@@ -67,11 +67,13 @@ from audioextender.processing.web_jobs import WebJobService
 from audioextender.reporting.feedback import append_web_feedback
 from audioextender.repositories.facade import JobRepository
 from audioextender.set_builder.intention_planner import IntentionPlanner
+from audioextender.set_builder.journey_planner import JourneyPlanner
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
 from audioextender.web.job_media_routes import (
+    BatchDownloadRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
     create_job_media_router,
 )
@@ -101,6 +103,7 @@ from audioextender.web.set_builder_routes import (
     SetBuilderRouteDependencies,
     SetExportPreflightRequest,  # noqa: F401 - compatibility re-export
     SetPlaylistSaveRequest,  # noqa: F401 - compatibility re-export
+    SetPlaylistTrack,  # noqa: F401 - compatibility re-export
     create_set_builder_router,
     preflight_paths,
     save_playlist_file,
@@ -3555,6 +3558,7 @@ app.include_router(
     )
 )
 intention_planner = IntentionPlanner.from_environment()
+journey_planner = JourneyPlanner(intention_planner)
 
 
 def _log_intention_provider_status() -> None:
@@ -3581,6 +3585,7 @@ app.include_router(
             music_library_root=lambda: _music_library_root(),
             safe_folder_name=_safe_folder_name,
             intention_planner=intention_planner,
+            journey_planner=journey_planner,
         )
     )
 )

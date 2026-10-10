@@ -150,7 +150,7 @@ Status definitions:
 
 ## Intent-driven Set Builder and musical identity
 
-Status: **In progress — local-first language interpretation is complete.** Set
+Status: **In progress — local-first language interpretation and Phase 1 journey planning are complete.** Set
 Builder accepts a natural-language intention and translates it into editable
 hard requirements, weighted preferences, limits, requested and optional genres,
 genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
@@ -158,6 +158,13 @@ policy. It uses local Ollama (`qwen3.5:4b`) by default, can use OpenAI only when
 is explicitly configured, and falls back to deterministic browser rules. Model
 output is schema-constrained, cleaned of placeholder/schema labels, and
 canonicalized against catalog vocabulary. The original brief remains intact.
+
+The Journey Planner now converts that interpretation into editable musical
+sections with runtime shares, genres, characteristics, purposes, and energy
+boundaries. Invalid AI plans fall back deterministically, explicitly requested
+genre order is protected, and the edited journey drives positional genre and
+energy scoring. Phase 2 remains AI selection and ordering of real shortlisted
+catalog tracks followed by deterministic validation.
 
 The generator uses the structured plan during local candidate retrieval and
 scoring, never relaxes hard identity requirements, discloses direct versus
