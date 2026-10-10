@@ -11,10 +11,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
-from audioextender.set_builder.evaluation_harness import SetPlanningEvaluationHarness, compare_evaluation_reports
+from audioextender.set_builder.evaluation_harness import (
+    SetPlanningEvaluationHarness,
+    compare_evaluation_reports,
+    compare_planning_variants,
+)
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.plan_evaluator import SetPlanEvaluator
 from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.preference_learning import (
+    DJPreferenceService,
+    JsonPreferenceStore,
+    PersonalizedCandidateRanker,
+)
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
 
 
@@ -23,6 +32,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--catalog", type=Path, default=Path("output/reports/set_builder_catalog.json"))
     parser.add_argument("--scenarios", type=Path, default=Path("tests/fixtures/set_builder_eval_scenarios.json"))
     parser.add_argument("--output", type=Path, default=Path("output/reports/set_builder_evaluation.json"))
+    parser.add_argument("--preferences", type=Path, default=Path("output/reports/set_builder_preferences.json"))
     parser.add_argument("--scenario", action="append", default=[], help="Run only the named scenario; repeatable")
     return parser.parse_args()
 
@@ -42,13 +52,21 @@ def main() -> int:
         if missing:
             raise SystemExit(f"Unknown scenario(s): {', '.join(sorted(missing))}")
     configuration = IntentionPlanner.from_environment()
-    harness = SetPlanningEvaluationHarness(
+    baseline_harness = SetPlanningEvaluationHarness(
         SetCandidateRetriever(),
+        AITrackPlanner(SetPlanningModelClient(configuration), SetPlanValidator()),
+        SetPlanEvaluator(),
+    )
+    preferences = DJPreferenceService(JsonPreferenceStore(options.preferences))
+    harness = SetPlanningEvaluationHarness(
+        SetCandidateRetriever(preference_ranker=PersonalizedCandidateRanker(preferences.profile)),
         AITrackPlanner(SetPlanningModelClient(configuration), SetPlanValidator()),
         SetPlanEvaluator(),
     )
     previous = read_json(options.output) if options.output.is_file() else None
     report = harness.run(catalog, scenarios)
+    baseline = baseline_harness.run(catalog, scenarios)
+    report["personalizationComparison"] = compare_planning_variants(report, baseline)
     report["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     report["comparison"] = compare_evaluation_reports(report, previous)
     options.output.parent.mkdir(parents=True, exist_ok=True)

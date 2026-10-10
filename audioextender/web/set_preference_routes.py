@@ -27,6 +27,11 @@ class PreferenceEnabledRequest(BaseModel):
     enabled: bool
 
 
+class PreferenceSignalRequest(BaseModel):
+    dimension: str = Field(min_length=1, max_length=100)
+    value: str = Field(min_length=1, max_length=300)
+
+
 def create_set_preference_router(service: DJPreferenceService) -> APIRouter:
     router = APIRouter(prefix="/api/set-builder/preferences", tags=["set-builder-preferences"])
 
@@ -46,8 +51,8 @@ def create_set_preference_router(service: DJPreferenceService) -> APIRouter:
     def reset() -> dict[str, Any]:
         return service.reset()
 
-    @router.delete("/signals/{dimension}/{value}")
-    def dismiss_signal(dimension: str, value: str) -> dict[str, Any]:
-        return service.dismiss_signal(dimension, value)
+    @router.delete("/signals")
+    def dismiss_signal(request: PreferenceSignalRequest) -> dict[str, Any]:
+        return service.dismiss_signal(request.dimension, request.value)
 
     return router

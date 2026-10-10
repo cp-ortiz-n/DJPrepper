@@ -150,7 +150,7 @@ Status definitions:
 
 ## Intent-driven Set Builder and musical identity
 
-Status: **In progress — local-first interpretation, Phase 1 journey planning, Phase 2A candidate safety, Phase 2B validated AI track planning, Phase 2C quality hardening, Phase 2D comparative AI acceptance, and Phase 2E conservative preference learning are complete.** Set
+Status: **In progress — local-first interpretation, Phase 1 journey planning, Phase 2A candidate safety, Phase 2B validated AI track planning, Phase 2C quality hardening, Phase 2D comparative AI acceptance, Phase 2E conservative preference learning, and Phase 2F human review and calibration are complete.** Set
 Builder accepts a natural-language intention and translates it into editable
 hard requirements, weighted preferences, limits, requested and optional genres,
 genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
@@ -354,7 +354,13 @@ without replacing the technical safety score.
 - [x] Require three distinct tracks before applying a signal.
 - [x] Keep feedback ranking locally inspectable, pauseable, and resettable.
 - [x] Cap adjustments at ±8 and damp broad attributes to limit overfitting.
-- [ ] Add transition-level feedback after real-library review of track-ranking signals.
+- [x] Capture overall, per-track, rejection-reason, and transition judgments.
+- [x] Compare personalized and neutral acceptance and report ranking changes.
+- [x] Detect contradictory feedback and broad-signal dominance.
+- [x] Let the DJ dismiss individual learned signals.
+- [x] Learn bounded transition preferences after three distinct track pairs.
+- [x] Compare personalized and baseline plans across five checked-in musical scenarios.
+- [ ] Complete hands-on acceptance review against the connected real library and tune weights only from that evidence.
 
 ## Preflight analysis mode
 

@@ -80,6 +80,19 @@ class DJPreferenceServiceTests(unittest.TestCase):
             self.assertTrue(reset["enabled"])
             self.assertEqual(reset["eventCount"], 0)
 
+    def test_dismissed_signal_is_persisted_and_no_longer_affects_ranking(self) -> None:
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            service = DJPreferenceService(JsonPreferenceStore(path))
+            service.record([event(str(index)) for index in range(3)])
+            dismissed = service.dismiss_signal("genre", "Latin House")
+            self.assertNotIn("latin house", {signal["value"] for signal in dismissed["activeSignals"]})
+            restarted = DJPreferenceService(JsonPreferenceStore(path))
+            self.assertEqual(
+                restarted.profile()["ignoredSignals"],
+                [{"dimension": "genre", "value": "latin house"}],
+            )
+
     def test_http_boundary_supports_record_inspect_pause_and_reset(self) -> None:
         with TemporaryDirectory() as temporary:
             service = DJPreferenceService(JsonPreferenceStore(Path(temporary) / "preferences.json"))
@@ -91,6 +104,16 @@ class DJPreferenceServiceTests(unittest.TestCase):
             self.assertEqual(client.get("/api/set-builder/preferences?context=warm-up").json()["eventCount"], 1)
             self.assertFalse(
                 client.put("/api/set-builder/preferences/enabled", json={"enabled": False}).json()["enabled"]
+            )
+            dismissed = client.request(
+                "DELETE",
+                "/api/set-builder/preferences/signals",
+                json={"dimension": "genre", "value": "Electronic / Techno"},
+            )
+            self.assertEqual(dismissed.status_code, 200)
+            self.assertIn(
+                {"dimension": "genre", "value": "electronic / techno"},
+                dismissed.json()["ignoredSignals"],
             )
             self.assertEqual(client.delete("/api/set-builder/preferences").json()["eventCount"], 0)
 

@@ -61,6 +61,7 @@ globals.
 | `web/set_builder_routes.py` | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
 | `web/set_planning_routes.py` | Candidate retrieval, validation, and asynchronous AI track-planning jobs |
 | `web/set_preference_routes.py` | Inspect, record, pause, and reset local Set Builder preference signals |
+| `web/set_review_routes.py` | Persist set, track, and transition reviews and expose calibration reports |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
 | `imports/routes.py` | Authorized source, local-file, and playlist import delivery |
 
@@ -140,6 +141,9 @@ The route surface is:
 - `POST /api/set-builder/preferences/events` to record accepted or rejected track choices.
 - `PUT /api/set-builder/preferences/enabled` to pause or resume personalization.
 - `DELETE /api/set-builder/preferences` to reset signals without changing catalog data.
+- `GET /api/set-builder/reviews` for context-specific acceptance and calibration reports.
+- `POST /api/set-builder/reviews` to persist overall, track, and transition judgments.
+- `DELETE /api/set-builder/reviews` to reset review history independently of catalog data.
 
 Preference learning is a deterministic ranking layer, not model training.
 `DJPreferenceService` persists action evidence locally, requires three distinct
@@ -147,6 +151,12 @@ tracks per signal, separates profiles by set vibe, and caps the final adjustment
 at ±8 points. `PersonalizedCandidateRanker` runs only after hard candidate
 constraints, so it cannot restore excluded, missing, or otherwise ineligible
 tracks. Matching signals and evidence counts are added to candidate reasons.
+`SetReviewService` is a separate persistence and reporting boundary. It records
+overall, per-track, and per-transition judgments; calculates personalized versus
+neutral acceptance; detects contradictions and broad-signal dominance; and
+builds a transition preference profile only after three distinct track pairs.
+The review route translates explicit track accept/reject judgments into the
+existing preference event vocabulary, keeping capture separate from scoring.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is

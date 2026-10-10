@@ -50,13 +50,15 @@ class SetReviewServiceTests(unittest.TestCase):
     def test_reports_acceptance_delta_rank_changes_reasons_and_catalog_fit(self) -> None:
         with TemporaryDirectory() as temporary:
             reviews, _ = self.service(Path(temporary))
-            reviews.record({
-                "setId": "set-one",
-                "context": "warm-up",
-                "overallDecision": "accept",
-                "tracks": [track("one", "accept", 4, 2), track("two", "reject")],
-                "evaluation": {"tierCounts": {"direct": 1, "bridge": 1}},
-            })
+            reviews.record(
+                {
+                    "setId": "set-one",
+                    "context": "warm-up",
+                    "overallDecision": "accept",
+                    "tracks": [track("one", "accept", 4, 2), track("two", "reject")],
+                    "evaluation": {"tierCounts": {"direct": 1, "bridge": 1}},
+                }
+            )
             report = reviews.report("warm-up")
         self.assertEqual(report["overallAccepted"], 1)
         self.assertEqual(report["tracks"]["changedByPersonalization"], 1)
@@ -96,13 +98,16 @@ class SetReviewServiceTests(unittest.TestCase):
             app = FastAPI()
             app.include_router(create_set_review_router(reviews, preferences))
             client = TestClient(app)
-            response = client.post("/api/set-builder/reviews", json={
-                "setId": "set-one",
-                "context": "warm-up",
-                "overallDecision": "accept",
-                "tracks": [track("one", "accept")],
-                "transitions": [transition("one-two", 4)],
-            })
+            response = client.post(
+                "/api/set-builder/reviews",
+                json={
+                    "setId": "set-one",
+                    "context": "warm-up",
+                    "overallDecision": "accept",
+                    "tracks": [track("one", "accept")],
+                    "transitions": [transition("one-two", 4)],
+                },
+            )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["report"]["reviewCount"], 1)
             self.assertEqual(preferences.profile("warm-up")["eventCount"], 1)

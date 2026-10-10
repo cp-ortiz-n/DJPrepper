@@ -56,7 +56,9 @@ class SetPlanningEvaluationHarness:
                 locked_ids=set(),
             )
             evaluation = self.evaluator.evaluate(
-                result["plan"], journey, result["warnings"],
+                result["plan"],
+                journey,
+                result["warnings"],
                 target_duration_minutes=int(scenario["targetDurationMinutes"]),
             )
             acceptance_failures = _acceptance_failures(evaluation, scenario.get("expectations", {}))
@@ -104,19 +106,23 @@ def _acceptance_failures(evaluation: dict[str, Any], expectations: dict[str, Any
     failures: list[dict[str, Any]] = []
     minimum_quality = float(expectations.get("minimumQualityScore") or 0)
     if minimum_quality and float(evaluation.get("qualityScore") or 0) < minimum_quality:
-        failures.append({
-            "code": "quality-below-floor",
-            "expected": minimum_quality,
-            "actual": evaluation.get("qualityScore"),
-        })
+        failures.append(
+            {
+                "code": "quality-below-floor",
+                "expected": minimum_quality,
+                "actual": evaluation.get("qualityScore"),
+            }
+        )
     minimum_genre_coverage = float(expectations.get("minimumGenreCoverage") or 0)
     actual_coverage = float((evaluation.get("requestedGenreCoverage") or {}).get("ratio") or 0)
     if minimum_genre_coverage and actual_coverage < minimum_genre_coverage:
-        failures.append({
-            "code": "genre-coverage-below-floor",
-            "expected": minimum_genre_coverage,
-            "actual": actual_coverage,
-        })
+        failures.append(
+            {
+                "code": "genre-coverage-below-floor",
+                "expected": minimum_genre_coverage,
+                "actual": actual_coverage,
+            }
+        )
     warning_counts = evaluation.get("warningCounts") or {}
     for code, maximum in (expectations.get("maximumWarnings") or {}).items():
         actual = int(warning_counts.get(code) or 0)
@@ -128,16 +134,39 @@ def _acceptance_failures(evaluation: dict[str, Any], expectations: dict[str, Any
 def compare_evaluation_reports(current: dict[str, Any], previous: dict[str, Any] | None) -> dict[str, Any]:
     if not previous:
         return {"baselineAvailable": False, "qualityScoreDelta": None, "newFailures": []}
-    previous_failures = {
-        result["id"] for result in previous.get("results", []) if result.get("status") == "failed"
-    }
-    current_failures = {
-        result["id"] for result in current.get("results", []) if result.get("status") == "failed"
-    }
+    previous_failures = {result["id"] for result in previous.get("results", []) if result.get("status") == "failed"}
+    current_failures = {result["id"] for result in current.get("results", []) if result.get("status") == "failed"}
     return {
         "baselineAvailable": True,
         "qualityScoreDelta": round(
             float(current.get("averageQualityScore") or 0) - float(previous.get("averageQualityScore") or 0), 1
         ),
         "newFailures": sorted(current_failures - previous_failures),
+    }
+
+
+def compare_planning_variants(personalized: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
+    """Compare two same-scenario runs without treating either as ground truth."""
+    baseline_by_id = {str(result.get("id")): result for result in baseline.get("results", [])}
+    scenarios = []
+    for result in personalized.get("results", []):
+        reference = baseline_by_id.get(str(result.get("id")), {})
+        chosen = list(result.get("trackIds", []))
+        original = list(reference.get("trackIds", []))
+        scenarios.append(
+            {
+                "id": result.get("id"),
+                "personalizedQualityScore": (result.get("evaluation") or {}).get("qualityScore"),
+                "baselineQualityScore": (reference.get("evaluation") or {}).get("qualityScore"),
+                "changedTrackIds": sorted(set(chosen).symmetric_difference(original)),
+                "orderChanged": chosen != original,
+            }
+        )
+    return {
+        "qualityScoreDelta": round(
+            float(personalized.get("averageQualityScore") or 0) - float(baseline.get("averageQualityScore") or 0),
+            1,
+        ),
+        "changedScenarioCount": sum(item["orderChanged"] for item in scenarios),
+        "scenarios": scenarios,
     }

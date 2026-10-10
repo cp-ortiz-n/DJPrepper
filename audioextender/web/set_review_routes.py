@@ -34,9 +34,7 @@ class SetReviewRequest(BaseModel):
     set_id: str = Field(default="", alias="setId", max_length=200)
     set_name: str = Field(default="Untitled set", alias="setName", max_length=200)
     context: str = Field(default="balanced", max_length=100)
-    overall_decision: Literal["accept", "reject", "unreviewed"] = Field(
-        default="unreviewed", alias="overallDecision"
-    )
+    overall_decision: Literal["accept", "reject", "unreviewed"] = Field(default="unreviewed", alias="overallDecision")
     notes: str = Field(default="", max_length=2000)
     tracks: list[TrackReviewRequest] = Field(default_factory=list, max_length=200)
     transitions: list[TransitionReviewRequest] = Field(default_factory=list, max_length=200)

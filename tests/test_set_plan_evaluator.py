@@ -8,6 +8,7 @@ from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.evaluation_harness import (
     SetPlanningEvaluationHarness,
     compare_evaluation_reports,
+    compare_planning_variants,
 )
 from audioextender.set_builder.plan_evaluator import SetPlanEvaluator
 from audioextender.set_builder.plan_validator import SetPlanValidator
@@ -26,23 +27,33 @@ class SetPlanEvaluatorTests(unittest.TestCase):
     def test_reports_scarcity_coverage_duration_repetition_and_warnings(self) -> None:
         plan = [
             {
-                "id": "downloaded:1", "artist": "DJ One", "genre": "Latin / Reggaeton",
-                "detailedGenres": ["Dembow"], "durationSeconds": 240, "sectionId": "opening",
-                "matchTier": "direct", "descriptors": [],
+                "id": "downloaded:1",
+                "artist": "DJ One",
+                "genre": "Latin / Reggaeton",
+                "detailedGenres": ["Dembow"],
+                "durationSeconds": 240,
+                "sectionId": "opening",
+                "matchTier": "direct",
+                "descriptors": [],
             },
             {
-                "id": "downloaded:2", "artist": "DJ One", "genre": "Electronic / House",
-                "detailedGenres": [], "durationSeconds": 240, "sectionId": "peak",
-                "matchTier": "bridge", "descriptors": [{"value": "Latin Techno"}],
+                "id": "downloaded:2",
+                "artist": "DJ One",
+                "genre": "Electronic / House",
+                "detailedGenres": [],
+                "durationSeconds": 240,
+                "sectionId": "peak",
+                "matchTier": "bridge",
+                "descriptors": [{"value": "Latin Techno"}],
             },
         ]
-        journey = {"sections": [
-            {"id": "opening", "genres": ["Reggaeton"]},
-            {"id": "peak", "genres": ["Latin Techno"]},
-        ]}
-        result = SetPlanEvaluator().evaluate(
-            plan, journey, [{"code": "large-bpm-jump"}], target_duration_minutes=8
-        )
+        journey = {
+            "sections": [
+                {"id": "opening", "genres": ["Reggaeton"]},
+                {"id": "peak", "genres": ["Latin Techno"]},
+            ]
+        }
+        result = SetPlanEvaluator().evaluate(plan, journey, [{"code": "large-bpm-jump"}], target_duration_minutes=8)
         self.assertEqual(result["tierCounts"], {"direct": 1, "bridge": 1})
         self.assertEqual(result["requestedGenreCoverage"]["ratio"], 1)
         self.assertEqual(result["journeyCoverage"], {"covered": 2, "total": 2})
@@ -75,23 +86,34 @@ class SetPlanningEvaluationHarnessTests(unittest.TestCase):
             for identifier, genre in ((1, "Reggaeton"), (2, "Salsa")):
                 path = root / f"{identifier}.wav"
                 path.touch()
-                catalog.append({
-                    "downloaded_id": identifier,
-                    "genre": genre,
-                    "detailed_genre": genre,
-                    "analysis": {
-                        "source_name": path.name, "artist": f"Artist {identifier}", "duration_seconds": 240,
-                        "bpm": 120 + identifier, "key": "8A", "_energy": 0.5,
-                    },
-                    "job": {"id": identifier, "library_path": str(path)},
-                    "descriptors": [],
-                })
+                catalog.append(
+                    {
+                        "downloaded_id": identifier,
+                        "genre": genre,
+                        "detailed_genre": genre,
+                        "analysis": {
+                            "source_name": path.name,
+                            "artist": f"Artist {identifier}",
+                            "duration_seconds": 240,
+                            "bpm": 120 + identifier,
+                            "key": "8A",
+                            "_energy": 0.5,
+                        },
+                        "job": {"id": identifier, "library_path": str(path)},
+                        "descriptors": [],
+                    }
+                )
             scenario = {
-                "id": "latin-test", "brief": {}, "targetDurationMinutes": 8, "targetTrackCount": 2,
-                "journey": {"sections": [
-                    {"id": "one", "durationPercent": 50, "genres": ["Reggaeton"]},
-                    {"id": "two", "durationPercent": 50, "genres": ["Salsa"]},
-                ]},
+                "id": "latin-test",
+                "brief": {},
+                "targetDurationMinutes": 8,
+                "targetTrackCount": 2,
+                "journey": {
+                    "sections": [
+                        {"id": "one", "durationPercent": 50, "genres": ["Reggaeton"]},
+                        {"id": "two", "durationPercent": 50, "genres": ["Salsa"]},
+                    ]
+                },
             }
             report = self._harness().run(catalog, [scenario])
         self.assertEqual(report["completedCount"], 1)
@@ -101,14 +123,19 @@ class SetPlanningEvaluationHarnessTests(unittest.TestCase):
         self.assertEqual(comparison["newFailures"], [])
 
     def test_failed_scenario_discloses_unavailable_candidate_count(self) -> None:
-        catalog = [{
-            "downloaded_id": 1,
-            "genre": "Techno",
-            "analysis": {"source_name": "missing.wav", "duration_seconds": 240},
-            "job": {"id": 1, "library_path": "/missing/audioextender-track.wav"},
-        }]
+        catalog = [
+            {
+                "downloaded_id": 1,
+                "genre": "Techno",
+                "analysis": {"source_name": "missing.wav", "duration_seconds": 240},
+                "job": {"id": 1, "library_path": "/missing/audioextender-track.wav"},
+            }
+        ]
         scenario = {
-            "id": "missing-drive", "brief": {}, "targetDurationMinutes": 4, "targetTrackCount": 1,
+            "id": "missing-drive",
+            "brief": {},
+            "targetDurationMinutes": 4,
+            "targetTrackCount": 1,
             "journey": {"sections": [{"id": "one", "durationPercent": 100, "genres": ["Techno"]}]},
         }
         result = self._harness().run(catalog, [scenario])["results"][0]
@@ -120,19 +147,40 @@ class SetPlanningEvaluationHarnessTests(unittest.TestCase):
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "track.wav"
             path.touch()
-            catalog = [{
-                "downloaded_id": 1, "genre": "Techno", "detailed_genre": "Techno",
-                "analysis": {"source_name": path.name, "duration_seconds": 240, "bpm": 125},
-                "job": {"id": 1, "library_path": str(path)},
-            }]
+            catalog = [
+                {
+                    "downloaded_id": 1,
+                    "genre": "Techno",
+                    "detailed_genre": "Techno",
+                    "analysis": {"source_name": path.name, "duration_seconds": 240, "bpm": 125},
+                    "job": {"id": 1, "library_path": str(path)},
+                }
+            ]
             scenario = {
-                "id": "quality-gate", "brief": {}, "targetDurationMinutes": 4, "targetTrackCount": 1,
+                "id": "quality-gate",
+                "brief": {},
+                "targetDurationMinutes": 4,
+                "targetTrackCount": 1,
                 "expectations": {"minimumQualityScore": 101},
                 "journey": {"sections": [{"id": "one", "durationPercent": 100, "genres": ["Techno"]}]},
             }
             result = self._harness().run(catalog, [scenario])["results"][0]
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["acceptanceFailures"][0]["code"], "quality-below-floor")
+
+    def test_compares_personalized_and_unpersonalized_track_orders(self) -> None:
+        baseline = {
+            "averageQualityScore": 80,
+            "results": [{"id": "latin", "trackIds": ["one", "two"], "evaluation": {"qualityScore": 80}}],
+        }
+        personalized = {
+            "averageQualityScore": 84,
+            "results": [{"id": "latin", "trackIds": ["one", "three"], "evaluation": {"qualityScore": 84}}],
+        }
+        result = compare_planning_variants(personalized, baseline)
+        self.assertEqual(result["qualityScoreDelta"], 4)
+        self.assertEqual(result["changedScenarioCount"], 1)
+        self.assertEqual(result["scenarios"][0]["changedTrackIds"], ["three", "two"])
 
 
 if __name__ == "__main__":

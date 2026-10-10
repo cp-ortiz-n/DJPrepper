@@ -36,6 +36,10 @@ class FrontendContractTests(unittest.TestCase):
         for action in ("lock", "remove", "replace-out", "replace-in", "save", "export"):
             self.assertIn(f"recordPreference('{action}'", set_builder)
         self.assertIn("preferenceAdjustment(track)", set_builder)
+        self.assertIn('id="set-review-panel"', page)
+        self.assertIn('id="submit-set-review"', page)
+        self.assertIn("submitSetReview", set_builder)
+        self.assertIn("transitionPreferenceAdjustment", set_builder)
 
 
 if __name__ == "__main__":

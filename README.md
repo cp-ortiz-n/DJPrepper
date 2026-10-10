@@ -119,6 +119,18 @@ be inspected, paused, or reset from Set Builder. Exclusions, required tracks,
 file availability, validation, and the deterministic Phase 2D comparison remain
 authoritative.
 
+Phase 2F adds a persistent human-review and calibration loop. A DJ can approve
+or reject the running order, accept or reject individual tracks with structured
+reasons, rate transitions, and leave notes. Reports compare personalized and
+neutral acceptance, identify rank changes, direct versus expanded matches,
+contradictory judgments, rejection patterns, and broad signals that may be
+overfitting. Individual learned signals can be dismissed. Transition
+preferences for BPM movement, harmonic compatibility, vocal spacing, energy
+movement, blend length, and technique require three distinct track pairs before
+they influence automatic transition optimization. The catalog evaluation tool
+now runs the five checked-in musical scenarios with and without personalization
+and reports changed tracks, order changes, and quality deltas.
+
 Install the recommended local provider on macOS with:
 
 ```bash
