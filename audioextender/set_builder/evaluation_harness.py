@@ -8,6 +8,7 @@ from typing import Any
 
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.plan_evaluator import SetPlanEvaluator
+from audioextender.set_builder.track_planner import AITrackPlanner
 
 
 @dataclass(frozen=True)
@@ -65,11 +66,15 @@ class SetPlanningEvaluationHarness:
                 "mode": result["mode"],
                 "provider": result["provider"],
                 "model": result["model"],
+                "attempts": result.get("attempts"),
+                "fallbackReason": result.get("fallbackReason"),
+                "modelRepairs": result.get("modelRepairs", []),
                 "durationMs": round((perf_counter() - started) * 1000),
                 "candidateCount": pool["candidateCount"],
                 "trackIds": [track["id"] for track in result["plan"]],
                 "warnings": result["warnings"],
                 "evaluation": evaluation,
+                "planComparison": result.get("comparison"),
                 "acceptanceFailures": acceptance_failures,
             }
         except Exception as error:

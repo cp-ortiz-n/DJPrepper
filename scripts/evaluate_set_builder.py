@@ -23,6 +23,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--catalog", type=Path, default=Path("output/reports/set_builder_catalog.json"))
     parser.add_argument("--scenarios", type=Path, default=Path("tests/fixtures/set_builder_eval_scenarios.json"))
     parser.add_argument("--output", type=Path, default=Path("output/reports/set_builder_evaluation.json"))
+    parser.add_argument("--scenario", action="append", default=[], help="Run only the named scenario; repeatable")
     return parser.parse_args()
 
 
@@ -34,6 +35,12 @@ def main() -> int:
     options = arguments()
     catalog = read_json(options.catalog).get("tracks", [])
     scenarios = read_json(options.scenarios).get("scenarios", [])
+    if options.scenario:
+        requested = set(options.scenario)
+        scenarios = [scenario for scenario in scenarios if scenario.get("id") in requested]
+        missing = requested - {str(scenario.get("id")) for scenario in scenarios}
+        if missing:
+            raise SystemExit(f"Unknown scenario(s): {', '.join(sorted(missing))}")
     configuration = IntentionPlanner.from_environment()
     harness = SetPlanningEvaluationHarness(
         SetCandidateRetriever(),

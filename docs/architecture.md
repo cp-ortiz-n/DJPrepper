@@ -107,6 +107,11 @@ SetPlanValidator
    ├── duration, track count, and journey-section coverage
    └── BPM, Camelot-key, and vocal-transition warnings
         ↓
+PlanProposalRepairer + PlanQualityComparator
+   ├── preserve valid unique AI choices and repair bounded structural gaps
+   ├── evaluate AI and deterministic plans with identical metrics
+   └── accept AI only when quality improves without reducing genre coverage
+        ↓
 SetPlanEvaluator
    ├── direct, identity, bridge, and fallback disclosure
    ├── genre, journey, duration, repetition, and warning measurements
@@ -150,6 +155,9 @@ owns provider adaptation, repair, and fallback; `planning_jobs.py` owns lifecycl
 and cancellation; `planning_store.py` atomically persists job/request state and
 turns interrupted jobs into explicit retryable failures after restart;
 `plan_evaluator.py` owns deterministic quality measurement; and
+`proposal_repairer.py` owns bounded structural cleanup without making musical
+quality decisions; `plan_comparator.py` owns the AI-versus-baseline acceptance
+policy; and
 `set-planning-client.js` owns browser polling and abort semantics. The model cannot bypass availability, explicit brief constraints,
 exclusions, duration, or journey-coverage checks.
 

@@ -99,6 +99,15 @@ warnings, evaluation, fallback reason, journey, and per-track selection reasons.
 Planning jobs persist locally; an app restart marks interrupted work as safely
 retryable instead of losing or silently applying it.
 
+Phase 2D compares every validated AI proposal with an independently generated
+deterministic baseline. AI wins only when it improves the deterministic quality
+score, preserves requested-genre coverage, and still passes every hard
+validator. Exact-count schemas restrict model output to real candidate and
+section IDs. A narrow structural repair boundary removes duplicates and fills
+missing section slots from eligible candidates while preserving valid unique AI
+choices; every repair is disclosed. The generated-set receipt shows both
+scores, the winner, the reason, and any repair count.
+
 Install the recommended local provider on macOS with:
 
 ```bash
@@ -150,6 +159,8 @@ and the deterministic quality score. Set `AUDIOEXTENDER_LLM_PROVIDER=offline`
 to measure the deterministic fallback or leave the configured provider active
 to evaluate real AI track selection. The catalog and scenario paths can be
 overridden with `--catalog` and `--scenarios`.
+Use `--scenario latin-kickback` to iterate on one checked-in case without
+running the complete model suite.
 
 Deterministic fallback plans use bounded transition optimization after track
 selection. It cannot change selected tracks or their journey sections; it only
@@ -428,7 +439,7 @@ Use this table before searching through the larger composition files:
 | Set Builder UI | `web/set-builder.js` and `web/styles.css` |
 | Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
 | Set Builder candidate shortlists or plan validation | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py` |
-| AI track ordering, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |
+| AI track ordering, comparison, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_comparator.py`, `proposal_repairer.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
 | Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |

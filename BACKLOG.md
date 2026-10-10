@@ -150,7 +150,7 @@ Status definitions:
 
 ## Intent-driven Set Builder and musical identity
 
-Status: **In progress — local-first interpretation, Phase 1 journey planning, Phase 2A candidate safety, Phase 2B validated AI track planning, and Phase 2C quality hardening are complete.** Set
+Status: **In progress — local-first interpretation, Phase 1 journey planning, Phase 2A candidate safety, Phase 2B validated AI track planning, Phase 2C quality hardening, and Phase 2D comparative AI acceptance are complete.** Set
 Builder accepts a natural-language intention and translates it into editable
 hard requirements, weighted preferences, limits, requested and optional genres,
 genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
@@ -181,6 +181,15 @@ with its prior report, and supports either the deterministic fallback or the
 configured model. Remaining Set Builder work is feedback-informed
 personalization and human review of real-library evaluation results, not
 another unvalidated model path.
+
+Phase 2D generates an independent deterministic baseline for every valid AI
+proposal and selects AI only when it improves the shared quality score without
+reducing requested-genre coverage. Dynamic schemas constrain track and section
+IDs and exact counts; bounded structural repair preserves valid AI selections,
+fills only missing eligible slots, and discloses each repair. Receipts and the
+catalog evaluation report retain both scores, the winner, provider/model,
+latency, repairs, and rejection reason. Remaining model work is improving local
+model selection quality and latency—not weakening the acceptance policy.
 
 The generator uses the structured plan during local candidate retrieval and
 scoring, never relaxes hard identity requirements, discloses direct versus

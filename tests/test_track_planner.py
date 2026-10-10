@@ -61,7 +61,7 @@ def planning_candidates(root: Path) -> tuple[dict, dict]:
 
 
 class AITrackPlannerTests(unittest.TestCase):
-    def test_accepts_valid_exact_id_plan(self) -> None:
+    def test_valid_ai_plan_is_compared_before_acceptance(self) -> None:
         with TemporaryDirectory() as temporary:
             set_journey, pool = planning_candidates(Path(temporary))
             model = FakeModel([{
@@ -82,33 +82,31 @@ class AITrackPlannerTests(unittest.TestCase):
                 target_track_count=2, target_duration_minutes=8,
                 required_ids=set(), excluded_ids=set(), locked_ids=set(),
             )
-        self.assertEqual(result["mode"], "ai-planned")
+        self.assertEqual(result["mode"], "deterministic-fallback")
         self.assertEqual(result["provider"], "ollama")
         self.assertEqual(result["attempts"], 1)
+        self.assertEqual(result["comparison"]["winner"], "deterministic")
+        self.assertEqual(result["fallbackReason"]["code"], "ai-quality-below-baseline")
         self.assertEqual([track["id"] for track in result["plan"]], ["downloaded:1", "downloaded:2"])
         self.assertTrue(all("path" not in track for track in model.calls[0]["payload"]["candidates"]))
         self.assertTrue(all("path" not in track for track in result["plan"]))
 
-    def test_repairs_hallucinated_id_using_validation_errors(self) -> None:
+    def test_repairs_hallucinated_id_without_a_second_model_call(self) -> None:
         invalid = {"summary": "Invalid", "selections": [
             {"trackId": "invented:99", "sectionId": "section-1", "reason": "Invented", "evidence": "ai-suggested"}
         ]}
-        repaired = {"summary": "Repaired", "selections": [
-            {"trackId": "downloaded:1", "sectionId": "section-1", "reason": "Opening", "evidence": "ai-suggested"},
-            {"trackId": "downloaded:2", "sectionId": "section-2", "reason": "Finish", "evidence": "ai-suggested"},
-        ]}
         with TemporaryDirectory() as temporary:
             set_journey, pool = planning_candidates(Path(temporary))
-            model = FakeModel([invalid, repaired])
+            model = FakeModel([invalid])
             result = AITrackPlanner(model, SetPlanValidator(duration_tolerance=0.5)).plan(
                 brief={}, journey=set_journey, candidate_pool=pool,
                 target_track_count=2, target_duration_minutes=8,
                 required_ids=set(), excluded_ids=set(), locked_ids=set(),
             )
-        repair = model.calls[1]["payload"]["repair"]
-        self.assertEqual(result["attempts"], 2)
-        self.assertEqual(repair["previousPlan"], invalid)
-        self.assertEqual(repair["validationErrors"][0]["code"], "unknown-track")
+        self.assertEqual(result["attempts"], 1)
+        self.assertEqual(len(model.calls), 1)
+        self.assertEqual({track["id"] for track in result["plan"]}, {"downloaded:1", "downloaded:2"})
+        self.assertTrue(result["modelRepairs"])
 
     def test_provider_failures_fall_back_to_deterministic_valid_plan(self) -> None:
         failures = [httpx.TimeoutException("slow") for _ in range(3)]
@@ -203,9 +201,19 @@ class SetPlanningModelClientTests(unittest.TestCase):
             patch.object(IntentionPlanner, "status", return_value={"provider": "ollama", "model": "test"}),
             patch("audioextender.set_builder.track_planner.httpx.post", return_value=response) as post,
         ):
-            result = client.complete({"candidates": []}, timeout_seconds=12)
+            result = client.complete({
+                "candidates": [{"id": "downloaded:1"}, {"id": "downloaded:2"}],
+                "journey": {"sections": [{"id": "opening"}, {"id": "peak"}]},
+                "targetTrackCount": 12,
+            }, timeout_seconds=12)
         self.assertEqual(result["summary"], "ok")
-        self.assertEqual(post.call_args.kwargs["json"]["format"], TRACK_PLAN_SCHEMA)
+        response_schema = post.call_args.kwargs["json"]["format"]
+        self.assertEqual(response_schema["properties"]["selections"]["minItems"], 12)
+        self.assertEqual(response_schema["properties"]["selections"]["maxItems"], 12)
+        item_properties = response_schema["properties"]["selections"]["items"]["properties"]
+        self.assertEqual(item_properties["trackId"]["enum"], ["downloaded:1", "downloaded:2"])
+        self.assertEqual(item_properties["sectionId"]["enum"], ["opening", "peak"])
+        self.assertEqual(TRACK_PLAN_SCHEMA["properties"]["selections"]["minItems"], 1)
         self.assertEqual(post.call_args.kwargs["timeout"], 12)
 
     def test_openai_request_disables_storage(self) -> None:

@@ -5,13 +5,15 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import httpx
 
 from audioextender.set_builder.intention_planner import IntentionPlanner
+from audioextender.set_builder.plan_comparator import PlanQualityComparator
 from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.proposal_repairer import PlanProposalRepairer
 from audioextender.set_builder.transition_optimizer import DeterministicTransitionOptimizer
 
 logger = logging.getLogger("uvicorn.error")
@@ -45,11 +47,35 @@ TRACK_PLAN_INSTRUCTIONS = (
     "Create a DJ running order only from the supplied candidates. Return only the requested JSON. "
     "Use every trackId exactly as supplied; never invent, shorten, or rewrite an ID. Select targetTrackCount tracks. "
     "Assign tracks only to eligibleSectionIds, cover every journey section, preserve required and locked tracks, and "
-    "never repeat a track. Follow section order, energy direction, requested genres, and musical identity. Prefer "
+    "never repeat a track. Use exactly the per-section counts in sectionTrackTargets. Follow section order, energy "
+    "direction, requested genres, and musical identity. Prefer "
     "workable BPM, Camelot-key, vocal, and timing transitions. Bridge or fallback tracks are allowed only when direct "
     "matches are scarce. Reasons must describe supplied facts or an explicit planning judgment; evidence must be "
     "ai-suggested. Do not claim to have heard audio."
 )
+
+
+def _schema_for_request(payload: dict[str, Any]) -> dict[str, Any]:
+    schema = json.loads(json.dumps(TRACK_PLAN_SCHEMA))
+    requested = max(1, min(100, int(payload.get("targetTrackCount") or 1)))
+    selections = schema["properties"]["selections"]
+    selections["minItems"] = requested
+    selections["maxItems"] = requested
+    selections["uniqueItems"] = True
+    candidate_ids = sorted({
+        str(candidate.get("id") or "") for candidate in payload.get("candidates", []) if candidate.get("id")
+    })
+    section_ids = sorted({
+        str(section.get("id") or "")
+        for section in (payload.get("journey") or {}).get("sections", [])
+        if section.get("id")
+    })
+    properties = selections["items"]["properties"]
+    if candidate_ids:
+        properties["trackId"]["enum"] = candidate_ids
+    if section_ids:
+        properties["sectionId"]["enum"] = section_ids
+    return schema
 
 
 def _public_validation(validation: dict[str, Any]) -> dict[str, Any]:
@@ -80,6 +106,7 @@ class SetPlanningModelClient:
     def complete(self, payload: dict[str, Any], *, timeout_seconds: float) -> dict[str, Any]:
         status = self.status()
         provider = status["provider"]
+        response_schema = _schema_for_request(payload)
         if provider == "ollama":
             response = httpx.post(
                 f"{self.configuration.ollama_endpoint}/api/chat",
@@ -87,7 +114,7 @@ class SetPlanningModelClient:
                     "model": self.configuration.ollama_model,
                     "stream": False,
                     "think": False,
-                    "format": TRACK_PLAN_SCHEMA,
+                    "format": response_schema,
                     "keep_alive": "10m",
                     "options": {"temperature": 0.12, "num_predict": 3500},
                     "messages": [
@@ -116,7 +143,7 @@ class SetPlanningModelClient:
                             "type": "json_schema",
                             "name": "dj_track_plan",
                             "strict": True,
-                            "schema": TRACK_PLAN_SCHEMA,
+                            "schema": response_schema,
                         }
                     },
                 },
@@ -286,6 +313,8 @@ def _select_section_candidates(
 class AITrackPlanner:
     model: TrackPlanningModel
     validator: SetPlanValidator
+    comparator: PlanQualityComparator = field(default_factory=PlanQualityComparator)
+    repairer: PlanProposalRepairer = field(default_factory=PlanProposalRepairer)
     maximum_attempts: int = 3
     timeout_seconds: float = 90
 
@@ -312,11 +341,13 @@ class AITrackPlanner:
             "journey": journey,
             "targetTrackCount": target_track_count,
             "targetDurationMinutes": target_duration_minutes,
+            "sectionTrackTargets": _section_targets(journey, target_track_count),
             "requiredTrackIds": sorted(required_ids),
             "lockedTrackIds": sorted(locked_ids),
             "candidates": model_candidates,
         }
         failures: list[list[dict[str, Any]]] = []
+        section_targets = _section_targets(journey, target_track_count)
         try:
             status = self.model.status()
         except (httpx.HTTPError, RuntimeError, ValueError) as error:
@@ -341,20 +372,53 @@ class AITrackPlanner:
                     continue
                 cancel_check()
                 try:
+                    proposal, model_repairs = self.repairer.repair(proposal, candidates, section_targets)
                     validation = self.validator.validate(
                         proposal.get("selections", []), candidates, journey,
                         required_ids=required_ids, excluded_ids=excluded_ids, locked_ids=locked_ids,
                         target_duration_minutes=target_duration_minutes, target_track_count=target_track_count,
                     )
                     if validation["valid"]:
+                        fallback = deterministic_track_plan(
+                            candidate_pool, journey, target_track_count, target_duration_minutes
+                        )
+                        baseline_validation = self.validator.validate(
+                            fallback["selections"], candidates, journey,
+                            required_ids=required_ids, excluded_ids=excluded_ids, locked_ids=locked_ids,
+                            target_duration_minutes=target_duration_minutes,
+                            target_track_count=target_track_count,
+                        )
+                        comparison = self.comparator.compare(
+                            validation,
+                            baseline_validation,
+                            journey,
+                            target_duration_minutes=target_duration_minutes,
+                        )
+                        if comparison["winner"] == "ai":
+                            return {
+                                **_public_validation(validation),
+                                "summary": str(proposal.get("summary") or "AI-planned running order."),
+                                "mode": "ai-planned",
+                                "provider": status.get("provider"),
+                                "model": status.get("model"),
+                                "attempts": attempt,
+                                "fallbackReason": None,
+                                "comparison": comparison,
+                                "modelRepairs": model_repairs,
+                            }
                         return {
-                            **_public_validation(validation),
-                            "summary": str(proposal.get("summary") or "AI-planned running order."),
-                            "mode": "ai-planned",
+                            **_public_validation(baseline_validation),
+                            "summary": fallback["summary"],
+                            "mode": "deterministic-fallback",
                             "provider": status.get("provider"),
                             "model": status.get("model"),
                             "attempts": attempt,
-                            "fallbackReason": None,
+                            "fallbackReason": {
+                                "code": "ai-quality-below-baseline",
+                                "message": comparison["reason"],
+                            },
+                            "comparison": comparison,
+                            "modelRepairs": model_repairs,
                         }
                     failures.append(validation["errors"])
                     previous = proposal
@@ -376,8 +440,10 @@ class AITrackPlanner:
             **_public_validation(validation),
             "summary": fallback["summary"],
             "mode": "deterministic-fallback",
-            "provider": "offline",
-            "model": None,
+            "provider": status.get("provider") if status.get("available") else "offline",
+            "model": status.get("model") if status.get("available") else None,
             "attempts": len(failures),
             "fallbackReason": failures[-1] if failures else "AI provider unavailable",
+            "comparison": None,
+            "modelRepairs": [],
         }

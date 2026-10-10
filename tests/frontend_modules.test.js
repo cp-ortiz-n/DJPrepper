@@ -134,6 +134,8 @@ test('Set Builder exposes explicit safe planning modes and cancellation', () => 
   assert.match(moduleSource, /planningReceipt:currentPlanningReceipt/);
   assert.match(moduleSource, /currentPlanningReceipt=record\.planningReceipt\|\|null/);
   assert.match(moduleSource, /evaluation\?\.disclosures/);
+  assert.match(moduleSource, /comparison\.deterministic\?\.qualityScore/);
+  assert.match(moduleSource, /modelRepairs:result\.modelRepairs\|\|\[\]/);
   assert.match(moduleSource, /currentPlanningReceipt\?\.warnings/);
 });
 

@@ -97,5 +97,6 @@ class LocalIntentionAcceptanceTests(unittest.TestCase):
             journey=journey, candidate_pool=pool, target_track_count=2, target_duration_minutes=8,
             required_ids=set(), excluded_ids=set(), locked_ids=set(),
         )
-        self.assertEqual(result["mode"], "ai-planned")
+        self.assertIn(result["mode"], {"ai-planned", "deterministic-fallback"})
+        self.assertIsNotNone(result["comparison"])
         self.assertEqual({track["id"] for track in result["plan"]}, {"downloaded:1", "downloaded:2"})
