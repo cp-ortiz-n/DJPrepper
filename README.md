@@ -108,6 +108,17 @@ missing section slots from eligible candidates while preserving valid unique AI
 choices; every repair is disclosed. The generated-set receipt shows both
 scores, the winner, the reason, and any repair count.
 
+Phase 2E adds local, explainable preference learning without retraining or
+granting the model control over safety rules. Locking, removing, replacing,
+adding, saving, and exporting tracks record small catalog-feature signals in a
+local JSON store. A signal must be supported by at least three distinct tracks
+before it changes candidate ordering, the combined adjustment is capped at
+eight points, and broad signals are damped so they do not hide distinctive
+genre or musical-identity evidence. Preferences are scoped by set vibe and can
+be inspected, paused, or reset from Set Builder. Exclusions, required tracks,
+file availability, validation, and the deterministic Phase 2D comparison remain
+authoritative.
+
 Install the recommended local provider on macOS with:
 
 ```bash

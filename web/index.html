@@ -328,6 +328,13 @@
           <select id="saved-set-select"><option value="">No saved set selected</option></select>
           <div class="saved-set-actions"><button id="load-set" type="button" class="button primary">Load</button><button id="duplicate-set" type="button" class="button secondary">Duplicate</button><button id="delete-set" type="button" class="button destructive">Delete</button></div>
           <p>Set plans stay on this Mac in your browser. Audio files remain in DJ Library.</p>
+          <details class="set-preference-panel">
+            <summary><span><strong>Learned preferences</strong><small id="set-preference-status">Loading local feedback…</small></span></summary>
+            <p>Set Builder learns only after the same signal appears across 3 distinct tracks. Hard requirements, exclusions, and unavailable files always win.</p>
+            <label class="set-preference-toggle"><input id="set-personalization-enabled" type="checkbox" checked> Use my accepted and rejected choices</label>
+            <div id="set-preference-summary" class="set-preference-summary"></div>
+            <button id="reset-set-preferences" type="button" class="button tertiary">Reset learned preferences</button>
+          </details>
         </aside>
       </div>
       <section id="set-result" class="panel set-result" hidden>

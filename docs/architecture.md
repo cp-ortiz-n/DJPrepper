@@ -60,6 +60,7 @@ globals.
 | `web/reporting_routes.py` | Track feedback and manual key verification |
 | `web/set_builder_routes.py` | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
 | `web/set_planning_routes.py` | Candidate retrieval, validation, and asynchronous AI track-planning jobs |
+| `web/set_preference_routes.py` | Inspect, record, pause, and reset local Set Builder preference signals |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
 | `imports/routes.py` | Authorized source, local-file, and playlist import delivery |
 
@@ -95,7 +96,8 @@ purpose, and start/end energy
 POST /api/set-builder/candidate-pool → SetCandidateRetriever
    ├── bounded, diverse candidates per journey section
    ├── stable catalog IDs and local file availability
-   └── direct, identity, bridge, and fallback scarcity tiers
+   ├── direct, identity, bridge, and fallback scarcity tiers
+   └── optional bounded adjustments from DJPreferenceService
         ↓
 POST /api/set-builder/plan-tracks → SetPlanningJobService
    ├── cancellable candidate retrieval and stale-job supersession
@@ -134,6 +136,17 @@ The route surface is:
 - `GET /api/set-builder/plan-tracks/{job_id}` for progress and the validated result.
 - `POST /api/set-builder/plan-tracks/{job_id}/cancel` to cancel without changing the current set.
 - `POST /api/set-builder/plan-tracks/{job_id}/retry` to retry a failed or canceled request.
+- `GET /api/set-builder/preferences` to inspect active and pending local signals.
+- `POST /api/set-builder/preferences/events` to record accepted or rejected track choices.
+- `PUT /api/set-builder/preferences/enabled` to pause or resume personalization.
+- `DELETE /api/set-builder/preferences` to reset signals without changing catalog data.
+
+Preference learning is a deterministic ranking layer, not model training.
+`DJPreferenceService` persists action evidence locally, requires three distinct
+tracks per signal, separates profiles by set vibe, and caps the final adjustment
+at ±8 points. `PersonalizedCandidateRanker` runs only after hard candidate
+constraints, so it cannot restore excluded, missing, or otherwise ineligible
+tracks. Matching signals and evidence counts are added to candidate reasons.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is

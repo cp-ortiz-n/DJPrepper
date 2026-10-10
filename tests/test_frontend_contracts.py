@@ -27,6 +27,16 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("@media (max-width:720px)", css)
         self.assertIn(".set-proposals { grid-template-columns:1fr; }", css)
 
+    def test_set_builder_exposes_conservative_preference_learning_controls(self):
+        set_builder = (ROOT / "web" / "set-builder.js").read_text()
+        page = (ROOT / "web" / "index.html").read_text()
+
+        self.assertIn('id="set-personalization-enabled"', page)
+        self.assertIn('id="reset-set-preferences"', page)
+        for action in ("lock", "remove", "replace-out", "replace-in", "save", "export"):
+            self.assertIn(f"recordPreference('{action}'", set_builder)
+        self.assertIn("preferenceAdjustment(track)", set_builder)
+
 
 if __name__ == "__main__":
     unittest.main()

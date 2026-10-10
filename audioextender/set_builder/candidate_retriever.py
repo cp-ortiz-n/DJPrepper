@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from audioextender.set_builder.preference_learning import PersonalizedCandidateRanker
+
 SET_BUILDER_CATALOG_VERSION = 4
 
 
@@ -126,6 +128,7 @@ class SetCandidateRetriever:
     default_section_limit: int = 16
     maximum_section_limit: int = 100
     maximum_total: int = 100
+    preference_ranker: PersonalizedCandidateRanker | None = None
 
     def retrieve(
         self,
@@ -159,14 +162,22 @@ class SetCandidateRetriever:
             ranked = []
             for track in compact:
                 score, tier, reasons = _match_score(track, section)
+                preference_adjustment, preference_reasons = (
+                    self.preference_ranker.adjustment(track, str((constraints or {}).get("vibe") or "balanced"))
+                    if self.preference_ranker else (0.0, [])
+                )
+                score += preference_adjustment
+                reasons.extend(
+                    {"evidence": "estimated", "text": reason} for reason in preference_reasons
+                )
                 if track["id"] in required | locked:
                     score += 1000
                     reasons.insert(0, {"evidence": "verified", "text": "Required or locked by the DJ."})
-                ranked.append((score, tier, track, reasons))
+                ranked.append((score, tier, track, reasons, preference_adjustment))
             ranked.sort(key=lambda value: (-value[0], value[2]["artist"].casefold(), value[2]["title"].casefold()))
             selected: list[dict[str, Any]] = []
             artist_counts: dict[str, int] = {}
-            for score, tier, track, reasons in ranked:
+            for score, tier, track, reasons, preference_adjustment in ranked:
                 if len(selected) >= limit:
                     break
                 if track["id"] not in emitted and len(emitted) >= total_cap:
@@ -178,6 +189,7 @@ class SetCandidateRetriever:
                     **track,
                     "matchTier": tier,
                     "relevanceScore": round(score, 2),
+                    "preferenceAdjustment": preference_adjustment,
                     "required": track["id"] in required,
                     "locked": track["id"] in locked,
                     "eligibleSectionIds": [section_id],

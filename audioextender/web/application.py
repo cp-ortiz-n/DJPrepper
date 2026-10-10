@@ -70,6 +70,11 @@ from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
 from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.preference_learning import (
+    DJPreferenceService,
+    JsonPreferenceStore,
+    PersonalizedCandidateRanker,
+)
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
@@ -112,6 +117,7 @@ from audioextender.web.set_builder_routes import (
     save_playlist_file,
 )
 from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
+from audioextender.web.set_preference_routes import create_set_preference_router
 from audioextender.web.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
@@ -3568,7 +3574,12 @@ app.include_router(
 )
 intention_planner = IntentionPlanner.from_environment()
 journey_planner = JourneyPlanner(intention_planner)
-candidate_retriever = SetCandidateRetriever()
+set_preference_service = DJPreferenceService(
+    JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
+)
+candidate_retriever = SetCandidateRetriever(
+    preference_ranker=PersonalizedCandidateRanker(set_preference_service.profile)
+)
 set_plan_validator = SetPlanValidator()
 track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
 
@@ -3614,6 +3625,7 @@ app.include_router(
         )
     )
 )
+app.include_router(create_set_preference_router(set_preference_service))
 app.include_router(
     create_library_router(
         LibraryRouteDependencies(
