@@ -162,6 +162,7 @@ class SetCandidateRetriever:
             ranked = []
             for track in compact:
                 score, tier, reasons = _match_score(track, section)
+                technical_score = score
                 preference_adjustment, preference_reasons = (
                     self.preference_ranker.adjustment(track, str((constraints or {}).get("vibe") or "balanced"))
                     if self.preference_ranker else (0.0, [])
@@ -172,12 +173,21 @@ class SetCandidateRetriever:
                 )
                 if track["id"] in required | locked:
                     score += 1000
+                    technical_score += 1000
                     reasons.insert(0, {"evidence": "verified", "text": "Required or locked by the DJ."})
-                ranked.append((score, tier, track, reasons, preference_adjustment))
+                ranked.append((score, tier, track, reasons, preference_adjustment, technical_score))
             ranked.sort(key=lambda value: (-value[0], value[2]["artist"].casefold(), value[2]["title"].casefold()))
+            baseline_ranks = {
+                value[2]["id"]: index
+                for index, value in enumerate(sorted(
+                    ranked,
+                    key=lambda value: (-value[5], value[2]["artist"].casefold(), value[2]["title"].casefold()),
+                ), start=1)
+            }
+            personalized_ranks = {value[2]["id"]: index for index, value in enumerate(ranked, start=1)}
             selected: list[dict[str, Any]] = []
             artist_counts: dict[str, int] = {}
-            for score, tier, track, reasons, preference_adjustment in ranked:
+            for score, tier, track, reasons, preference_adjustment, technical_score in ranked:
                 if len(selected) >= limit:
                     break
                 if track["id"] not in emitted and len(emitted) >= total_cap:
@@ -189,7 +199,11 @@ class SetCandidateRetriever:
                     **track,
                     "matchTier": tier,
                     "relevanceScore": round(score, 2),
+                    "technicalScore": round(technical_score, 2),
                     "preferenceAdjustment": preference_adjustment,
+                    "baselineRank": baseline_ranks[track["id"]],
+                    "personalizedRank": personalized_ranks[track["id"]],
+                    "rankDelta": baseline_ranks[track["id"]] - personalized_ranks[track["id"]],
                     "required": track["id"] in required,
                     "locked": track["id"] in locked,
                     "eligibleSectionIds": [section_id],

@@ -111,6 +111,10 @@ class DJPreferenceService:
 
     def profile(self, context: str | None = None) -> dict[str, Any]:
         payload = self._payload()
+        ignored = {
+            (str(item.get("dimension") or ""), str(item.get("value") or ""))
+            for item in payload["ignoredSignals"]
+        }
         normalized_context = str(context or "").strip().casefold()
         per_signal_track: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
         for event in payload["events"]:
@@ -128,6 +132,8 @@ class DJPreferenceService:
         active: list[dict[str, Any]] = []
         pending: list[dict[str, Any]] = []
         for (dimension, value), tracks in sorted(per_signal_track.items()):
+            if (dimension, value) in ignored:
+                continue
             evidence = len(tracks)
             score = sum(tracks.values())
             signal = {
@@ -145,6 +151,7 @@ class DJPreferenceService:
             "eventCount": len(payload["events"]),
             "activeSignals": active,
             "pendingSignals": pending,
+            "ignoredSignals": payload["ignoredSignals"],
         }
 
     def set_enabled(self, enabled: bool) -> dict[str, Any]:
@@ -154,13 +161,30 @@ class DJPreferenceService:
         return self.profile()
 
     def reset(self) -> dict[str, Any]:
-        self.store.save({"version": 1, "enabled": True, "events": []})
+        self.store.save({"version": 1, "enabled": True, "events": [], "ignoredSignals": []})
+        return self.profile()
+
+    def dismiss_signal(self, dimension: str, value: str) -> dict[str, Any]:
+        payload = self._payload()
+        signal = {"dimension": dimension.strip().casefold(), "value": value.strip().casefold()}
+        if signal["dimension"] in FEATURE_DIMENSIONS and signal["value"]:
+            payload["ignoredSignals"] = [
+                item for item in payload["ignoredSignals"]
+                if item != signal
+            ] + [signal]
+            self.store.save(payload)
         return self.profile()
 
     def _payload(self) -> dict[str, Any]:
         payload = self.store.load()
         events = payload.get("events") if isinstance(payload.get("events"), list) else []
-        return {"version": 1, "enabled": bool(payload.get("enabled", True)), "events": events}
+        ignored = payload.get("ignoredSignals") if isinstance(payload.get("ignoredSignals"), list) else []
+        return {
+            "version": 1,
+            "enabled": bool(payload.get("enabled", True)),
+            "events": events,
+            "ignoredSignals": ignored,
+        }
 
 
 @dataclass(frozen=True)

@@ -345,6 +345,13 @@
         </section>
         <details id="set-health" class="set-health"></details>
         <details id="set-selection-summary" class="set-selection-summary" open><summary>Selection summary</summary><div></div></details>
+        <details id="set-review-panel" class="set-review-panel">
+          <summary><span><strong>Review this set</strong><small>Teach Set Builder what worked after listening.</small></span></summary>
+          <div class="set-review-overall" role="group" aria-label="Overall set decision"><button type="button" data-set-decision="accept" class="button secondary">Approve running order</button><button type="button" data-set-decision="reject" class="button secondary">Needs changes</button></div>
+          <label>Review notes<textarea id="set-review-notes" rows="2" maxlength="2000" placeholder="What worked, what felt wrong, or what should change next time?"></textarea></label>
+          <div class="set-review-actions"><button id="submit-set-review" type="button">Save review</button><span id="set-review-status" role="status">Review individual tracks and transitions below, then save.</span></div>
+          <div id="set-calibration-summary" class="set-calibration-summary"></div>
+        </details>
         <div id="set-export-status" class="set-export-status"><span>Rekordbox paths will be checked before export.</span></div>
         <div id="set-add-track-panel-host"></div>
         <details class="set-journey" open><summary>Energy and BPM journey</summary><div class="set-curves"><div><span>Energy journey</span><svg id="set-energy-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div><div><span>BPM journey</span><svg id="set-bpm-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div></div></details>

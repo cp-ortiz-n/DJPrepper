@@ -46,4 +46,8 @@ def create_set_preference_router(service: DJPreferenceService) -> APIRouter:
     def reset() -> dict[str, Any]:
         return service.reset()
 
+    @router.delete("/signals/{dimension}/{value}")
+    def dismiss_signal(dimension: str, value: str) -> dict[str, Any]:
+        return service.dismiss_signal(dimension, value)
+
     return router
