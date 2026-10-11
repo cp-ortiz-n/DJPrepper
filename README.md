@@ -143,6 +143,14 @@ can never mark AI Set Builder v1 released.
 The production planner makes one bounded model attempt before using its
 validated deterministic fallback; repeated slow retries cannot freeze a set
 generation or multiply a provider outage into several minutes of waiting.
+The model receives a section-balanced shortlist rather than the full candidate
+cap. Filesystem paths, verbose score explanations, provenance records, and
+other validator-only fields remain local. Ollama returns only catalog track IDs
+and section IDs; readable reasons are rebuilt from verified local evidence.
+This keeps real-catalog planning within the latency gate without weakening
+validation. Missing requested genres pass coverage only when the candidate pool
+proves that zero matching files are available and the result discloses the
+scarcity explicitly.
 
 Install the recommended local provider on macOS with:
 

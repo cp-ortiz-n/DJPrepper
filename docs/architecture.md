@@ -103,6 +103,7 @@ POST /api/set-builder/candidate-pool → SetCandidateRetriever
 POST /api/set-builder/plan-tracks → SetPlanningJobService
    ├── cancellable candidate retrieval and stale-job supersession
    ├── AITrackPlanner with strict structured output and repair attempts
+   ├── section-balanced compact model context with ID-only model output
    ├── deterministic catalog-backed fallback
    └── phase timings and persisted outcome telemetry
         ↓
@@ -167,6 +168,13 @@ coverage, and full requested-genre coverage form the automated gate. Manual DJ
 listening approval is a distinct required input and cannot be inferred from a
 quality score. `SetPlanningJobService.observability()` summarizes persisted job
 receipts without returning prompts, catalog rows, filesystem paths, or audio.
+`bounded_model_candidates()` preserves required and locked tracks, keeps
+multiple candidates per journey-section slot, removes unavailable files, and
+caps model context independently of the validator's complete local pool. Model
+responses contain only stable track and section IDs. `PlanProposalRepairer`
+restores explanations from catalog evidence before validation. Genre coverage
+may be satisfied through disclosed scarcity only when the evaluated candidate
+pool contains zero available matches for every missing requested term.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is

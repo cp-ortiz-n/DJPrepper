@@ -40,6 +40,14 @@ class AIReleaseGateTests(unittest.TestCase):
         self.assertFalse(result["released"])
         self.assertEqual(result["failures"], [{"code": "ai-provider-failures", "scenarios": ["timeout"]}])
 
+    def test_explicit_zero_candidate_scarcity_satisfies_coverage_policy(self) -> None:
+        item = scenario("scarce", coverage=0.5)
+        item["evaluation"]["requestedGenreCoverage"].update(
+            missing=["schranz"], scarcity=[{"genre": "schranz", "availableCandidateCount": 0}]
+        )
+        result = assess_ai_release({"results": [item]}, required_scenarios=1, manual_listening_approved=True)
+        self.assertTrue(result["released"])
+
     def test_job_summary_reports_fallback_repairs_failures_and_cancellations(self) -> None:
         states: list[dict[str, Any]] = [
             {"jobId": "ai", "status": "complete", "result": {"mode": "ai-planned", "planningDurationMs": 100}},

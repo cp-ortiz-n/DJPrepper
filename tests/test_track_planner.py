@@ -19,6 +19,7 @@ from audioextender.set_builder.track_planner import (
     TRACK_PLAN_SCHEMA,
     AITrackPlanner,
     SetPlanningModelClient,
+    bounded_model_candidates,
     deterministic_track_plan,
     flatten_candidates,
 )
@@ -61,6 +62,30 @@ def planning_candidates(root: Path) -> tuple[dict, dict]:
 
 
 class AITrackPlannerTests(unittest.TestCase):
+    def test_model_shortlist_is_available_compact_section_balanced_and_bounded(self) -> None:
+        candidates = [
+            {
+                "id": f"downloaded:{index}",
+                "available": index != 1,
+                "eligibleSectionIds": ["opening" if index < 50 else "peak"],
+                "relevanceScore": 100 - index,
+                "descriptors": [{"value": "melodic", "provenance": "inferred", "confidence": 0.9}],
+                "path": f"/private/{index}.wav",
+                "reasons": [{"text": "verbose"}],
+            }
+            for index in range(80)
+        ]
+        result = bounded_model_candidates(candidates, {"opening": 8, "peak": 8})
+        self.assertLessEqual(len(result), 60)
+        self.assertNotIn("downloaded:1", {item["id"] for item in result})
+        self.assertTrue(
+            {"opening", "peak"}.issubset({section for item in result for section in item["eligibleSectionIds"]})
+        )
+        self.assertTrue(
+            all("path" not in item and "reasons" not in item and "descriptors" not in item for item in result)
+        )
+        self.assertTrue(any(item["identity"] == ["melodic"] for item in result))
+
     def test_valid_ai_plan_is_compared_before_acceptance(self) -> None:
         with TemporaryDirectory() as temporary:
             set_journey, pool = planning_candidates(Path(temporary))
@@ -266,6 +291,9 @@ class SetPlanningModelClientTests(unittest.TestCase):
         self.assertEqual(item_properties["sectionId"]["enum"], ["opening", "peak"])
         self.assertEqual(TRACK_PLAN_SCHEMA["properties"]["selections"]["minItems"], 1)
         self.assertEqual(post.call_args.kwargs["timeout"], 12)
+        options = post.call_args.kwargs["json"]["options"]
+        self.assertEqual(options["num_ctx"], 16384)
+        self.assertEqual(options["num_predict"], 540)
 
     def test_openai_request_disables_storage(self) -> None:
         response = Mock()

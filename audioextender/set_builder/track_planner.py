@@ -34,10 +34,8 @@ TRACK_PLAN_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "trackId": {"type": "string"},
                     "sectionId": {"type": "string"},
-                    "reason": {"type": "string"},
-                    "evidence": {"type": "string", "enum": ["ai-suggested"]},
                 },
-                "required": ["trackId", "sectionId", "reason", "evidence"],
+                "required": ["trackId", "sectionId"],
             },
         },
     },
@@ -51,9 +49,65 @@ TRACK_PLAN_INSTRUCTIONS = (
     "never repeat a track. Use exactly the per-section counts in sectionTrackTargets. Follow section order, energy "
     "direction, requested genres, and musical identity. Prefer "
     "workable BPM, Camelot-key, vocal, and timing transitions. Bridge or fallback tracks are allowed only when direct "
-    "matches are scarce. Reasons must describe supplied facts or an explicit planning judgment; evidence must be "
-    "ai-suggested. Do not claim to have heard audio."
+    "matches are scarce. Return only trackId and sectionId for each selection; verified explanations are generated "
+    "locally from catalog evidence. Do not claim to have heard audio."
 )
+
+MODEL_CANDIDATE_LIMIT = 60
+
+
+def _model_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Keep selection evidence compact while validation retains full local data."""
+    return {
+        "id": candidate.get("id"),
+        "title": candidate.get("title"),
+        "artist": candidate.get("artist"),
+        "genre": candidate.get("genre"),
+        "detailedGenres": candidate.get("detailedGenres", []),
+        "identity": [
+            str(descriptor.get("value"))
+            for descriptor in candidate.get("descriptors", [])
+            if isinstance(descriptor, dict) and descriptor.get("value")
+        ],
+        "bpm": candidate.get("bpm"),
+        "camelot": candidate.get("camelot") or candidate.get("key"),
+        "energy": candidate.get("energy"),
+        "durationSeconds": candidate.get("durationSeconds"),
+        "vocals": candidate.get("vocals"),
+        "timing": candidate.get("timing"),
+        "roles": candidate.get("roles", []),
+        "matchTier": candidate.get("matchTier"),
+        "relevanceScore": candidate.get("relevanceScore"),
+        "eligibleSectionIds": candidate.get("eligibleSectionIds", []),
+        "required": bool(candidate.get("required")),
+        "locked": bool(candidate.get("locked")),
+    }
+
+
+def bounded_model_candidates(candidates: list[dict[str, Any]], section_targets: dict[str, int]) -> list[dict[str, Any]]:
+    """Build a diverse shortlist sized to the plan instead of the catalog cap."""
+    chosen: dict[str, dict[str, Any]] = {}
+    available = [candidate for candidate in candidates if candidate.get("available")]
+    for candidate in available:
+        if candidate.get("required") or candidate.get("locked"):
+            chosen[str(candidate["id"])] = candidate
+    for section_id, target in section_targets.items():
+        section = [candidate for candidate in available if section_id in candidate.get("eligibleSectionIds", [])]
+        section.sort(key=lambda item: (-float(item.get("relevanceScore") or 0), str(item.get("id") or "")))
+        for candidate in section[: max(target + 4, target * 2)]:
+            chosen.setdefault(str(candidate["id"]), candidate)
+    ranked = sorted(
+        chosen.values(),
+        key=lambda item: (
+            not bool(item.get("required") or item.get("locked")),
+            -float(item.get("relevanceScore") or 0),
+            str(item.get("id") or ""),
+        ),
+    )
+    protected = [item for item in ranked if item.get("required") or item.get("locked")]
+    optional = [item for item in ranked if not (item.get("required") or item.get("locked"))]
+    bounded = [*protected, *optional[: max(0, MODEL_CANDIDATE_LIMIT - len(protected))]]
+    return [_model_candidate(item) for item in bounded]
 
 
 def _schema_for_request(payload: dict[str, Any]) -> dict[str, Any]:
@@ -108,6 +162,7 @@ class SetPlanningModelClient:
         provider = status["provider"]
         response_schema = _schema_for_request(payload)
         if provider == "ollama":
+            prediction_limit = min(1200, max(400, int(payload.get("targetTrackCount") or 1) * 45))
             response = httpx.post(
                 f"{self.configuration.ollama_endpoint}/api/chat",
                 json={
@@ -116,10 +171,14 @@ class SetPlanningModelClient:
                     "think": False,
                     "format": response_schema,
                     "keep_alive": "10m",
-                    "options": {"temperature": 0.12, "num_predict": 3500},
+                    "options": {
+                        "temperature": 0.12,
+                        "num_ctx": 16384,
+                        "num_predict": prediction_limit,
+                    },
                     "messages": [
                         {"role": "system", "content": TRACK_PLAN_INSTRUCTIONS},
-                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))},
                     ],
                 },
                 timeout=timeout_seconds,
@@ -167,6 +226,14 @@ class SetPlanningModelClient:
         result = json.loads(content)
         if not isinstance(result, dict):
             raise ValueError("The AI provider returned an invalid track plan")
+        if provider == "ollama":
+            body = response.json()
+            result["_providerMetrics"] = {
+                "promptTokens": int(body.get("prompt_eval_count") or 0),
+                "outputTokens": int(body.get("eval_count") or 0),
+                "promptEvalMs": round(float(body.get("prompt_eval_duration") or 0) / 1_000_000),
+                "generationMs": round(float(body.get("eval_duration") or 0) / 1_000_000),
+            }
         return result
 
 
@@ -344,21 +411,19 @@ class AITrackPlanner:
         planning_started = perf_counter()
         provider_status_started = perf_counter()
         candidates = flatten_candidates(candidate_pool)
-        model_candidates = [
-            {key: value for key, value in candidate.items() if key != "path"} for candidate in candidates
-        ]
+        section_targets = _section_targets(journey, target_track_count)
+        model_candidates = bounded_model_candidates(candidates, section_targets)
         base_payload = {
             "brief": brief,
             "journey": journey,
             "targetTrackCount": target_track_count,
             "targetDurationMinutes": target_duration_minutes,
-            "sectionTrackTargets": _section_targets(journey, target_track_count),
+            "sectionTrackTargets": section_targets,
             "requiredTrackIds": sorted(required_ids),
             "lockedTrackIds": sorted(locked_ids),
             "candidates": model_candidates,
         }
         failures: list[list[dict[str, Any]]] = []
-        section_targets = _section_targets(journey, target_track_count)
         try:
             status = self.model.status()
         except (httpx.HTTPError, RuntimeError, ValueError) as error:
@@ -379,6 +444,7 @@ class AITrackPlanner:
                     model_ms = round((perf_counter() - model_started) * 1000)
                     if not isinstance(proposal, dict):
                         raise ValueError("The AI provider returned a non-object track plan")
+                    provider_metrics = proposal.pop("_providerMetrics", {})
                 except (httpx.HTTPError, json.JSONDecodeError, TypeError, ValueError, RuntimeError) as error:
                     model_ms = round((perf_counter() - model_started) * 1000)
                     attempt_telemetry.append({"attempt": attempt, "modelMs": model_ms, "outcome": "provider-error"})
@@ -425,6 +491,7 @@ class AITrackPlanner:
                             {
                                 "attempt": attempt,
                                 "modelMs": model_ms,
+                                **provider_metrics,
                                 "repairValidationComparisonMs": round((perf_counter() - validation_started) * 1000),
                                 "repairCount": len(model_repairs),
                                 "outcome": "ai-selected" if comparison["winner"] == "ai" else "deterministic-selected",
@@ -468,6 +535,7 @@ class AITrackPlanner:
                         {
                             "attempt": attempt,
                             "modelMs": model_ms,
+                            **provider_metrics,
                             "repairValidationComparisonMs": round((perf_counter() - validation_started) * 1000),
                             "repairCount": len(model_repairs),
                             "outcome": "validation-failed",
@@ -479,6 +547,7 @@ class AITrackPlanner:
                         {
                             "attempt": attempt,
                             "modelMs": model_ms,
+                            **provider_metrics,
                             "repairValidationComparisonMs": round((perf_counter() - validation_started) * 1000),
                             "outcome": "validation-error",
                         }

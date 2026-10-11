@@ -60,6 +60,7 @@ class SetPlanningEvaluationHarness:
                 journey,
                 result["warnings"],
                 target_duration_minutes=int(scenario["targetDurationMinutes"]),
+                candidate_pool=pool,
             )
             acceptance_failures = _acceptance_failures(evaluation, scenario.get("expectations", {}))
             return {

@@ -362,6 +362,8 @@ without replacing the technical safety score.
 - [x] Compare personalized and baseline plans across five checked-in musical scenarios.
 - [x] Add Phase 2G timing, outcome, fallback, repair, and aggregate AI operations telemetry.
 - [x] Add a strict release gate that cannot pass without valid five-scenario evidence and explicit DJ listening approval.
+- [x] Reduce Ollama planning context by 85–88%, use ID-only output, and capture prompt/output timing metrics.
+- [x] Distinguish silent genre-coverage loss from explicitly proven zero-candidate catalog scarcity.
 - [ ] Complete the final hands-on acceptance review against the connected real library, pass `--manual-listening-approved`, and tune weights only from that evidence.
 
 ## Preflight analysis mode

@@ -70,6 +70,26 @@ class SetPlanEvaluatorTests(unittest.TestCase):
         self.assertEqual(result["journeyCoverage"], {"covered": 0, "total": 1})
         self.assertEqual(result["duration"]["actualMinutes"], 0)
 
+    def test_discloses_missing_genre_only_when_candidate_pool_proves_scarcity(self) -> None:
+        plan = [
+            {
+                "id": "one",
+                "artist": "DJ",
+                "genre": "Techno",
+                "detailedGenres": [],
+                "durationSeconds": 240,
+                "sectionId": "finish",
+                "matchTier": "identity",
+                "descriptors": [],
+            }
+        ]
+        journey = {"sections": [{"id": "finish", "genres": ["Schranz"]}]}
+        pool = {"sections": [{"candidates": [{**plan[0], "available": True}]}]}
+        result = SetPlanEvaluator().evaluate(plan, journey, [], target_duration_minutes=4, candidate_pool=pool)
+        coverage = result["requestedGenreCoverage"]
+        self.assertEqual(coverage["scarcity"], [{"genre": "schranz", "availableCandidateCount": 0}])
+        self.assertTrue(any("No available catalog candidate" in line for line in result["disclosures"]))
+
 
 class SetPlanningEvaluationHarnessTests(unittest.TestCase):
     def _harness(self) -> SetPlanningEvaluationHarness:

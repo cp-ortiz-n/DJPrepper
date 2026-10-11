@@ -29,7 +29,7 @@ def assess_ai_release(
     coverage = [
         str(item.get("id") or "unnamed")
         for item in results
-        if float(((item.get("evaluation") or {}).get("requestedGenreCoverage") or {}).get("ratio") or 0) < 1
+        if not _coverage_satisfied((item.get("evaluation") or {}).get("requestedGenreCoverage") or {})
     ]
     if coverage:
         failures.append({"code": "incomplete-genre-coverage", "scenarios": coverage})
@@ -53,6 +53,18 @@ def assess_ai_release(
 def _provider_failed(reason: Any) -> bool:
     reasons = reason if isinstance(reason, list) else [reason]
     return any(isinstance(item, dict) and str(item.get("code") or "").startswith("provider-") for item in reasons)
+
+
+def _coverage_satisfied(coverage: dict[str, Any]) -> bool:
+    if float(coverage.get("ratio") or 0) >= 1:
+        return True
+    missing = {str(value) for value in coverage.get("missing", [])}
+    disclosed_scarcity = {
+        str(item.get("genre"))
+        for item in coverage.get("scarcity", [])
+        if isinstance(item, dict) and int(item.get("availableCandidateCount") or 0) == 0
+    }
+    return bool(missing) and missing <= disclosed_scarcity
 
 
 def summarize_planning_jobs(states: list[dict[str, Any]]) -> dict[str, Any]:

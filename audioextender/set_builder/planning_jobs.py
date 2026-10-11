@@ -157,6 +157,7 @@ class SetPlanningJobService:
                 request["journey"],
                 result["warnings"],
                 target_duration_minutes=request["target_duration_minutes"],
+                candidate_pool=pool,
             )
             timings["evaluationMs"] = round((perf_counter() - phase_started) * 1000)
             result["planningDurationMs"] = round((perf_counter() - started) * 1000)
