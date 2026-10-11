@@ -55,11 +55,17 @@ and the musical/job ownership decisions are documented.
 Objective: remove low-risk noise and expose stable contracts before extraction.
 Dependencies: Phase 0. Benefit: clearer failures and less brittle test feedback.
 
-- [ ] **ARCH-011A — Replace duplicate/brittle frontend tests with behavior
+- [x] **ARCH-011A — Replace duplicate/brittle frontend tests with behavior
   coverage.** Priority: P1. Effort: M. Risk: Low. Dependencies: ARCH-012A.
   Acceptance: repeated Set Builder tests occur once; key user workflows execute
   controller/DOM behavior; only true architecture boundaries use source-text
   assertions; all existing scenarios remain covered. Evidence: [ARCH-011](docs/architecture-audit.md#arch-011--frontend-tests-contain-brittle-source-assertions-and-duplicated-cases).
+  Completed 2026-10-11: repeated Set Builder scenarios now occur once;
+  descriptor rendering, provider status, and editable journey validation execute
+  production behavior; source inspection is limited to the composition-root
+  size/ownership ratchet and shared CSS accessibility/responsive contracts.
+  Request cancellation, stale responses, playback ownership, and planning
+  lifecycle behavior remain covered by their focused suites.
 - [ ] **ARCH-010A — Inventory and normalize error contracts.** Priority: P1.
   Effort: M. Risk: Medium. Dependencies: ARCH-001A. Acceptance: expected domain,
   unavailable-resource, cancellation, and unexpected errors have documented

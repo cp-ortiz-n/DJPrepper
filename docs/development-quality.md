@@ -33,10 +33,10 @@ The reports were regenerated from this checkout, not inferred from older HTML. P
 
 | Surface | Statements/lines | Branches | Functions |
 | --- | ---: | ---: | ---: |
-| Python application | 66.0% (7,525 / 11,406) | 46.7% (1,376 / 2,946; 498 partial) | n/a |
-| JavaScript application | 12.95% (657 / 5,072) | 57.23% (174 / 304) | 52.13% (61 / 117) |
+| Python application | 66.3% (7,558 / 11,406) | 47.4% (1,396 / 2,946; 500 partial) | n/a |
+| JavaScript application | 14.16% (725 / 5,118) | 68.32% (274 / 401) | 57.98% (69 / 119) |
 
-The combined Python line-and-branch score reported by coverage.py is 62.0%.
+The combined Python line-and-branch score reported by coverage.py is 62.4%.
 Representative modules: `set_builder/candidate_retriever.py` 91%,
 `set_builder/plan_validator.py` 98%, `set_builder/track_planner.py` 86%,
 `repositories/track_catalog.py` 79%, `analysis/key_detection.py` 79%,
@@ -64,4 +64,12 @@ background-operation inventory retains all ten audited families and a complete
 lifecycle description. It is a documentation contract, not a claim that those
 families already share an executor. Current differences and known gaps are
 recorded in `docs/background-operation-lifecycles.md` for `ARCH-004B`.
+
+`ARCH-011A` removed repeated Set Builder test cases and replaced implementation-
+text assertions with calls to production behavior for descriptor rendering,
+provider availability, and journey-duration validation. The remaining frontend
+source inspection is limited to deliberate architecture contracts: the `app.js`
+composition-root size/ownership ratchet and shared CSS accessibility/responsive
+tokens. Focused suites own request cancellation and stale-response rejection,
+single-player behavior, Set planning lifecycle, imports, and musical policy.
 

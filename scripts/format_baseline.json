@@ -29,10 +29,8 @@
     "web/settings.js",
     "web/shared-components.js",
     "web/styles.css",
-    "tests/frontend_modules.test.js",
     "tests/import_queue.test.js",
     "tests/playback_behavior.test.js",
-    "tests/request_state_controller.test.js",
-    "tests/set_planning_client.test.js"
+    "tests/request_state_controller.test.js"
   ]
 }

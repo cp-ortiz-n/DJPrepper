@@ -371,7 +371,10 @@ module. `tests/frontend_modules.test.js` enforces this boundary and a size ceili
    ```
 
 `tests/test_package_structure.py` guards package/composition boundaries and
-module size. `tests/frontend_modules.test.js` guards shared frontend behavior.
+module size. `tests/frontend_modules.test.js` exercises shared frontend behavior;
+its only source-text assertion is the intentional `app.js` composition-root
+ownership and size ratchet. Request concurrency, playback ownership, planning
+lifecycle, imports, and musical-policy behavior live in focused Node suites.
 `tests/test_intention_planner.py` covers provider ordering, schema enforcement,
 fallback, hallucination cleanup, and catalog normalization without a live
 model. `tests/test_local_intention_acceptance.py` is an opt-in Ollama suite for
