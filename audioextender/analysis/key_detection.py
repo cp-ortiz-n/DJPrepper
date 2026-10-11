@@ -71,7 +71,7 @@ def _infer_downbeat_offset(onset: np.ndarray, beat_frames: np.ndarray) -> tuple[
     scores = []
     for offset in range(4):
         usable = accents[offset:]
-        usable = usable[:len(usable) // 4 * 4]
+        usable = usable[: len(usable) // 4 * 4]
         if not len(usable):
             scores.append(0.0)
             continue
@@ -105,9 +105,7 @@ def _beat_grid_confidence(
     normalized_onset = _normalize(onset)
     beat_strength = normalized_onset[np.clip(beat_frames, 0, len(normalized_onset) - 1)]
     onset_support = float(np.clip(np.mean(beat_strength), 0.0, 1.0))
-    confidence = 100.0 * (
-        0.65 * timing_consistency + 0.25 * onset_support + 0.10 * downbeat_confidence
-    )
+    confidence = 100.0 * (0.65 * timing_consistency + 0.25 * onset_support + 0.10 * downbeat_confidence)
     return float(np.clip(confidence, 0.0, 100.0))
 
 
@@ -157,27 +155,25 @@ def _ensemble_key_estimate(
         confidence *= 0.95
 
     named_results = tuple(
-        (name, result) for name, result in (
-            ("primary", primary), ("harmonic", harmonic), ("CQT", cqt)
-        ) if result is not None
+        (name, result)
+        for name, result in (("primary", primary), ("harmonic", harmonic), ("CQT", cqt))
+        if result is not None
     )
     by_label: dict[str, float] = {}
     for _name, result in named_results:
         by_label[result[0]] = max(by_label.get(result[0], 0.0), result[1])
     ordered = [selected[0]] + [
-        label for label, _score in sorted(
-            by_label.items(), key=lambda item: item[1], reverse=True
-        ) if label != selected[0]
+        label
+        for label, _score in sorted(by_label.items(), key=lambda item: item[1], reverse=True)
+        if label != selected[0]
     ]
-    candidates = tuple(
+    candidates: tuple[dict[str, float | str], ...] = tuple(
         {
             "key": label,
             "confidence": float(confidence if label == selected[0] else by_label[label]),
             "selected": 1.0 if label == selected[0] else 0.0,
             "reason": reason if label == selected[0] else "alternate detector",
-            "detectors": ", ".join(
-                name for name, result in named_results if result[0] == label
-            ),
+            "detectors": ", ".join(name for name, result in named_results if result[0] == label),
         }
         for label in ordered[:3]
     )
@@ -190,28 +186,20 @@ def analyze_key(audio: AudioData, hop_length: int = 512) -> KeyAnalysis:
     sample_rate = audio.sample_rate
     if sample_rate > ANALYSIS_SAMPLE_RATE:
         divisor = gcd(sample_rate, ANALYSIS_SAMPLE_RATE)
-        mono = resample_poly(
-            mono, ANALYSIS_SAMPLE_RATE // divisor, sample_rate // divisor
-        ).astype(np.float32, copy=False)
+        mono = resample_poly(mono, ANALYSIS_SAMPLE_RATE // divisor, sample_rate // divisor).astype(
+            np.float32, copy=False
+        )
         sample_rate = ANALYSIS_SAMPLE_RATE
     magnitude = np.abs(librosa.stft(mono, hop_length=hop_length))
     harmonic_spectrum, _ = librosa.decompose.hpss(magnitude)
-    primary_chroma = librosa.feature.chroma_stft(
-        S=magnitude ** 2, sr=sample_rate
-    )
-    harmonic_chroma = librosa.feature.chroma_stft(
-        S=harmonic_spectrum ** 2, sr=sample_rate
-    )
+    primary_chroma = librosa.feature.chroma_stft(S=magnitude**2, sr=sample_rate)
+    harmonic_chroma = librosa.feature.chroma_stft(S=harmonic_spectrum**2, sr=sample_rate)
     primary = _estimate_key(primary_chroma)
     harmonic = _estimate_key(harmonic_chroma)
     cqt_chroma = None
     if primary[0] != harmonic[0]:
-        cqt_chroma = librosa.feature.chroma_cqt(
-            y=mono, sr=sample_rate, hop_length=hop_length
-        )
-    label, confidence, _root, _mode, candidates = _ensemble_key_estimate(
-        primary_chroma, harmonic_chroma, cqt_chroma
-    )
+        cqt_chroma = librosa.feature.chroma_cqt(y=mono, sr=sample_rate, hop_length=hop_length)
+    label, confidence, _root, _mode, candidates = _ensemble_key_estimate(primary_chroma, harmonic_chroma, cqt_chroma)
     return KeyAnalysis(label, confidence, candidates)
 
 
@@ -232,8 +220,10 @@ def _classify_bar_sections(
         mask = (frame_times >= boundaries[index]) & (frame_times < boundaries[index + 1])
         if np.any(mask):
             features[index] = (
-                np.mean(rms[mask]), np.mean(percussion[mask]),
-                np.mean(harmonic[mask]), np.mean(onset[mask]),
+                np.mean(rms[mask]),
+                np.mean(percussion[mask]),
+                np.mean(harmonic[mask]),
+                np.mean(onset[mask]),
             )
     energy, drums, harmony, activity = features.T
     energy_high = float(np.percentile(energy, 72))
@@ -244,12 +234,10 @@ def _classify_bar_sections(
     confidence: list[float] = []
     for index in range(count):
         position = (index + 0.5) / count
-        recent = energy[max(0, index - 3):index + 1]
+        recent = energy[max(0, index - 3) : index + 1]
         slope = float(np.polyfit(np.arange(len(recent)), recent, 1)[0]) if len(recent) > 1 else 0.0
         relative_slope = slope / max(float(np.mean(recent)), 0.08)
-        previous_rising = index > 0 and any(
-            labels[j] == "buildup" for j in range(max(0, index - 2), index)
-        )
+        previous_rising = index > 0 and any(labels[j] == "buildup" for j in range(max(0, index - 2), index))
         if position >= 0.84 and relative_slope < -0.06:
             label, certainty = "fade", 0.72
         elif position >= 0.78 and energy[index] < energy_high:
@@ -284,9 +272,7 @@ def _analyze_groove(
     subdivision_ratios: list[float] = []
     for left, right in zip(beat_times[:-1], beat_times[1:], strict=True):
         period = right - left
-        mask = (frame_times >= left + 0.34 * period) & (
-            frame_times <= left + 0.80 * period
-        )
+        mask = (frame_times >= left + 0.34 * period) & (frame_times <= left + 0.80 * period)
         if not np.any(mask):
             continue
         local_times = frame_times[mask]
@@ -330,26 +316,27 @@ def _analyze_groove(
             regularity = float(np.exp(-6.0 * np.std(local_intervals) / max(np.mean(local_intervals), 1e-6)))
         else:
             regularity = 0.35
-        bar_confidence.append(float(np.clip(
-            0.45 * np.mean(timing_support)
-            + 0.35 * np.clip(np.mean(onset_support), 0.0, 1.0)
-            + 0.20 * regularity,
-            0.0,
-            1.0,
-        )))
+        bar_confidence.append(
+            float(
+                np.clip(
+                    0.45 * np.mean(timing_support)
+                    + 0.35 * np.clip(np.mean(onset_support), 0.0, 1.0)
+                    + 0.20 * regularity,
+                    0.0,
+                    1.0,
+                )
+            )
+        )
     if bar_patterns:
         patterns = np.vstack(bar_patterns)
-        normalized = patterns / np.maximum(
-            np.linalg.norm(patterns, axis=1, keepdims=True), 1e-8
-        )
+        normalized = patterns / np.maximum(np.linalg.norm(patterns, axis=1, keepdims=True), 1e-8)
         template = np.median(normalized, axis=0)
         template /= max(float(np.linalg.norm(template)), 1e-8)
         recurrence = np.clip(normalized @ template, 0.0, 1.0)
         # Recurring four-beat accent shape is the evidence that the inferred
         # first beat remains the same musical phase across successive bars.
         bar_confidence = [
-            0.75 * confidence + 0.25 * float(recurrence[index])
-            for index, confidence in enumerate(bar_confidence)
+            0.75 * confidence + 0.25 * float(recurrence[index]) for index, confidence in enumerate(bar_confidence)
         ]
     confidence_array = np.asarray(bar_confidence, dtype=float)
     continuity = 100.0 * float(np.mean(confidence_array)) if len(confidence_array) else 0.0
@@ -389,16 +376,10 @@ def analyze_track(
     magnitude = np.abs(librosa.stft(mono, hop_length=hop))
     harmonic_spectrum, percussive_spectrum = librosa.decompose.hpss(magnitude)
     report(0.36, "Measuring onset activity")
-    percussion_db = librosa.amplitude_to_db(
-        percussive_spectrum, ref=np.max
-    )
-    onset = librosa.onset.onset_strength(
-        S=percussion_db, sr=sample_rate, hop_length=hop
-    )
+    percussion_db = librosa.amplitude_to_db(percussive_spectrum, ref=np.max)
+    onset = librosa.onset.onset_strength(S=percussion_db, sr=sample_rate, hop_length=hop)
     report(0.45, "Detecting beats and BPM")
-    tempo, beat_frames = librosa.beat.beat_track(
-        onset_envelope=onset, sr=sample_rate, hop_length=hop, units="frames"
-    )
+    tempo, beat_frames = librosa.beat.beat_track(onset_envelope=onset, sr=sample_rate, hop_length=hop, units="frames")
     bpm = float(np.asarray(tempo).reshape(-1)[0]) if np.size(tempo) else 0.0
     beat_frames = np.asarray(beat_frames, dtype=int)
     beat_times = librosa.frames_to_time(beat_frames, sr=sample_rate, hop_length=hop)
@@ -414,16 +395,14 @@ def analyze_track(
 
     report(0.57, "Building the 4/4 bar grid")
     offset, downbeat_confidence = _infer_downbeat_offset(onset, beat_frames)
-    grid_confidence = _beat_grid_confidence(
-        beat_times, beat_frames, onset, downbeat_confidence
-    )
+    grid_confidence = _beat_grid_confidence(beat_times, beat_frames, onset, downbeat_confidence)
     downbeat_indices = np.arange(offset, len(beat_times), config.beats_per_bar, dtype=int)
     bar_boundaries = beat_times[downbeat_indices]
     # Beat trackers often acquire confidence only after a sparse or atmospheric
     # opening. Project the established bar period backwards so a protected
     # pre-vocal opening can still supply properly sized musical loops.
     if len(bar_boundaries):
-        opening_period = float(np.median(intervals[:min(12, len(intervals))]))
+        opening_period = float(np.median(intervals[: min(12, len(intervals))]))
         bar_period = config.beats_per_bar * opening_period
         earlier: list[float] = []
         projected = float(bar_boundaries[0]) - bar_period
@@ -434,7 +413,7 @@ def analyze_track(
             bar_boundaries = np.concatenate((np.asarray(earlier[::-1]), bar_boundaries))
     # Include the projected end of the final complete bar for slicing candidates.
     if len(bar_boundaries):
-        beat_period = float(np.median(intervals[-min(12, len(intervals)):]))
+        beat_period = float(np.median(intervals[-min(12, len(intervals)) :]))
         projected = bar_boundaries[-1] + config.beats_per_bar * beat_period
         if projected <= audio.duration + beat_period:
             bar_boundaries = np.append(bar_boundaries, min(projected, audio.duration))
@@ -445,31 +424,25 @@ def analyze_track(
     percussion_rms = librosa.feature.rms(S=percussive_spectrum)[0]
     harmonic_rms = librosa.feature.rms(S=harmonic_spectrum)[0]
     report(0.77, "Measuring spectral stability")
-    centroid = librosa.feature.spectral_centroid(
-        S=magnitude, sr=sample_rate
-    )[0]
+    centroid = librosa.feature.spectral_centroid(S=magnitude, sr=sample_rate)[0]
     report(0.86, "Finding transitions and fills")
     flux = np.concatenate(([0.0], np.mean(np.maximum(np.diff(magnitude, axis=1), 0), axis=0)))
     frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=(magnitude.shape[0] - 1) * 2)
     bass_bins = (frequencies >= 35.0) & (frequencies <= 220.0)
     bass_rms = np.sqrt(np.mean(magnitude[bass_bins] ** 2, axis=0))
     report(0.93, "Comparing harmonic content")
-    chroma = librosa.feature.chroma_stft(S=magnitude ** 2, sr=sample_rate)
-    harmonic_chroma = librosa.feature.chroma_stft(
-        S=harmonic_spectrum ** 2, sr=sample_rate
-    )
+    chroma = librosa.feature.chroma_stft(S=magnitude**2, sr=sample_rate)
+    harmonic_chroma = librosa.feature.chroma_stft(S=harmonic_spectrum**2, sr=sample_rate)
     primary_key = _estimate_key(chroma)
     harmonic_key = _estimate_key(harmonic_chroma)
     cqt_chroma = None
     if primary_key[0] != harmonic_key[0]:
-        cqt_chroma = librosa.feature.chroma_cqt(
-            y=mono, sr=sample_rate, hop_length=hop
-        )
-    key_label, key_confidence, key_root, key_mode, key_candidates = (
-        _ensemble_key_estimate(chroma, harmonic_chroma, cqt_chroma)
+        cqt_chroma = librosa.feature.chroma_cqt(y=mono, sr=sample_rate, hop_length=hop)
+    key_label, key_confidence, key_root, key_mode, key_candidates = _ensemble_key_estimate(
+        chroma, harmonic_chroma, cqt_chroma
     )
     mel_energy = librosa.feature.melspectrogram(
-        S=magnitude ** 2,
+        S=magnitude**2,
         sr=sample_rate,
         n_mels=32,
         fmin=30.0,
@@ -478,8 +451,15 @@ def analyze_track(
     spectral_profile = librosa.power_to_db(mel_energy, ref=np.max)
     spectral_profile = np.clip((spectral_profile + 80.0) / 80.0, 0.0, 1.0)
     feature_length = min(
-        len(rms), len(onset), len(percussion_rms), len(harmonic_rms), len(bass_rms),
-        len(centroid), len(flux), chroma.shape[1], spectral_profile.shape[1],
+        len(rms),
+        len(onset),
+        len(percussion_rms),
+        len(harmonic_rms),
+        len(bass_rms),
+        len(centroid),
+        len(flux),
+        chroma.shape[1],
+        spectral_profile.shape[1],
     )
     frame_times = librosa.frames_to_time(np.arange(feature_length), sr=sample_rate, hop_length=hop)
     normalized_rms = _normalize(rms[:feature_length])
@@ -493,12 +473,19 @@ def analyze_track(
         downbeat_continuity,
         bar_grid_confidence,
     ) = _analyze_groove(
-        beat_times, bar_boundaries, frame_times, normalized_onset,
+        beat_times,
+        bar_boundaries,
+        frame_times,
+        normalized_onset,
         tempo_drift_percent,
     )
     bar_section_labels, bar_section_confidence = _classify_bar_sections(
-        bar_boundaries, frame_times, normalized_rms, normalized_percussion,
-        normalized_harmonic, normalized_onset,
+        bar_boundaries,
+        frame_times,
+        normalized_rms,
+        normalized_percussion,
+        normalized_harmonic,
+        normalized_onset,
     )
 
     result = TrackAnalysis(

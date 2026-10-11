@@ -22,7 +22,7 @@ class TrackIdsRequest(BaseModel):
 @dataclass
 class MetadataBatchDependencies:
     repository: Callable[[], Any]
-    require_library_online: Callable[[], None]
+    require_library_online: Callable[[], Any]
     sync_wav_metadata: Callable[..., bool]
     read_wav_artwork: Callable[[Path], Any]
     embed_wav_artwork: Callable[[Path, Path], Any]
@@ -51,8 +51,11 @@ class MetadataBatchService:
         self.dependencies.require_library_online()
         tracks = self.repository.list_downloaded_tracks()
         return self.dependencies.registry.start(
-            "wav-tags", tracks, self._sync_wav_tags,
-            stage="Synchronizing WAV metadata", counters={"tagged": 0},
+            "wav-tags",
+            tracks,
+            self._sync_wav_tags,
+            stage="Synchronizing WAV metadata",
+            counters={"tagged": 0},
             requested="Synchronize WAV tags with the catalog",
             written_to=[str(self.dependencies.music_library_root())],
             durability="WAV tags are written to the audio files and survive restart.",
@@ -81,16 +84,19 @@ class MetadataBatchService:
             context.progress(
                 processed=index,
                 stage=f"Synchronizing WAV metadata {index} of {len(tracks)}",
-                counters={"tagged": tagged, "skipped": skipped, "failed": failed,
-                          "succeeded": tagged},
+                counters={"tagged": tagged, "skipped": skipped, "failed": failed, "succeeded": tagged},
                 error=(
-                    {"id": int(track["id"]), "filename": track["filename"],
-                     "path": str(path), "error": error}
-                    if error else None
+                    {"id": int(track["id"]), "filename": track["filename"], "path": str(path), "error": error}
+                    if error
+                    else None
                 ),
             )
-        return {"tagged": tagged, "skipped": skipped, "failed": failed,
-                "stage": "WAV metadata synchronization complete"}
+        return {
+            "tagged": tagged,
+            "skipped": skipped,
+            "failed": failed,
+            "stage": "WAV metadata synchronization complete",
+        }
 
     def start_artwork(self, track_ids: list[int]) -> dict:
         self.dependencies.require_library_online()
@@ -101,13 +107,13 @@ class MetadataBatchService:
             if not tracks:
                 raise HTTPException(404, "None of the selected tracks remain in the catalog")
         else:
-            tracks = [
-                track for track in tracks
-                if not Path(str(track.get("artwork_path") or "")).is_file()
-            ]
+            tracks = [track for track in tracks if not Path(str(track.get("artwork_path") or "")).is_file()]
         return self.dependencies.registry.start(
-            "artwork", tracks, self._sync_artwork,
-            stage="Synchronizing artwork", counters={"updated": 0, "resolved": 0},
+            "artwork",
+            tracks,
+            self._sync_artwork,
+            stage="Synchronizing artwork",
+            counters={"updated": 0, "resolved": 0},
             requested="Find, cache, and embed missing artwork",
             written_to=[str(self.dependencies.music_library_root())],
             durability="Artwork is stored in WAV files and the catalog and survives restart.",
@@ -156,22 +162,19 @@ class MetadataBatchService:
             context.progress(
                 processed=index,
                 stage=f"Synchronizing artwork {index} of {len(tracks)}",
-                counters={"updated": updated, "skipped": skipped, "failed": failed,
-                          "succeeded": updated},
-                error=(
-                    {"id": int(track["id"]), "filename": track["filename"], "error": error}
-                    if error else None
-                ),
+                counters={"updated": updated, "skipped": skipped, "failed": failed, "succeeded": updated},
+                error=({"id": int(track["id"]), "filename": track["filename"], "error": error} if error else None),
             )
-        return {"updated": updated, "skipped": skipped, "failed": failed,
-                "stage": "Artwork synchronization complete"}
+        return {"updated": updated, "skipped": skipped, "failed": failed, "stage": "Artwork synchronization complete"}
 
     def start_genre_rescan(self) -> dict:
         self.dependencies.require_library_online()
         return self.dependencies.registry.start(
-            "genre-rescan", self.repository.list_downloaded_tracks(), self._rescan_genres,
+            "genre-rescan",
+            self.repository.list_downloaded_tracks(),
+            self._rescan_genres,
             stage="Rescanning genres",
-            counters={"updated": 0, "unchanged": 0, "unresolved": 0, "conflicts": []},
+            counters={"updated": 0, "unchanged": 0, "unresolved": 0},
             requested="Rescan detailed genres and organize tracks into genre folders",
             written_to=[str(self.dependencies.music_library_root())],
             durability="File moves and catalog paths are permanent and survive restart.",
@@ -201,31 +204,37 @@ class MetadataBatchService:
                 except HTTPException as error:
                     outcome = "failed"
                     conflict = {
-                        "id": int(track["id"]), "track_id": int(track["id"]),
+                        "id": int(track["id"]),
+                        "track_id": int(track["id"]),
                         "title": track.get("title") or track.get("filename"),
-                        "reason": str(error.detail), "error": str(error.detail),
+                        "reason": str(error.detail),
+                        "error": str(error.detail),
                     }
                     conflicts.append(conflict)
             counters[outcome] += 1
             context.progress(
                 processed=index,
                 stage=f"Rescanning genres {index} of {len(tracks)}",
-                counters={**counters, "succeeded": counters["updated"], "conflicts": conflicts},
+                counters={**counters, "succeeded": counters["updated"]},
                 error=conflicts[-1] if outcome == "failed" else None,
             )
         return {**counters, "conflicts": conflicts, "stage": "Genre rescan complete"}
 
     def status(self, batch_id: str) -> dict:
+        """Return the current state of a metadata batch by identifier."""
         try:
             return self.dependencies.registry.status(batch_id)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
 
     def latest(self, kind: str) -> dict:
+        """Return the latest metadata batch of a given kind."""
         return self.dependencies.registry.latest(kind) or {"status": "none"}
 
 
 def create_metadata_batch_router(service: MetadataBatchService) -> APIRouter:
+    """Create and return an APIRouter for metadata batch operations."""
+
     router = APIRouter(tags=["metadata batches"])
 
     @router.post("/api/downloaded-library/retag-all", status_code=202)

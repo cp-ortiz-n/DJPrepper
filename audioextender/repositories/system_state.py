@@ -16,9 +16,7 @@ def _now() -> str:
 class SystemStateRepositoryMixin(RepositoryMixinBase):
     def get_system_state(self, key: str) -> str | None:
         with closing(self._connect()) as connection:
-            row = connection.execute(
-                "SELECT value FROM system_state WHERE key=?", (key,)
-            ).fetchone()
+            row = connection.execute("SELECT value FROM system_state WHERE key=?", (key,)).fetchone()
         return str(row["value"]) if row else None
 
     def set_system_state(self, key: str, value: str) -> None:
@@ -67,16 +65,15 @@ class SystemStateRepositoryMixin(RepositoryMixinBase):
                 (new_prefix + "%", old_prefix + "%", new_prefix, len(old_prefix) + 1),
             ).fetchone()[0]
             if duplicate:
-                raise ValueError(
-                    "The destination is already represented by conflicting catalog records"
-                )
+                raise ValueError("The destination is already represented by conflicting catalog records")
             cursor = connection.execute(
                 "UPDATE downloaded_tracks SET file_path=? || SUBSTR(file_path, ?), updated_at=? WHERE file_path LIKE ?",
                 (new_prefix, len(old_prefix) + 1, _now(), old_prefix + "%"),
             )
             counts["tracks"] = cursor.rowcount
             cursor = connection.execute(
-                "UPDATE downloaded_tracks SET artwork_path=? || SUBSTR(artwork_path, ?), updated_at=? WHERE artwork_path LIKE ?",
+                "UPDATE downloaded_tracks SET artwork_path=? || SUBSTR(artwork_path, ?), "
+                "updated_at=? WHERE artwork_path LIKE ?",
                 (new_prefix, len(old_prefix) + 1, _now(), old_prefix + "%"),
             )
             counts["artwork"] = cursor.rowcount

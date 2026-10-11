@@ -69,12 +69,8 @@ def select_redrum_candidate(
         tail_release_compatibility=0.8,
         chord_return_compatibility=1.0,
         energy_context_match=0.8,
-        boundary_grid_confidence=float(
-            np.mean(analysis.bar_grid_confidence[index:index + unit_bars])
-        ),
-        local_grid_confidence=float(
-            np.mean(analysis.bar_grid_confidence[index:index + unit_bars])
-        ),
+        boundary_grid_confidence=float(np.mean(analysis.bar_grid_confidence[index : index + unit_bars])),
+        local_grid_confidence=float(np.mean(analysis.bar_grid_confidence[index : index + unit_bars])),
         arrangement_fit=1.0,
         energy_shape="stable",
         section_label="percussion bed",
@@ -124,24 +120,15 @@ def create_redrum_intro(
 
     kick_phrase = low_pass(phrase, REDRUM_KICK_CUTOFF_HZ)
     bass_phrase = np.zeros_like(phrase)
-    if (
-        instrumental_audio is not None
-        and instrumental_audio.sample_rate == source_audio.sample_rate
-    ):
+    if instrumental_audio is not None and instrumental_audio.sample_rate == source_audio.sample_rate:
         first = max(0, round(candidate.start * source_audio.sample_rate))
         last = min(len(instrumental_audio.samples), first + len(phrase))
-        support = instrumental_audio.samples[first:last] - phrase[:last - first]
-        bass_phrase[:len(support)] = low_pass(support, REDRUM_BASS_CUTOFF_HZ)
+        support = instrumental_audio.samples[first:last] - phrase[: last - first]
+        bass_phrase[: len(support)] = low_pass(support, REDRUM_BASS_CUTOFF_HZ)
 
-    drums = np.concatenate(
-        [phrase.copy() for _ in range(candidate.repetitions)], axis=0
-    )
-    kicks = np.concatenate(
-        [kick_phrase.copy() for _ in range(candidate.repetitions)], axis=0
-    )
-    bass = np.concatenate(
-        [bass_phrase.copy() for _ in range(candidate.repetitions)], axis=0
-    )
+    drums = np.concatenate([phrase.copy() for _ in range(candidate.repetitions)], axis=0)
+    kicks = np.concatenate([kick_phrase.copy() for _ in range(candidate.repetitions)], axis=0)
+    bass = np.concatenate([bass_phrase.copy() for _ in range(candidate.repetitions)], axis=0)
     pre_roll = np.zeros_like(drums)
     total_bars = max(1, candidate.unit_bars * candidate.repetitions)
     bar_frames = max(1, round(len(pre_roll) / total_bars))
@@ -149,27 +136,21 @@ def create_redrum_intro(
     drums_end = max(kick_end + 1, total_bars // 2)
     for bar in range(total_bars):
         first = bar * bar_frames
-        last = len(pre_roll) if bar == total_bars - 1 else min(
-            len(pre_roll), (bar + 1) * bar_frames
-        )
+        last = len(pre_roll) if bar == total_bars - 1 else min(len(pre_roll), (bar + 1) * bar_frames)
         if bar < kick_end:
             pre_roll[first:last] = kicks[first:last] * np.float32(REDRUM_KICK_GAIN)
         elif bar < drums_end:
             pre_roll[first:last] = drums[first:last] * np.float32(REDRUM_DRUM_GAIN)
         else:
-            pre_roll[first:last] = (
-                drums[first:last] * np.float32(REDRUM_DRUM_GAIN)
-                + bass[first:last] * np.float32(REDRUM_BASS_GAIN)
+            pre_roll[first:last] = drums[first:last] * np.float32(REDRUM_DRUM_GAIN) + bass[first:last] * np.float32(
+                REDRUM_BASS_GAIN
             )
     pre_roll_peak = float(np.max(np.abs(pre_roll)))
     if pre_roll_peak > 0.98:
         pre_roll *= np.float32(0.98 / pre_roll_peak)
 
     overlay_length = min(len(phrase), len(edited_original.samples))
-    overlay = (
-        phrase[:overlay_length] * np.float32(0.50)
-        + bass_phrase[:overlay_length] * np.float32(0.30)
-    )
+    overlay = phrase[:overlay_length] * np.float32(0.50) + bass_phrase[:overlay_length] * np.float32(0.30)
     fade = np.linspace(1.0, 0.0, overlay_length, dtype=np.float32)[:, None]
     opening = edited_original.samples.copy()
     source_bar_frames = max(1, round(len(phrase) / max(candidate.unit_bars, 1)))
@@ -180,13 +161,9 @@ def create_redrum_intro(
     )
     source_gain = np.ones((overlay_length, 1), dtype=np.float32)
     if source_fade_frames > 1:
-        phase = np.linspace(
-            0.0, np.pi / 2.0, source_fade_frames, dtype=np.float32
-        )[:, None]
+        phase = np.linspace(0.0, np.pi / 2.0, source_fade_frames, dtype=np.float32)[:, None]
         source_gain[:source_fade_frames] = np.sin(phase) ** 2
-    opening[:overlay_length] = (
-        edited_original.samples[:overlay_length] * source_gain + overlay * fade
-    )
+    opening[:overlay_length] = edited_original.samples[:overlay_length] * source_gain + overlay * fade
 
     # Protect the source's peak without globally changing its loudness. Reduce
     # only the added overlay when necessary; the untouched original stays intact.
@@ -195,10 +172,7 @@ def create_redrum_intro(
     mixed_peak = float(np.max(np.abs(opening[:overlay_length])))
     if mixed_peak > allowed_peak:
         reduction = allowed_peak / mixed_peak
-        opening[:overlay_length] = (
-            edited_original.samples[:overlay_length] * source_gain
-            + overlay * fade * reduction
-        )
+        opening[:overlay_length] = edited_original.samples[:overlay_length] * source_gain + overlay * fade * reduction
     return AudioData(
         np.concatenate((pre_roll, opening), axis=0).astype(np.float32, copy=False),
         edited_original.sample_rate,

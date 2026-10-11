@@ -84,15 +84,10 @@ class JobRepository(
                     """
                 )
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_jobs_status_created "
-                    "ON jobs(status, created_at DESC)"
+                    "CREATE INDEX IF NOT EXISTS idx_jobs_status_created ON jobs(status, created_at DESC)"
                 )
-                connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_jobs_source_id ON jobs(source_path, id DESC)"
-                )
-                columns = {
-                    str(row[1]) for row in connection.execute("PRAGMA table_info(jobs)").fetchall()
-                }
+                connection.execute("CREATE INDEX IF NOT EXISTS idx_jobs_source_id ON jobs(source_path, id DESC)")
+                columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(jobs)").fetchall()}
                 additions = {
                     "intro_preview_path": "TEXT",
                     "outro_preview_path": "TEXT",
@@ -107,9 +102,7 @@ class JobRepository(
                 for column, definition in additions.items():
                     if column not in columns:
                         connection.execute(f"ALTER TABLE jobs ADD COLUMN {column} {definition}")
-                rows = connection.execute(
-                    "SELECT id, parent_job_id, config_json, review_status FROM jobs"
-                ).fetchall()
+                rows = connection.execute("SELECT id, parent_job_id, config_json, review_status FROM jobs").fetchall()
                 for row in rows:
                     if row["review_status"] is not None:
                         continue
@@ -118,11 +111,7 @@ class JobRepository(
                     except (TypeError, ValueError):
                         job_config = {}
                     if job_config.get("review_candidates"):
-                        state = (
-                            "resolved"
-                            if job_config.get("manual_candidate_selection")
-                            else "pending"
-                        )
+                        state = "resolved" if job_config.get("manual_candidate_selection") else "pending"
                         connection.execute(
                             "UPDATE jobs SET review_status = ? WHERE id = ?",
                             (state, row["id"]),
@@ -211,14 +200,12 @@ class JobRepository(
                     """
                 )
                 downloaded_columns = {
-                    str(row[1])
-                    for row in connection.execute("PRAGMA table_info(downloaded_tracks)").fetchall()
+                    str(row[1]) for row in connection.execute("PRAGMA table_info(downloaded_tracks)").fetchall()
                 }
                 for column in ("artwork_url", "artwork_path"):
                     if column not in downloaded_columns:
                         connection.execute(
-                            f"ALTER TABLE downloaded_tracks ADD COLUMN {column} "
-                            "TEXT NOT NULL DEFAULT ''"
+                            f"ALTER TABLE downloaded_tracks ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
                         )
                 identity_columns = {
                     "recording_code": "TEXT NOT NULL DEFAULT ''",
@@ -227,12 +214,12 @@ class JobRepository(
                     "identity_confidence": "TEXT NOT NULL DEFAULT 'migrated'",
                     "identity_reason": "TEXT NOT NULL DEFAULT ''",
                     "audio_fingerprint": "TEXT NOT NULL DEFAULT ''",
+                    "identity_inference_locked": "INTEGER NOT NULL DEFAULT 0",
                 }
+                identity_lock_added = "identity_inference_locked" not in downloaded_columns
                 for column, definition in identity_columns.items():
                     if column not in downloaded_columns:
-                        connection.execute(
-                            f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}"
-                        )
+                        connection.execute(f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}")
                 quality_columns = {
                     "audio_quality_score": "REAL",
                     "audio_quality_label": "TEXT NOT NULL DEFAULT ''",
@@ -241,9 +228,7 @@ class JobRepository(
                 }
                 for column, definition in quality_columns.items():
                     if column not in downloaded_columns:
-                        connection.execute(
-                            f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}"
-                        )
+                        connection.execute(f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}")
                 key_analysis_columns = {
                     "detected_key": "TEXT NOT NULL DEFAULT ''",
                     "key_confidence": "REAL",
@@ -252,9 +237,7 @@ class JobRepository(
                 }
                 for column, definition in key_analysis_columns.items():
                     if column not in downloaded_columns:
-                        connection.execute(
-                            f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}"
-                        )
+                        connection.execute(f"ALTER TABLE downloaded_tracks ADD COLUMN {column} {definition}")
                 self._ensure_recording_identities(connection)
                 connection.execute(
                     """
@@ -310,12 +293,47 @@ class JobRepository(
                     """
                 )
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_import_failures_open "
-                    "ON import_failures(resolved, updated_at DESC)"
+                    "CREATE INDEX IF NOT EXISTS idx_import_failures_open ON import_failures(resolved, updated_at DESC)"
                 )
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_downloaded_playlists_name "
                     "ON downloaded_track_playlists(playlist_name, track_id)"
+                )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS downloaded_track_descriptors (
+                    track_id INTEGER NOT NULL,
+                    category TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    provenance TEXT NOT NULL DEFAULT 'manual',
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY(track_id, category, value),
+                    FOREIGN KEY(track_id) REFERENCES downloaded_tracks(id) ON DELETE CASCADE
+                    )"""
+                )
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_track_descriptors_value "
+                    "ON downloaded_track_descriptors(category, value, track_id)"
+                )
+                if identity_lock_added:
+                    connection.execute(
+                        """UPDATE downloaded_tracks SET identity_inference_locked=1
+                    WHERE identity_inference_locked=0 AND EXISTS (
+                        SELECT 1 FROM downloaded_track_descriptors descriptors
+                        WHERE descriptors.track_id=downloaded_tracks.id
+                        AND descriptors.provenance='manual'
+                    )"""
+                    )
+                connection.execute(
+                    """CREATE TABLE IF NOT EXISTS identity_vocabulary_rules (
+                    signal TEXT PRIMARY KEY,
+                    category TEXT NOT NULL DEFAULT '',
+                    value TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'approved',
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    updated_at TEXT NOT NULL
+                    )"""
                 )
                 connection.execute(
                     """CREATE TABLE IF NOT EXISTS library_search_index (
@@ -333,20 +351,15 @@ class JobRepository(
                     set_analysis_json TEXT NOT NULL DEFAULT '{}')"""
                 )
                 library_columns = {
-                    str(row[1])
-                    for row in connection.execute(
-                        "PRAGMA table_info(library_search_index)"
-                    ).fetchall()
+                    str(row[1]) for row in connection.execute("PRAGMA table_info(library_search_index)").fetchall()
                 }
                 if "set_analysis_json" not in library_columns:
                     connection.execute(
-                        "ALTER TABLE library_search_index ADD COLUMN "
-                        "set_analysis_json TEXT NOT NULL DEFAULT '{}'"
+                        "ALTER TABLE library_search_index ADD COLUMN set_analysis_json TEXT NOT NULL DEFAULT '{}'"
                     )
                 if "detail_genre" not in library_columns:
                     connection.execute(
-                        "ALTER TABLE library_search_index ADD COLUMN "
-                        "detail_genre TEXT NOT NULL DEFAULT ''"
+                        "ALTER TABLE library_search_index ADD COLUMN detail_genre TEXT NOT NULL DEFAULT ''"
                     )
                 connection.execute(
                     "CREATE INDEX IF NOT EXISTS idx_library_search_updated "
@@ -357,12 +370,10 @@ class JobRepository(
                     "ON library_search_index(category, updated_at DESC)"
                 )
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_library_search_bpm "
-                    "ON library_search_index(bpm, job_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_library_search_bpm ON library_search_index(bpm, job_id)"
                 )
                 connection.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_library_search_key "
-                    "ON library_search_index(musical_key, job_id)"
+                    "CREATE INDEX IF NOT EXISTS idx_library_search_key ON library_search_index(musical_key, job_id)"
                 )
                 connection.execute(
                     """CREATE TABLE IF NOT EXISTS downloaded_track_exclusions (
@@ -397,9 +408,7 @@ class JobRepository(
             """CREATE TABLE IF NOT EXISTS system_state (
             key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)"""
         )
-        migration = connection.execute(
-            "SELECT value FROM system_state WHERE key='recording_genre_codes'"
-        ).fetchone()
+        migration = connection.execute("SELECT value FROM system_state WHERE key='recording_genre_codes'").fetchone()
         legacy_families = connection.execute(
             """SELECT recording_code,
             COALESCE(MAX(CASE WHEN version_code='ORG' THEN genre_category END),
@@ -422,9 +431,7 @@ class JobRepository(
                 "INSERT INTO system_state (key,value,updated_at) VALUES (?,?,?)",
                 ("recording_genre_codes", "v1", _now()),
             )
-        missing = connection.execute(
-            "SELECT 1 FROM downloaded_tracks WHERE recording_code='' LIMIT 1"
-        ).fetchone()
+        missing = connection.execute("SELECT 1 FROM downloaded_tracks WHERE recording_code='' LIMIT 1").fetchone()
         if missing is None:
             return
         rows = connection.execute("SELECT * FROM downloaded_tracks ORDER BY id").fetchall()
@@ -433,9 +440,7 @@ class JobRepository(
         versions: dict[str, set[str]] = {}
         for row in rows:
             current_code = str(row["recording_code"] or "")
-            key = str(row["identity_key"] or "") or identity_key(
-                str(row["artist"] or ""), str(row["title"] or "")
-            )
+            key = str(row["identity_key"] or "") or identity_key(str(row["artist"] or ""), str(row["title"] or ""))
             if current_code:
                 families.setdefault(key, current_code)
                 versions.setdefault(current_code, set()).add(str(row["version_code"] or "ORG"))

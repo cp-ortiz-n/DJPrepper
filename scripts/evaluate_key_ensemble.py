@@ -18,7 +18,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from audioextender.analysis.key_detection import _ensemble_key_estimate, _estimate_key
 from audioextender.audio.loading import load_audio
 
-
 REFERENCES = {
     "Martin Solveig, Good Times Ahead - Intoxicated - Edit.wav": "C major",
     "Sammy Virji - If U Need It.wav": "A# minor",
@@ -45,16 +44,12 @@ def _analyze(row: tuple[str, str]) -> dict[str, object]:
     harmonic_spectrum, _ = librosa.decompose.hpss(magnitude)
     harmonic_audio = librosa.istft(harmonic_spectrum, hop_length=512, length=len(mono))
     variants = {
-        "stft": librosa.feature.chroma_stft(S=magnitude ** 2, sr=sample_rate),
-        "harmonic_stft": librosa.feature.chroma_stft(S=harmonic_spectrum ** 2, sr=sample_rate),
+        "stft": librosa.feature.chroma_stft(S=magnitude**2, sr=sample_rate),
+        "harmonic_stft": librosa.feature.chroma_stft(S=harmonic_spectrum**2, sr=sample_rate),
         "cqt": librosa.feature.chroma_cqt(y=mono, sr=sample_rate, hop_length=512),
-        "harmonic_cqt": librosa.feature.chroma_cqt(
-            y=harmonic_audio, sr=sample_rate, hop_length=512
-        ),
+        "harmonic_cqt": librosa.feature.chroma_cqt(y=harmonic_audio, sr=sample_rate, hop_length=512),
     }
-    ensemble = _ensemble_key_estimate(
-        variants["stft"], variants["harmonic_stft"], variants["cqt"]
-    )
+    ensemble = _ensemble_key_estimate(variants["stft"], variants["harmonic_stft"], variants["cqt"])
     return {
         "track": name,
         "reference": REFERENCES[name],
@@ -70,9 +65,7 @@ def _analyze(row: tuple[str, str]) -> dict[str, object]:
 def main() -> None:
     database = Path("output/reports/audioextender.sqlite3")
     with sqlite3.connect(database) as connection:
-        rows = connection.execute(
-            "SELECT source_name, source_path FROM jobs WHERE status='complete'"
-        ).fetchall()
+        rows = connection.execute("SELECT source_name, source_path FROM jobs WHERE status='complete'").fetchall()
     selected = {name: path for name, path in rows if name in REFERENCES}
     results = []
     with ProcessPoolExecutor(max_workers=2) as executor:

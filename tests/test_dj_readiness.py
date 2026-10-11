@@ -13,17 +13,15 @@ class DJReadinessTests(unittest.TestCase):
         frame_times = np.arange(total * 4, dtype=float)
         rms = np.full(total * 4, 0.04)
         percussion = np.full(total * 4, 0.05)
-        rms[:safe_bars * 4] = 0.30
-        percussion[:safe_bars * 4] = 0.24
+        rms[: safe_bars * 4] = 0.30
+        percussion[: safe_bars * 4] = 0.24
         return Mock(
             bar_boundaries=np.arange(0, (total + 1) * 4, 4, dtype=float),
             bar_grid_confidence=np.full(total, 0.9),
             frame_times=frame_times,
             rms=rms,
             percussion_rms=percussion,
-            bar_section_labels=np.asarray(
-                ["intro"] * total, dtype="<U8"
-            ),
+            bar_section_labels=np.asarray(["intro"] * total, dtype="<U8"),
         )
 
     def test_counts_consecutive_mixable_opening_bars(self) -> None:

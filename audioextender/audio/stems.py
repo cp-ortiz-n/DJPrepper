@@ -57,10 +57,7 @@ def detect_sustained_vocal_boundaries(
     changes = np.diff(np.pad(active.astype(int), (1, 1)))
     starts = np.flatnonzero(changes == 1)
     ends = np.flatnonzero(changes == -1)
-    regions = [
-        (start, end) for start, end in zip(starts, ends, strict=True)
-        if end - start >= minimum_frames
-    ]
+    regions = [(start, end) for start, end in zip(starts, ends, strict=True) if end - start >= minimum_frames]
     if not regions:
         return None, None
 
@@ -70,13 +67,9 @@ def detect_sustained_vocal_boundaries(
 
     closing_start = duration * 0.55
     closing = [
-        region for region in regions
-        if frame_times[min(int(region[1]) - 1, len(frame_times) - 1)] >= closing_start
+        region for region in regions if frame_times[min(int(region[1]) - 1, len(frame_times) - 1)] >= closing_start
     ]
-    outro_after = (
-        float(frame_times[min(int(closing[-1][1]) - 1, len(frame_times) - 1)])
-        if closing else None
-    )
+    outro_after = float(frame_times[min(int(closing[-1][1]) - 1, len(frame_times) - 1)]) if closing else None
     return intro_before, outro_after
 
 
@@ -103,9 +96,7 @@ def analyze_vocal_stem(
     """Run four-stem Demucs and map vocal RMS onto the main feature timeline."""
     report = progress or (lambda _fraction, _label: None)
     if not demucs_available():
-        raise StemSeparationError(
-            "Demucs is not installed. Install it with: pip install demucs"
-        )
+        raise StemSeparationError("Demucs is not installed. Install it with: pip install demucs")
     # Import lazily so the core, non-Demucs application does not require PyTorch.
     import torch
 
@@ -191,13 +182,16 @@ def analyze_vocal_stem(
         stem = load_audio(path)
         samples = stem.samples
         if stem.sample_rate != source_sample_rate:
-            samples = np.column_stack([
-                librosa.resample(
-                    samples[:, channel], orig_sr=stem.sample_rate,
-                    target_sr=source_sample_rate,
-                )
-                for channel in range(samples.shape[1])
-            ])
+            samples = np.column_stack(
+                [
+                    librosa.resample(
+                        samples[:, channel],
+                        orig_sr=stem.sample_rate,
+                        target_sr=source_sample_rate,
+                    )
+                    for channel in range(samples.shape[1])
+                ]
+            )
         return AudioData(np.asarray(samples, dtype=np.float32), source_sample_rate)
 
     vocals_path = stem_paths["vocals"]
@@ -208,9 +202,7 @@ def analyze_vocal_stem(
         path = stem_paths[name]
         assert path is not None
         instrumental_stems[name] = aligned_stem(path)
-    common_length = min(
-        len(stem.samples) for stem in (vocals, *instrumental_stems.values())
-    )
+    common_length = min(len(stem.samples) for stem in (vocals, *instrumental_stems.values()))
     instrumental_samples = np.sum(
         [stem.samples[:common_length] for stem in instrumental_stems.values()], axis=0
     ).astype(np.float32)
@@ -240,11 +232,11 @@ def analyze_vocal_stem(
             source_start = -lag_frames
             length = min(len(target), len(samples) - source_start)
             if length > 0:
-                target[:length] = samples[source_start:source_start + length]
+                target[:length] = samples[source_start : source_start + length]
         else:
             length = min(len(target) - lag_frames, len(samples))
             if length > 0:
-                target[lag_frames:lag_frames + length] = samples[:length]
+                target[lag_frames : lag_frames + length] = samples[:length]
         return target
 
     aligned_vocals = align_samples(raw_vocals)
@@ -263,23 +255,21 @@ def analyze_vocal_stem(
     reconstructed = (aligned_instrumental + aligned_vocals)[::stride]
     reference = source.samples[::stride]
     error_ratio = float(
-        np.sqrt(np.mean((reconstructed - reference) ** 2))
-        / max(float(np.sqrt(np.mean(reference ** 2))), 1e-8)
+        np.sqrt(np.mean((reconstructed - reference) ** 2)) / max(float(np.sqrt(np.mean(reference**2))), 1e-8)
     )
     correlation = float(np.corrcoef(reference.reshape(-1), reconstructed.reshape(-1))[0, 1])
     if not np.isfinite(correlation):
         correlation = 0.0
-    reconstruction_rms = max(float(np.sqrt(np.mean(reconstructed ** 2))), 1e-8)
-    reference_rms = max(float(np.sqrt(np.mean(reference ** 2))), 1e-8)
+    reconstruction_rms = max(float(np.sqrt(np.mean(reconstructed**2))), 1e-8)
+    reference_rms = max(float(np.sqrt(np.mean(reference**2))), 1e-8)
     gain_match = float(np.exp(-abs(np.log(reconstruction_rms / reference_rms))))
-    reliability = float(np.clip(
-        0.55 * max(0.0, correlation)
-        + 0.25 * gain_match
-        + 0.20 * np.exp(-2.0 * error_ratio),
-        0.0,
-        1.0,
-    ))
+    reliability = float(
+        np.clip(
+            0.55 * max(0.0, correlation) + 0.25 * gain_match + 0.20 * np.exp(-2.0 * error_ratio),
+            0.0,
+            1.0,
+        )
+    )
     return StemResult(
-        np.clip(aligned, 0.0, 1.5), instrumental,
-        AudioData(aligned_drums, source_sample_rate), reliability, temporary
+        np.clip(aligned, 0.0, 1.5), instrumental, AudioData(aligned_drums, source_sample_rate), reliability, temporary
     )

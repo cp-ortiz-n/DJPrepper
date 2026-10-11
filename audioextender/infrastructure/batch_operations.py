@@ -17,6 +17,7 @@ TERMINAL_BATCH_STATUSES = frozenset({"complete", "failed", "canceled"})
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+
 class BatchCanceled(RuntimeError):
     """Raised cooperatively when a batch has been canceled."""
 
@@ -80,7 +81,8 @@ class BatchOperationRegistry:
         with self.lock:
             active = next(
                 (
-                    state for state in reversed(tuple(self._states.values()))
+                    state
+                    for state in reversed(tuple(self._states.values()))
                     if state["kind"] == kind and state["status"] in {"pending", "processing", "canceling"}
                 ),
                 None,
@@ -151,12 +153,7 @@ class BatchOperationRegistry:
                     completed_at=_now(),
                     updated_at=_now(),
                 )
-                changed_count = int(
-                    state.get("succeeded")
-                    or result.get("updated")
-                    or result.get("tagged")
-                    or 0
-                )
+                changed_count = int(state.get("succeeded") or result.get("updated") or result.get("tagged") or 0)
                 state["receipt"] = operation_receipt(
                     operation=str(state["kind"]),
                     requested=str(state["receipt"]["requested"]["summary"]),
@@ -171,8 +168,11 @@ class BatchOperationRegistry:
         except BatchCanceled as error:
             with self.lock:
                 self._states[batch_id].update(
-                    status="canceled", stage=str(error), retryable=True,
-                    canceled_at=_now(), updated_at=_now(),
+                    status="canceled",
+                    stage=str(error),
+                    retryable=True,
+                    canceled_at=_now(),
+                    updated_at=_now(),
                 )
                 state = self._states[batch_id]
                 state["receipt"] = operation_receipt(
@@ -192,9 +192,13 @@ class BatchOperationRegistry:
                 state = self._states[batch_id]
                 state["errors"].append({"error": str(error)})
                 state.update(
-                    status="failed", stage="Failed", error=str(error),
+                    status="failed",
+                    stage="Failed",
+                    error=str(error),
                     failed=max(1, int(state.get("failed") or 0)),
-                    retryable=True, completed_at=_now(), updated_at=_now(),
+                    retryable=True,
+                    completed_at=_now(),
+                    updated_at=_now(),
                 )
                 state["receipt"] = operation_receipt(
                     operation=str(state["kind"]),
@@ -245,9 +249,7 @@ class BatchOperationRegistry:
             state = self._require(batch_id)
             if state["status"] not in TERMINAL_BATCH_STATUSES:
                 raise ValueError("Only a finished batch can be retried")
-            failed_ids = {
-                item.get("id") for item in state.get("errors", []) if item.get("id") is not None
-            }
+            failed_ids = {item.get("id") for item in state.get("errors", []) if item.get("id") is not None}
             original = self._items[batch_id]
             items = [item for item in original if not failed_ids or self._item_id(item) in failed_ids]
             worker = self._workers[batch_id]
@@ -256,9 +258,15 @@ class BatchOperationRegistry:
             written_to = list(state["receipt"]["written_to"])
             durability = self._durability[batch_id]
         return self.start(
-            kind, items, worker, stage="Retrying", retry_of=batch_id,
+            kind,
+            items,
+            worker,
+            stage="Retrying",
+            retry_of=batch_id,
             counters={key: 0 for key in state if key in {"tagged", "updated", "unchanged", "unresolved", "resolved"}},
-            requested=requested, written_to=written_to, durability=durability,
+            requested=requested,
+            written_to=written_to,
+            durability=durability,
         )
 
     @staticmethod

@@ -9,7 +9,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 
-from audioextender.library.cue_export import write_rekordbox_xml
 from audioextender.audio.wav_metadata import (
     embed_wav_artwork,
     read_wav_artwork,
@@ -17,6 +16,7 @@ from audioextender.audio.wav_metadata import (
     sync_wav_metadata,
     write_wav_metadata,
 )
+from audioextender.library.cue_export import write_rekordbox_xml
 
 
 class WavMetadataTests(unittest.TestCase):
@@ -43,13 +43,17 @@ class WavMetadataTests(unittest.TestCase):
                 output.setframerate(8000)
                 output.writeframes(b"\0\0" * 800)
 
-            write_wav_metadata(
-                path, title="Track", artist="Artist", genre="House", album="Night Set"
-            )
+            write_wav_metadata(path, title="Track", artist="Artist", genre="House", album="Night Set")
             probe = subprocess.run(
                 [
-                    "ffprobe", "-v", "error", "-show_entries", "format_tags",
-                    "-of", "json", str(path),
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format_tags",
+                    "-of",
+                    "json",
+                    str(path),
                 ],
                 check=True,
                 capture_output=True,
@@ -61,12 +65,8 @@ class WavMetadataTests(unittest.TestCase):
             self.assertEqual(normalized["artist"], "Artist")
             self.assertEqual(normalized["genre"], "House")
             self.assertEqual(normalized["album"], "Night Set")
-            self.assertFalse(sync_wav_metadata(
-                path, title="Track", artist="Artist", genre="House", album="Night Set"
-            ))
-            self.assertTrue(sync_wav_metadata(
-                path, title="Track", artist="Artist", genre="Techno", album="Night Set"
-            ))
+            self.assertFalse(sync_wav_metadata(path, title="Track", artist="Artist", genre="House", album="Night Set"))
+            self.assertTrue(sync_wav_metadata(path, title="Track", artist="Artist", genre="Techno", album="Night Set"))
 
     def test_rekordbox_xml_contains_catalog_identity(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

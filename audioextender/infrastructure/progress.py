@@ -12,10 +12,16 @@ class ProgressBar:
     """Render batch/song progress, stages, learned ETA, and slow-task notices."""
 
     def __init__(
-        self, width: int = 22, show_logs: bool = False,
-        song: str = "Current song", batch_index: int = 1, batch_total: int = 1,
-        completed_durations: list[float] | None = None, workers: int = 1,
-        use_stems: bool = False, aggregate: bool = False,
+        self,
+        width: int = 22,
+        show_logs: bool = False,
+        song: str = "Current song",
+        batch_index: int = 1,
+        batch_total: int = 1,
+        completed_durations: list[float] | None = None,
+        workers: int = 1,
+        use_stems: bool = False,
+        aggregate: bool = False,
     ) -> None:
         self.width = width
         self.started = time.monotonic()
@@ -76,20 +82,22 @@ class ProgressBar:
 
     def _stage_line(self) -> str:
         p = self.percent
-        return "  ".join((
-            self._stage("Load", p >= 8, p < 8),
-            self._stage("Analyze", p >= 70, 8 <= p < 70),
-            self._stage("Stems", p >= 80, self.use_stems and 70 <= p < 80, not self.use_stems),
-            self._stage("Select", p >= 90, 80 <= p < 90),
-            self._stage("Render", p >= 97, 90 <= p < 97),
-            self._stage("Export", p >= 100, 97 <= p < 100),
-        ))
+        return "  ".join(
+            (
+                self._stage("Load", p >= 8, p < 8),
+                self._stage("Analyze", p >= 70, 8 <= p < 70),
+                self._stage("Stems", p >= 80, self.use_stems and 70 <= p < 80, not self.use_stems),
+                self._stage("Select", p >= 90, 80 <= p < 90),
+                self._stage("Render", p >= 97, 90 <= p < 97),
+                self._stage("Export", p >= 100, 97 <= p < 100),
+            )
+        )
 
     def _lines(self) -> list[str]:
         elapsed = time.monotonic() - self.started
-        batch_fraction = self.percent / 100.0 if self.aggregate else (
-            self.batch_index - 1 + self.percent / 100.0
-        ) / self.batch_total
+        batch_fraction = (
+            self.percent / 100.0 if self.aggregate else (self.batch_index - 1 + self.percent / 100.0) / self.batch_total
+        )
         batch_eta = self._batch_eta(elapsed)
         batch_timing = f" · ETA ~{self._time(batch_eta)}" if batch_eta is not None else ""
         batch_line = (
@@ -106,8 +114,7 @@ class ProgressBar:
             device = "Apple GPU (MPS)" if demucs.group(1).upper() == "MPS" else "CPU"
             stem_fraction = min(1.0, int(demucs.group(2)) / 100.0)
             current_line = (
-                f"Stems [{self._bar(stem_fraction)}] {int(stem_fraction * 100):3d}% · "
-                f"{device} · {self.song}{slow}"
+                f"Stems [{self._bar(stem_fraction)}] {int(stem_fraction * 100):3d}% · {device} · {self.song}{slow}"
             )
         else:
             current_line = (
@@ -143,9 +150,7 @@ class ProgressBar:
     def _start_spinner(self) -> None:
         if not self._interactive or self._spinner_thread is not None:
             return
-        self._spinner_thread = threading.Thread(
-            target=self._spin, name="audio-extender-progress", daemon=True
-        )
+        self._spinner_thread = threading.Thread(target=self._spin, name="audio-extender-progress", daemon=True)
         self._spinner_thread.start()
 
     def _stop_spinner(self) -> None:

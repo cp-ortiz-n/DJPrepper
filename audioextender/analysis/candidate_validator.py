@@ -56,61 +56,50 @@ class CandidateValidator:
                 uses_instrumental,
                 candidate.repetitions > config.maximum_repetitions,
             )
-        if vocal_analysis_available and not uses_instrumental and (
-            candidate.vocal_coverage > config.maximum_vocal_coverage
-            or candidate.vocal_boundary_risk > config.maximum_vocal_boundary_risk
+        if (
+            vocal_analysis_available
+            and not uses_instrumental
+            and (
+                candidate.vocal_coverage > config.maximum_vocal_coverage
+                or candidate.vocal_boundary_risk > config.maximum_vocal_boundary_risk
+            )
         ):
             return ValidationResult(
                 None,
-                f"vocals {candidate.vocal_coverage:.0%}, boundary risk "
-                f"{candidate.vocal_boundary_risk:.0%}",
+                f"vocals {candidate.vocal_coverage:.0%}, boundary risk {candidate.vocal_boundary_risk:.0%}",
                 False,
             )
         if candidate.buildup_risk > config.maximum_buildup_risk:
-            return ValidationResult(
-                None, f"buildup risk {candidate.buildup_risk:.0%}", uses_instrumental
-            )
+            return ValidationResult(None, f"buildup risk {candidate.buildup_risk:.0%}", uses_instrumental)
         if candidate.bass_reset_risk > config.maximum_bass_reset_risk:
-            return ValidationResult(
-                None, f"bass-reset risk {candidate.bass_reset_risk:.0%}", uses_instrumental
-            )
+            return ValidationResult(None, f"bass-reset risk {candidate.bass_reset_risk:.0%}", uses_instrumental)
         if candidate.arrangement_fit < config.minimum_arrangement_fit:
             return ValidationResult(
                 None,
-                f"section {candidate.section_label}, arrangement fit "
-                f"{candidate.arrangement_fit:+.0%}",
+                f"section {candidate.section_label}, arrangement fit {candidate.arrangement_fit:+.0%}",
                 uses_instrumental,
             )
         if (
             position == "intro"
             and not uses_instrumental
-            and candidate.rhythmic_strength
-            < MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH
-            and candidate.instrumentalness
-            < MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO
+            and candidate.rhythmic_strength < MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH
+            and candidate.instrumentalness < MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO
         ):
             return ValidationResult(
                 None,
-                "exposed melodic phrase without a stable rhythmic bed "
-                f"(rhythm {candidate.rhythmic_strength:.0%})",
+                f"exposed melodic phrase without a stable rhythmic bed (rhythm {candidate.rhythmic_strength:.0%})",
                 False,
             )
 
-        quality = (
-            candidate.instrumental_loop_quality
-            if uses_instrumental else candidate.loop_quality
-        )
+        quality = candidate.instrumental_loop_quality if uses_instrumental else candidate.loop_quality
         quality_floor = max(
             config.minimum_loop_quality,
-            config.minimum_intro_loop_quality
-            if position == "intro"
-            else config.minimum_outro_loop_quality,
+            config.minimum_intro_loop_quality if position == "intro" else config.minimum_outro_loop_quality,
         )
         if round(quality) < quality_floor:
             return ValidationResult(
                 None,
-                f"quality {quality:.0f}% below "
-                f"{quality_floor:.0f}%",
+                f"quality {quality:.0f}% below {quality_floor:.0f}%",
                 uses_instrumental,
             )
 

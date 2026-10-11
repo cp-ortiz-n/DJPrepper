@@ -72,12 +72,14 @@ def _arrangement_sections(analysis: TrackAnalysis) -> tuple[TrackArrangementSect
     for index in range(1, usable + 1):
         if index < usable and labels[index] == labels[first]:
             continue
-        sections.append(TrackArrangementSection(
-            float(boundaries[first]),
-            float(boundaries[index]),
-            str(labels[first]),
-            sum(float(value) for value in confidence[first:index]) / (index - first),
-        ))
+        sections.append(
+            TrackArrangementSection(
+                float(boundaries[first]),
+                float(boundaries[index]),
+                str(labels[first]),
+                sum(float(value) for value in confidence[first:index]) / (index - first),
+            )
+        )
         first = index
     return tuple(sections)
 
@@ -103,8 +105,7 @@ def _pick_ranked_candidate(
         raise RuntimeError(f"No {position} candidates are available")
     if requested_rank > len(candidates):
         raise RuntimeError(
-            f"Requested {position} candidate {requested_rank}, but only "
-            f"{len(candidates)} distinct option(s) exist"
+            f"Requested {position} candidate {requested_rank}, but only {len(candidates)} distinct option(s) exist"
         )
     if not interactive:
         if requested_rank == 0:
@@ -116,7 +117,7 @@ def _pick_ranked_candidate(
     resume = getattr(progress, "resume_after_input", lambda: None)
     page_start = 0
     while True:
-        page = candidates[page_start:page_start + DEFAULT_CANDIDATE_COUNT]
+        page = candidates[page_start : page_start + DEFAULT_CANDIDATE_COUNT]
         if audition is not None:
             audition(page)
         pause()
@@ -137,10 +138,9 @@ def _pick_ranked_candidate(
         print("  C. Choose the candidate nearest a custom source-time range")
         page_default_rank = requested_rank if page_start == 0 else page_start + 1
         default_label = "none" if page_default_rank == 0 else "1"
-        response = input(
-            f"Choose {position} candidate [0-{len(page)}, R, C] "
-            f"(Enter for {default_label}): "
-        ).strip().upper()
+        response = (
+            input(f"Choose {position} candidate [0-{len(page)}, R, C] (Enter for {default_label}): ").strip().upper()
+        )
         if not response:
             resume()
             if page_default_rank == 0:
@@ -165,14 +165,10 @@ def _pick_ranked_candidate(
                 continue
             chosen = min(
                 candidates,
-                key=lambda candidate: abs(candidate.start - custom_start)
-                + abs(candidate.end - custom_end),
+                key=lambda candidate: abs(candidate.start - custom_start) + abs(candidate.end - custom_end),
             )
             rank = candidates.index(chosen) + 1
-            print(
-                f"Snapped to ranked candidate {rank}: "
-                f"{_format_time(chosen.start)}–{_format_time(chosen.end)}"
-            )
+            print(f"Snapped to ranked candidate {rank}: {_format_time(chosen.start)}–{_format_time(chosen.end)}")
             resume()
             return chosen, rank
         if response.isdigit() and 1 <= int(response) <= len(page):
@@ -199,7 +195,6 @@ def _parse_timestamp(value: str) -> float:
     return result
 
 
-
 class TrackProcessor:
     """Orchestrate one track through analysis, stems, selection, and export."""
 
@@ -211,9 +206,7 @@ class TrackProcessor:
         candidate_validator: CandidateValidator | None = None,
     ) -> None:
         self.stem_provider = stem_provider or StemProvider()
-        self.selection_coordinator = (
-            selection_coordinator or SelectionCoordinator()
-        )
+        self.selection_coordinator = selection_coordinator or SelectionCoordinator()
         self.export_service = export_service or ExportService()
         self.candidate_validator = candidate_validator or CandidateValidator()
 
@@ -232,7 +225,7 @@ class TrackProcessor:
             raise FileNotFoundError(source)
         if output == source:
             raise ValueError("Output path must differ from input path")
-    
+
         started = time.monotonic()
         stage_timings: list[tuple[str, float]] = []
         progress = progress or ProgressBar(show_logs=config.choose_candidates)
@@ -242,32 +235,28 @@ class TrackProcessor:
             audio = load_audio(source)
             stage_timings.append(("Loading audio", time.monotonic() - stage_started))
             progress.update(8, "Starting audio analysis")
-            cache = AnalysisCache(
-                Path(config.cache_directory), config.cache_enabled, config.refresh_cache
-            )
+            cache = AnalysisCache(Path(config.cache_directory), config.cache_enabled, config.refresh_cache)
             analysis = cache.load_analysis(source, config)
             analysis_cache_hit = analysis is not None
             if analysis is None:
                 analysis_stage_started = time.monotonic()
                 analysis_stage_label = "Starting audio analysis"
+
                 def report_analysis(fraction: float, label: str) -> None:
                     nonlocal analysis_stage_started, analysis_stage_label
                     now = time.monotonic()
                     if label != analysis_stage_label:
-                        stage_timings.append(
-                            (analysis_stage_label, now - analysis_stage_started)
-                        )
+                        stage_timings.append((analysis_stage_label, now - analysis_stage_started))
                         analysis_stage_started = now
                         analysis_stage_label = label
                     progress.update(8 + 62 * fraction, label)
+
                 analysis = analyze_track(
                     audio,
                     config,
                     report_analysis,
                 )
-                stage_timings.append(
-                    (analysis_stage_label, time.monotonic() - analysis_stage_started)
-                )
+                stage_timings.append((analysis_stage_label, time.monotonic() - analysis_stage_started))
                 cache.save_analysis(source, config, analysis)
                 if config.cache_enabled:
                     progress.log("Saved track analysis to cache")
@@ -276,23 +265,15 @@ class TrackProcessor:
                 progress.log("Loaded track analysis from cache")
             progress.log(f"Audio: {audio.sample_rate} Hz, stereo, {audio.duration:.1f} seconds")
             progress.log(f"Detected BPM: {analysis.bpm:.1f}")
-            progress.log(
-                f"Estimated key: {analysis.key_label} "
-                f"({analysis.key_confidence:.0f}% confidence)"
-            )
+            progress.log(f"Estimated key: {analysis.key_label} ({analysis.key_confidence:.0f}% confidence)")
             progress.log(
                 f"Groove: {analysis.groove_label}; timing: {analysis.timing_label}; "
                 f"downbeat continuity: {analysis.downbeat_continuity:.0f}%"
             )
-            progress.log(
-                f"Detected {len(analysis.beat_times)} beats "
-                f"({len(analysis.downbeat_indices)} inferred bars)"
-            )
-    
+            progress.log(f"Detected {len(analysis.beat_times)} beats ({len(analysis.downbeat_indices)} inferred bars)")
+
             stem_started = time.monotonic()
-            stem_analysis = self.stem_provider.analyze(
-                source, audio, analysis, config, cache, progress
-            )
+            stem_analysis = self.stem_provider.analyze(source, audio, analysis, config, cache, progress)
             stage_timings.append(("Vocal and stem analysis", time.monotonic() - stem_started))
             vocal_energy = stem_analysis.vocal_energy
             instrumental_audio = stem_analysis.instrumental_audio
@@ -307,15 +288,14 @@ class TrackProcessor:
             if outro_after is None and stem_analysis.outro_boundary is not None:
                 outro_after = stem_analysis.outro_boundary
                 automatic_outro_boundary = True
-    
+
             detected_style = None
             preset_reason = None
             section_profiles = classify_track_sections(analysis, vocal_energy)
             progress.log(
                 "Section styles: "
                 + "; ".join(
-                    f"{profile.name.lower()} {profile.style} ({profile.confidence:.0%})"
-                    for profile in section_profiles
+                    f"{profile.name.lower()} {profile.style} ({profile.confidence:.0%})" for profile in section_profiles
                 )
             )
             if config.preset_name == "auto":
@@ -323,25 +303,16 @@ class TrackProcessor:
                 selected = PRESETS[decision.preset]
                 config = replace(
                     config,
-                    intro_bars=(
-                        config.intro_bars if config.intro_bars_locked else selected.intro_bars
-                    ),
-                    outro_bars=(
-                        config.outro_bars if config.outro_bars_locked else selected.outro_bars
-                    ),
-                    use_stems=(
-                        config.use_stems if config.stems_locked else selected.use_stems
-                    ),
+                    intro_bars=(config.intro_bars if config.intro_bars_locked else selected.intro_bars),
+                    outro_bars=(config.outro_bars if config.outro_bars_locked else selected.outro_bars),
+                    use_stems=(config.use_stems if config.stems_locked else selected.use_stems),
                     minimum_loop_quality=selected.minimum_loop_quality,
                     maximum_repetitions=selected.maximum_repetitions,
                     preset_name=f"auto → {decision.preset}",
                 )
                 detected_style = decision.style
                 preset_reason = decision.reason
-                progress.log(
-                    f"Automatic style: {decision.style}; selected {decision.preset} "
-                    f"({decision.reason})"
-                )
+                progress.log(f"Automatic style: {decision.style}; selected {decision.preset} ({decision.reason})")
 
             readiness = detect_dj_readiness(analysis)
             if config.analysis_only:
@@ -371,12 +342,8 @@ class TrackProcessor:
                     mix_out=None,
                     intro_existing_mix_bars=readiness.intro.mixable_bars,
                     outro_existing_mix_bars=readiness.outro.mixable_bars,
-                    intro_already_dj_ready=(
-                        readiness.intro.mixable_bars >= DJ_READY_MINIMUM_BARS
-                    ),
-                    outro_already_dj_ready=(
-                        readiness.outro.mixable_bars >= DJ_READY_MINIMUM_BARS
-                    ),
+                    intro_already_dj_ready=(readiness.intro.mixable_bars >= DJ_READY_MINIMUM_BARS),
+                    outro_already_dj_ready=(readiness.outro.mixable_bars >= DJ_READY_MINIMUM_BARS),
                     analysis_cache_hit=analysis_cache_hit,
                     vocal_cache_hit=vocal_cache_hit,
                     preset_name=config.preset_name,
@@ -391,40 +358,36 @@ class TrackProcessor:
             intro_already_ready = (
                 not config.intro_bars_locked
                 and config.intro_bars > 0
-                and readiness.intro.mixable_bars
-                >= max(DJ_READY_MINIMUM_BARS, config.intro_bars)
+                and readiness.intro.mixable_bars >= max(DJ_READY_MINIMUM_BARS, config.intro_bars)
             )
             outro_already_ready = (
                 not config.outro_bars_locked
                 and config.outro_bars > 0
-                and readiness.outro.mixable_bars
-                >= max(DJ_READY_MINIMUM_BARS, config.outro_bars)
+                and readiness.outro.mixable_bars >= max(DJ_READY_MINIMUM_BARS, config.outro_bars)
             )
             intro_preservation_reason = None
             outro_preservation_reason = None
             if intro_already_ready:
                 intro_preservation_reason = (
-                    f"already DJ-ready with {readiness.intro.mixable_bars} "
-                    "consecutive mixable opening bars"
+                    f"already DJ-ready with {readiness.intro.mixable_bars} consecutive mixable opening bars"
                 )
                 progress.log(f"Intro preserved: {intro_preservation_reason}")
                 config = replace(config, intro_bars=0)
             if outro_already_ready:
                 outro_preservation_reason = (
-                    f"already DJ-ready with {readiness.outro.mixable_bars} "
-                    "consecutive mixable closing bars"
+                    f"already DJ-ready with {readiness.outro.mixable_bars} consecutive mixable closing bars"
                 )
                 progress.log(f"Outro preserved: {outro_preservation_reason}")
                 config = replace(config, outro_bars=0)
-    
+
             progress.update(80, "Scoring intro phrases")
             intro_rejection_reason = intro_preservation_reason
             outro_rejection_reason = outro_preservation_reason
-    
+
             coordinator = self.selection_coordinator
             exporter = self.export_service
             reviews: dict[str, tuple[str | None, str | None]] = {}
-    
+
             def choose_side(
                 options: list[SectionCandidate], position: Position, requested_rank: int
             ) -> tuple[SectionCandidate | None, int | None]:
@@ -451,34 +414,28 @@ class TrackProcessor:
                     resume = getattr(progress, "resume_after_input", lambda: None)
                     pause()
                     print(
-                        "Feedback tags: good, chopped, wrong phrase, vocals, "
-                        "buildup, bass reset, too repetitive, other"
+                        "Feedback tags: good, chopped, wrong phrase, vocals, buildup, bass reset, too repetitive, other"
                     )
-                    reason = input(
-                        f"Why did you choose this {position} option? "
-                        "(comma-separated, optional): "
-                    ).strip() or None
+                    reason = (
+                        input(f"Why did you choose this {position} option? (comma-separated, optional): ").strip()
+                        or None
+                    )
                     notes = input("Notes (optional): ").strip() or None
                     reviews[position] = (reason, notes)
                     resume()
                 return chosen, rank
-    
+
             if config.intro_bars == 0:
                 progress.log("Extended intro disabled")
             elif intro_before is not None:
-                source_label = (
-                    "automatic vocal detection"
-                    if automatic_intro_boundary else "manual rule"
-                )
+                source_label = "automatic vocal detection" if automatic_intro_boundary else "manual rule"
                 progress.log(
                     f"Protected vocal entrance: intro source must end before "
                     f"{_format_time(intro_before)} ({source_label})"
                 )
-    
+
             prefer_instrumental = (
-                instrumental_audio is not None
-                and stem_reliability
-                >= config.minimum_stem_construction_reliability
+                instrumental_audio is not None and stem_reliability >= config.minimum_stem_construction_reliability
             )
             intro_selection = coordinator.select(
                 analysis,
@@ -504,22 +461,15 @@ class TrackProcessor:
             intro_before = intro_selection.maximum_end
             automatic_intro_boundary = intro_selection.automatic_boundary
             intro_fallback = intro_selection.fallback
-    
+
             progress.update(85, "Scoring outro phrases")
             if config.outro_bars == 0:
                 progress.log("Extended outro disabled; preserving original ending")
             else:
-                if (
-                    outro_after is not None
-                    and outro_before is not None
-                    and outro_after >= outro_before
-                ):
+                if outro_after is not None and outro_before is not None and outro_after >= outro_before:
                     raise ValueError("outro_after must be earlier than outro_before")
                 if outro_after is not None:
-                    source_label = (
-                        "automatic vocal detection"
-                        if automatic_outro_boundary else "manual rule"
-                    )
+                    source_label = "automatic vocal detection" if automatic_outro_boundary else "manual rule"
                     progress.log(
                         f"Protected vocal release: outro source must begin after "
                         f"{_format_time(outro_after)} ({source_label})"
@@ -529,7 +479,7 @@ class TrackProcessor:
                         f"Protected closing section: outro source must end before "
                         f"{_format_time(outro_before)} (manual rule)"
                     )
-    
+
             outro_selection = coordinator.select(
                 analysis,
                 audio.duration,
@@ -567,9 +517,7 @@ class TrackProcessor:
                 if start is None or end is None:
                     return None
                 if end > audio.duration:
-                    raise ValueError(
-                        f"Custom {position} ends after the source track"
-                    )
+                    raise ValueError(f"Custom {position} ends after the source track")
                 if options:
                     base = min(
                         options,
@@ -583,8 +531,7 @@ class TrackProcessor:
                     round((end - start) / (beat_seconds * config.beats_per_bar)),
                 )
                 progress.log(
-                    f"Custom {position}: {_format_time(start)} - {_format_time(end)} "
-                    f"({bars}-bar estimate ×{copies})"
+                    f"Custom {position}: {_format_time(start)} - {_format_time(end)} ({bars}-bar estimate ×{copies})"
                 )
                 return replace(
                     base,
@@ -633,7 +580,7 @@ class TrackProcessor:
                             instrumental_audio,
                             stem_reliability,
                         )
-    
+
             progress.update(88, "Optimizing loop boundaries")
             if intro is not None:
                 intro = optimize_candidate_boundaries(audio, intro)
@@ -667,28 +614,19 @@ class TrackProcessor:
             )
             intro = intro_validation.candidate
             outro = outro_validation.candidate
-            intro_rejection_reason = (
-                intro_validation.rejection_reason or intro_preservation_reason
-            )
-            outro_rejection_reason = (
-                outro_validation.rejection_reason or outro_preservation_reason
-            )
+            intro_rejection_reason = intro_validation.rejection_reason or intro_preservation_reason
+            outro_rejection_reason = outro_validation.rejection_reason or outro_preservation_reason
             redrum_intro = False
             high_quality_drums = None
             if (
                 intro is None
                 and config.intro_bars > 0
                 and (
-                    (
-                        intro_rejection_reason is not None
-                        and "exposed melodic phrase" in intro_rejection_reason
-                    )
+                    (intro_rejection_reason is not None and "exposed melodic phrase" in intro_rejection_reason)
                     or not intro_selection.options
                 )
             ):
-                redrum_candidate = select_redrum_candidate(
-                    analysis, config.intro_bars, audio.duration
-                )
+                redrum_candidate = select_redrum_candidate(analysis, config.intro_bars, audio.duration)
                 if redrum_candidate is not None:
                     intro = redrum_candidate
                     reason = intro_rejection_reason or intro_selection.fallback or "no safe full-mix phrase"
@@ -712,10 +650,7 @@ class TrackProcessor:
                         stem_reliability = cached_instrumental[1]
                         progress.log("Loaded cached Demucs drums for melodic intro rescue")
                 if drums_audio is None or stem_reliability < MINIMUM_REDRUM_STEM_RELIABILITY:
-                    progress.log(
-                        "Melodic intro rescue requires clean drums; running Demucs only "
-                        "for this track"
-                    )
+                    progress.log("Melodic intro rescue requires clean drums; running Demucs only for this track")
                     try:
                         rescue = self.stem_provider.analyze(
                             source,
@@ -728,19 +663,13 @@ class TrackProcessor:
                     except StemSeparationError as error:
                         intro = None
                         redrum_intro = False
-                        intro_rejection_reason = (
-                            f"melodic intro needs a clean drum stem; Demucs unavailable: {error}"
-                        )
+                        intro_rejection_reason = f"melodic intro needs a clean drum stem; Demucs unavailable: {error}"
                     else:
                         drums_audio = rescue.drums_audio
                         instrumental_audio = rescue.instrumental_audio
                         stem_reliability = rescue.reliability
                         vocal_cache_hit = rescue.cache_hit
-                if (
-                    redrum_intro
-                    and drums_audio is not None
-                    and stem_reliability >= MINIMUM_REDRUM_STEM_RELIABILITY
-                ):
+                if redrum_intro and drums_audio is not None and stem_reliability >= MINIMUM_REDRUM_STEM_RELIABILITY:
                     high_quality_drums = drums_audio
                 elif redrum_intro:
                     intro = None
@@ -753,23 +682,23 @@ class TrackProcessor:
             if intro_rejection_reason:
                 progress.log(f"Intro disabled: {intro_rejection_reason}")
             elif intro_validation.shortened:
-                progress.log(
-                    f"Intro shortened to {config.maximum_repetitions} repeats by preset"
-                )
+                progress.log(f"Intro shortened to {config.maximum_repetitions} repeats by preset")
             if outro_rejection_reason:
                 progress.log(f"Outro disabled: {outro_rejection_reason}")
             elif outro_validation.shortened:
-                progress.log(
-                    f"Outro shortened to {config.maximum_repetitions} repeats by preset"
-                )
+                progress.log(f"Outro shortened to {config.maximum_repetitions} repeats by preset")
             progress.update(90, "Assembling extended edit")
             intro_uses_stems = not redrum_intro and should_use_instrumental(
-                intro, instrumental_audio, stem_reliability,
+                intro,
+                instrumental_audio,
+                stem_reliability,
                 config.minimum_stem_construction_reliability,
                 config.minimum_vocal_coverage_for_instrumental_edit,
             )
             outro_uses_stems = should_use_instrumental(
-                outro, instrumental_audio, stem_reliability,
+                outro,
+                instrumental_audio,
+                stem_reliability,
                 config.minimum_stem_construction_reliability,
                 config.minimum_vocal_coverage_for_instrumental_edit,
             )
@@ -779,8 +708,13 @@ class TrackProcessor:
                     f"outro {'instrumental stems' if outro_uses_stems else 'full mix'}"
                 )
             edited = create_extended_edit(
-                audio, None if redrum_intro else intro, outro, config.crossfade_ms, instrumental_audio,
-                stem_reliability, config.minimum_stem_construction_reliability,
+                audio,
+                None if redrum_intro else intro,
+                outro,
+                config.crossfade_ms,
+                instrumental_audio,
+                stem_reliability,
+                config.minimum_stem_construction_reliability,
                 config.minimum_vocal_coverage_for_instrumental_edit,
             )
             if config.insert_source_start is not None:
@@ -811,20 +745,14 @@ class TrackProcessor:
                     high_quality_drums,
                     instrumental_audio,
                 )
-                progress.log(
-                    "Redrum source: "
-                    + "Demucs drums stem"
-                )
+                progress.log("Redrum source: " + "Demucs drums stem")
             export_result = exporter.export(
                 ExportRequest(
                     source=source,
                     output=output,
                     edited_audio=edited,
                     original_audio=audio,
-                    wav_output=(
-                        output.parent.parent / WAV_OUTPUT_FOLDER_NAME /
-                        f"{source.stem}.wav"
-                    ),
+                    wav_output=(output.parent.parent / WAV_OUTPUT_FOLDER_NAME / f"{source.stem}.wav"),
                     analysis=analysis,
                     intro=intro,
                     outro=outro,
@@ -863,9 +791,7 @@ class TrackProcessor:
         return FileResult(
             source_name=source.name,
             output=output,
-            wav_output=(
-                output.parent.parent / WAV_OUTPUT_FOLDER_NAME / f"{source.stem}.wav"
-            ),
+            wav_output=(output.parent.parent / WAV_OUTPUT_FOLDER_NAME / f"{source.stem}.wav"),
             intro_candidates=intro_selection.options,
             outro_candidates=outro_selection.options,
             intro_review_reason=reviews.get("intro", (None, None))[0],
@@ -896,14 +822,11 @@ class TrackProcessor:
                     redrum_added_seconds(intro)
                     if redrum_intro
                     else intro.repetitions
-                    * (
-                        (intro.end - intro.start)
-                        - adaptive_crossfade_ms(intro, config.crossfade_ms) / 1000.0
-                    )
+                    * ((intro.end - intro.start) - adaptive_crossfade_ms(intro, config.crossfade_ms) / 1000.0)
                 )
-            ) if intro is not None and outro is not None else (
-                outro.start if outro is not None else None
-            ),
+            )
+            if intro is not None and outro is not None
+            else (outro.start if outro is not None else None),
             intro_output_start=intro_output_start,
             intro_output_end=intro_output_end,
             outro_output_start=outro_output_start,
@@ -927,20 +850,19 @@ class TrackProcessor:
             full_exported=export_result.full_exported,
             intro_candidate_rank=intro_candidate_rank,
             outro_candidate_rank=outro_candidate_rank,
-            automatic_intro_length=(
-                config.auto_select_bar_lengths and not config.intro_bars_locked
-            ),
-            automatic_outro_length=(
-                config.auto_select_bar_lengths and not config.outro_bars_locked
-            ),
+            automatic_intro_length=(config.auto_select_bar_lengths and not config.intro_bars_locked),
+            automatic_outro_length=(config.auto_select_bar_lengths and not config.outro_bars_locked),
             intro_rejection_reason=intro_rejection_reason,
             outro_rejection_reason=outro_rejection_reason,
             intro_fallback=intro_fallback,
             outro_fallback=outro_fallback,
             stem_reliability=(stem_reliability if config.use_stems or redrum_intro else None),
             intro_construction=(
-                "progressive Demucs redrum" if redrum_intro
-                else "instrumental stems" if intro_uses_stems else "full mix"
+                "progressive Demucs redrum"
+                if redrum_intro
+                else "instrumental stems"
+                if intro_uses_stems
+                else "full mix"
             ),
             outro_construction=("instrumental stems" if outro_uses_stems else "full mix"),
             output_duration=edited.duration,
@@ -950,8 +872,7 @@ class TrackProcessor:
             arrangement_sections=_arrangement_sections(analysis),
             stage_timings=tuple(stage_timings + [("Total", time.monotonic() - started)]),
         )
-    
-    
+
 
 def process_file(
     source: Path,

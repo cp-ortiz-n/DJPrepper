@@ -62,16 +62,11 @@ def _grid_fit(analysis: TrackAnalysis, time: float) -> float:
 
 
 def _slope(analysis: TrackAnalysis, end: float, seconds: float = 3.0) -> float:
-    mask = (analysis.frame_times >= max(0.0, end - seconds)) & (
-        analysis.frame_times <= end
-    )
+    mask = (analysis.frame_times >= max(0.0, end - seconds)) & (analysis.frame_times <= end)
     values = analysis.rms[mask]
     if len(values) < 3:
         return 0.0
-    return float(
-        np.polyfit(np.linspace(0.0, 1.0, len(values)), values, 1)[0]
-        / max(float(np.mean(values)), 0.08)
-    )
+    return float(np.polyfit(np.linspace(0.0, 1.0, len(values)), values, 1)[0] / max(float(np.mean(values)), 0.08))
 
 
 def assess_custom_insertion(
@@ -119,25 +114,35 @@ def assess_custom_insertion(
 
     energy = seam_score(analysis.rms)
     bass = seam_score(analysis.bass_rms)
-    rhythm = float(np.mean([
-        seam_score(analysis.percussion_rms),
-        seam_score(analysis.onset),
-    ]))
+    rhythm = float(
+        np.mean(
+            [
+                seam_score(analysis.percussion_rms),
+                seam_score(analysis.onset),
+            ]
+        )
+    )
 
     vocal_score: float | None = None
     if vocal_energy is not None and len(vocal_energy) == len(analysis.frame_times):
-        boundary_activity = np.mean([
-            _mean(vocal_energy, start_mask),
-            _mean(vocal_energy, end_mask),
-            _mean(vocal_energy, destination_mask),
-        ])
+        boundary_activity = np.mean(
+            [
+                _mean(vocal_energy, start_mask),
+                _mean(vocal_energy, end_mask),
+                _mean(vocal_energy, destination_mask),
+            ]
+        )
         vocal_score = float(np.clip(1.0 - boundary_activity / 0.55, 0.0, 1.0))
 
     buildup = max(0.0, _slope(analysis, source_end))
     structure = float(np.clip(1.0 - buildup * (0.60 if copies > 1 else 0.35), 0.0, 1.0))
     weighted = (
-        0.20 * grid + 0.23 * harmony + 0.18 * energy + 0.13 * bass
-        + 0.13 * rhythm + 0.08 * (vocal_score if vocal_score is not None else 0.72)
+        0.20 * grid
+        + 0.23 * harmony
+        + 0.18 * energy
+        + 0.13 * bass
+        + 0.13 * rhythm
+        + 0.08 * (vocal_score if vocal_score is not None else 0.72)
         + 0.05 * structure
     )
     score = int(round(100.0 * np.clip(weighted, 0.0, 1.0)))
@@ -165,8 +170,13 @@ def assess_custom_insertion(
         score = min(score, 59)
     verdict = "Strong placement" if score >= 75 else "Needs a listen" if score >= 60 else "Risky placement"
     return TransitionAssessment(
-        score, verdict, round(grid * 100), round(harmony * 100),
-        round(energy * 100), round(bass * 100), round(rhythm * 100),
+        score,
+        verdict,
+        round(grid * 100),
+        round(harmony * 100),
+        round(energy * 100),
+        round(bass * 100),
+        round(rhythm * 100),
         round(vocal_score * 100) if vocal_score is not None else None,
         tuple(warnings),
     )

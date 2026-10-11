@@ -40,8 +40,7 @@ def _candidate(
         "phrase_suitability": candidate.phrase_suitability,
         "transition_quality": candidate.transition_quality,
         "instrumental_construction_quality": (
-            candidate.instrumental_loop_quality
-            if construction == "instrumental stems" else None
+            candidate.instrumental_loop_quality if construction == "instrumental stems" else None
         ),
         "instrumentalness": candidate.instrumentalness,
         "unit_bars": candidate.unit_bars,
@@ -95,12 +94,8 @@ def _result_record(result: Any) -> dict[str, Any]:
         "preset": result.preset_name,
         "detected_style": result.detected_style,
         "preset_reason": result.preset_reason,
-        "section_profiles": [
-            asdict(profile) for profile in getattr(result, "section_profiles", ())
-        ],
-        "arrangement_sections": [
-            asdict(section) for section in getattr(result, "arrangement_sections", ())
-        ],
+        "section_profiles": [asdict(profile) for profile in getattr(result, "section_profiles", ())],
+        "arrangement_sections": [asdict(section) for section in getattr(result, "arrangement_sections", ())],
         "dj_readiness": {
             "intro_mixable_bars": result.intro_existing_mix_bars,
             "outro_mixable_bars": result.outro_existing_mix_bars,
@@ -113,15 +108,21 @@ def _result_record(result: Any) -> dict[str, Any]:
             "vocal_analysis": result.vocal_cache_hit,
         },
         "intro": _candidate(
-            result.intro, result.intro_construction, result.automatic_intro_length,
-            result.intro_output_start, result.intro_output_end,
+            result.intro,
+            result.intro_construction,
+            result.automatic_intro_length,
+            result.intro_output_start,
+            result.intro_output_end,
         ),
         "intro_disabled_reason": result.intro_rejection_reason,
         "intro_candidate_rank": result.intro_candidate_rank,
         "intro_fallback": result.intro_fallback,
         "outro": _candidate(
-            result.outro, result.outro_construction, result.automatic_outro_length,
-            result.outro_output_start, result.outro_output_end,
+            result.outro,
+            result.outro_construction,
+            result.automatic_outro_length,
+            result.outro_output_start,
+            result.outro_output_end,
         ),
         "outro_disabled_reason": result.outro_rejection_reason,
         "outro_candidate_rank": result.outro_candidate_rank,
@@ -135,9 +136,7 @@ def _result_record(result: Any) -> dict[str, Any]:
 
 def _atomic_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.stem}-", suffix=".tmp", dir=path.parent
-    )
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.stem}-", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(text)
@@ -171,7 +170,8 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
         else data["loop_quality"]
     )
     return [
-        f"### {label}", "",
+        f"### {label}",
+        "",
         f"- Source: {_clock(data['source_start'])}–{_clock(data['source_end'])}",
         f"- Extended WAV placement: {_clock(data.get('output_start'))}–{_clock(data.get('output_end'))}",
         f"- Phrase: {data.get('phrase_suitability', 0):.0f}% · "
@@ -179,21 +179,31 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
         f"{data.get('transition_quality', 0):.0f}%",
         f"- Construction: {data['construction']} · Splice: {data['splice_mode']}",
         f"- Material: {data['unit_bars']} unique bars · {data['extension_bars']} added bars · {data['copies']} copies",
-        f"- Section: {data['section']} ({_percent(data['section_confidence'])}) · Arrangement fit: {data['arrangement_fit']:+.0%}",
-        f"- Energy: {data['energy']} · Buildup: {_percent(data['buildup_risk'])} · Bass reset: {_percent(data['bass_reset_risk'])} · Context: {_percent(data['context_match'])}",
-        f"- Harmony: chord return {_percent(data['chord_return'])} · Resolution risk {_percent(data['resolution_risk'])}",
+        f"- Section: {data['section']} ({_percent(data['section_confidence'])}) · "
+        f"Arrangement fit: {data['arrangement_fit']:+.0%}",
+        f"- Energy: {data['energy']} · Buildup: {_percent(data['buildup_risk'])} · "
+        f"Bass reset: {_percent(data['bass_reset_risk'])} · Context: {_percent(data['context_match'])}",
+        f"- Harmony: chord return {_percent(data['chord_return'])} · "
+        f"Resolution risk {_percent(data['resolution_risk'])}",
         f"- Grid: local {_percent(data['local_grid'])} · Boundary {_percent(data['boundary_grid'])}",
-        f"- Regional context: {data.get('regional_style', 'unknown')} · Compatibility {_percent(data.get('regional_compatibility'))} · Boundary risk {_percent(data.get('regional_boundary_risk'))}",
-        f"- Vocals: coverage {_percent(data['vocal_coverage'])} · Boundary risk {_percent(data['vocal_boundary_risk'])}",
+        f"- Regional context: {data.get('regional_style', 'unknown')} · "
+        f"Compatibility {_percent(data.get('regional_compatibility'))} · "
+        f"Boundary risk {_percent(data.get('regional_boundary_risk'))}",
+        f"- Vocals: coverage {_percent(data['vocal_coverage'])} · "
+        f"Boundary risk {_percent(data['vocal_boundary_risk'])}",
         "",
     ]
 
 
 def _render_markdown(document: dict[str, Any]) -> str:
     lines = [
-        "# DJ Library Studio Processing Report", "",
-        f"Last report update: {document['updated_at']}", "",
-        "This report is persistent: skipped songs retain their last analysis, while rebuilt songs replace their previous record.", "",
+        "# DJ Library Studio Processing Report",
+        "",
+        f"Last report update: {document['updated_at']}",
+        "",
+        "This report is persistent: skipped songs retain their last analysis, while rebuilt songs replace "
+        "their previous record.",
+        "",
         "| Song | Status | BPM | Key | Intro | Outro | Mix cues |",
         "|---|---|---:|---|---|---|---|",
     ]
@@ -212,21 +222,33 @@ def _render_markdown(document: dict[str, Any]) -> str:
         lines.extend(["", f"## {record['source_name']}", ""])
         if record["status"] == "skipped":
             lines.extend(["> Skipped in the latest run; the analysis below is from the last successful update.", ""])
-        lines.extend([
-            f"- Output: `{record['output_name']}`",
-            f"- Source WAV: `{record.get('wav_name') or '—'}`",
-            f"- Last processed: {record.get('updated_at', 'unknown')} · Processing time: {_clock(record.get('processing_seconds'))}",
-            f"- BPM: {record.get('bpm', 0):.1f} · Key: {record.get('key') or '—'} ({_percent(record.get('key_confidence'))})",
-            f"- Beat grid: {_percent(record.get('beat_grid_confidence'))} · Tempo drift: {_percent(record.get('tempo_drift'))} · Downbeat continuity: {_percent(record.get('downbeat_continuity'))}",
-            f"- Groove: {record.get('groove') or '—'} · Timing: {record.get('timing') or '—'} · Preset: {record.get('preset') or 'default'}",
-            "- Section behavior: " + " · ".join(
-                f"{profile['name']} {profile['style']} ({_percent(profile['confidence'])})"
-                for profile in record.get("section_profiles", [])
-            ) if record.get("section_profiles") else "- Section behavior: unavailable for this older analysis",
-            f"- Existing mixing room: intro {record.get('dj_readiness', {}).get('intro_mixable_bars', 0)} bars · outro {record.get('dj_readiness', {}).get('outro_mixable_bars', 0)} bars",
-            f"- Suggested cues: mix in {_clock(record.get('mix_in'))} · mix out {_clock(record.get('mix_out'))}",
-            "",
-        ])
+        lines.extend(
+            [
+                f"- Output: `{record['output_name']}`",
+                f"- Source WAV: `{record.get('wav_name') or '—'}`",
+                f"- Last processed: {record.get('updated_at', 'unknown')} · "
+                f"Processing time: {_clock(record.get('processing_seconds'))}",
+                f"- BPM: {record.get('bpm', 0):.1f} · Key: {record.get('key') or '—'} "
+                f"({_percent(record.get('key_confidence'))})",
+                f"- Beat grid: {_percent(record.get('beat_grid_confidence'))} · "
+                f"Tempo drift: {_percent(record.get('tempo_drift'))} · "
+                f"Downbeat continuity: {_percent(record.get('downbeat_continuity'))}",
+                f"- Groove: {record.get('groove') or '—'} · Timing: {record.get('timing') or '—'} · "
+                f"Preset: {record.get('preset') or 'default'}",
+                "- Section behavior: "
+                + " · ".join(
+                    f"{profile['name']} {profile['style']} ({_percent(profile['confidence'])})"
+                    for profile in record.get("section_profiles", [])
+                )
+                if record.get("section_profiles")
+                else "- Section behavior: unavailable for this older analysis",
+                f"- Existing mixing room: intro "
+                f"{record.get('dj_readiness', {}).get('intro_mixable_bars', 0)} bars · outro "
+                f"{record.get('dj_readiness', {}).get('outro_mixable_bars', 0)} bars",
+                f"- Suggested cues: mix in {_clock(record.get('mix_in'))} · mix out {_clock(record.get('mix_out'))}",
+                "",
+            ]
+        )
         lines.extend(_candidate_markdown("Intro", record.get("intro"), record.get("intro_disabled_reason")))
         lines.extend(_candidate_markdown("Outro", record.get("outro"), record.get("outro_disabled_reason")))
     return "\n".join(lines).rstrip() + "\n"

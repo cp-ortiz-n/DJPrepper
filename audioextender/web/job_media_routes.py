@@ -36,7 +36,7 @@ BatchFileType = Literal[
 
 class BatchDownloadRequest(BaseModel):
     job_ids: list[int] = Field(min_length=1)
-    file_types: list[BatchFileType] = Field(default_factory=lambda: ["extended"], min_length=1)
+    file_types: list[BatchFileType] = Field(default_factory=lambda: ["extended"], min_length=1)  # type: ignore[arg-type]
 
 
 class TransitionScoreRequest(BaseModel):
@@ -75,9 +75,7 @@ def _job_or_404(dependencies: JobMediaRouteDependencies, job_id: int) -> dict:
     return job
 
 
-def _audio_response(
-    dependencies: JobMediaRouteDependencies, job_id: int, kind: str
-) -> FileResponse:
+def _audio_response(dependencies: JobMediaRouteDependencies, job_id: int, kind: str) -> FileResponse:
     job = _job_or_404(dependencies, job_id)
     field_name = {
         "extended": "extended_path",
@@ -99,9 +97,7 @@ def _audio_response(
     )
 
 
-def _batch_archive(
-    dependencies: JobMediaRouteDependencies, request: BatchDownloadRequest
-) -> FileResponse:
+def _batch_archive(dependencies: JobMediaRouteDependencies, request: BatchDownloadRequest) -> FileResponse:
     jobs: list[dict] = []
     for job_id in dict.fromkeys(request.job_ids):
         job = dependencies.repository().get(job_id)
@@ -203,21 +199,13 @@ def _waveform(dependencies: JobMediaRouteDependencies, job_id: int, kind: str) -
             sample_window = min(2048, max(256, int(info.samplerate * 0.025)))
             envelope = []
             with sf.SoundFile(path) as audio_file:
-                positions = np.linspace(
-                    0, max(0, info.frames - sample_window), target_points, dtype=np.int64
-                )
+                positions = np.linspace(0, max(0, info.frames - sample_window), target_points, dtype=np.int64)
                 for position in positions:
                     audio_file.seek(int(position))
                     block = audio_file.read(sample_window, dtype="float32", always_2d=True)
-                    envelope.append(
-                        float(np.sqrt(np.mean(np.square(block, dtype=np.float64))))
-                        if block.size
-                        else 0.0
-                    )
+                    envelope.append(float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))) if block.size else 0.0)
             scale = max(float(np.percentile(envelope, 98)), 1e-8) if envelope else 1.0
-            peaks = np.power(np.clip(np.asarray(envelope) / scale, 0.0, 1.0), 1.35).astype(
-                np.float32
-            )
+            peaks = np.power(np.clip(np.asarray(envelope) / scale, 0.0, 1.0), 1.35).astype(np.float32)
             duration = float(info.duration)
             cache.save_waveform(path, duration, peaks, target_points)
         else:

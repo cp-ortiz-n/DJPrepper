@@ -50,9 +50,7 @@ class BackgroundTaskRegistry(MutableMapping[str, dict[str, Any]]):
         with self.lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.path.with_suffix(".tmp")
-            temporary.write_text(
-                json.dumps(self._states, indent=2, default=str), encoding="utf-8"
-            )
+            temporary.write_text(json.dumps(self._states, indent=2, default=str), encoding="utf-8")
             temporary.replace(self.path)
 
     def __getitem__(self, key: str) -> dict[str, Any]:

@@ -3,13 +3,13 @@ import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
-import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, escapeHtml, fraction, notify, operationReceiptText, option, pct, renderTrackPagination, reportDate, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261003-1';
+import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, descriptorChipsMarkup, descriptorEditorMarkup, escapeHtml, fraction, inferDescriptorEditor, notify, openDescriptorEditorDialog, operationReceiptText, option, pct, renderTrackPagination, reportDate, saveDescriptorEditor, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261005-7';
 import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
-import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js?v=20261003-5';
-import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261003-3';
+import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js?v=20261005-5';
+import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261005-15';
 import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261003-1';
-import {createSetBuilderFeature} from './set-builder.js?v=20261004-5';
+import {createSetBuilderFeature} from './set-builder.js?v=20261009-10';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261003-1';
 
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
@@ -674,6 +674,7 @@ const musicFilesFeature = createMusicFilesFeature({
   bindGenreEditor, startKeyAnalysis,
   showView, loadJobs, closeDownloadedInspector, clock, stopNativeAudio, bindCompactAudio, bindLazyAudio,
   compactAudioIsWithin, stopCompactAudio, collapsedGenreFolders, bindGenreFolderState,
+  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
 });
 const {loadDownloadedLibrary} = musicFilesFeature;
 const djLibraryFeature = createDjLibraryFeature({
@@ -689,6 +690,7 @@ const djLibraryFeature = createDjLibraryFeature({
   ELECTRONIC_GENRE_CATEGORIES, LATIN_GENRE_CATEGORIES, libraryReprocessForm, reportDate,
   bindLazyAudio,
   syncControlUnlessEditing, captureTextFilter, operationReceiptText,
+  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
   loadAnalysis: (...args) => loadAnalysis(...args),
   jobAction: (...args) => jobAction(...args),
   jobElement: (...args) => jobElement(...args),
@@ -705,6 +707,7 @@ const setBuilderFeature = createSetBuilderFeature({
   energyBand, songEnergy, LIBRARY_ROLE_INFO,
   libraryRoles, timingProfile, vocalProfile, bindCompactAudio, compactAudioMarkup,
   stopNativeAudio, stopCompactAudio, notify,
+  descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor,
 });
 const {loadSetBuilder} = setBuilderFeature;
 

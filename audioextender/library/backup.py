@@ -57,8 +57,7 @@ class LibraryBackupService:
             cache = self.project / "cache"
             if cache.is_dir():
                 items.extend(
-                    (path, f"cache/{path.relative_to(cache).as_posix()}")
-                    for path in cache.rglob("*") if path.is_file()
+                    (path, f"cache/{path.relative_to(cache).as_posix()}") for path in cache.rglob("*") if path.is_file()
                 )
         return [(path, name) for path, name in items if path.is_file()]
 
@@ -137,9 +136,7 @@ class LibraryBackupService:
 
     def restore(self, archive: Path, pre_restore_destination: Path) -> dict:
         manifest = self.inspect(archive)
-        pre_restore = self.create(
-            pre_restore_destination, include_cache=False, retention=10
-        )
+        pre_restore = self.create(pre_restore_destination, include_cache=False, retention=10)
         with tempfile.TemporaryDirectory(prefix="audioextender-restore-") as temporary:
             staging = Path(temporary)
             with zipfile.ZipFile(archive) as bundle:
@@ -151,9 +148,12 @@ class LibraryBackupService:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_bytes(bundle.read(name))
             restored_database = staging / "state/audioextender.sqlite3"
-            with closing(sqlite3.connect(restored_database)) as source, closing(sqlite3.connect(self.database)) as target:
-                source.backup(target)
-                target.commit()
+            with (
+                closing(sqlite3.connect(restored_database)) as source_connection,
+                closing(sqlite3.connect(self.database)) as target_connection,
+            ):
+                source_connection.backup(target_connection)
+                target_connection.commit()
             mapping = {
                 "state/track_overrides.json": self.project / "track_overrides.json",
                 "state/processing_report.json": self.project / "output/reports/processing_report.json",
@@ -161,10 +161,10 @@ class LibraryBackupService:
                 "state/set_builder_catalog.json": self.project / "output/reports/set_builder_catalog.json",
             }
             for source_name, destination in mapping.items():
-                source = staging / source_name
-                if source.is_file():
+                staged_source = staging / source_name
+                if staged_source.is_file():
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(source, destination)
+                    os.replace(staged_source, destination)
             self._restore_tree(staging / "library/.audioextender", self.library_root / ".audioextender")
             self._restore_tree(staging / "library/_Playlist", self.library_root / "_Playlist")
             self._restore_tree(staging / "cache", self.project / "cache")
@@ -184,6 +184,8 @@ class LibraryBackupService:
 
     @staticmethod
     def _apply_retention(destination: Path, retention: int) -> None:
-        backups = sorted(destination.glob("AudioExtender-Backup-*.aexbackup"), key=lambda path: path.stat().st_mtime, reverse=True)
-        for expired in backups[max(1, retention):]:
+        backups = sorted(
+            destination.glob("AudioExtender-Backup-*.aexbackup"), key=lambda path: path.stat().st_mtime, reverse=True
+        )
+        for expired in backups[max(1, retention) :]:
             expired.unlink(missing_ok=True)

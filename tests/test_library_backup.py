@@ -30,8 +30,11 @@ class LibraryBackupServiceTests(unittest.TestCase):
             wav.parent.mkdir(parents=True)
             wav.write_bytes(b"not duplicated by backup")
             repository.upsert_downloaded_track(
-                title="Protected track", artist="DJ", file_path=wav,
-                genre="house", genre_category="Electronic / House / House",
+                title="Protected track",
+                artist="DJ",
+                file_path=wav,
+                genre="house",
+                genre_category="Electronic / House / House",
             )
             repository.replace_settings({"preset": "club"})
             overrides = project / "track_overrides.json"

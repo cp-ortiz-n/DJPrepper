@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import queue
 import re
 import shutil
@@ -22,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -64,22 +65,33 @@ from audioextender.library.relocation import LibraryRelocationCoordinator
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.web_jobs import WebJobService
 from audioextender.reporting.feedback import append_web_feedback
+from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.repositories.facade import JobRepository
+from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
+from audioextender.set_builder.intention_planner import IntentionPlanner
+from audioextender.set_builder.journey_planner import JourneyPlanner
+from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.preference_learning import (
+    DJPreferenceService,
+    JsonPreferenceStore,
+    PersonalizedCandidateRanker,
+)
+from audioextender.set_builder.review_service import SetReviewService
+from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
+from audioextender.web.descriptor_routes import (
+    DescriptorRouteDependencies,
+    create_descriptor_router,
+)
 from audioextender.web.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
-    CueEdit,  # noqa: F401 - compatibility re-export
-    CueEditRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
-    TransitionScoreRequest,  # noqa: F401 - compatibility re-export
     create_job_media_router,
 )
 from audioextender.web.job_routes import (
     JobQueueService,
-    ReorderRequest,  # noqa: F401 - compatibility re-export
     create_job_router,
 )
 from audioextender.web.library_maintenance_routes import (
-    IntegrityRepairRequest,  # noqa: F401 - compatibility re-export
     LibraryMaintenanceDependencies,
     LibraryMaintenanceService,
     create_library_maintenance_router,
@@ -94,9 +106,7 @@ from audioextender.web.metadata_batch_routes import (
     create_metadata_batch_router,
 )
 from audioextender.web.reporting_routes import (
-    KeyVerificationRequest,  # noqa: F401 - compatibility re-export
     ReportingRouteDependencies,
-    TrackFeedbackRequest,  # noqa: F401 - compatibility re-export
     create_reporting_router,
 )
 from audioextender.web.set_builder_routes import (
@@ -108,6 +118,9 @@ from audioextender.web.set_builder_routes import (
     preflight_paths,
     save_playlist_file,
 )
+from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
+from audioextender.web.set_preference_routes import create_set_preference_router
+from audioextender.web.set_review_routes import create_set_review_router
 from audioextender.web.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
@@ -150,6 +163,7 @@ DEFAULT_MUSIC_LIBRARY = str(Path.home() / "Music" / "AudioExtender Library")
 BACKUP_ROOT = OUTPUT / "backups"
 STORAGE_INVENTORY_SNAPSHOT = OUTPUT / "reports" / "storage_inventory.json"
 
+
 def create_app() -> FastAPI:
     """Create the FastAPI delivery shell; domain dependencies are composed below."""
     application = FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None)
@@ -167,16 +181,13 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+logger = logging.getLogger("uvicorn.error")
 repository = JobRepository(DATABASE)
-library_relocation = LibraryRelocationCoordinator(
-    repository, OUTPUT / "reports" / "library_relocation.json"
-)
+library_relocation = LibraryRelocationCoordinator(repository, OUTPUT / "reports" / "library_relocation.json")
 pending_backup_restores: dict[str, Path] = {}
 repository.recover_interrupted()
 service = WebJobService(PROJECT, repository)
-creative_commons_registry = BackgroundTaskRegistry(
-    OUTPUT / "reports" / "tasks" / "creative-commons.json"
-)
+creative_commons_registry = BackgroundTaskRegistry(OUTPUT / "reports" / "tasks" / "creative-commons.json")
 creative_commons_batches = creative_commons_registry
 creative_commons_batch_lock = creative_commons_registry.lock
 wav_tag_audit_refresh_lock = threading.Lock()
@@ -203,7 +214,9 @@ analytics_cache_lock = threading.Lock()
 analytics_cache: dict[str, object] = {"expires_at": 0.0, "payload": None}
 library_catalog_cache_lock = threading.Lock()
 library_catalog_cache: dict[str, object] = {
-    "signature": None, "facets_signature": None, "facets": None,
+    "signature": None,
+    "facets_signature": None,
+    "facets": None,
 }
 library_status_cache_lock = threading.Lock()
 library_status_cache: dict[str, object] = {"expires_at": 0.0, "payload": None}
@@ -220,6 +233,8 @@ performance_cache_stats: dict[str, dict[str, int]] = {
     "waveform": {"hits": 0, "misses": 0},
     "artwork_thumbnail": {"hits": 0, "misses": 0},
 }
+
+
 def _record_cache_result(cache_name: str, hit: bool) -> None:
     with performance_diagnostics_lock:
         counters = performance_cache_stats.setdefault(cache_name, {"hits": 0, "misses": 0})
@@ -272,7 +287,7 @@ def performance_diagnostics_report() -> dict:
 
     operations = []
     for operation, entries in grouped.items():
-        durations = sorted(float(entry["duration_ms"]) for entry in entries)
+        durations = sorted(float(cast(Any, entry["duration_ms"])) for entry in entries)
         percentile_index = round((len(durations) - 1) * 0.95)
         operations.append(
             {
@@ -281,11 +296,13 @@ def performance_diagnostics_report() -> dict:
                 "average_ms": round(sum(durations) / len(durations), 1),
                 "p95_ms": durations[percentile_index],
                 "maximum_ms": durations[-1],
-                "failures": sum(int(entry["status"]) >= 400 for entry in entries),
-                "average_response_bytes": round(sum(int(entry.get("response_bytes") or 0) for entry in entries) / len(entries)),
+                "failures": sum(int(cast(Any, entry["status"])) >= 400 for entry in entries),
+                "average_response_bytes": round(
+                    sum(int(cast(Any, entry.get("response_bytes") or 0)) for entry in entries) / len(entries)
+                ),
             }
         )
-    operations.sort(key=lambda item: (-float(item["p95_ms"]), -int(item["count"])))
+    operations.sort(key=lambda item: (-float(cast(Any, item["p95_ms"])), -int(cast(Any, item["count"]))))
 
     cache = []
     for name, counters in cache_snapshot.items():
@@ -297,8 +314,8 @@ def performance_diagnostics_report() -> dict:
                 "hit_rate": round(counters["hits"] * 100 / total, 1) if total else None,
             }
         )
-    slow = [sample for sample in reversed(samples) if float(sample["duration_ms"]) >= 250][:20]
-    durations = [float(sample["duration_ms"]) for sample in samples]
+    slow = [sample for sample in reversed(samples) if float(cast(Any, sample["duration_ms"])) >= 250][:20]
+    durations = [float(cast(Any, sample["duration_ms"])) for sample in samples]
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "window_size": len(samples),
@@ -336,11 +353,8 @@ WEB_DEFAULTS = {
     "maximum_vocal_boundary_risk_percent": round(MAXIMUM_VOCAL_BOUNDARY_RISK * 100, 6),
     "maximum_buildup_risk_percent": round(MAXIMUM_BUILDUP_RISK * 100, 6),
     "maximum_bass_reset_risk_percent": round(MAXIMUM_BASS_RESET_RISK * 100, 6),
-    "minimum_stem_reliability_percent": round(
-        MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, 6
-    ),
+    "minimum_stem_reliability_percent": round(MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, 6),
 }
-
 
 
 class PresetRequest(BaseModel):
@@ -569,10 +583,14 @@ def _library_location_summary() -> dict:
             outside.append({"id": int(track["id"]), "title": track.get("title"), "path": str(path)})
         locations[label] = locations.get(label, 0) + 1
     return {
-        "configured_root": str(root), "online": root.is_dir(),
-        "locations": [{"path": path, "tracks": count, "configured": path == str(root)}
-                      for path, count in sorted(locations.items(), key=lambda item: (-item[1], item[0]))],
-        "outside_count": len(outside), "outside_tracks": outside,
+        "configured_root": str(root),
+        "online": root.is_dir(),
+        "locations": [
+            {"path": path, "tracks": count, "configured": path == str(root)}
+            for path, count in sorted(locations.items(), key=lambda item: (-item[1], item[0]))
+        ],
+        "outside_count": len(outside),
+        "outside_tracks": outside,
     }
 
 
@@ -594,7 +612,6 @@ def _write_source_metadata(audio_path: Path, metadata: dict) -> Path:
     return destination
 
 
-
 @app.get("/api/presets")
 def list_presets() -> dict:
     return {"presets": _preset_payload()}
@@ -602,10 +619,7 @@ def list_presets() -> dict:
 
 @app.put("/api/presets/{current_name}")
 def save_preset(current_name: str, request: PresetRequest) -> dict:
-    if (
-        request.intro_bars not in SUPPORTED_BAR_COUNTS
-        or request.outro_bars not in SUPPORTED_BAR_COUNTS
-    ):
+    if request.intro_bars not in SUPPORTED_BAR_COUNTS or request.outro_bars not in SUPPORTED_BAR_COUNTS:
         raise HTTPException(400, "Unsupported bar count")
     state = _preset_state()
     if current_name != request.name and request.name in _available_presets():
@@ -615,9 +629,7 @@ def save_preset(current_name: str, request: PresetRequest) -> dict:
         if current_name in PRESETS and current_name not in state["hidden"]:
             state["hidden"].append(current_name)
     state["hidden"] = [name for name in state["hidden"] if name != request.name]
-    state["definitions"][request.name] = {
-        key: value for key, value in request.model_dump().items() if key != "name"
-    }
+    state["definitions"][request.name] = {key: value for key, value in request.model_dump().items() if key != "name"}
     _save_preset_state(state)
     return {"presets": _preset_payload()}
 
@@ -640,9 +652,7 @@ def restore_presets() -> dict:
     return {"presets": _preset_payload()}
 
 
-def _match_tracks_to_youtube(
-    tracks: list[dict], progress: Callable[..., None]
-) -> list[dict]:
+def _match_tracks_to_youtube(tracks: list[dict], progress: Callable[..., None]) -> list[dict]:
     import yt_dlp
 
     results: list[dict] = []
@@ -673,9 +683,7 @@ def _match_tracks_to_youtube(
                 {
                     **track,
                     "youtube_title": match.get("title"),
-                    "youtube_url": (
-                        f"https://www.youtube.com/watch?v={video_id}" if video_id else None
-                    ),
+                    "youtube_url": (f"https://www.youtube.com/watch?v={video_id}" if video_id else None),
                     "youtube_duration": match.get("duration"),
                     "match_score": match_score,
                     "match_warnings": warnings,
@@ -717,25 +725,15 @@ def _best_youtube_match(track: dict, entries: list[dict]) -> tuple[dict, int, li
     best: tuple[float, dict, list[str]] | None = None
     for entry in entries:
         candidate_title = _match_tokens(entry.get("title"))
-        candidate_context = (
-            candidate_title
-            | _match_tokens(entry.get("channel"))
-            | _match_tokens(entry.get("uploader"))
-        )
+        candidate_context = candidate_title | _match_tokens(entry.get("channel")) | _match_tokens(entry.get("uploader"))
         title_coverage = len(expected_title & candidate_title) / max(1, len(expected_title))
-        artist_coverage = (
-            len(expected_artist & candidate_context) / len(expected_artist)
-            if expected_artist
-            else 1.0
-        )
+        artist_coverage = len(expected_artist & candidate_context) / len(expected_artist) if expected_artist else 1.0
         extra_bad = (unwanted & candidate_title) - expected_all
         expected_versions = expected_title & version_tokens
         candidate_versions = candidate_title & version_tokens
         version_mismatch = bool(candidate_versions - expected_versions)
         duration = float(entry.get("duration") or 0)
-        duration_difference = (
-            abs(duration - expected_duration) if duration and expected_duration else 0
-        )
+        duration_difference = abs(duration - expected_duration) if duration and expected_duration else 0
         duration_tolerance = max(15.0, expected_duration * 0.12)
         duration_score = (
             max(0.0, 1.0 - duration_difference / max(duration_tolerance, 1.0))
@@ -845,7 +843,9 @@ def match_single_source(request: SourceMatchRequest) -> dict:
     except ImportError as error:
         raise HTTPException(500, "yt-dlp is not installed") from error
     query = " - ".join(part for part in (metadata["artist"], metadata["title"]) if part)
-    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True, "extract_flat": True, "playlistend": 8}) as searcher:
+    with yt_dlp.YoutubeDL(
+        {"quiet": True, "no_warnings": True, "skip_download": True, "extract_flat": True, "playlistend": 8}
+    ) as searcher:
         info = searcher.extract_info(f"ytsearch8:{query}", download=False) or {}
     match, score, warnings = _best_youtube_match(metadata, info.get("entries") or [])
     video_id = str(match.get("id") or "")
@@ -873,17 +873,11 @@ def _playlist_csv_tracks(contents: bytes) -> list[dict]:
         None,
     )
     artist_field = next(
-        (
-            fields[name]
-            for name in ("artist name(s)", "artist name", "artists", "artist")
-            if name in fields
-        ),
+        (fields[name] for name in ("artist name(s)", "artist name", "artists", "artist") if name in fields),
         None,
     )
     if title_field is None or artist_field is None:
-        raise ValueError(
-            "CSV needs track and artist columns, such as Track Name and Artist Name(s)"
-        )
+        raise ValueError("CSV needs track and artist columns, such as Track Name and Artist Name(s)")
     duration_field = fields.get("duration (ms)") or fields.get("duration_ms")
     tracks: list[dict] = []
     for row in reader:
@@ -916,9 +910,7 @@ def _safe_audio_name(value: str) -> str:
 
 def _generalized_genre(value: str) -> str:
     """Map detailed Spotify-style genres to practical, broad DJ library folders."""
-    genre = unicodedata.normalize("NFKD", str(value or "")).encode(
-        "ascii", "ignore"
-    ).decode().casefold()
+    genre = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().casefold()
     electronic_families = (
         ("Techno / Schranz", ("schranz",)),
         ("Techno / Hard Techno", ("hard techno",)),
@@ -944,7 +936,13 @@ def _generalized_genre(value: str) -> str:
         ("Bass / Future Bass", ("future bass",)),
         ("Bass / Dubstep", ("dubstep",)),
         ("Bass / Moombahton", ("moombahton",)),
-        ("Bass / Phonk", ("drift phonk", "phonk",)),
+        (
+            "Bass / Phonk",
+            (
+                "drift phonk",
+                "phonk",
+            ),
+        ),
         ("Bass / Deep Bass", ("deep bass", "bass music")),
         ("Drum & Bass / Liquid", ("liquid drum and bass", "liquid dnb")),
         ("Drum & Bass / Jungle", ("jungle",)),
@@ -970,7 +968,10 @@ def _generalized_genre(value: str) -> str:
         ("Merengue", ("merengue", "perico ripiao", "merengue urbano")),
         ("Zapateado", ("zapateado", "duranguense", "huapango", "quebradita")),
         ("Corridos", ("corrido", "corridos", "corridos tumbados")),
-        ("Regional Mexican", ("regional mexican", "musica mexicana", "banda", "norteno", "sierreno", "ranchera", "mariachi")),
+        (
+            "Regional Mexican",
+            ("regional mexican", "musica mexicana", "banda", "norteno", "sierreno", "ranchera", "mariachi"),
+        ),
         ("Bachata", ("bachata",)),
         ("Dembow", ("dembow",)),
         ("Latin Pop", ("latin pop", "pop latino")),
@@ -985,12 +986,7 @@ def _generalized_genre(value: str) -> str:
         ("Latin Hip-Hop", ("latin hip hop", "mexican hip hop")),
         ("Latin R&B", ("latin r&b",)),
     )
-    latin_matches = [
-        (genre.find(term), family)
-        for family, terms in latin_families
-        for term in terms
-        if term in genre
-    ]
+    latin_matches = [(genre.find(term), family) for family, terms in latin_families for term in terms if term in genre]
     if latin_matches:
         return f"Latin / {min(latin_matches, key=lambda match: match[0])[1]}"
     electronic_matches = [
@@ -1024,10 +1020,26 @@ def _generalized_genre(value: str) -> str:
 
 
 LATIN_SUBGENRES = {
-    "reggaeton", "salsa", "cumbia", "merengue", "zapateado", "corridos",
-    "regional mexican", "bachata", "dembow", "latin house", "latin pop",
-    "latin jazz", "bolero", "vallenato", "brazilian",
-    "flamenco", "latin rock", "latin indie", "latin ska", "latin hip-hop",
+    "reggaeton",
+    "salsa",
+    "cumbia",
+    "merengue",
+    "zapateado",
+    "corridos",
+    "regional mexican",
+    "bachata",
+    "dembow",
+    "latin house",
+    "latin pop",
+    "latin jazz",
+    "bolero",
+    "vallenato",
+    "brazilian",
+    "flamenco",
+    "latin rock",
+    "latin indie",
+    "latin ska",
+    "latin hip-hop",
     "latin r&b",
 }
 
@@ -1058,7 +1070,7 @@ def _normalize_genre_category(value: str) -> str:
         return "Latin / Other"
     if lowered in LATIN_SUBGENRES:
         label = lowered.title()
-        label = {"Reggaeton":"Reggaeton", "Dembow":"Dembow"}.get(label, label)
+        label = {"Reggaeton": "Reggaeton", "Dembow": "Dembow"}.get(label, label)
         return f"Latin / {label}"
     parts = [part.strip() for part in cleaned.split(" / ") if part.strip()]
     return " / ".join(_safe_folder_name(part) for part in parts) or "Other"
@@ -1073,9 +1085,7 @@ def _genre_directory(category: str) -> Path:
     return _music_library_root().joinpath(*_genre_path_parts(category))
 
 
-def _catalog_genre_category(
-    wav_path: Path, stored_category: str, detailed_genre: str
-) -> str:
+def _catalog_genre_category(wav_path: Path, stored_category: str, detailed_genre: str) -> str:
     """Resolve catalog genre without overwriting a user's folder choice."""
     stored = _normalize_genre_category(stored_category or "Other")
     if not detailed_genre.strip() and stored in {"Other", "Latin / Other"}:
@@ -1110,15 +1120,15 @@ def _cataloged_download_by_youtube_id(video_id: str) -> dict | None:
         (
             track
             for track in repository.list_downloaded_tracks()
-            if track.get("youtube_id") == video_id
-            and Path(str(track.get("file_path") or "")).is_file()
+            if track.get("youtube_id") == video_id and Path(str(track.get("file_path") or "")).is_file()
         ),
         None,
     )
 
 
 def _migrate_downloaded_catalog(
-    *, incremental: bool = False,
+    *,
+    incremental: bool = False,
     progress: Callable[[dict[str, int]], None] | None = None,
 ) -> dict[str, int]:
     """Catalog source records, skipping unchanged files during reconciliation."""
@@ -1163,9 +1173,7 @@ def _migrate_downloaded_catalog(
                 progress(dict(results))
             continue
         wav_path = (
-            source_record.with_name(
-                source_record.name.removesuffix(".source.json") + ".wav"
-            )
+            source_record.with_name(source_record.name.removesuffix(".source.json") + ".wav")
             if legacy_record
             else Path(str(metadata.get("file_path") or ""))
         )
@@ -1186,9 +1194,7 @@ def _migrate_downloaded_catalog(
         playlist_name = str(metadata.get("playlist_name") or "Legacy Imports")
         stored_category = str(metadata.get("genre_category") or "")
         detailed_genre = str(metadata.get("genre") or "")
-        category = _catalog_genre_category(
-            wav_path, stored_category, detailed_genre
-        )
+        category = _catalog_genre_category(wav_path, stored_category, detailed_genre)
         repository.upsert_downloaded_track(
             title=str(metadata.get("title") or wav_path.stem),
             artist=str(metadata.get("artist") or ""),
@@ -1221,9 +1227,7 @@ def _ensure_downloaded_catalog_migrated() -> None:
             return
         if repository.get_system_state("downloaded_catalog_migration") != DOWNLOADED_CATALOG_MIGRATION_VERSION:
             _migrate_downloaded_catalog()
-            repository.set_system_state(
-                "downloaded_catalog_migration", DOWNLOADED_CATALOG_MIGRATION_VERSION
-            )
+            repository.set_system_state("downloaded_catalog_migration", DOWNLOADED_CATALOG_MIGRATION_VERSION)
         downloaded_catalog_migrated = True
 
 
@@ -1233,7 +1237,9 @@ def _cache_track_artwork(artwork_url: str, destination: Path) -> str:
         return ""
     artwork_host = (urlparse(artwork_url).hostname or "").casefold()
     trusted_artwork = artwork_host in {
-        "image-cdn-ak.spotifycdn.com", "i.scdn.co", "i.ytimg.com"
+        "image-cdn-ak.spotifycdn.com",
+        "i.scdn.co",
+        "i.ytimg.com",
     } or artwork_host.endswith(".sndcdn.com")
     if not trusted_artwork:
         return ""
@@ -1254,9 +1260,7 @@ def _cache_track_artwork(artwork_url: str, destination: Path) -> str:
         return ""
 
 
-def _creative_commons_worker(
-    batch_id: str, tracks: list[CreativeCommonsMatch], playlist_name: str
-) -> None:
+def _creative_commons_worker(batch_id: str, tracks: list[CreativeCommonsMatch], playlist_name: str) -> None:
     report: dict[str, list[dict]] = {
         "downloaded": [],
         "already_downloaded": [],
@@ -1293,7 +1297,9 @@ def _creative_commons_worker(
                 # if "creative commons" not in license_name.casefold():
                 #    report["skipped_not_creative_commons"].append(base)
                 # else:
-                category = _generalized_genre(track.genre) if track.genre else _normalize_genre_category(track.genre_category)
+                category = (
+                    _generalized_genre(track.genre) if track.genre else _normalize_genre_category(track.genre_category)
+                )
                 base.update(genre=track.genre, genre_category=category)
                 output_name = _safe_audio_name(f"{track.artist} - {track.title}") + ".wav"
                 existing_download = _cataloged_download_by_youtube_id(video_id)
@@ -1314,9 +1320,7 @@ def _creative_commons_worker(
                     if source_record.exists():
                         try:
                             recorded_video_id = str(
-                                json.loads(source_record.read_text(encoding="utf-8")).get(
-                                    "youtube_id", ""
-                                )
+                                json.loads(source_record.read_text(encoding="utf-8")).get("youtube_id", "")
                             )
                         except (OSError, json.JSONDecodeError):
                             recorded_video_id = ""
@@ -1324,9 +1328,13 @@ def _creative_commons_worker(
                         base["filename"] = output_name
                         report["already_downloaded"].append(base)
                         repository.upsert_downloaded_track(
-                            title=track.title, artist=track.artist, file_path=destination,
-                            genre=track.genre, genre_category=category,
-                            spotify_uri=track.spotify_uri, youtube_id=video_id,
+                            title=track.title,
+                            artist=track.artist,
+                            file_path=destination,
+                            genre=track.genre,
+                            genre_category=category,
+                            spotify_uri=track.spotify_uri,
+                            youtube_id=video_id,
                             youtube_url=track.url,
                             duration_seconds=float(info.get("duration") or 0) or None,
                             artwork_url=artwork_url,
@@ -1341,24 +1349,18 @@ def _creative_commons_worker(
                         original_stem = destination.stem
                         copy_number = 2
                         while destination.exists():
-                            destination = destination.with_name(
-                                f"{original_stem} ({copy_number}){destination.suffix}"
-                            )
+                            destination = destination.with_name(f"{original_stem} ({copy_number}){destination.suffix}")
                             copy_number += 1
                         output_name = destination.name
                         source_record = _source_metadata_path(destination)
-                    with tempfile.TemporaryDirectory(
-                        prefix="audioextender-cc-import-"
-                    ) as temporary:
+                    with tempfile.TemporaryDirectory(prefix="audioextender-cc-import-") as temporary:
                         options = {
                             "format": "bestaudio/best",
                             "outtmpl": str(Path(temporary) / "source.%(ext)s"),
                             "noplaylist": True,
                             "quiet": True,
                             "no_warnings": True,
-                            "postprocessors": [
-                                {"key": "FFmpegExtractAudio", "preferredcodec": "wav"}
-                            ],
+                            "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
                         }
                         with yt_dlp.YoutubeDL(options) as downloader:
                             downloader.extract_info(track.url, download=True)
@@ -1402,9 +1404,7 @@ def _creative_commons_worker(
                     artwork_path=_cache_track_artwork(artwork_url, destination),
                     playlist_name=track_playlist,
                 )
-                repository.resolve_import_failure(
-                    playlist_name=track_playlist, title=track.title, artist=track.artist
-                )
+                repository.resolve_import_failure(playlist_name=track_playlist, title=track.title, artist=track.artist)
             except Exception as error:
                 report["failed"].append({**base, "error": str(error)})
                 repository.record_import_failure(
@@ -1446,9 +1446,7 @@ def _creative_commons_worker(
             )
     except Exception as error:
         with creative_commons_batch_lock:
-            creative_commons_batches[batch_id].update(
-                status="failed", stage="Batch import failed", error=str(error)
-            )
+            creative_commons_batches[batch_id].update(status="failed", stage="Batch import failed", error=str(error))
 
 
 @app.post("/api/imports/creative-commons", status_code=202)
@@ -1477,9 +1475,7 @@ def download_creative_commons_batch(batch_id: str) -> FileResponse:
     if not included:
         raise HTTPException(404, "No verified Creative Commons WAV files are available")
     safe_playlist = _safe_folder_name(playlist_name)
-    temporary = tempfile.NamedTemporaryFile(
-        prefix=f"{safe_playlist}-", suffix="-WAVs.zip", delete=False
-    )
+    temporary = tempfile.NamedTemporaryFile(prefix=f"{safe_playlist}-", suffix="-WAVs.zip", delete=False)
     temporary.close()
     path = Path(temporary.name)
     added = 0
@@ -1487,11 +1483,11 @@ def download_creative_commons_batch(batch_id: str) -> FileResponse:
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
             for item in included:
                 category = str(item.get("genre_category") or "Other")
-                catalog_track = _cataloged_download_by_youtube_id(
-                    str(item.get("youtube_id") or "")
-                )
-                source = Path(str(catalog_track.get("file_path"))) if catalog_track else _music_library_root().joinpath(
-                    *_genre_path_parts(category), str(item.get("filename") or "")
+                catalog_track = _cataloged_download_by_youtube_id(str(item.get("youtube_id") or ""))
+                source = (
+                    Path(str(catalog_track.get("file_path")))
+                    if catalog_track
+                    else _music_library_root().joinpath(*_genre_path_parts(category), str(item.get("filename") or ""))
                 )
                 if catalog_track:
                     category = str(catalog_track.get("genre_category") or category)
@@ -1547,9 +1543,7 @@ def list_import_failures() -> dict:
     return {"failures": failures, "total": len(failures)}
 
 
-def _original_import_metadata(
-    playlist_name: str, title: str, artist: str
-) -> dict[str, str]:
+def _original_import_metadata(playlist_name: str, title: str, artist: str) -> dict[str, str]:
     """Recover source metadata from the first playlist report for a failed track."""
     report_root = OUTPUT / "reports" / "imports"
     wanted_title = title.strip().casefold()
@@ -1557,7 +1551,8 @@ def _original_import_metadata(
     preferred = report_root / _safe_folder_name(playlist_name)
     candidates = [*preferred.glob("*Import Report.json")]
     candidates.extend(
-        path for path in report_root.glob("**/*Import Report.json")
+        path
+        for path in report_root.glob("**/*Import Report.json")
         if path.parent != preferred and path.parent.name != "Retry imports"
     )
     for report_path in candidates:
@@ -1576,8 +1571,7 @@ def _original_import_metadata(
                     return {
                         "genre": genre,
                         "genre_category": (
-                            _generalized_genre(genre) if genre else
-                            _normalize_genre_category(category or "Other")
+                            _generalized_genre(genre) if genre else _normalize_genre_category(category or "Other")
                         ),
                     }
     return {"genre": "", "genre_category": "Other"}
@@ -1590,9 +1584,14 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
 
         tracks: list[CreativeCommonsMatch] = []
         options = {
-            "quiet": True, "no_warnings": True, "skip_download": True,
-            "extract_flat": True, "playlistend": 8,
-            "socket_timeout": 15, "retries": 1, "extractor_retries": 1,
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "extract_flat": True,
+            "playlistend": 8,
+            "socket_timeout": 15,
+            "retries": 1,
+            "extractor_retries": 1,
         }
         with yt_dlp.YoutubeDL(options) as searcher:
             for index, failure in enumerate(failures, start=1):
@@ -1613,16 +1612,20 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
                         title=str(failure.get("title") or "Unknown track"),
                         artist=str(failure.get("artist") or ""),
                         spotify_uri=str(failure.get("spotify_uri") or ""),
-                        youtube_url="", error="No reliable replacement source was found",
+                        youtube_url="",
+                        error="No reliable replacement source was found",
                     )
                     continue
                 artwork_url = ""
                 spotify_uri = str(failure.get("spotify_uri") or "")
                 if spotify_uri.startswith("spotify:track:"):
                     try:
-                        artwork_url = str(_spotify_source_metadata(
-                            "https://open.spotify.com/track/" + spotify_uri.rsplit(":", 1)[-1]
-                        ).get("thumbnail_url") or "")
+                        artwork_url = str(
+                            _spotify_source_metadata(
+                                "https://open.spotify.com/track/" + spotify_uri.rsplit(":", 1)[-1]
+                            ).get("thumbnail_url")
+                            or ""
+                        )
                     except HTTPException:
                         pass
                 original_metadata = _original_import_metadata(
@@ -1630,16 +1633,18 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
                     str(failure.get("title") or "Unknown track"),
                     str(failure.get("artist") or "Unknown artist"),
                 )
-                tracks.append(CreativeCommonsMatch(
-                    url=source_url,
-                    title=str(failure.get("title") or "Unknown track"),
-                    artist=str(failure.get("artist") or "Unknown artist"),
-                    spotify_uri=spotify_uri,
-                    genre=original_metadata["genre"],
-                    genre_category=original_metadata["genre_category"],
-                    artwork_url=artwork_url,
-                    playlist_name=str(failure.get("playlist_name") or "Imported Playlist"),
-                ))
+                tracks.append(
+                    CreativeCommonsMatch(
+                        url=source_url,
+                        title=str(failure.get("title") or "Unknown track"),
+                        artist=str(failure.get("artist") or "Unknown artist"),
+                        spotify_uri=spotify_uri,
+                        genre=original_metadata["genre"],
+                        genre_category=original_metadata["genre_category"],
+                        artwork_url=artwork_url,
+                        playlist_name=str(failure.get("playlist_name") or "Imported Playlist"),
+                    )
+                )
                 with creative_commons_batch_lock:
                     creative_commons_batches[batch_id].update(
                         stage=f"Refreshing sources {index} of {len(failures)}",
@@ -1648,7 +1653,9 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
         if not tracks:
             with creative_commons_batch_lock:
                 creative_commons_batches[batch_id].update(
-                    status="complete", stage="No retryable sources were found", progress=100,
+                    status="complete",
+                    stage="No retryable sources were found",
+                    progress=100,
                     counts={"downloaded": 0, "already_downloaded": 0, "failed": len(failures)},
                 )
             return
@@ -1663,10 +1670,7 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
 @app.post("/api/imports/failures/retry", status_code=202)
 def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
     wanted = set(request.failure_ids)
-    failures = [
-        item for item in repository.list_import_failures()
-        if int(item["id"]) in wanted
-    ]
+    failures = [item for item in repository.list_import_failures() if int(item["id"]) in wanted]
     if len(failures) != len(wanted):
         raise HTTPException(404, "One or more import issues are no longer available")
     return creative_commons_service.start_retry(failures)
@@ -1690,8 +1694,14 @@ def _probe_local_audio(path: Path) -> dict:
     """Read common file tags without decoding the complete recording."""
     completed = subprocess.run(
         [
-            "ffprobe", "-v", "error", "-show_entries", "format=duration:format_tags",
-            "-of", "json", str(path),
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration:format_tags",
+            "-of",
+            "json",
+            str(path),
         ],
         check=True,
         capture_output=True,
@@ -1724,21 +1734,21 @@ def _authorized_import_worker(import_id: str, request: AuthorizedImportRequest) 
 
 def _downloaded_track_payload(track: dict) -> dict:
     suggested_genre = _generalized_genre(str(track.get("genre") or ""))
-    current_genre = _normalize_genre_category(
-        str(track.get("genre_category") or "Other")
-    )
+    current_genre = _normalize_genre_category(str(track.get("genre_category") or "Other"))
+    try:
+        descriptors = json.loads(str(track.get("descriptors_json") or "[]"))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        descriptors = []
     payload = {
-        key: value
-        for key, value in track.items()
-        if key not in {"file_path", "artwork_path"}
+        key: value for key, value in track.items() if key not in {"file_path", "artwork_path", "descriptors_json"}
     } | {
         "absolute_path": str(Path(str(track.get("file_path") or "")).expanduser().resolve()),
         "available": Path(track["file_path"]).is_file(),
-        "artwork_available": bool(track.get("artwork_path"))
-        and Path(str(track["artwork_path"])).is_file(),
+        "artwork_available": bool(track.get("artwork_path")) and Path(str(track["artwork_path"])).is_file(),
         "genre_category": current_genre,
         "suggested_genre": suggested_genre,
         "needs_genre": current_genre in {"Other", "Latin / Other"},
+        "descriptors": descriptors,
     }
     return payload
 
@@ -1753,10 +1763,8 @@ def _run_audio_quality_batch(batch_id: str) -> None:
                 raise FileNotFoundError("Audio file is unavailable")
             result = analyze_audio_quality(
                 path,
-                window_seconds=.5,
-                source_is_transcoded_lossy=bool(
-                    track.get("youtube_id") or track.get("youtube_url")
-                ),
+                window_seconds=0.5,
+                source_is_transcoded_lossy=bool(track.get("youtube_id") or track.get("youtube_url")),
             ).to_dict()
             return track, path, result, ""
         except (OSError, RuntimeError, ValueError) as exc:
@@ -1787,18 +1795,30 @@ def _run_audio_quality_batch(batch_id: str) -> None:
 @app.post("/api/downloaded-library/audio-quality")
 def start_audio_quality_scan() -> dict:
     with audio_quality_batch_lock:
-        active = next(({"batch_id": key, **value} for key, value in audio_quality_batches.items()
-                       if value["status"] == "processing"), None)
+        active = next(
+            (
+                {"batch_id": key, **value}
+                for key, value in audio_quality_batches.items()
+                if value["status"] == "processing"
+            ),
+            None,
+        )
         if active:
             return active
         total = len(repository.list_downloaded_tracks())
         batch_id = uuid.uuid4().hex
         audio_quality_batches[batch_id] = {
-            "status": "processing", "stage": "Analyzing audio quality", "total": total,
-            "processed": 0, "failed": 0, "current": "", "errors": [],
+            "status": "processing",
+            "stage": "Analyzing audio quality",
+            "total": total,
+            "processed": 0,
+            "failed": 0,
+            "current": "",
+            "errors": [],
         }
-    threading.Thread(target=_run_audio_quality_batch, args=(batch_id,), daemon=True,
-                     name=f"audio-quality-{batch_id[:8]}").start()
+    threading.Thread(
+        target=_run_audio_quality_batch, args=(batch_id,), daemon=True, name=f"audio-quality-{batch_id[:8]}"
+    ).start()
     return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
 
 
@@ -1857,9 +1877,20 @@ def _artwork_thumbnail_worker() -> None:
             thumbnail.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(
                 [
-                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
-                    "-vf", f"scale={size}:{size}:force_original_aspect_ratio=increase,crop={size}:{size}",
-                    "-frames:v", "1", "-q:v", "4", str(temporary),
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(source),
+                    "-vf",
+                    f"scale={size}:{size}:force_original_aspect_ratio=increase,crop={size}:{size}",
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "4",
+                    str(temporary),
                 ],
                 check=True,
                 timeout=15,
@@ -1891,25 +1922,56 @@ def downloaded_library(
     if paged:
         facets = repository.downloaded_catalog_facets()
         tracks, filtered_total = repository.page_downloaded_tracks(
-            page=page, page_size=page_size, search=search, genre=genre,
-            detailed_genre=detailed_genre, playlist=playlist, analysis=analysis,
-            artwork=artwork, quality=quality, sort=sort,
+            page=page,
+            page_size=page_size,
+            search=search,
+            genre=genre,
+            detailed_genre=detailed_genre,
+            playlist=playlist,
+            analysis=analysis,
+            artwork=artwork,
+            quality=quality,
+            sort=sort,
         )
-        if analysis in {"complete", "active", "attention", "missing_title", "missing_artist", "missing_genre", "missing_artwork", "unmapped_genre", "broad_genre"}:
+        if analysis in {
+            "complete",
+            "active",
+            "attention",
+            "missing_title",
+            "missing_artist",
+            "missing_genre",
+            "missing_artwork",
+            "unmapped_genre",
+            "broad_genre",
+        }:
             analyzable_total = 0
         else:
             _, analyzable_total = repository.page_downloaded_tracks(
-                page=1, page_size=1, search=search, genre=genre,
-                detailed_genre=detailed_genre, playlist=playlist, artwork=artwork,
-                quality=quality, analysis=("failed" if analysis == "failed" else "needs"), sort=sort,
+                page=1,
+                page_size=1,
+                search=search,
+                genre=genre,
+                detailed_genre=detailed_genre,
+                playlist=playlist,
+                artwork=artwork,
+                quality=quality,
+                analysis=("failed" if analysis == "failed" else "needs"),
+                sort=sort,
             )
         total_pages = max(1, (filtered_total + page_size - 1) // page_size)
         if page > total_pages:
             page = total_pages
             tracks, filtered_total = repository.page_downloaded_tracks(
-                page=page, page_size=page_size, search=search, genre=genre,
-                detailed_genre=detailed_genre, playlist=playlist,
-                analysis=analysis, artwork=artwork, quality=quality, sort=sort,
+                page=page,
+                page_size=page_size,
+                search=search,
+                genre=genre,
+                detailed_genre=detailed_genre,
+                playlist=playlist,
+                analysis=analysis,
+                artwork=artwork,
+                quality=quality,
+                sort=sort,
             )
         genres: dict[str, int] = {}
         for raw_genre, count in facets["genres"].items():
@@ -1918,14 +1980,15 @@ def downloaded_library(
         playlists = facets["playlists"]
     else:
         tracks = repository.list_downloaded_tracks_with_jobs()
-        genres: dict[str, int] = {}
-        playlists: dict[str, int] = {}
+        genres = {}
+        playlists = {}
         for track in tracks:
             track_genre = _normalize_genre_category(str(track.get("genre_category") or "Other"))
             genres[track_genre] = genres.get(track_genre, 0) + 1
             for track_playlist in track.get("playlists", []):
                 playlists[track_playlist] = playlists.get(track_playlist, 0) + 1
         filtered_total = len(tracks)
+
         def review_flags(track: dict) -> dict[str, bool]:
             title = str(track.get("title") or "").strip().casefold()
             artist = str(track.get("artist") or "").strip().casefold()
@@ -1939,6 +2002,7 @@ def downloaded_library(
                 "unmapped_genre": bool(detailed_genre) and category == "Other",
                 "broad_genre": category.endswith(" / General") or category.endswith(" / Other"),
             }
+
         track_review_flags = [review_flags(track) for track in tracks]
         facets = {
             "total": len(tracks),
@@ -1952,13 +2016,13 @@ def downloaded_library(
         }
         total_pages = 1
         analyzable_total = sum(
-            (track.get("analysis_status") or "not_analyzed")
-            not in {"queued", "processing", "complete"}
+            (track.get("analysis_status") or "not_analyzed") not in {"queued", "processing", "complete"}
             for track in tracks
         )
     return {
         "tracks": [
-            _downloaded_track_payload(track) | {
+            _downloaded_track_payload(track)
+            | {
                 "analysis_status": track.get("analysis_status") or "not_analyzed",
             }
             for track in tracks
@@ -1969,10 +2033,12 @@ def downloaded_library(
         "playlists": dict(sorted(playlists.items())),
         "review_states": facets.get("review_states", {}),
         "pagination": {
-            "page": page, "page_size": page_size,
+            "page": page,
+            "page_size": page_size,
             "filtered_total": filtered_total,
             "analyzable_total": analyzable_total,
-            "catalog_total": facets["total"], "total_pages": total_pages,
+            "catalog_total": facets["total"],
+            "total_pages": total_pages,
         },
     }
 
@@ -2034,9 +2100,7 @@ def remove_downloaded_track(track_id: int) -> dict:
 @app.delete("/api/downloaded-library/tracks")
 def remove_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     requested = set(request.track_ids)
-    removed = sum(
-        1 for track_id in requested if repository.delete_downloaded_track(track_id)
-    )
+    removed = sum(1 for track_id in requested if repository.delete_downloaded_track(track_id))
     return {"removed": removed, "requested": len(requested)}
 
 
@@ -2058,9 +2122,7 @@ def downloaded_duplicate_candidates() -> dict:
 @app.post("/api/downloaded-library/merge-duplicate")
 def merge_downloaded_duplicate(request: DuplicateMergeRequest) -> dict:
     try:
-        track = repository.merge_downloaded_tracks(
-            request.survivor_id, request.duplicate_id
-        )
+        track = repository.merge_downloaded_tracks(request.survivor_id, request.duplicate_id)
     except KeyError as error:
         raise HTTPException(404, "One or more tracks were not found") from error
     except ValueError as error:
@@ -2086,24 +2148,17 @@ def downloaded_track_family(track_id: int) -> dict:
         raise HTTPException(404, "Track was not found") from error
     return {
         "family": [_downloaded_track_payload(track) for track in family],
-        "suggestions": [
-            {**item, "track": _downloaded_track_payload(item["track"])}
-            for item in suggestions
-        ],
+        "suggestions": [{**item, "track": _downloaded_track_payload(item["track"])} for item in suggestions],
     }
 
 
 @app.post("/api/downloaded-library/tracks/{track_id}/link-version")
 def link_downloaded_track_version(track_id: int, request: TrackFamilyLinkRequest) -> dict:
-    target_track_id = request.target_track_id or repository.track_id_for_identity(
-        request.target_identity
-    )
+    target_track_id = request.target_track_id or repository.track_id_for_identity(request.target_identity)
     if target_track_id is None:
         raise HTTPException(404, "Target track ID was not found")
     try:
-        track = repository.link_recording_version(
-            track_id, target_track_id, request.relationship
-        )
+        track = repository.link_recording_version(track_id, target_track_id, request.relationship)
     except KeyError as error:
         raise HTTPException(404, "One or more tracks were not found") from error
     except ValueError as error:
@@ -2121,9 +2176,7 @@ def _downloaded_archive(tracks: list[dict], name: str) -> FileResponse:
     available = [track for track in tracks if Path(track["file_path"]).is_file()]
     if not available:
         raise HTTPException(404, "No downloaded WAV files are available for this selection")
-    handle = tempfile.NamedTemporaryFile(
-        prefix="audioextender-downloads-", suffix=".zip", delete=False
-    )
+    handle = tempfile.NamedTemporaryFile(prefix="audioextender-downloads-", suffix=".zip", delete=False)
     archive = Path(handle.name)
     handle.close()
     root_name = _safe_folder_name(name)
@@ -2150,9 +2203,7 @@ def _downloaded_archive(tracks: list[dict], name: str) -> FileResponse:
 @app.post("/api/downloaded-library/download")
 def download_selected_tracks(request: DownloadedTracksRequest) -> FileResponse:
     wanted = set(request.track_ids)
-    tracks = [
-        track for track in repository.list_downloaded_tracks() if track["id"] in wanted
-    ]
+    tracks = [track for track in repository.list_downloaded_tracks() if track["id"] in wanted]
     if len(tracks) != len(wanted):
         raise HTTPException(404, "One or more downloaded tracks were not found")
     return _downloaded_archive(tracks, "Selected Downloaded Tracks")
@@ -2161,9 +2212,7 @@ def download_selected_tracks(request: DownloadedTracksRequest) -> FileResponse:
 @app.post("/api/downloaded-library/analyze", status_code=202)
 def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     wanted = set(request.track_ids)
-    tracks = [
-        track for track in repository.list_downloaded_tracks() if track["id"] in wanted
-    ]
+    tracks = [track for track in repository.list_downloaded_tracks() if track["id"] in wanted]
     if len(tracks) != len(wanted):
         raise HTTPException(404, "One or more downloaded tracks were not found")
     return _queue_downloaded_analysis(tracks)
@@ -2172,10 +2221,7 @@ def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
 @app.post("/api/downloaded-library/reanalyze", status_code=202)
 def reanalyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     wanted = set(request.track_ids)
-    tracks = [
-        track for track in repository.list_downloaded_tracks_with_jobs()
-        if track["id"] in wanted
-    ]
+    tracks = [track for track in repository.list_downloaded_tracks_with_jobs() if track["id"] in wanted]
     if len(tracks) != len(wanted):
         raise HTTPException(404, "One or more downloaded tracks were not found")
     return _queue_downloaded_analysis(tracks, force=True)
@@ -2185,7 +2231,8 @@ def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> di
     existing_paths = {
         str(Path(job["source_path"]).resolve())
         for job in repository.list_jobs(limit=10_000)
-        if job["status"] in ({"queued", "processing", "paused"} if force else {"queued", "processing", "paused", "complete"})
+        if job["status"]
+        in ({"queued", "processing", "paused"} if force else {"queued", "processing", "paused", "complete"})
     }
     effective = _effective_settings()
     created: list[int] = []
@@ -2217,8 +2264,7 @@ def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> di
                 "review_candidates": False,
             },
             parent_job_id=(
-                int(track["completed_library_job_id"])
-                if force and track.get("completed_library_job_id") else None
+                int(track["completed_library_job_id"]) if force and track.get("completed_library_job_id") else None
             ),
         )
         created.append(job_id)
@@ -2232,10 +2278,15 @@ def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest)
     if request.analysis in {"complete", "active"}:
         return {"job_ids": [], "skipped": [], "unavailable": [], "matched": 0}
     tracks, _ = repository.page_downloaded_tracks(
-        page=1, page_size=10_000_000, search=request.search, genre=request.genre,
-        detailed_genre=request.detailed_genre, playlist=request.playlist,
+        page=1,
+        page_size=10_000_000,
+        search=request.search,
+        genre=request.genre,
+        detailed_genre=request.detailed_genre,
+        playlist=request.playlist,
         analysis=("failed" if request.analysis == "failed" else "needs"),
-        quality=request.quality, sort=request.sort,
+        quality=request.quality,
+        sort=request.sort,
     )
     result = _queue_downloaded_analysis(tracks)
     return {**result, "matched": len(tracks)}
@@ -2244,9 +2295,15 @@ def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest)
 @app.post("/api/downloaded-library/reanalyze-matching", status_code=202)
 def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest) -> dict:
     tracks, _ = repository.page_downloaded_tracks(
-        page=1, page_size=10_000_000, search=request.search, genre=request.genre,
-        detailed_genre=request.detailed_genre, playlist=request.playlist,
-        analysis=request.analysis, quality=request.quality, sort=request.sort,
+        page=1,
+        page_size=10_000_000,
+        search=request.search,
+        genre=request.genre,
+        detailed_genre=request.detailed_genre,
+        playlist=request.playlist,
+        analysis=request.analysis,
+        quality=request.quality,
+        sort=request.sort,
     )
     result = _queue_downloaded_analysis(tracks, force=True)
     return {**result, "matched": len(tracks)}
@@ -2255,9 +2312,7 @@ def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterReques
 @app.patch("/api/downloaded-library/genre")
 def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
     try:
-        result = track_metadata_mutations.change_genre(
-            request.track_ids, request.genre_category
-        )
+        result = track_metadata_mutations.change_genre(request.track_ids, request.genre_category)
         return {
             **result,
             "receipt": operation_receipt(
@@ -2313,14 +2368,14 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
         if moved:
             shutil.move(str(source), str(destination))
         write_wav_metadata(
-            destination, title=title, artist=artist,
-            genre=category, album=playlist_name,
+            destination,
+            title=title,
+            artist=artist,
+            genre=category,
+            album=playlist_name,
         )
         artwork_path = str(track.get("artwork_path") or "")
-        if artwork_url and (
-            artwork_url != str(track.get("artwork_url") or "")
-            or not Path(artwork_path).is_file()
-        ):
+        if artwork_url and (artwork_url != str(track.get("artwork_url") or "") or not Path(artwork_path).is_file()):
             artwork_path = _cache_track_artwork(artwork_url, destination)
             if not artwork_path:
                 raise HTTPException(
@@ -2328,23 +2383,31 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
                     "Artwork could not be downloaded. Use a direct Spotify or YouTube image URL.",
                 )
         metadata = {
-            **track, "title": title, "artist": artist, "genre": detailed_genre,
-            "genre_category": category, "playlist_name": playlist_name,
-            "playlists": [playlist_name], "file_path": str(destination.resolve()),
+            **track,
+            "title": title,
+            "artist": artist,
+            "genre": detailed_genre,
+            "genre_category": category,
+            "playlist_name": playlist_name,
+            "playlists": [playlist_name],
+            "file_path": str(destination.resolve()),
             "filename": destination.name,
             "artwork_url": artwork_url or str(track.get("artwork_url") or ""),
             "artwork_path": artwork_path,
         }
         _write_source_metadata(destination, metadata)
         repository.update_downloaded_track_metadata(
-            track_id=track_id, old_path=source, new_path=destination,
-            title=title, artist=artist, genre=detailed_genre,
-            genre_category=category, playlist_name=playlist_name,
+            track_id=track_id,
+            old_path=source,
+            new_path=destination,
+            title=title,
+            artist=artist,
+            genre=detailed_genre,
+            genre_category=category,
+            playlist_name=playlist_name,
         )
         if artwork_url and artwork_path:
-            repository.update_downloaded_track_artwork(
-                track_id, artwork_url=artwork_url, artwork_path=artwork_path
-            )
+            repository.update_downloaded_track_artwork(track_id, artwork_url=artwork_url, artwork_path=artwork_path)
         if moved:
             old_metadata.unlink(missing_ok=True)
             try:
@@ -2360,9 +2423,14 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
             shutil.move(str(destination), str(source))
         raise HTTPException(500, f"Could not update track metadata: {error}") from error
     return {
-        "updated": True, "track_id": track_id, "title": title, "artist": artist,
-        "genre": detailed_genre, "genre_category": category,
-        "playlist_name": playlist_name, "filename": destination.name,
+        "updated": True,
+        "track_id": track_id,
+        "title": title,
+        "artist": artist,
+        "genre": detailed_genre,
+        "genre_category": category,
+        "playlist_name": playlist_name,
+        "filename": destination.name,
         "artwork_url": metadata["artwork_url"],
         "artwork_available": bool(artwork_path),
         "receipt": operation_receipt(
@@ -2372,7 +2440,8 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
             changed="Updated the WAV tags, source record, and catalog entry",
             changed_count=1,
             written_to=[
-                str(destination.resolve()), str(_source_metadata_path(destination)),
+                str(destination.resolve()),
+                str(_source_metadata_path(destination)),
                 str(getattr(repository, "path", DATABASE)),
             ],
             survives_restart=True,
@@ -2389,17 +2458,13 @@ def repair_playlist_derived_genres() -> dict:
     cleared: list[int] = []
     failed: list[dict[str, object]] = []
     for track in repository.list_downloaded_tracks():
-        playlists = [
-            str(value).strip()
-            for value in (track.get("playlists") or [])
-            if str(value).strip()
-        ]
+        playlists = [str(value).strip() for value in (track.get("playlists") or []) if str(value).strip()]
         detailed_genre = str(track.get("genre") or "").strip()
         matching_playlist = next(
             (
-                playlist for playlist in playlists
-                if playlist.replace("_", " ").strip().casefold()
-                == detailed_genre.casefold()
+                playlist
+                for playlist in playlists
+                if playlist.replace("_", " ").strip().casefold() == detailed_genre.casefold()
             ),
             "",
         )
@@ -2445,10 +2510,7 @@ def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     """Synchronize embedded WAV tags from the authoritative music catalog."""
     _require_music_library_online()
     wanted = set(request.track_ids)
-    tracks = [
-        track for track in repository.list_downloaded_tracks()
-        if int(track["id"]) in wanted
-    ]
+    tracks = [track for track in repository.list_downloaded_tracks() if int(track["id"]) in wanted]
     if len(tracks) != len(wanted):
         raise HTTPException(404, "One or more downloaded tracks were not found")
     tagged: list[int] = []
@@ -2471,17 +2533,16 @@ def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
         except (FileNotFoundError, OSError, ValueError, subprocess.SubprocessError) as error:
             failed.append({"id": int(track["id"]), "error": str(error)})
     return {
-        "tagged": tagged, "skipped": skipped, "failed": failed,
+        "tagged": tagged,
+        "skipped": skipped,
+        "failed": failed,
         "receipt": operation_receipt(
             operation="retag-selected-tracks",
             requested=f"Synchronize WAV tags for {len(wanted)} selected tracks",
             requested_count=len(wanted),
             changed=f"Updated {len(tagged)} WAV files; {len(skipped)} were already correct",
             changed_count=len(tagged),
-            written_to=[
-                str(Path(str(track["file_path"])).resolve())
-                for track in tracks if int(track["id"]) in tagged
-            ],
+            written_to=[str(Path(str(track["file_path"])).resolve()) for track in tracks if int(track["id"]) in tagged],
             failures=failed,
             survives_restart=True,
             durability="Embedded WAV tags are stored in the audio files and survive restart.",
@@ -2493,15 +2554,21 @@ def _refresh_wav_tag_audit() -> dict:
     tracks = repository.list_downloaded_tracks()
     errors = [
         {
-            "id": int(track["id"]), "filename": track["filename"],
-            "path": str(track["file_path"]), "error": "File is missing from disk",
+            "id": int(track["id"]),
+            "filename": track["filename"],
+            "path": str(track["file_path"]),
+            "error": "File is missing from disk",
         }
         for track in tracks
         if not Path(str(track["file_path"])).is_file()
     ]
     payload = {
-        "status": "audit", "total": len(tracks), "processed": len(tracks),
-        "tagged": 0, "skipped": len(tracks) - len(errors), "failed": len(errors),
+        "status": "audit",
+        "total": len(tracks),
+        "processed": len(tracks),
+        "tagged": 0,
+        "skipped": len(tracks) - len(errors),
+        "failed": len(errors),
         "errors": errors,
     }
     repository.set_system_state(
@@ -2549,14 +2616,11 @@ def download_playlist(playlist: str) -> FileResponse:
     return _downloaded_archive(tracks, playlist)
 
 
-
 @app.delete("/api/library/{source_name}")
 def remove_library_track(source_name: str) -> dict:
     """Remove every inactive generation from the Library without deleting exports."""
     matching = [
-        job
-        for job in repository.list_jobs(10_000)
-        if str(job["source_name"]).casefold() == source_name.casefold()
+        job for job in repository.list_jobs(10_000) if str(job["source_name"]).casefold() == source_name.casefold()
     ]
     if not matching:
         raise HTTPException(404, "Library track not found")
@@ -2575,7 +2639,6 @@ def remove_library_track(source_name: str) -> dict:
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         pass
     return {"removed_generations": removed, "files_preserved": True}
-
 
 
 @app.post("/api/jobs/{job_id}/reprocess", status_code=202)
@@ -2676,9 +2739,7 @@ def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
         )
         if any(value is not None for value in insert_values):
             if any(value is None for value in insert_values):
-                raise HTTPException(
-                    400, "Insertion requires source start, source end, and destination"
-                )
+                raise HTTPException(400, "Insertion requires source start, source end, and destination")
             assert request.insert_source_start is not None
             assert request.insert_source_end is not None
             assert request.insert_destination is not None
@@ -2743,11 +2804,7 @@ def candidate_audio(job_id: int, position: str, rank: int) -> FileResponse:
         previews = OUTPUT / "previews"
         folder = (
             next(
-                (
-                    item
-                    for item in previews.iterdir()
-                    if item.is_dir() and item.name.casefold() == wanted
-                ),
+                (item for item in previews.iterdir() if item.is_dir() and item.name.casefold() == wanted),
                 folder,
             )
             if previews.is_dir()
@@ -2924,7 +2981,6 @@ async def create_jobs(
     return {"job_ids": created}
 
 
-
 @app.get("/api/overrides/{source_name}")
 def get_override(source_name: str) -> dict:
     override = load_track_overrides(OVERRIDES).get(source_name.casefold())
@@ -2958,7 +3014,7 @@ def save_override(source_name: str, request: OverrideRequest) -> dict:
 def analytics() -> dict:
     now = perf_counter()
     with analytics_cache_lock:
-        if analytics_cache["payload"] is not None and now < float(analytics_cache["expires_at"]):
+        if analytics_cache["payload"] is not None and now < float(cast(Any, analytics_cache["expires_at"])):
             return analytics_cache["payload"]  # type: ignore[return-value]
     summary = repository.analytics_summary()
     feedback = summary["feedback"]
@@ -3004,19 +3060,16 @@ def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
     if not recent:
         return FileResponse(path, media_type="application/json")
     try:
-            payload = _load_processing_report()
-            songs = [
-                song for song in payload.get("songs", {}).values()
-                if song.get("status") == "updated"
-            ]
-            songs.sort(key=lambda song: str(song.get("updated_at") or ""), reverse=True)
-            fields = {"source_name", "status", "updated_at", "bpm", "key", "intro", "outro"}
-            return {
-                "songs": {
-                    str(index): {key: value for key, value in song.items() if key in fields}
-                    for index, song in enumerate(songs[:recent_count])
-                }
+        payload = _load_processing_report()
+        songs = [song for song in payload.get("songs", {}).values() if song.get("status") == "updated"]
+        songs.sort(key=lambda song: str(song.get("updated_at") or ""), reverse=True)
+        fields = {"source_name", "status", "updated_at", "bpm", "key", "intro", "outro"}
+        return {
+            "songs": {
+                str(index): {key: value for key, value in song.items() if key in fields}
+                for index, song in enumerate(songs[:recent])
             }
+        }
     except (OSError, ValueError) as error:
         raise HTTPException(500, "The report could not be read") from error
 
@@ -3028,17 +3081,19 @@ def report_audio_index() -> list[dict]:
     for job in repository.list_report_audio_jobs():
         wav_available = Path(str(job.get("wav_path") or "")).is_file()
         extended_available = Path(str(job.get("extended_path") or "")).is_file()
-        result.append({
-            "id": int(job["id"]),
-            "source_name": str(job["source_name"]),
-            "status": "complete",
-            "wav_available": wav_available,
-            "extended_available": extended_available,
-            "downloaded_track_id": job.get("downloaded_track_id"),
-            "detected_key": job.get("latest_detected_key") or "",
-            "key_confidence": job.get("latest_key_confidence"),
-            "key_analyzed_at": job.get("key_analyzed_at") or "",
-        })
+        result.append(
+            {
+                "id": int(job["id"]),
+                "source_name": str(job["source_name"]),
+                "status": "complete",
+                "wav_available": wav_available,
+                "extended_available": extended_available,
+                "downloaded_track_id": job.get("downloaded_track_id"),
+                "detected_key": job.get("latest_detected_key") or "",
+                "key_confidence": job.get("latest_key_confidence"),
+                "key_analyzed_at": job.get("key_analyzed_at") or "",
+            }
+        )
     return result
 
 
@@ -3046,17 +3101,29 @@ def _library_roles(song: dict) -> list[str]:
     style = str(song.get("detected_style") or "").casefold()
     timing = str(song.get("timing") or "").casefold()
     bpm = float(song.get("bpm") or 0)
-    intro = song.get("intro") or {}; outro = song.get("outro") or {}
+    intro = song.get("intro") or {}
+    outro = song.get("outro") or {}
     roles: set[str] = set()
-    if "ambient" in style or "sparse" in style: roles.add("ambient")
-    if "melodic" in style or "harmonic" in style or float(song.get("key_confidence") or 0) >= .65: roles.add("melodic")
-    if "vocal-safe" in style or max(float(intro.get("instrumentalness") or 0), float(outro.get("instrumentalness") or 0)) >= .72: roles.add("vocal-safe")
-    if "live" in timing or "variable" in timing or float(song.get("tempo_drift") or 0) >= .08: roles.add("live timing")
-    if "peak" in style or "high-energy" in style or (bpm >= 122 and "ambient" not in roles): roles.add("peak-time")
-    if "slow" in style or "subtle" in style or (bpm and bpm < 120) or "ambient" in roles: roles.add("warm-up")
+    if "ambient" in style or "sparse" in style:
+        roles.add("ambient")
+    if "melodic" in style or "harmonic" in style or float(song.get("key_confidence") or 0) >= 0.65:
+        roles.add("melodic")
+    if (
+        "vocal-safe" in style
+        or max(float(intro.get("instrumentalness") or 0), float(outro.get("instrumentalness") or 0)) >= 0.72
+    ):
+        roles.add("vocal-safe")
+    if "live" in timing or "variable" in timing or float(song.get("tempo_drift") or 0) >= 0.08:
+        roles.add("live timing")
+    if "peak" in style or "high-energy" in style or (bpm >= 122 and "ambient" not in roles):
+        roles.add("peak-time")
+    if "slow" in style or "subtle" in style or (bpm and bpm < 120) or "ambient" in roles:
+        roles.add("warm-up")
     readiness = song.get("dj_readiness") or {}
-    if "closing" in style or float(readiness.get("outro_mixable_bars") or 0) >= 8 or outro.get("section") == "closing": roles.add("closing")
-    if not roles: roles.add("peak-time" if bpm >= 122 else "warm-up")
+    if "closing" in style or float(readiness.get("outro_mixable_bars") or 0) >= 8 or outro.get("section") == "closing":
+        roles.add("closing")
+    if not roles:
+        roles.add("peak-time" if bpm >= 122 else "warm-up")
     return sorted(roles)
 
 
@@ -3065,53 +3132,88 @@ def _library_energy(song: dict) -> float:
     for section in song.get("section_profiles") or []:
         match = re.search(r"energy\s+([\d.]+)", str(section.get("reason") or ""), re.I)
         if match:
-            try: values.append(float(match.group(1)))
-            except ValueError: pass
-    if values: return sum(values) / len(values)
+            try:
+                values.append(float(match.group(1)))
+            except ValueError:
+                pass
+    if values:
+        return sum(values) / len(values)
     style = str(song.get("detected_style") or "").casefold()
-    return .8 if "high-energy" in style or "peak" in style else .25 if "ambient" in style or "sparse" in style else .5
+    return (
+        0.8 if "high-energy" in style or "peak" in style else 0.25 if "ambient" in style or "sparse" in style else 0.5
+    )
 
 
-def _set_builder_analysis(song: dict, *, roles: list[str], energy: float,
-                          vocals: str, timing: str) -> dict:
+def _set_builder_analysis(song: dict, *, roles: list[str], energy: float, vocals: str, timing: str) -> dict:
     base_fields = {
-        "source_name", "bpm", "key", "key_confidence", "beat_grid_confidence",
-        "duration_seconds", "mix_in", "mix_out",
+        "source_name",
+        "bpm",
+        "key",
+        "key_confidence",
+        "beat_grid_confidence",
+        "duration_seconds",
+        "mix_in",
+        "mix_out",
     }
     compact = {key: value for key, value in song.items() if key in base_fields}
-    compact.update({
-        "_roles": roles, "_energy": energy, "_vocals": vocals, "_timing": timing,
-        "intro": {key: value for key, value in (song.get("intro") or {}).items()
-                  if key in {"instrumentalness", "section"}},
-        "outro": {key: value for key, value in (song.get("outro") or {}).items()
-                  if key in {"instrumentalness", "section"}},
-        "dj_readiness": {key: value for key, value in (song.get("dj_readiness") or {}).items()
-                         if key in {"intro_mixable_bars", "outro_mixable_bars"}},
-        "arrangement_sections": [
-            {key: value for key, value in section.items()
-             if key in {"label", "name", "start", "end", "confidence"}}
-            for section in (song.get("arrangement_sections") or [])
-        ],
-    })
+    compact.update(
+        {
+            "_roles": roles,
+            "_energy": energy,
+            "_vocals": vocals,
+            "_timing": timing,
+            "intro": {
+                key: value for key, value in (song.get("intro") or {}).items() if key in {"instrumentalness", "section"}
+            },
+            "outro": {
+                key: value for key, value in (song.get("outro") or {}).items() if key in {"instrumentalness", "section"}
+            },
+            "dj_readiness": {
+                key: value
+                for key, value in (song.get("dj_readiness") or {}).items()
+                if key in {"intro_mixable_bars", "outro_mixable_bars"}
+            },
+            "arrangement_sections": [
+                {key: value for key, value in section.items() if key in {"label", "name", "start", "end", "confidence"}}
+                for section in (song.get("arrangement_sections") or [])
+            ],
+        }
+    )
     return compact
 
 
 def _build_set_builder_catalog_payload() -> dict:
     tracks = []
     for row in repository.list_set_builder_tracks():
-        tracks.append({
-            "analysis": json.loads(row.get("set_analysis_json") or "{}"),
-            "genre": row.get("category") or "Other",
-            "detailed_genre": row.get("detail_genre") or "",
-            "job": {
-                "id": row["job_id"], "source_name": row["source_name"],
-                "source_path": row.get("source_path"), "wav_path": row.get("wav_path"),
-                "library_path": row.get("library_path"),
-                "extended_path": row.get("extended_path"),
-                "config_json": row.get("config_json") or "{}",
-            },
-        })
-    return {"version": 2, "tracks": tracks, "total": len(tracks)}
+        try:
+            descriptors = json.loads(str(row.get("descriptors_json") or "[]"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            descriptors = []
+        analysis = json.loads(row.get("set_analysis_json") or "{}")
+        analysis.update(
+            title=row.get("title") or "",
+            artist=row.get("artist") or "",
+            _camelot=row.get("camelot") or "",
+        )
+        tracks.append(
+            {
+                "analysis": analysis,
+                "genre": row.get("category") or "Other",
+                "detailed_genre": row.get("detail_genre") or "",
+                "downloaded_id": row.get("downloaded_id"),
+                "descriptors": descriptors,
+                "job": {
+                    "id": row["job_id"],
+                    "source_name": row["source_name"],
+                    "source_path": row.get("source_path"),
+                    "wav_path": row.get("wav_path"),
+                    "library_path": row.get("library_path"),
+                    "extended_path": row.get("extended_path"),
+                    "config_json": row.get("config_json") or "{}",
+                },
+            }
+        )
+    return {"version": 4, "tracks": tracks, "total": len(tracks)}
 
 
 def _write_set_builder_catalog_cache() -> None:
@@ -3123,8 +3225,30 @@ def _write_set_builder_catalog_cache() -> None:
 
 
 _CAMELOT_KEYS = {
-    "A minor":"8A","E minor":"9A","B minor":"10A","F# minor":"11A","C# minor":"12A","G# minor":"1A","D# minor":"2A","A# minor":"3A","F minor":"4A","C minor":"5A","G minor":"6A","D minor":"7A",
-    "C major":"8B","G major":"9B","D major":"10B","A major":"11B","E major":"12B","B major":"1B","F# major":"2B","C# major":"3B","G# major":"4B","D# major":"5B","A# major":"6B","F major":"7B",
+    "A minor": "8A",
+    "E minor": "9A",
+    "B minor": "10A",
+    "F# minor": "11A",
+    "C# minor": "12A",
+    "G# minor": "1A",
+    "D# minor": "2A",
+    "A# minor": "3A",
+    "F minor": "4A",
+    "C minor": "5A",
+    "G minor": "6A",
+    "D minor": "7A",
+    "C major": "8B",
+    "G major": "9B",
+    "D major": "10B",
+    "A major": "11B",
+    "E major": "12B",
+    "B major": "1B",
+    "F# major": "2B",
+    "C# major": "3B",
+    "G# major": "4B",
+    "D# major": "5B",
+    "A# major": "6B",
+    "F major": "7B",
 }
 
 
@@ -3135,11 +3259,12 @@ def _refresh_library_search_index() -> None:
     }
     downloaded_tracks = repository.list_downloaded_tracks_with_jobs()
     downloaded_by_path = {str(track.get("file_path") or ""): track for track in downloaded_tracks}
-    downloaded_by_job = {int(track["completed_library_job_id"]): track for track in downloaded_tracks if track.get("completed_library_job_id")}
-    key_verifications = {
-        str(item["source_name"]).casefold(): item
-        for item in repository.key_verifications()
+    downloaded_by_job = {
+        int(track["completed_library_job_id"]): track
+        for track in downloaded_tracks
+        if track.get("completed_library_job_id")
     }
+    key_verifications = {str(item["source_name"]).casefold(): item for item in repository.key_verifications()}
     entries = []
     for job in repository.list_latest_completed_jobs():
         song = dict(analysis_by_name.get(str(job.get("source_name") or "").casefold(), {}))
@@ -3159,41 +3284,86 @@ def _refresh_library_search_index() -> None:
         artist = str(downloaded.get("artist") or "") if downloaded else ""
         title = title or (" - ".join(source_parts[1:]) if len(source_parts) > 1 else source_stem)
         artist = artist or (source_parts[0] if len(source_parts) > 1 else "Unknown artist")
-        category = _normalize_genre_category(str(downloaded.get("genre_category") or "Other")) if downloaded else str(song.get("detected_style") or "Unclassified")
-        roles = _library_roles(song); energy = _library_energy(song)
+        category = (
+            _normalize_genre_category(str(downloaded.get("genre_category") or "Other"))
+            if downloaded
+            else str(song.get("detected_style") or "Unclassified")
+        )
+        roles = _library_roles(song)
+        energy = _library_energy(song)
         analyzed_preset = str(song.get("preset") or "")
-        preset = (analyzed_preset.split("→")[-1].strip() if "→" in analyzed_preset else analyzed_preset.strip()) or str(job.get("preset") or "default")
-        config = json.loads(job.get("config_json") or "{}")
-        result = "review" if job.get("review_status") == "pending" else "extended" if job.get("intro_quality") is not None or job.get("outro_quality") is not None else "preserved"
-        musical_key = str(song.get("key") or "").replace("Db ", "C# ").replace("Eb ", "D# ").replace("Gb ", "F# ").replace("Ab ", "G# ").replace("Bb ", "A# ")
+        preset = (analyzed_preset.split("→")[-1].strip() if "→" in analyzed_preset else analyzed_preset.strip()) or str(
+            job.get("preset") or "default"
+        )
+        result = (
+            "review"
+            if job.get("review_status") == "pending"
+            else "extended"
+            if job.get("intro_quality") is not None or job.get("outro_quality") is not None
+            else "preserved"
+        )
+        musical_key = (
+            str(song.get("key") or "")
+            .replace("Db ", "C# ")
+            .replace("Eb ", "D# ")
+            .replace("Gb ", "F# ")
+            .replace("Ab ", "G# ")
+            .replace("Bb ", "A# ")
+        )
         instrumental_values = [
-            float(value) for value in (
+            float(value)
+            for value in (
                 (song.get("intro") or {}).get("instrumentalness"),
                 (song.get("outro") or {}).get("instrumentalness"),
-            ) if value is not None
+            )
+            if value is not None
         ]
         instrumental = max(instrumental_values) if instrumental_values else None
         timing_text = str(song.get("timing") or "").casefold()
-        vocal_profile = "mixed" if instrumental is None else "vocal-safe" if instrumental >= .72 else "vocal-forward" if instrumental < .45 else "mixed"
-        timing_profile = "variable" if "live" in timing_text or "variable" in timing_text or float(song.get("tempo_drift") or 0) >= .08 else "steady"
-        entries.append({
-            "job_id": int(job["id"]), "source_name": job["source_name"], "title": title,
-            "artist": artist, "downloaded_id": int(downloaded["id"]) if downloaded else None,
-            "category": category,
-            "detail_genre": str(downloaded.get("genre") or "").strip() if downloaded else "",
-            "roles": f"|{'|'.join(roles)}|", "preset": preset.casefold(),
-            "requested_preset": str(job.get("preset") or "default").casefold(), "result": result,
-            "bpm": float(song.get("bpm") or job.get("bpm") or 0), "musical_key": musical_key,
-            "camelot": _CAMELOT_KEYS.get(musical_key, ""), "energy": energy,
-            "energy_band": "high" if energy >= .67 else "low" if energy < .4 else "medium",
-            "vocals": vocal_profile, "timing": timing_profile,
-            "updated_at": job["updated_at"], "analysis_json": json.dumps(song, separators=(",", ":")),
-            "set_analysis_json": json.dumps(
-                _set_builder_analysis(song, roles=roles, energy=energy,
-                                      vocals=vocal_profile, timing=timing_profile),
-                separators=(",", ":"),
-            ),
-        })
+        vocal_profile = (
+            "mixed"
+            if instrumental is None
+            else "vocal-safe"
+            if instrumental >= 0.72
+            else "vocal-forward"
+            if instrumental < 0.45
+            else "mixed"
+        )
+        timing_profile = (
+            "variable"
+            if "live" in timing_text or "variable" in timing_text or float(song.get("tempo_drift") or 0) >= 0.08
+            else "steady"
+        )
+        entries.append(
+            {
+                "job_id": int(job["id"]),
+                "source_name": job["source_name"],
+                "title": title,
+                "artist": artist,
+                "downloaded_id": int(downloaded["id"]) if downloaded else None,
+                "category": category,
+                "detail_genre": str(downloaded.get("genre") or "").strip() if downloaded else "",
+                "roles": f"|{'|'.join(roles)}|",
+                "preset": preset.casefold(),
+                "requested_preset": str(job.get("preset") or "default").casefold(),
+                "result": result,
+                "bpm": float(song.get("bpm") or job.get("bpm") or 0),
+                "musical_key": musical_key,
+                "camelot": _CAMELOT_KEYS.get(musical_key, ""),
+                "energy": energy,
+                "energy_band": "high" if energy >= 0.67 else "low" if energy < 0.4 else "medium",
+                "vocals": vocal_profile,
+                "timing": timing_profile,
+                "updated_at": job["updated_at"],
+                "analysis_json": json.dumps(song, separators=(",", ":")),
+                "set_analysis_json": json.dumps(
+                    _set_builder_analysis(
+                        song, roles=roles, energy=energy, vocals=vocal_profile, timing=timing_profile
+                    ),
+                    separators=(",", ":"),
+                ),
+            }
+        )
     repository.replace_library_search_index(entries)
     _write_set_builder_catalog_cache()
 
@@ -3202,10 +3372,7 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
     """Refresh the compact Library index only when its inputs have changed."""
     _ensure_downloaded_catalog_migrated()
     report_path = OUTPUT / "reports" / "processing_report.json"
-    report_signature = (
-        (report_path.stat().st_mtime_ns, report_path.stat().st_size)
-        if report_path.exists() else (0, 0)
-    )
+    report_signature = (report_path.stat().st_mtime_ns, report_path.stat().st_size) if report_path.exists() else (0, 0)
     source_signature = repository.library_index_source_signature()
     signature_text = json.dumps(
         {"version": 4, "report": report_signature, "sources": source_signature}, separators=(",", ":")
@@ -3245,8 +3412,7 @@ def _refresh_library_index_background() -> None:
         _refresh_library_search_index()
         report_path = OUTPUT / "reports" / "processing_report.json"
         report_signature = (
-            (report_path.stat().st_mtime_ns, report_path.stat().st_size)
-            if report_path.exists() else (0, 0)
+            (report_path.stat().st_mtime_ns, report_path.stat().st_size) if report_path.exists() else (0, 0)
         )
         source_signature = repository.library_index_source_signature()
         signature_text = json.dumps(
@@ -3255,9 +3421,7 @@ def _refresh_library_index_background() -> None:
         )
         repository.set_system_state("library_search_index_signature", signature_text)
         with library_catalog_cache_lock:
-            library_catalog_cache["signature"] = (
-                report_signature, (hash(source_signature), len(source_signature))
-            )
+            library_catalog_cache["signature"] = (report_signature, (hash(source_signature), len(source_signature)))
     finally:
         with library_index_refresh_lock:
             library_index_refresh_active = False
@@ -3330,9 +3494,7 @@ library_maintenance_service = LibraryMaintenanceService(
         read_wav_metadata=read_wav_metadata,
         sync_wav_metadata=sync_wav_metadata,
         probe_local_audio=lambda path: _probe_local_audio(path),
-        catalog_genre_category=lambda path, genre, detailed: _catalog_genre_category(
-            path, genre, detailed
-        ),
+        catalog_genre_category=lambda path, genre, detailed: _catalog_genre_category(path, genre, detailed),
         metadata_batches=metadata_batch_registry,
         catalog_migration_lock=downloaded_catalog_migration_lock,
         integrity_batches=integrity_scan_batches,
@@ -3413,6 +3575,37 @@ app.include_router(
         )
     )
 )
+intention_planner = IntentionPlanner.from_environment()
+journey_planner = JourneyPlanner(intention_planner)
+set_preference_service = DJPreferenceService(
+    JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
+)
+set_review_service = SetReviewService(
+    JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_reviews.json")),
+    set_preference_service.profile,
+)
+candidate_retriever = SetCandidateRetriever(
+    preference_ranker=PersonalizedCandidateRanker(set_preference_service.profile)
+)
+set_plan_validator = SetPlanValidator()
+track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
+
+
+def _log_intention_provider_status() -> None:
+    status = intention_planner.status()
+    if status["available"]:
+        logger.info(
+            "Set Builder AI ready: provider=%s model=%s local_runtime=%s",
+            status["provider"],
+            status["model"],
+            status["local_runtime"],
+        )
+    else:
+        logger.warning("Set Builder AI unavailable: deterministic offline rules will be used")
+
+
+app.router.add_event_handler("startup", _log_intention_provider_status)
+
 app.include_router(
     create_set_builder_router(
         SetBuilderRouteDependencies(
@@ -3421,9 +3614,26 @@ app.include_router(
             write_catalog_cache=_write_set_builder_catalog_cache,
             music_library_root=lambda: _music_library_root(),
             safe_folder_name=_safe_folder_name,
+            intention_planner=intention_planner,
+            journey_planner=journey_planner,
         )
     )
 )
+app.include_router(
+    create_set_planning_router(
+        SetPlanningRouteDependencies(
+            catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+            ensure_catalog_current=_ensure_library_search_index_current,
+            write_catalog_cache=_write_set_builder_catalog_cache,
+            candidate_retriever=candidate_retriever,
+            plan_validator=set_plan_validator,
+            track_planner=track_planner,
+            planning_job_store_path=SET_BUILDER_CATALOG_CACHE.with_name("set_planning_jobs.json"),
+        )
+    )
+)
+app.include_router(create_set_preference_router(set_preference_service))
+app.include_router(create_set_review_router(set_review_service, set_preference_service))
 app.include_router(
     create_library_router(
         LibraryRouteDependencies(
@@ -3435,13 +3645,17 @@ app.include_router(
         )
     )
 )
-app.include_router(create_library_maintenance_router(library_maintenance_service))
-app.include_router(create_metadata_batch_router(metadata_batch_service))
 app.include_router(
-    create_job_router(
-        JobQueueService(repository=lambda: repository, processor=lambda: service)
+    create_descriptor_router(
+        DescriptorRouteDependencies(
+            repository=lambda: repository,
+            invalidate_set_catalog=lambda: SET_BUILDER_CATALOG_CACHE.unlink(missing_ok=True),
+        )
     )
 )
+app.include_router(create_library_maintenance_router(library_maintenance_service))
+app.include_router(create_metadata_batch_router(metadata_batch_service))
+app.include_router(create_job_router(JobQueueService(repository=lambda: repository, processor=lambda: service)))
 app.include_router(
     create_job_media_router(
         JobMediaRouteDependencies(

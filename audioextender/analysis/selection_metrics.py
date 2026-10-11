@@ -27,24 +27,21 @@ def _chord_identity(chroma: np.ndarray) -> tuple[int, str, float]:
     return best[1], best[2], float(confidence)
 
 
-def _chord_transition_score(
-    source: np.ndarray, target: np.ndarray, key_root: int
-) -> float:
+def _chord_transition_score(source: np.ndarray, target: np.ndarray, key_root: int) -> float:
     """Score a loop chord transition, rewarding shared tones and V→I motion."""
     similarity = _cosine_similarity(source, target)
     source_root, _source_mode, source_conf = _chord_identity(source)
     target_root, _target_mode, target_conf = _chord_identity(target)
-    cadence = 1.0 if (
-        source_root == (key_root + 7) % 12 and target_root == key_root
-    ) else 0.0
+    cadence = 1.0 if (source_root == (key_root + 7) % 12 and target_root == key_root) else 0.0
     fourth_motion = 1.0 if target_root == (source_root + 5) % 12 else 0.0
     tonal_confidence = min(source_conf, target_conf)
-    return float(np.clip(
-        0.72 * similarity
-        + tonal_confidence * (0.20 * cadence + 0.08 * fourth_motion),
-        0.0,
-        1.0,
-    ))
+    return float(
+        np.clip(
+            0.72 * similarity + tonal_confidence * (0.20 * cadence + 0.08 * fourth_motion),
+            0.0,
+            1.0,
+        )
+    )
 
 
 def _normalized_slope(values: np.ndarray) -> float:
@@ -63,9 +60,7 @@ def _cosine_similarity(left: np.ndarray, right: np.ndarray) -> float:
     return float(np.clip(np.dot(left, right) / denominator, 0.0, 1.0))
 
 
-def _means_by_bar(
-    values: np.ndarray, frame_times: np.ndarray, boundaries: np.ndarray
-) -> np.ndarray:
+def _means_by_bar(values: np.ndarray, frame_times: np.ndarray, boundaries: np.ndarray) -> np.ndarray:
     """Reduce fast drum-level movement to musically meaningful bar averages."""
     means = []
     for start, end in zip(boundaries[:-1], boundaries[1:], strict=True):
@@ -96,24 +91,16 @@ def _vocal_phrase_metrics(
     coverage = float(np.mean(active[region])) if np.any(region) else 0.0
 
     edge_seconds = max(0.30, min(beat_duration * 0.75, 1.0))
-    start_edge = (frame_times >= start - edge_seconds) & (
-        frame_times < start + edge_seconds
-    )
-    end_edge = (frame_times >= end - edge_seconds) & (
-        frame_times < end + edge_seconds
-    )
+    start_edge = (frame_times >= start - edge_seconds) & (frame_times < start + edge_seconds)
+    end_edge = (frame_times >= end - edge_seconds) & (frame_times < end + edge_seconds)
     start_risk = float(np.mean(active[start_edge])) if np.any(start_edge) else 0.0
     end_risk = float(np.mean(active[end_edge])) if np.any(end_edge) else 0.0
     boundary_risk = max(start_risk, end_risk)
 
     ending = (frame_times >= end - 2.0 * beat_duration) & (frame_times < end)
-    before_ending = (frame_times >= end - 4.0 * beat_duration) & (
-        frame_times < end - 2.0 * beat_duration
-    )
+    before_ending = (frame_times >= end - 4.0 * beat_duration) & (frame_times < end - 2.0 * beat_duration)
     ending_level = float(np.mean(smooth[ending])) if np.any(ending) else 0.0
     previous_level = float(np.mean(smooth[before_ending])) if np.any(before_ending) else 0.0
-    pickup = float(
-        np.clip((ending_level - previous_level) / max(threshold, 1e-6), 0.0, 1.0)
-    )
+    pickup = float(np.clip((ending_level - previous_level) / max(threshold, 1e-6), 0.0, 1.0))
     phrase_penalty = float(np.clip(0.65 * coverage + 0.35 * pickup, 0.0, 1.0))
     return coverage, boundary_risk, phrase_penalty

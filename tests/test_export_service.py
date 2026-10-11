@@ -9,10 +9,10 @@ import numpy as np
 
 from audioextender.audio.loading import AudioData
 from audioextender.core.config import EditConfig
-from audioextender.library.cue_export import CuePoint
 from audioextender.core.exceptions import ExportError
-from audioextender.library.export_service import ExportRequest, ExportService
 from audioextender.core.interfaces import NullProgressReporter
+from audioextender.library.cue_export import CuePoint
+from audioextender.library.export_service import ExportRequest, ExportService
 
 
 class ExportServiceTests(unittest.TestCase):
@@ -48,9 +48,7 @@ class ExportServiceTests(unittest.TestCase):
         cue_writer = Mock()
         service = ExportService(writer, cue_builder, cue_writer)
         with tempfile.TemporaryDirectory() as temporary:
-            request = self.request(
-                Path(temporary), EditConfig(export_cues=True, preview_only=False)
-            )
+            request = self.request(Path(temporary), EditConfig(export_cues=True, preview_only=False))
             result = service.export(request, NullProgressReporter())
         self.assertEqual(writer.call_count, 2)
         writer.assert_any_call(self.audio, request.wav_output, 24)
@@ -90,18 +88,14 @@ class ExportServiceTests(unittest.TestCase):
     def test_preview_directory_keeps_artifacts_out_of_output_root(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            directory = ExportService.preview_directory(
-                root / "Song.mp3", root / "Song (Extended Edit).wav"
-            )
+            directory = ExportService.preview_directory(root / "Song.mp3", root / "Song (Extended Edit).wav")
             self.assertEqual(directory, root / "previews" / "Song")
             self.assertTrue(directory.is_dir())
 
     def test_disabled_side_removes_splice_preview_but_keeps_candidate_audition(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            directory = ExportService.preview_directory(
-                root / "Song.mp3", root / "Song (Extended Edit).wav"
-            )
+            directory = ExportService.preview_directory(root / "Song.mp3", root / "Song (Extended Edit).wav")
             stale = [
                 directory / "Intro Preview.wav",
                 directory / "Intro Candidate 1.wav",

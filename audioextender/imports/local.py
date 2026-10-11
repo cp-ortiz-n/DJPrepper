@@ -28,7 +28,7 @@ class LocalAudioImportService:
         generalized_genre: Callable[[str], str],
         genre_directory: Callable[[str], Path],
         write_metadata: Callable[..., None],
-        write_source_metadata: Callable[[Path, dict[str, Any]], None],
+        write_source_metadata: Callable[[Path, dict[str, Any]], Any],
         safe_name: Callable[[str], str],
         thread_factory: Callable[..., threading.Thread] = threading.Thread,
     ) -> None:
@@ -135,9 +135,7 @@ class LocalAudioImportService:
                     self._require_library_online()
                     destination_dir = self._genre_directory(category)
                     destination_dir.mkdir(parents=True, exist_ok=True)
-                    display_name = " - ".join(
-                        value for value in (metadata["artist"], metadata["title"]) if value
-                    )
+                    display_name = " - ".join(value for value in (metadata["artist"], metadata["title"]) if value)
                     stem = self._safe_name(display_name or source.stem)
                     destination = destination_dir / f"{stem}.wav"
                     counter = 2
@@ -147,8 +145,16 @@ class LocalAudioImportService:
                     temporary_wav = destination.with_suffix(".importing.wav")
                     subprocess.run(
                         [
-                            "ffmpeg", "-y", "-v", "error", "-i", str(source),
-                            "-vn", "-c:a", "pcm_s24le", str(temporary_wav),
+                            "ffmpeg",
+                            "-y",
+                            "-v",
+                            "error",
+                            "-i",
+                            str(source),
+                            "-vn",
+                            "-c:a",
+                            "pcm_s24le",
+                            str(temporary_wav),
                         ],
                         check=True,
                         capture_output=True,

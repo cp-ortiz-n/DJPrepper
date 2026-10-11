@@ -17,7 +17,7 @@ class TrackMetadataMutationDependencies:
     music_library_root: Callable[[], Path]
     source_metadata_path: Callable[[Path], Path]
     write_wav_metadata: Callable[..., None]
-    write_source_metadata: Callable[[Path, dict], None]
+    write_source_metadata: Callable[[Path, dict], Any]
 
 
 class TrackMetadataMutationService:
@@ -71,14 +71,15 @@ class TrackMetadataMutationService:
                     genre=category,
                     album=str((metadata.get("playlists") or ["Imported Singles"])[0]),
                 )
-                self.dependencies.write_source_metadata(
-                    destination, {**metadata, "genre_category": category}
-                )
+                self.dependencies.write_source_metadata(destination, {**metadata, "genre_category": category})
                 if destination.resolve() != source.resolve():
                     old_metadata.unlink(missing_ok=True)
             self.dependencies.repository.relocate_downloaded_tracks(completed)
             for _, source, destination, _ in completed:
-                if destination.resolve() != source.resolve() and source.parent != self.dependencies.music_library_root():
+                if (
+                    destination.resolve() != source.resolve()
+                    and source.parent != self.dependencies.music_library_root()
+                ):
                     try:
                         source.parent.rmdir()
                     except OSError:

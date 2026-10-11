@@ -48,7 +48,8 @@ def classify_interval(
     onset = float(np.clip(np.mean(analysis.onset[mask]), 0.0, 1.0))
     vocal = (
         float(np.clip(np.mean(vocal_energy[mask]), 0.0, 1.0))
-        if vocal_energy is not None and len(vocal_energy) == len(mask) else 0.0
+        if vocal_energy is not None and len(vocal_energy) == len(mask)
+        else 0.0
     )
     global_energy = max(float(np.mean(analysis.rms)), 1e-6)
     relative_energy = float(np.clip(energy / global_energy, 0.0, 1.5))
@@ -57,7 +58,9 @@ def classify_interval(
         "melodic/harmonic": 0.55 * harmonic + 0.25 * (1 - percussion) + 0.20 * relative_energy / 1.5,
         "rhythm-forward": 0.50 * percussion + 0.30 * onset + 0.20 * min(relative_energy, 1.0),
         "high-energy": 0.38 * min(relative_energy, 1.0) + 0.34 * percussion + 0.28 * onset,
-        "dynamic/transition": 0.45 * abs(relative_energy - 1.0) + 0.30 * onset + 0.25 * (1 - analysis.beat_grid_confidence / 100.0),
+        "dynamic/transition": 0.45 * abs(relative_energy - 1.0)
+        + 0.30 * onset
+        + 0.25 * (1 - analysis.beat_grid_confidence / 100.0),
     }
     if vocal_energy is not None:
         scores["vocal-forward"] = 0.70 * vocal + 0.15 * harmonic + 0.15 * energy

@@ -36,8 +36,7 @@ def choose_splice_mode(candidate: SectionCandidate) -> str:
         return "bass-preserving"
     if (
         candidate.timbre_compatibility < HARMONIC_TAIL_COMPATIBILITY_THRESHOLD
-        or candidate.tail_release_compatibility
-        < HARMONIC_TAIL_COMPATIBILITY_THRESHOLD
+        or candidate.tail_release_compatibility < HARMONIC_TAIL_COMPATIBILITY_THRESHOLD
     ):
         return "harmonic-tail"
     if candidate.loop_quality >= 80.0:
@@ -88,17 +87,15 @@ def tail_duration_ms(candidate: SectionCandidate) -> float:
     if candidate.boundary_grid_confidence < LOW_GRID_BOUNDARY_THRESHOLD:
         duration_ms = max(
             duration_ms,
-            750.0 + 750.0 * (LOW_GRID_BOUNDARY_THRESHOLD - candidate.boundary_grid_confidence)
-            / LOW_GRID_BOUNDARY_THRESHOLD,
+            750.0
+            + 750.0 * (LOW_GRID_BOUNDARY_THRESHOLD - candidate.boundary_grid_confidence) / LOW_GRID_BOUNDARY_THRESHOLD,
         )
     return duration_ms
 
 
 def build_splice_plan(candidate: SectionCandidate, minimum_ms: float) -> SplicePlan:
     mode = choose_splice_mode(candidate)
-    planned = candidate if candidate.splice_mode == mode else replace(
-        candidate, splice_mode=mode
-    )
+    planned = candidate if candidate.splice_mode == mode else replace(candidate, splice_mode=mode)
     return SplicePlan(
         mode=mode,
         crossfade_ms=crossfade_duration_ms(planned, minimum_ms),

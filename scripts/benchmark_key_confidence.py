@@ -71,16 +71,20 @@ def main() -> None:
     old_average = sum(float(item["old_confidence"]) for item in results) / len(results)
     new_average = sum(float(item["new_confidence"]) for item in results) / len(results)
     changed_keys = sum(item["old_key"] != item["new_key"] for item in results)
-    print(json.dumps({
-        "summary": {
-            "tracks": len(results),
-            "old_average": old_average,
-            "new_average": new_average,
-            "confidence_delta": new_average - old_average,
-            "changed_keys": changed_keys,
-        },
-        "results": results,
-    }))
+    print(
+        json.dumps(
+            {
+                "summary": {
+                    "tracks": len(results),
+                    "old_average": old_average,
+                    "new_average": new_average,
+                    "confidence_delta": new_average - old_average,
+                    "changed_keys": changed_keys,
+                },
+                "results": results,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":
