@@ -29,12 +29,15 @@ compatibility rather than relying on visual inspection.
   inventory, delivery shell, response/error shapes, startup provider reporting,
   runtime roots, dependency wiring, disconnected-library behavior, and existing
   restart persistence. See `docs/web-composition-contracts.md`.
-- [ ] **ARCH-003A — Establish musical-policy ownership and golden fixtures.**
+- [x] **ARCH-003A — Establish musical-policy ownership and golden fixtures.**
   Priority: P0. Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance:
   document authoritative owners for normalized key/Camelot, energy, roles,
   vocals, timing, Library match score, and Set transition cost; golden fixtures
   cover current Python and browser outputs without changing weights. Evidence:
   [ARCH-003](docs/architecture-audit.md#arch-003--shared-musical-classification-is-duplicated-across-backend-and-browser).
+  Completed 2026-10-11: authoritative and compatibility owners are recorded in
+  `docs/musical-policy-ownership.md`; one versioned JSON fixture now drives
+  Python catalog/Set-transition tests and browser profile/Library-score tests.
 - [ ] **ARCH-004A — Document the background-operation lifecycle matrix.**
   Priority: P1. Effort: S. Risk: Low. Dependencies: ARCH-012A. Acceptance: every
   job type lists states, persistence, cancellation checkpoints, retry rules,

@@ -20,6 +20,10 @@ response shapes, and restart expectations are frozen in
 [`web-composition-contracts.md`](web-composition-contracts.md). Update those
 contracts deliberately whenever an approved public API change is made.
 
+Current musical classifications and scoring boundaries are documented in
+[`musical-policy-ownership.md`](musical-policy-ownership.md). Its shared golden
+fixture freezes Python and browser behavior before the `ARCH-003B` consolidation.
+
 ## Package ownership
 
 | Package | Responsibility |
@@ -337,6 +341,7 @@ module. `tests/frontend_modules.test.js` enforces this boundary and a size ceili
 | Relocation/backup | `library/relocation.py`, `library/backup.py`, `web/settings_routes.py` |
 | Queue behavior | `processing/web_jobs.py`, `web/job_routes.py`, `repositories/jobs.py` |
 | DJ Library filtering | `web/library_routes.py`, `repositories/library_analysis.py` |
+| Musical profile ownership or scoring | `docs/musical-policy-ownership.md`, then the named authority |
 | Integrity scan/repair | `web/library_maintenance_routes.py` |
 | Browser cards/filters | Corresponding `web/*.js` module plus `web/styles.css` |
 | Set Builder language interpretation/provider policy | `set_builder/intention_planner.py`, `web/set_builder_routes.py` |

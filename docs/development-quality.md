@@ -50,5 +50,12 @@ Measured risk is concentrated in browser DOM workflows, web delivery/composition
 
 `tests/test_architecture_boundaries.py` rejects internal Python import cycles, domain-to-web imports, new SQL outside repositories, and growth in four verified hotspots. One existing backup query is fingerprinted as legacy debt. The test also ratchets the size and branch count of `TrackProcessor.process`.
 
-Current musical-policy owners remain intentionally separate: Python `analysis/` owns processing-time BPM/key/section and splice policy; `set_builder/` owns candidate, journey, transition, validation, and AI acceptance policy; browser `dj-library.js` owns display compatibility helpers. Consolidation and golden cross-runtime fixtures belong to `ARCH-003A`; Phase 0 does not change weights or algorithms.
+Current musical-policy owners remain intentionally separate: Python `analysis/`
+owns processing-time BPM/key/section and splice policy; `set_builder/` owns
+candidate, journey, transition, validation, and AI acceptance policy; browser
+`dj-library.js` owns the interactive Library match score and compatibility
+fallbacks. `docs/musical-policy-ownership.md` records exact precedence. The
+versioned `tests/fixtures/musical_policy_golden.json` is exercised by Python and
+Node so cross-runtime drift fails the standard quality gate. `ARCH-003A` changes
+no weights or algorithms; consolidation remains scoped to `ARCH-003B`.
 
