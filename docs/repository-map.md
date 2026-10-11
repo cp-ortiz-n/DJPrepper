@@ -108,6 +108,7 @@ map reflects the current layout; it does not propose moving code.
 │   │   ├── planning_store.py
 │   │   ├── preference_learning.py
 │   │   ├── proposal_repairer.py
+│   │   ├── release_gate.py
 │   │   ├── review_service.py
 │   │   ├── track_planner.py
 │   │   └── transition_optimizer.py
@@ -191,6 +192,7 @@ map reflects the current layout; it does not propose moving code.
 │   ├── test_scoring_and_splices.py
 │   ├── test_set_candidate_planning.py
 │   ├── test_set_plan_evaluator.py
+│   ├── test_set_release_gate.py
 │   ├── test_set_preference_learning.py
 │   ├── test_set_review_service.py
 │   ├── test_stability_workflow.py
@@ -233,7 +235,7 @@ map reflects the current layout; it does not propose moving code.
 | `audioextender/repositories/` | SQLite persistence grouped by jobs, catalog, analysis, feedback, and system state |
 | `audioextender/infrastructure/` | Shared cache, progress, background-task, and batch-operation support |
 | `audioextender/reporting/` | Processing summaries and listening feedback |
-| `audioextender/set_builder/` | Intention/journey planning, candidate selection, validation, evaluation, preferences, and plan jobs |
+| `audioextender/set_builder/` | Intention/journey planning, candidate selection, validation, evaluation, preferences, plan jobs, and production release assessment |
 | `audioextender/web/` | FastAPI composition and focused API route modules |
 | `web/` | Browser shell, feature modules, shared controls, and styles |
 | `scripts/` | Manual evaluation/benchmark tools and a focused stability-test launcher |
@@ -259,13 +261,16 @@ shared test data builders, and `fixtures/` contains checked-in scenario data.
 | Audio, musical analysis, and edit quality | `test_audio_quality.py`, `test_dj_readiness.py`, `test_key_analysis.py`, `test_scoring_and_splices.py`, `test_stem_provider.py`, `test_style_detector.py`, `test_track_descriptors.py`, `test_transition_scorer.py`, `test_wav_metadata.py` |
 | Processing, resources, and persistence/reporting | `test_background_tasks.py`, `test_batch_operations.py`, `test_behavior_workflows.py`, `test_cli_helpers.py`, `test_config_and_overrides.py`, `test_export_service.py`, `test_integration_synthetic.py`, `test_progress_and_resources.py`, `test_reports_and_cache.py` |
 | Imports and library identity/lifecycle | `test_import_service.py`, `test_library_backup.py`, `test_library_relocation.py`, `test_playlist_match_service.py`, `test_recording_identity.py`, `test_stability_workflow.py` |
-| Set Builder planning, evaluation, and personalization | `test_feedback_and_reranking.py`, `test_intention_planner.py`, `test_journey_planner.py`, `test_local_intention_acceptance.py`, `test_plan_comparator.py`, `test_proposal_repairer.py`, `test_set_candidate_planning.py`, `test_set_plan_evaluator.py`, `test_set_preference_learning.py`, `test_set_review_service.py`, `test_track_planner.py`, `test_transition_optimizer.py` |
+| Set Builder planning, evaluation, release, and personalization | `test_feedback_and_reranking.py`, `test_intention_planner.py`, `test_journey_planner.py`, `test_local_intention_acceptance.py`, `test_plan_comparator.py`, `test_proposal_repairer.py`, `test_set_candidate_planning.py`, `test_set_plan_evaluator.py`, `test_set_preference_learning.py`, `test_set_release_gate.py`, `test_set_review_service.py`, `test_track_planner.py`, `test_transition_optimizer.py` |
 | Browser contracts and feature modules | `test_frontend_contracts.py`, `frontend_modules.test.js`, `import_queue.test.js`, `playback_behavior.test.js`, `request_state_controller.test.js`, `set_planning_client.test.js` |
 
 The Set Builder scenario file is `fixtures/set_builder_eval_scenarios.json`; it
 is used by both planning tests and `scripts/evaluate_set_builder.py`. The local
 model acceptance test is opt-in and requires the relevant provider/model; the
 ordinary suite uses deterministic behavior and mocks.
+`test_set_release_gate.py` covers the production acceptance policy, including
+the manual-listening requirement, provider failures, genre scarcity, and
+planning-job summaries.
 
 Run the regular suites from the repository root:
 
