@@ -150,14 +150,46 @@ Status definitions:
 
 ## Intent-driven Set Builder and musical identity
 
-Status: **In progress — local-first language interpretation is complete.** Set
+Status: **In progress — local-first interpretation, Phase 1 journey planning, Phase 2A candidate safety, Phase 2B validated AI track planning, Phase 2C quality hardening, Phase 2D comparative AI acceptance, Phase 2E conservative preference learning, and Phase 2F human review and calibration are complete.** Set
 Builder accepts a natural-language intention and translates it into editable
 hard requirements, weighted preferences, limits, requested and optional genres,
 genre drift, vibe, energy curve, opening/ending traits, and an ordered fallback
-policy. It uses local Ollama (`qwen3:4b`) by default, can use OpenAI only when it
+policy. It uses local Ollama (`qwen3.5:4b`) by default, can use OpenAI only when it
 is explicitly configured, and falls back to deterministic browser rules. Model
 output is schema-constrained, cleaned of placeholder/schema labels, and
 canonicalized against catalog vocabulary. The original brief remains intact.
+
+The Journey Planner now converts that interpretation into editable musical
+sections with runtime shares, genres, characteristics, purposes, and energy
+boundaries. Invalid AI plans fall back deterministically, explicitly requested
+genre order is protected, and the edited journey drives positional genre and
+energy scoring. Phase 2A now provides bounded, diverse candidate pools with
+stable catalog IDs, availability checks, scarcity tiers, and evidence labels,
+plus deterministic validation for invented IDs, duplicates, exclusions,
+required or locked tracks, duration, section coverage, BPM jumps, keys, and
+vocal collisions. Phase 2B now selects and orders only those controlled
+shortlists, repairs invalid model output, runs through a cancellable asynchronous
+job, and falls back to a validated deterministic plan when the provider is
+offline, times out, or cannot produce a valid answer. The UI exposes AI Planned,
+AI Interpreted, and Classic modes rather than hiding which layer made a choice.
+Phase 2C adds deterministic proposal evaluation and disclosure, reproducible
+planning receipts in saved sets, persisted/retryable interrupted jobs, explicit
+planning duration, small/medium/large catalog performance budgets, and an
+opt-in live Ollama track-selection acceptance case. A repeatable catalog-scale
+evaluation harness now measures checked-in musical scenarios, compares each run
+with its prior report, and supports either the deterministic fallback or the
+configured model. Remaining Set Builder work is feedback-informed
+personalization and human review of real-library evaluation results, not
+another unvalidated model path.
+
+Phase 2D generates an independent deterministic baseline for every valid AI
+proposal and selects AI only when it improves the shared quality score without
+reducing requested-genre coverage. Dynamic schemas constrain track and section
+IDs and exact counts; bounded structural repair preserves valid AI selections,
+fills only missing eligible slots, and discloses each repair. Receipts and the
+catalog evaluation report retain both scores, the winner, provider/model,
+latency, repairs, and rejection reason. Remaining model work is improving local
+model selection quality and latency—not weakening the acceptance policy.
 
 The generator uses the structured plan during local candidate retrieval and
 scoring, never relaxes hard identity requirements, discloses direct versus
@@ -167,7 +199,7 @@ time; participate in scoring; are searchable; and can be edited individually
 or in bulk from Music Files and DJ Library. Browser storage remains only as a
 compatibility fallback for uncataloged tracks. Remaining work is richer
 audio-derived identity inference, catalog-scale review, stronger scarcity
-handling, and proposal-quality/performance hardening.
+handling, and catalog-scale musical review.
 
 ### Problem
 
@@ -316,12 +348,23 @@ and analysis confidence.
 Use accepted and rejected listening feedback to personalize candidate ordering
 without replacing the technical safety score.
 
-- Derive preference signals by track classification and transition traits.
-- Show technical and personal-preference scores separately.
-- Explain which feedback patterns influenced each score.
-- Require a minimum amount of feedback before applying adjustments.
-- Keep feedback ranking optional and retain the original scorer as a baseline.
-- Prevent a small number of tracks from overfitting the ranking model.
+- [x] Derive preference signals from lock, remove, replace, add, save, and export actions.
+- [x] Preserve technical relevance and expose a separate bounded preference adjustment.
+- [x] Explain matching feedback signals and their distinct-track evidence.
+- [x] Require three distinct tracks before applying a signal.
+- [x] Keep feedback ranking locally inspectable, pauseable, and resettable.
+- [x] Cap adjustments at ±8 and damp broad attributes to limit overfitting.
+- [x] Capture overall, per-track, rejection-reason, and transition judgments.
+- [x] Compare personalized and neutral acceptance and report ranking changes.
+- [x] Detect contradictory feedback and broad-signal dominance.
+- [x] Let the DJ dismiss individual learned signals.
+- [x] Learn bounded transition preferences after three distinct track pairs.
+- [x] Compare personalized and baseline plans across five checked-in musical scenarios.
+- [x] Add Phase 2G timing, outcome, fallback, repair, and aggregate AI operations telemetry.
+- [x] Add a strict release gate that cannot pass without valid five-scenario evidence and explicit DJ listening approval.
+- [x] Reduce Ollama planning context by 85–88%, use ID-only output, and capture prompt/output timing metrics.
+- [x] Distinguish silent genre-coverage loss from explicitly proven zero-candidate catalog scarcity.
+- [ ] Complete the final hands-on acceptance review against the connected real library, pass `--manual-listening-approved`, and tune weights only from that evidence.
 
 ## Preflight analysis mode
 

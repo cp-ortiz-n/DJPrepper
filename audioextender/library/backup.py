@@ -149,11 +149,11 @@ class LibraryBackupService:
                     target.write_bytes(bundle.read(name))
             restored_database = staging / "state/audioextender.sqlite3"
             with (
-                closing(sqlite3.connect(restored_database)) as source,
-                closing(sqlite3.connect(self.database)) as target,
+                closing(sqlite3.connect(restored_database)) as source_connection,
+                closing(sqlite3.connect(self.database)) as target_connection,
             ):
-                source.backup(target)
-                target.commit()
+                source_connection.backup(target_connection)
+                target_connection.commit()
             mapping = {
                 "state/track_overrides.json": self.project / "track_overrides.json",
                 "state/processing_report.json": self.project / "output/reports/processing_report.json",
@@ -161,10 +161,10 @@ class LibraryBackupService:
                 "state/set_builder_catalog.json": self.project / "output/reports/set_builder_catalog.json",
             }
             for source_name, destination in mapping.items():
-                source = staging / source_name
-                if source.is_file():
+                staged_source = staging / source_name
+                if staged_source.is_file():
                     destination.parent.mkdir(parents=True, exist_ok=True)
-                    os.replace(source, destination)
+                    os.replace(staged_source, destination)
             self._restore_tree(staging / "library/.audioextender", self.library_root / ".audioextender")
             self._restore_tree(staging / "library/_Playlist", self.library_root / "_Playlist")
             self._restore_tree(staging / "cache", self.project / "cache")

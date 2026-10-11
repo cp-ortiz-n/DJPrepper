@@ -16,7 +16,7 @@ analysis adds a penalty for vocal-heavy regions.
 - Python 3.10–3.12 recommended
 - FFmpeg (recommended for broad MP3 decoding support)
 - Enough free disk space for an uncompressed stereo WAV
-- Optional: Ollama and `qwen3:4b` for local Set Builder intention interpretation
+- Optional: Ollama and `qwen3.5:4b` for local Set Builder intention interpretation
 
 Install Homebrew and FFmpeg if needed:
 
@@ -47,6 +47,12 @@ Start it from the project folder:
 python3 web_app.py
 ```
 
+On macOS, you can instead double-click **Start AudioExtender.command** in the
+project folder. The launcher starts Ollama when necessary, downloads the
+configured local model on the first run, starts AudioExtender, and opens the
+browser. Closing its Terminal window stops AudioExtender; Ollama may remain
+available for the next launch.
+
 Then open [http://localhost:8765](http://localhost:8765). The dashboard supports
 multi-file drag and drop, edit settings, a persistent processing queue, live
 stage progress, recent analysis results, full-length source and extended audio
@@ -68,21 +74,90 @@ audio playback, and reusable controls live in dedicated modules. See
 ### Optional local AI for Set Builder
 
 Set Builder can translate a natural-language DJ brief into a structured,
-editable plan before it chooses any tracks. The default `auto` provider order
-is local Ollama, optional OpenAI, and finally deterministic browser rules.
+editable plan before it chooses any tracks. It also creates an editable musical
+journey made of named sections, runtime percentages, catalog genres, musical
+characteristics, purposes, and start/end energy targets. The default `auto`
+provider order is local Ollama, optional OpenAI, and finally deterministic rules.
 
-The model interprets language only. Track filtering, compatibility scoring,
-ordering, and audio processing remain deterministic and local. Ollama receives
-the text brief and a bounded list of catalog vocabulary; it never receives
-audio. When the optional OpenAI fallback is configured, only that text context
-is sent and request storage is disabled.
+Set Builder now exposes three explicit planning modes: **AI Planned** lets the
+configured model select and order tracks from a bounded catalog shortlist,
+**AI Interpreted** uses the model for the brief and journey while deterministic
+rules choose tracks, and **Classic** uses local rules only. AI Planned results
+are still validated against real catalog IDs,
+available files, exclusions, required or locked tracks, duration, section
+coverage, BPM jumps, keys, and vocal collisions. Invalid model plans receive up
+to two bounded repair attempts, then fall back to a deterministic catalog-backed
+plan. Planning runs as a cancellable background job so a stale response cannot
+replace the current set. Ollama receives the text brief and bounded catalog
+metadata; it never receives audio. When the optional OpenAI fallback is
+configured, only that text context is sent and request storage is disabled.
+Each completed AI plan now includes deterministic quality measurements for
+scarcity tiers, requested-genre and journey coverage, duration accuracy,
+repeated artists, and transition warnings. The generated-set screen shows this
+disclosure, and saved sets retain the planning mode, provider/model, validation
+warnings, evaluation, fallback reason, journey, and per-track selection reasons.
+Planning jobs persist locally; an app restart marks interrupted work as safely
+retryable instead of losing or silently applying it.
+
+Phase 2D compares every validated AI proposal with an independently generated
+deterministic baseline. AI wins only when it improves the deterministic quality
+score, preserves requested-genre coverage, and still passes every hard
+validator. Exact-count schemas restrict model output to real candidate and
+section IDs. A narrow structural repair boundary removes duplicates and fills
+missing section slots from eligible candidates while preserving valid unique AI
+choices; every repair is disclosed. The generated-set receipt shows both
+scores, the winner, the reason, and any repair count.
+
+Phase 2E adds local, explainable preference learning without retraining or
+granting the model control over safety rules. Locking, removing, replacing,
+adding, saving, and exporting tracks record small catalog-feature signals in a
+local JSON store. A signal must be supported by at least three distinct tracks
+before it changes candidate ordering, the combined adjustment is capped at
+eight points, and broad signals are damped so they do not hide distinctive
+genre or musical-identity evidence. Preferences are scoped by set vibe and can
+be inspected, paused, or reset from Set Builder. Exclusions, required tracks,
+file availability, validation, and the deterministic Phase 2D comparison remain
+authoritative.
+
+Phase 2F adds a persistent human-review and calibration loop. A DJ can approve
+or reject the running order, accept or reject individual tracks with structured
+reasons, rate transitions, and leave notes. Reports compare personalized and
+neutral acceptance, identify rank changes, direct versus expanded matches,
+contradictory judgments, rejection patterns, and broad signals that may be
+overfitting. Individual learned signals can be dismissed. Transition
+preferences for BPM movement, harmonic compatibility, vocal spacing, energy
+movement, blend length, and technique require three distinct track pairs before
+they influence automatic transition optimization. The catalog evaluation tool
+now runs the five checked-in musical scenarios with and without personalization
+and reports changed tracks, order changes, and quality deltas.
+
+Phase 2G is the production-acceptance boundary. Every planning receipt records
+candidate retrieval, model/planning, validation/comparison, evaluation, and
+total timing, together with provider attempts, repairs, outcome, model, and
+fallback reason. Set Builder exposes aggregate local AI operations without
+including audio or catalog contents. The evaluation command applies a strict
+release gate: all selected scenarios must complete with valid catalog-backed
+plans and full requested-genre coverage, and the DJ must explicitly confirm the
+listening review with `--manual-listening-approved`. Automated success alone
+can never mark AI Set Builder v1 released.
+The production planner makes one bounded model attempt before using its
+validated deterministic fallback; repeated slow retries cannot freeze a set
+generation or multiply a provider outage into several minutes of waiting.
+The model receives a section-balanced shortlist rather than the full candidate
+cap. Filesystem paths, verbose score explanations, provenance records, and
+other validator-only fields remain local. Ollama returns only catalog track IDs
+and section IDs; readable reasons are rebuilt from verified local evidence.
+This keeps real-catalog planning within the latency gate without weakening
+validation. Missing requested genres pass coverage only when the candidate pool
+proves that zero matching files are available and the result discloses the
+scarcity explicitly.
 
 Install the recommended local provider on macOS with:
 
 ```bash
 brew install --cask ollama-app
 open -a Ollama
-ollama pull qwen3:4b
+ollama pull qwen3.5:4b
 ```
 
 Set Builder continues to work without Ollama by using offline rules. Provider
@@ -90,7 +165,7 @@ behavior can be configured with:
 
 ```bash
 export AUDIOEXTENDER_LLM_PROVIDER=auto  # auto, ollama, openai, or offline
-export OLLAMA_SET_BUILDER_MODEL=qwen3:4b
+export OLLAMA_SET_BUILDER_MODEL=qwen3.5:4b
 export OLLAMA_HOST=http://127.0.0.1:11434
 export OPENAI_SET_BUILDER_MODEL=gpt-5-mini
 export OPENAI_API_KEY=...                # optional cloud fallback
@@ -98,7 +173,49 @@ export OPENAI_API_KEY=...                # optional cloud fallback
 
 The UI identifies results as Local AI, Cloud AI, or offline rules. Model output
 is schema-constrained and sanitized against catalog vocabulary before the
-browser uses it.
+browser uses it. The journey must total 100% of the target runtime; edits to its
+section order, genres, and energy targets feed either safe planning mode.
+
+When AudioExtender starts, its Terminal prints the detected Set Builder AI
+provider and model. Every interpreted brief also logs the provider, model,
+response time, and vocabulary size without logging the brief or track metadata.
+The Set Builder card shows the same live state as **Local AI ready**, **Cloud AI
+ready**, or **Offline rules**.
+
+For an opt-in acceptance run against the installed Ollama model—including real
+structured track selection from controlled candidates—run:
+
+```bash
+AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.test_local_intention_acceptance
+```
+
+For a repeatable evaluation against the current exported catalog and the
+checked-in DJ-brief scenarios, run:
+
+```bash
+.venv/bin/python scripts/evaluate_set_builder.py
+```
+
+The harness writes `output/reports/set_builder_evaluation.json`, compares the
+new results with the prior run, and reports candidate scarcity, journey and
+genre coverage, duration accuracy, warnings, repeated artists, planning time,
+and the deterministic quality score. Set `AUDIOEXTENDER_LLM_PROVIDER=offline`
+to measure the deterministic fallback or leave the configured provider active
+to evaluate real AI track selection. The catalog and scenario paths can be
+overridden with `--catalog` and `--scenarios`.
+Use `--scenario latin-kickback` to iterate on one checked-in case without
+running the complete model suite.
+After listening to and approving every result in the complete suite, rerun with
+`--manual-listening-approved`. A zero exit status then means the final Phase 2G
+release gate passed; without explicit listening approval the report remains
+truthfully pending even when every automated measurement succeeds.
+
+Deterministic fallback plans use bounded transition optimization after track
+selection. It cannot change selected tracks or their journey sections; it only
+orders them for smoother BPM—including half/double-time compatibility—Camelot
+key, vocal, and energy movement. Checked-in scenario thresholds cause the
+evaluation command to fail when quality, coverage, or transition warnings
+regress.
 
 The **Import** tab can convert an individually confirmed, authorized YouTube
 source to WAV. It can also read a Spotify playlist CSV and suggest a likely
@@ -369,6 +486,8 @@ Use this table before searching through the larger composition files:
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
 | Set Builder UI | `web/set-builder.js` and `web/styles.css` |
 | Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
+| Set Builder candidate shortlists or plan validation | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py` |
+| AI track ordering, comparison, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_comparator.py`, `proposal_repairer.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
 | Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
@@ -1264,23 +1383,29 @@ manual key verification, listening feedback, relocated paths, and playlist
 exports survive reimport, application restart, and reanalysis. It never reads
 or modifies the user's music library.
 
-Optional coverage reporting is available with the development requirements:
+### Code coverage in VS Code
+
+Install the development requirements and JavaScript dependencies, then run
+coverage with the project virtual environment active:
 
 ```bash
 python3 -m pip install -r requirements-dev.txt
-python3 -m coverage run -m unittest discover -s tests
-python3 -m coverage report -m
+npm install
+npm run coverage
 ```
+
+This creates LCOV reports for all maintained Python application and script code
+and every JavaScript file under `web/`. The recommended **Code Coverage**
+extension by Markis Taylor is configured to load both reports automatically.
+Tests, dependencies, caches, and generated output are not coverage targets.
 
 Run the complete local quality gate after installing the development
 requirements:
 
 ```bash
-python3 -m unittest discover -s tests
 python3 -m ruff check .
 python3 -m mypy
-python3 -m coverage run -m unittest discover -s tests
-python3 -m coverage report
+npm run coverage
 ```
 
 The tests follow the same separation as the application modules: domain logic

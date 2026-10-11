@@ -28,8 +28,11 @@ def embed_wav_artwork(path: Path, artwork: Path | bytes, mime: str = "image/jpeg
     audio = WAVE(path)
     if audio.tags is None:
         audio.add_tags()
-    audio.tags.delall("APIC")
-    audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
+    tags = audio.tags
+    if tags is None:
+        raise RuntimeError("WAV artwork tags could not be initialized")
+    tags.delall("APIC")
+    tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=data))
     audio.save()
 
 

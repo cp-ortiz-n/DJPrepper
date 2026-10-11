@@ -357,12 +357,18 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     ON CONFLICT(file_path) DO UPDATE SET
                         title=excluded.title, artist=excluded.artist,
                         genre=excluded.genre, genre_category=excluded.genre_category,
-                        spotify_uri=CASE WHEN excluded.spotify_uri != '' THEN excluded.spotify_uri ELSE downloaded_tracks.spotify_uri END,
-                        youtube_id=CASE WHEN excluded.youtube_id != '' THEN excluded.youtube_id ELSE downloaded_tracks.youtube_id END,
-                        youtube_url=CASE WHEN excluded.youtube_url != '' THEN excluded.youtube_url ELSE downloaded_tracks.youtube_url END,
-                        artwork_url=CASE WHEN excluded.artwork_url != '' THEN excluded.artwork_url ELSE downloaded_tracks.artwork_url END,
-                        artwork_path=CASE WHEN excluded.artwork_path != '' THEN excluded.artwork_path ELSE downloaded_tracks.artwork_path END,
-                        audio_fingerprint=CASE WHEN excluded.audio_fingerprint != '' THEN excluded.audio_fingerprint ELSE downloaded_tracks.audio_fingerprint END,
+                        spotify_uri=CASE WHEN excluded.spotify_uri != ''
+                            THEN excluded.spotify_uri ELSE downloaded_tracks.spotify_uri END,
+                        youtube_id=CASE WHEN excluded.youtube_id != ''
+                            THEN excluded.youtube_id ELSE downloaded_tracks.youtube_id END,
+                        youtube_url=CASE WHEN excluded.youtube_url != ''
+                            THEN excluded.youtube_url ELSE downloaded_tracks.youtube_url END,
+                        artwork_url=CASE WHEN excluded.artwork_url != ''
+                            THEN excluded.artwork_url ELSE downloaded_tracks.artwork_url END,
+                        artwork_path=CASE WHEN excluded.artwork_path != ''
+                            THEN excluded.artwork_path ELSE downloaded_tracks.artwork_path END,
+                        audio_fingerprint=CASE WHEN excluded.audio_fingerprint != ''
+                            THEN excluded.audio_fingerprint ELSE downloaded_tracks.audio_fingerprint END,
                         duration_seconds=COALESCE(excluded.duration_seconds, downloaded_tracks.duration_seconds),
                         updated_at=excluded.updated_at
                     """,
@@ -823,7 +829,10 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
         missing_title = (
             "TRIM(COALESCE(tracks.title, '')) = '' OR LOWER(TRIM(tracks.title)) IN ('unknown title','untitled')"
         )
-        missing_artist = "TRIM(COALESCE(tracks.artist, '')) = '' OR LOWER(TRIM(tracks.artist)) IN ('unknown artist','unknown','unavailable')"
+        missing_artist = (
+            "TRIM(COALESCE(tracks.artist, '')) = '' OR "
+            "LOWER(TRIM(tracks.artist)) IN ('unknown artist','unknown','unavailable')"
+        )
         missing_genre = "TRIM(COALESCE(tracks.genre, '')) = ''"
         missing_artwork = "TRIM(COALESCE(tracks.artwork_path, '')) = ''"
         unmapped_genre = "TRIM(COALESCE(tracks.genre, '')) != '' AND tracks.genre_category = 'Other'"
@@ -858,7 +867,10 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
             "complete": f"{status} = 'complete'",
             "active": f"{status} IN ('queued','processing')",
             "failed": f"{status} IN ('failed','canceled')",
-            "attention": f"({missing_title} OR {missing_artist} OR {missing_genre} OR {missing_artwork} OR {unmapped_genre} OR {broad_genre})",
+            "attention": (
+                f"({missing_title} OR {missing_artist} OR {missing_genre} OR "
+                f"{missing_artwork} OR {unmapped_genre} OR {broad_genre})"
+            ),
             "missing_title": f"({missing_title})",
             "missing_artist": f"({missing_artist})",
             "missing_genre": f"({missing_genre})",
@@ -999,7 +1011,10 @@ class TrackCatalogRepositoryMixin(RepositoryMixinBase):
                     category_genres[display] = category_genres.get(display, 0) + 1
             issue_conditions = {
                 "missing_title": "TRIM(COALESCE(title, '')) = '' OR LOWER(TRIM(title)) IN ('unknown title','untitled')",
-                "missing_artist": "TRIM(COALESCE(artist, '')) = '' OR LOWER(TRIM(artist)) IN ('unknown artist','unknown','unavailable')",
+                "missing_artist": (
+                    "TRIM(COALESCE(artist, '')) = '' OR "
+                    "LOWER(TRIM(artist)) IN ('unknown artist','unknown','unavailable')"
+                ),
                 "missing_genre": "TRIM(COALESCE(genre, '')) = ''",
                 "missing_artwork": "TRIM(COALESCE(artwork_path, '')) = ''",
                 "unmapped_genre": "TRIM(COALESCE(genre, '')) != '' AND genre_category = 'Other'",

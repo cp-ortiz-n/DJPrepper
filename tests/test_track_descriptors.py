@@ -224,7 +224,9 @@ class TrackDescriptorTests(unittest.TestCase):
             self.assertEqual(inferred["skipped_protected"], [track_id])
             self.assertEqual({item["value"] for item in repository.track_descriptors(track_id)}, {"my manual crate"})
             restarted = JobRepository(database)
-            self.assertTrue(restarted.track_identity_inference_status(track_id)["protected_from_inference"])
+            status = restarted.track_identity_inference_status(track_id)
+            assert status is not None
+            self.assertTrue(status["protected_from_inference"])
             restarted.set_track_identity_inference_protection([track_id], False)
             self.assertIn(track_id, restarted.track_ids_missing_inferred_identity())
 

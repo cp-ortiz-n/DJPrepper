@@ -104,7 +104,7 @@ class SettingsRouteDependencies:
     music_library_root: Callable[[], Path]
     library_location_summary: Callable[[], dict[str, Any]]
     source_metadata_path: Callable[[Path], Path]
-    refresh_wav_tag_audit: Callable[[], None]
+    refresh_wav_tag_audit: Callable[[], Any]
     metadata_batches: Any
     library_status_cache: dict[str, Any]
     library_status_lock: Any

@@ -6,6 +6,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import queue
 import re
 import shutil
@@ -22,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -66,25 +67,31 @@ from audioextender.processing.web_jobs import WebJobService
 from audioextender.reporting.feedback import append_web_feedback
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.repositories.facade import JobRepository
+from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
+from audioextender.set_builder.intention_planner import IntentionPlanner
+from audioextender.set_builder.journey_planner import JourneyPlanner
+from audioextender.set_builder.plan_validator import SetPlanValidator
+from audioextender.set_builder.preference_learning import (
+    DJPreferenceService,
+    JsonPreferenceStore,
+    PersonalizedCandidateRanker,
+)
+from audioextender.set_builder.review_service import SetReviewService
+from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
 from audioextender.web.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
-    CueEdit,  # noqa: F401 - compatibility re-export
-    CueEditRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
-    TransitionScoreRequest,  # noqa: F401 - compatibility re-export
     create_job_media_router,
 )
 from audioextender.web.job_routes import (
     JobQueueService,
-    ReorderRequest,  # noqa: F401 - compatibility re-export
     create_job_router,
 )
 from audioextender.web.library_maintenance_routes import (
-    IntegrityRepairRequest,  # noqa: F401 - compatibility re-export
     LibraryMaintenanceDependencies,
     LibraryMaintenanceService,
     create_library_maintenance_router,
@@ -99,9 +106,7 @@ from audioextender.web.metadata_batch_routes import (
     create_metadata_batch_router,
 )
 from audioextender.web.reporting_routes import (
-    KeyVerificationRequest,  # noqa: F401 - compatibility re-export
     ReportingRouteDependencies,
-    TrackFeedbackRequest,  # noqa: F401 - compatibility re-export
     create_reporting_router,
 )
 from audioextender.web.set_builder_routes import (
@@ -113,6 +118,9 @@ from audioextender.web.set_builder_routes import (
     preflight_paths,
     save_playlist_file,
 )
+from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
+from audioextender.web.set_preference_routes import create_set_preference_router
+from audioextender.web.set_review_routes import create_set_review_router
 from audioextender.web.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
@@ -173,6 +181,7 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+logger = logging.getLogger("uvicorn.error")
 repository = JobRepository(DATABASE)
 library_relocation = LibraryRelocationCoordinator(repository, OUTPUT / "reports" / "library_relocation.json")
 pending_backup_restores: dict[str, Path] = {}
@@ -278,7 +287,7 @@ def performance_diagnostics_report() -> dict:
 
     operations = []
     for operation, entries in grouped.items():
-        durations = sorted(float(entry["duration_ms"]) for entry in entries)
+        durations = sorted(float(cast(Any, entry["duration_ms"])) for entry in entries)
         percentile_index = round((len(durations) - 1) * 0.95)
         operations.append(
             {
@@ -287,13 +296,13 @@ def performance_diagnostics_report() -> dict:
                 "average_ms": round(sum(durations) / len(durations), 1),
                 "p95_ms": durations[percentile_index],
                 "maximum_ms": durations[-1],
-                "failures": sum(int(entry["status"]) >= 400 for entry in entries),
+                "failures": sum(int(cast(Any, entry["status"])) >= 400 for entry in entries),
                 "average_response_bytes": round(
-                    sum(int(entry.get("response_bytes") or 0) for entry in entries) / len(entries)
+                    sum(int(cast(Any, entry.get("response_bytes") or 0)) for entry in entries) / len(entries)
                 ),
             }
         )
-    operations.sort(key=lambda item: (-float(item["p95_ms"]), -int(item["count"])))
+    operations.sort(key=lambda item: (-float(cast(Any, item["p95_ms"])), -int(cast(Any, item["count"]))))
 
     cache = []
     for name, counters in cache_snapshot.items():
@@ -305,8 +314,8 @@ def performance_diagnostics_report() -> dict:
                 "hit_rate": round(counters["hits"] * 100 / total, 1) if total else None,
             }
         )
-    slow = [sample for sample in reversed(samples) if float(sample["duration_ms"]) >= 250][:20]
-    durations = [float(sample["duration_ms"]) for sample in samples]
+    slow = [sample for sample in reversed(samples) if float(cast(Any, sample["duration_ms"])) >= 250][:20]
+    durations = [float(cast(Any, sample["duration_ms"])) for sample in samples]
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "window_size": len(samples),
@@ -1971,8 +1980,8 @@ def downloaded_library(
         playlists = facets["playlists"]
     else:
         tracks = repository.list_downloaded_tracks_with_jobs()
-        genres: dict[str, int] = {}
-        playlists: dict[str, int] = {}
+        genres = {}
+        playlists = {}
         for track in tracks:
             track_genre = _normalize_genre_category(str(track.get("genre_category") or "Other"))
             genres[track_genre] = genres.get(track_genre, 0) + 1
@@ -3005,7 +3014,7 @@ def save_override(source_name: str, request: OverrideRequest) -> dict:
 def analytics() -> dict:
     now = perf_counter()
     with analytics_cache_lock:
-        if analytics_cache["payload"] is not None and now < float(analytics_cache["expires_at"]):
+        if analytics_cache["payload"] is not None and now < float(cast(Any, analytics_cache["expires_at"])):
             return analytics_cache["payload"]  # type: ignore[return-value]
     summary = repository.analytics_summary()
     feedback = summary["feedback"]
@@ -3058,7 +3067,7 @@ def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
         return {
             "songs": {
                 str(index): {key: value for key, value in song.items() if key in fields}
-                for index, song in enumerate(songs[:recent_count])
+                for index, song in enumerate(songs[:recent])
             }
         }
     except (OSError, ValueError) as error:
@@ -3180,9 +3189,15 @@ def _build_set_builder_catalog_payload() -> dict:
             descriptors = json.loads(str(row.get("descriptors_json") or "[]"))
         except (TypeError, ValueError, json.JSONDecodeError):
             descriptors = []
+        analysis = json.loads(row.get("set_analysis_json") or "{}")
+        analysis.update(
+            title=row.get("title") or "",
+            artist=row.get("artist") or "",
+            _camelot=row.get("camelot") or "",
+        )
         tracks.append(
             {
-                "analysis": json.loads(row.get("set_analysis_json") or "{}"),
+                "analysis": analysis,
                 "genre": row.get("category") or "Other",
                 "detailed_genre": row.get("detail_genre") or "",
                 "downloaded_id": row.get("downloaded_id"),
@@ -3198,7 +3213,7 @@ def _build_set_builder_catalog_payload() -> dict:
                 },
             }
         )
-    return {"version": 3, "tracks": tracks, "total": len(tracks)}
+    return {"version": 4, "tracks": tracks, "total": len(tracks)}
 
 
 def _write_set_builder_catalog_cache() -> None:
@@ -3280,7 +3295,6 @@ def _refresh_library_search_index() -> None:
         preset = (analyzed_preset.split("→")[-1].strip() if "→" in analyzed_preset else analyzed_preset.strip()) or str(
             job.get("preset") or "default"
         )
-        config = json.loads(job.get("config_json") or "{}")
         result = (
             "review"
             if job.get("review_status") == "pending"
@@ -3561,6 +3575,37 @@ app.include_router(
         )
     )
 )
+intention_planner = IntentionPlanner.from_environment()
+journey_planner = JourneyPlanner(intention_planner)
+set_preference_service = DJPreferenceService(
+    JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
+)
+set_review_service = SetReviewService(
+    JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_reviews.json")),
+    set_preference_service.profile,
+)
+candidate_retriever = SetCandidateRetriever(
+    preference_ranker=PersonalizedCandidateRanker(set_preference_service.profile)
+)
+set_plan_validator = SetPlanValidator()
+track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
+
+
+def _log_intention_provider_status() -> None:
+    status = intention_planner.status()
+    if status["available"]:
+        logger.info(
+            "Set Builder AI ready: provider=%s model=%s local_runtime=%s",
+            status["provider"],
+            status["model"],
+            status["local_runtime"],
+        )
+    else:
+        logger.warning("Set Builder AI unavailable: deterministic offline rules will be used")
+
+
+app.router.add_event_handler("startup", _log_intention_provider_status)
+
 app.include_router(
     create_set_builder_router(
         SetBuilderRouteDependencies(
@@ -3569,10 +3614,26 @@ app.include_router(
             write_catalog_cache=_write_set_builder_catalog_cache,
             music_library_root=lambda: _music_library_root(),
             safe_folder_name=_safe_folder_name,
-            intention_planner=IntentionPlanner.from_environment(),
+            intention_planner=intention_planner,
+            journey_planner=journey_planner,
         )
     )
 )
+app.include_router(
+    create_set_planning_router(
+        SetPlanningRouteDependencies(
+            catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+            ensure_catalog_current=_ensure_library_search_index_current,
+            write_catalog_cache=_write_set_builder_catalog_cache,
+            candidate_retriever=candidate_retriever,
+            plan_validator=set_plan_validator,
+            track_planner=track_planner,
+            planning_job_store_path=SET_BUILDER_CATALOG_CACHE.with_name("set_planning_jobs.json"),
+        )
+    )
+)
+app.include_router(create_set_preference_router(set_preference_service))
+app.include_router(create_set_review_router(set_review_service, set_preference_service))
 app.include_router(
     create_library_router(
         LibraryRouteDependencies(

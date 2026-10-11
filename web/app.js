@@ -9,7 +9,7 @@ import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, cr
 import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261005-15';
 import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261003-1';
-import {createSetBuilderFeature} from './set-builder.js?v=20261005-8';
+import {createSetBuilderFeature} from './set-builder.js?v=20261009-10';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261003-1';
 
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate

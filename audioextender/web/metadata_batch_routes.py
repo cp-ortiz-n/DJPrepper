@@ -22,7 +22,7 @@ class TrackIdsRequest(BaseModel):
 @dataclass
 class MetadataBatchDependencies:
     repository: Callable[[], Any]
-    require_library_online: Callable[[], None]
+    require_library_online: Callable[[], Any]
     sync_wav_metadata: Callable[..., bool]
     read_wav_artwork: Callable[[Path], Any]
     embed_wav_artwork: Callable[[Path, Path], Any]
@@ -174,7 +174,7 @@ class MetadataBatchService:
             self.repository.list_downloaded_tracks(),
             self._rescan_genres,
             stage="Rescanning genres",
-            counters={"updated": 0, "unchanged": 0, "unresolved": 0, "conflicts": []},
+            counters={"updated": 0, "unchanged": 0, "unresolved": 0},
             requested="Rescan detailed genres and organize tracks into genre folders",
             written_to=[str(self.dependencies.music_library_root())],
             durability="File moves and catalog paths are permanent and survive restart.",
@@ -215,7 +215,7 @@ class MetadataBatchService:
             context.progress(
                 processed=index,
                 stage=f"Rescanning genres {index} of {len(tracks)}",
-                counters={**counters, "succeeded": counters["updated"], "conflicts": conflicts},
+                counters={**counters, "succeeded": counters["updated"]},
                 error=conflicts[-1] if outcome == "failed" else None,
             )
         return {**counters, "conflicts": conflicts, "stage": "Genre rescan complete"}

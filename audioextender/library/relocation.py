@@ -58,11 +58,11 @@ class LibraryRelocationPlanner:
             if free < total_bytes:
                 raise ValueError("The destination does not have enough free space")
         else:
-            absent = [
-                track
-                for track in managed
-                if not (destination / self._relative(Path(track["file_path"]), source)).is_file()
-            ]
+            absent = []
+            for track in managed:
+                relative = self._relative(Path(track["file_path"]), source)
+                if relative is None or not (destination / relative).is_file():
+                    absent.append(track)
             if absent:
                 raise ValueError(f"The relocated folder is missing {len(absent)} cataloged track(s)")
         return {

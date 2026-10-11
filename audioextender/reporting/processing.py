@@ -179,12 +179,18 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
         f"{data.get('transition_quality', 0):.0f}%",
         f"- Construction: {data['construction']} · Splice: {data['splice_mode']}",
         f"- Material: {data['unit_bars']} unique bars · {data['extension_bars']} added bars · {data['copies']} copies",
-        f"- Section: {data['section']} ({_percent(data['section_confidence'])}) · Arrangement fit: {data['arrangement_fit']:+.0%}",
-        f"- Energy: {data['energy']} · Buildup: {_percent(data['buildup_risk'])} · Bass reset: {_percent(data['bass_reset_risk'])} · Context: {_percent(data['context_match'])}",
-        f"- Harmony: chord return {_percent(data['chord_return'])} · Resolution risk {_percent(data['resolution_risk'])}",
+        f"- Section: {data['section']} ({_percent(data['section_confidence'])}) · "
+        f"Arrangement fit: {data['arrangement_fit']:+.0%}",
+        f"- Energy: {data['energy']} · Buildup: {_percent(data['buildup_risk'])} · "
+        f"Bass reset: {_percent(data['bass_reset_risk'])} · Context: {_percent(data['context_match'])}",
+        f"- Harmony: chord return {_percent(data['chord_return'])} · "
+        f"Resolution risk {_percent(data['resolution_risk'])}",
         f"- Grid: local {_percent(data['local_grid'])} · Boundary {_percent(data['boundary_grid'])}",
-        f"- Regional context: {data.get('regional_style', 'unknown')} · Compatibility {_percent(data.get('regional_compatibility'))} · Boundary risk {_percent(data.get('regional_boundary_risk'))}",
-        f"- Vocals: coverage {_percent(data['vocal_coverage'])} · Boundary risk {_percent(data['vocal_boundary_risk'])}",
+        f"- Regional context: {data.get('regional_style', 'unknown')} · "
+        f"Compatibility {_percent(data.get('regional_compatibility'))} · "
+        f"Boundary risk {_percent(data.get('regional_boundary_risk'))}",
+        f"- Vocals: coverage {_percent(data['vocal_coverage'])} · "
+        f"Boundary risk {_percent(data['vocal_boundary_risk'])}",
         "",
     ]
 
@@ -195,7 +201,8 @@ def _render_markdown(document: dict[str, Any]) -> str:
         "",
         f"Last report update: {document['updated_at']}",
         "",
-        "This report is persistent: skipped songs retain their last analysis, while rebuilt songs replace their previous record.",
+        "This report is persistent: skipped songs retain their last analysis, while rebuilt songs replace "
+        "their previous record.",
         "",
         "| Song | Status | BPM | Key | Intro | Outro | Mix cues |",
         "|---|---|---:|---|---|---|---|",
@@ -219,10 +226,15 @@ def _render_markdown(document: dict[str, Any]) -> str:
             [
                 f"- Output: `{record['output_name']}`",
                 f"- Source WAV: `{record.get('wav_name') or '—'}`",
-                f"- Last processed: {record.get('updated_at', 'unknown')} · Processing time: {_clock(record.get('processing_seconds'))}",
-                f"- BPM: {record.get('bpm', 0):.1f} · Key: {record.get('key') or '—'} ({_percent(record.get('key_confidence'))})",
-                f"- Beat grid: {_percent(record.get('beat_grid_confidence'))} · Tempo drift: {_percent(record.get('tempo_drift'))} · Downbeat continuity: {_percent(record.get('downbeat_continuity'))}",
-                f"- Groove: {record.get('groove') or '—'} · Timing: {record.get('timing') or '—'} · Preset: {record.get('preset') or 'default'}",
+                f"- Last processed: {record.get('updated_at', 'unknown')} · "
+                f"Processing time: {_clock(record.get('processing_seconds'))}",
+                f"- BPM: {record.get('bpm', 0):.1f} · Key: {record.get('key') or '—'} "
+                f"({_percent(record.get('key_confidence'))})",
+                f"- Beat grid: {_percent(record.get('beat_grid_confidence'))} · "
+                f"Tempo drift: {_percent(record.get('tempo_drift'))} · "
+                f"Downbeat continuity: {_percent(record.get('downbeat_continuity'))}",
+                f"- Groove: {record.get('groove') or '—'} · Timing: {record.get('timing') or '—'} · "
+                f"Preset: {record.get('preset') or 'default'}",
                 "- Section behavior: "
                 + " · ".join(
                     f"{profile['name']} {profile['style']} ({_percent(profile['confidence'])})"
@@ -230,7 +242,9 @@ def _render_markdown(document: dict[str, Any]) -> str:
                 )
                 if record.get("section_profiles")
                 else "- Section behavior: unavailable for this older analysis",
-                f"- Existing mixing room: intro {record.get('dj_readiness', {}).get('intro_mixable_bars', 0)} bars · outro {record.get('dj_readiness', {}).get('outro_mixable_bars', 0)} bars",
+                f"- Existing mixing room: intro "
+                f"{record.get('dj_readiness', {}).get('intro_mixable_bars', 0)} bars · outro "
+                f"{record.get('dj_readiness', {}).get('outro_mixable_bars', 0)} bars",
                 f"- Suggested cues: mix in {_clock(record.get('mix_in'))} · mix out {_clock(record.get('mix_out'))}",
                 "",
             ]

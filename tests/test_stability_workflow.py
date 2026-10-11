@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 from __future__ import annotations
 
 import json
@@ -120,7 +121,9 @@ class StabilityWorkflowTests(unittest.TestCase):
             self.assertRegex(track["recording_code"], r"^HOU-\d{6,}$")
             self.assertEqual(track["version_code"], "ORG")
             self.assertEqual(set(track["playlists"]), {"House Night", "Favorites"})
-            self.assertEqual(restarted.key_verification(source_track.name)["verified_key"], "A minor")
+            verification = restarted.key_verification(source_track.name)
+            assert verification is not None
+            self.assertEqual(verification["verified_key"], "A minor")
             self.assertEqual(restarted.track_feedback(source_track.name)[0]["notes"], "Mixes cleanly")
 
             # Reanalysis links a new generation without replacing user-owned data.
@@ -137,7 +140,9 @@ class StabilityWorkflowTests(unittest.TestCase):
             self.assertEqual(reanalysis["parent_job_id"], completed_job)
             self.assertTrue(json.loads(reanalysis["config_json"])["refresh_cache"])
             service.enqueue_many.assert_called_once_with(queued["job_ids"])
-            self.assertEqual(restarted.key_verification(source_track.name)["verified_key"], "A minor")
+            verification = restarted.key_verification(source_track.name)
+            assert verification is not None
+            self.assertEqual(verification["verified_key"], "A minor")
             self.assertEqual(len(restarted.track_feedback(source_track.name)), 1)
 
             preflight = web_module.set_builder_export_preflight(SetExportPreflightRequest(paths=[str(relocated_track)]))

@@ -8,6 +8,7 @@
   ],
   "python.testing.pytestEnabled": false,
   "python.testing.unittestEnabled": true,
+  "markiscodecoverage.searchCriteria": "coverage/lcov*.info",
   "cSpell.words": [
     "audioextender"
   ]

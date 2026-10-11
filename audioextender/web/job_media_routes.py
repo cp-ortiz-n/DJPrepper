@@ -36,7 +36,7 @@ BatchFileType = Literal[
 
 class BatchDownloadRequest(BaseModel):
     job_ids: list[int] = Field(min_length=1)
-    file_types: list[BatchFileType] = Field(default_factory=lambda: ["extended"], min_length=1)
+    file_types: list[BatchFileType] = Field(default_factory=lambda: ["extended"], min_length=1)  # type: ignore[arg-type]
 
 
 class TransitionScoreRequest(BaseModel):

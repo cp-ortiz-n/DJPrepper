@@ -72,7 +72,8 @@ class SystemStateRepositoryMixin(RepositoryMixinBase):
             )
             counts["tracks"] = cursor.rowcount
             cursor = connection.execute(
-                "UPDATE downloaded_tracks SET artwork_path=? || SUBSTR(artwork_path, ?), updated_at=? WHERE artwork_path LIKE ?",
+                "UPDATE downloaded_tracks SET artwork_path=? || SUBSTR(artwork_path, ?), "
+                "updated_at=? WHERE artwork_path LIKE ?",
                 (new_prefix, len(old_prefix) + 1, _now(), old_prefix + "%"),
             )
             counts["artwork"] = cursor.rowcount

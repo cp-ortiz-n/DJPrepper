@@ -59,6 +59,9 @@ globals.
 | `web/metadata_batch_routes.py` | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches |
 | `web/reporting_routes.py` | Track feedback and manual key verification |
 | `web/set_builder_routes.py` | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
+| `web/set_planning_routes.py` | Candidate retrieval, validation, and asynchronous AI track-planning jobs |
+| `web/set_preference_routes.py` | Inspect, record, pause, and reset local Set Builder preference signals |
+| `web/set_review_routes.py` | Persist set, track, and transition reviews and expose calibration reports |
 | `web/settings_routes.py` | Settings, storage, backup/restore, relocation, cleanup |
 | `imports/routes.py` | Authorized source, local-file, and playlist import delivery |
 
@@ -68,33 +71,110 @@ providers are normally lambdas so tests can replace the active repository.
 
 ## Set Builder intention planning
 
-Set Builder uses an optional language-model boundary to understand a DJ's
-natural-language brief. The model does not build the set and does not inspect
-audio. It returns a small structured plan used by the existing deterministic
-selection engine.
+Set Builder uses optional language-model boundaries to understand a DJ's
+natural-language brief and, in AI Planned mode, choose a running order from a
+server-controlled shortlist. The model never inspects audio or the unrestricted
+catalog, and every proposed order passes deterministic validation before it can
+reach the browser.
 
 ```text
 Natural-language brief
         ↓
-POST /api/set-builder/interpret-intention
-        ↓
-IntentionPlanner
-   ├── Ollama qwen3:4b (default local provider)
+POST /api/set-builder/interpret-intention → IntentionPlanner
+   ├── Ollama qwen3.5:4b (default local provider)
    ├── OpenAI (optional configured fallback)
    └── browser offline rules (final fallback)
         ↓
 JSON schema validation + catalog-vocabulary sanitization
         ↓
-Editable requirements, preferences, genre drift, vibe, energy curve,
-opening traits, ending traits, and explanation
+POST /api/set-builder/plan-journey → JourneyPlanner
+   ├── model-planned sections when a provider is available
+   └── deterministic section planning when unavailable or invalid
         ↓
-Local deterministic filtering, scoring, ordering, and rendering
+Editable sections with runtime share, catalog genres, characteristics,
+purpose, and start/end energy
+        ↓
+POST /api/set-builder/candidate-pool → SetCandidateRetriever
+   ├── bounded, diverse candidates per journey section
+   ├── stable catalog IDs and local file availability
+   ├── direct, identity, bridge, and fallback scarcity tiers
+   └── optional bounded adjustments from DJPreferenceService
+        ↓
+POST /api/set-builder/plan-tracks → SetPlanningJobService
+   ├── cancellable candidate retrieval and stale-job supersession
+   ├── AITrackPlanner with strict structured output and repair attempts
+   ├── section-balanced compact model context with ID-only model output
+   ├── deterministic catalog-backed fallback
+   └── phase timings and persisted outcome telemetry
+        ↓
+SetPlanValidator
+   ├── IDs, exclusions, required/locked tracks, duplicates, and files
+   ├── duration, track count, and journey-section coverage
+   └── BPM, Camelot-key, and vocal-transition warnings
+        ↓
+PlanProposalRepairer + PlanQualityComparator
+   ├── preserve valid unique AI choices and repair bounded structural gaps
+   ├── evaluate AI and deterministic plans with identical metrics
+   └── accept AI only when quality improves without reducing genre coverage
+        ↓
+SetPlanEvaluator
+   ├── direct, identity, bridge, and fallback disclosure
+   ├── genre, journey, duration, repetition, and warning measurements
+   └── reproducible quality receipt returned with the validated plan
+        ↓
+DeterministicTransitionOptimizer (fallback plans)
+   ├── preserves chosen tracks, section allocation, and journey order
+   ├── bounded beam search across BPM, Camelot key, vocals, and energy
+   └── recognizes half/double-time BPM compatibility
 ```
 
 The route surface is:
 
 - `GET /api/set-builder/intention-provider` for provider and model status.
 - `POST /api/set-builder/interpret-intention` for structured interpretation.
+- `POST /api/set-builder/plan-journey` for a validated, editable section plan.
+- `POST /api/set-builder/candidate-pool` for a bounded shortlist backed by real catalog IDs.
+- `POST /api/set-builder/validate-plan` for deterministic hard errors, musical warnings, and plan metrics.
+- `POST /api/set-builder/plan-tracks` to start a bounded asynchronous track-planning job.
+- `GET /api/set-builder/plan-tracks/{job_id}` for progress and the validated result.
+- `POST /api/set-builder/plan-tracks/{job_id}/cancel` to cancel without changing the current set.
+- `POST /api/set-builder/plan-tracks/{job_id}/retry` to retry a failed or canceled request.
+- `GET /api/set-builder/ai-observability` for aggregate local outcomes, latency, repairs, and fallbacks.
+- `GET /api/set-builder/preferences` to inspect active and pending local signals.
+- `POST /api/set-builder/preferences/events` to record accepted or rejected track choices.
+- `PUT /api/set-builder/preferences/enabled` to pause or resume personalization.
+- `DELETE /api/set-builder/preferences` to reset signals without changing catalog data.
+- `GET /api/set-builder/reviews` for context-specific acceptance and calibration reports.
+- `POST /api/set-builder/reviews` to persist overall, track, and transition judgments.
+- `DELETE /api/set-builder/reviews` to reset review history independently of catalog data.
+
+Preference learning is a deterministic ranking layer, not model training.
+`DJPreferenceService` persists action evidence locally, requires three distinct
+tracks per signal, separates profiles by set vibe, and caps the final adjustment
+at ±8 points. `PersonalizedCandidateRanker` runs only after hard candidate
+constraints, so it cannot restore excluded, missing, or otherwise ineligible
+tracks. Matching signals and evidence counts are added to candidate reasons.
+`SetReviewService` is a separate persistence and reporting boundary. It records
+overall, per-track, and per-transition judgments; calculates personalized versus
+neutral acceptance; detects contradictions and broad-signal dominance; and
+builds a transition preference profile only after three distinct track pairs.
+The review route translates explicit track accept/reject judgments into the
+existing preference event vocabulary, keeping capture separate from scoring.
+
+`release_gate.py` owns the final Phase 2G acceptance policy. It consumes the
+evaluation report rather than planning tracks itself, so release policy remains
+separate from retrieval and model orchestration. Valid plans, complete scenario
+coverage, and full requested-genre coverage form the automated gate. Manual DJ
+listening approval is a distinct required input and cannot be inferred from a
+quality score. `SetPlanningJobService.observability()` summarizes persisted job
+receipts without returning prompts, catalog rows, filesystem paths, or audio.
+`bounded_model_candidates()` preserves required and locked tracks, keeps
+multiple candidates per journey-section slot, removes unavailable files, and
+caps model context independently of the validator's complete local pool. Model
+responses contain only stable track and section IDs. `PlanProposalRepairer`
+restores explanations from catalog evidence before validation. Genre coverage
+may be satisfied through disclosed scarcity only when the evaluated candidate
+pool contains zero available matches for every missing requested term.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is
@@ -103,9 +183,41 @@ controlled by `AUDIOEXTENDER_LLM_PROVIDER`, `OLLAMA_HOST`,
 `OPENAI_SET_BUILDER_MODEL`.
 
 Only the text brief and a bounded catalog vocabulary list cross this boundary;
-audio never does. OpenAI requests use `store: false`. Returned genres are
+audio and filesystem paths never do. AI Planned mode adds only the bounded
+candidate metadata needed for selection. OpenAI requests use `store: false`. Returned genres are
 canonicalized against catalog vocabulary, schema labels and placeholders are
 removed, and malformed or unavailable provider responses fall through safely.
+Journey percentages are normalized to 100%, energy values are bounded to 1–10,
+unknown genres are rejected, and omission or reordering of required genre
+sequences triggers deterministic fallback. Edited journey sections directly
+control positional genre and energy targets in either safe generator. The
+candidate and validator services are provider-independent. `track_planner.py`
+owns provider adaptation, repair, and fallback; `planning_jobs.py` owns lifecycle
+and cancellation; `planning_store.py` atomically persists job/request state and
+turns interrupted jobs into explicit retryable failures after restart;
+`plan_evaluator.py` owns deterministic quality measurement; and
+`proposal_repairer.py` owns bounded structural cleanup without making musical
+quality decisions; `plan_comparator.py` owns the AI-versus-baseline acceptance
+policy; and
+`set-planning-client.js` owns browser polling and abort semantics. The model cannot bypass availability, explicit brief constraints,
+exclusions, duration, or journey-coverage checks.
+
+Completed set records store a planning receipt separately from the editable
+brief. That receipt includes mode, provider/model, evaluation, warnings,
+candidate scarcity, fallback reason, duration, and per-track selection evidence.
+Loading a saved set restores this provenance; manual edits remain possible but
+do not rewrite the historical generation receipt.
+
+`scripts/evaluate_set_builder.py` is the catalog-scale regression boundary. It
+runs the checked-in scenarios in `tests/fixtures/set_builder_eval_scenarios.json`
+through candidate retrieval, track planning, validation, and evaluation, then
+atomically writes a comparable report. `evaluation_harness.py` contains the
+provider-independent orchestration so tests can use synthetic catalogs while
+operators can use the exported real catalog. The harness never weakens runtime
+validation and records failed scenarios instead of hiding them from averages.
+Scenario expectations can enforce quality, genre-coverage, and warning-count
+floors; the Latin-party regression specifically guards against reintroducing
+the avoidable BPM discontinuities found during the first connected-drive run.
 
 ## Browser request state
 

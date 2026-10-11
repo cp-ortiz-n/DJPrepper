@@ -41,7 +41,9 @@ class LibraryRelocationTests(unittest.TestCase):
             self.assertEqual(state["status"], "complete")
             self.assertTrue(source_track.is_file())
             self.assertTrue((destination / source_track.relative_to(source)).is_file())
-            self.assertEqual(repository.get_downloaded_track(track_id)["file_path"], str(source_track.resolve()))
+            saved_track = repository.get_downloaded_track(track_id)
+            assert saved_track is not None
+            self.assertEqual(saved_track["file_path"], str(source_track.resolve()))
 
     def test_move_relinks_paths_preserves_id_and_keeps_original(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -61,6 +63,7 @@ class LibraryRelocationTests(unittest.TestCase):
             coordinator.prepare(source, destination, "move", "fast")
             coordinator._run()
             relocated = repository.get_downloaded_track(track_id)
+            assert relocated is not None
             self.assertEqual(coordinator.status()["status"], "complete")
             self.assertEqual(relocated["id"], track_id)
             self.assertEqual(Path(relocated["file_path"]), (destination / source_track.relative_to(source)).resolve())
@@ -68,6 +71,7 @@ class LibraryRelocationTests(unittest.TestCase):
             self.assertTrue((destination / ".audioextender" / "library.json").is_file())
             self.assertTrue(any((destination / "_Playlist").glob("*.m3u8")))
             relocated_job = repository.get(job_id)
+            assert relocated_job is not None
             self.assertEqual(
                 Path(relocated_job["wav_path"]).resolve(),
                 (destination / source_track.relative_to(source)).resolve(),
@@ -79,7 +83,9 @@ class LibraryRelocationTests(unittest.TestCase):
             self.assertTrue(coordinator.status()["database_backup"])
             rolled_back = coordinator.rollback()
             self.assertEqual(rolled_back["status"], "rolled_back")
-            self.assertEqual(Path(repository.get_downloaded_track(track_id)["file_path"]), source_track.resolve())
+            rolled_back_track = repository.get_downloaded_track(track_id)
+            assert rolled_back_track is not None
+            self.assertEqual(Path(rolled_back_track["file_path"]), source_track.resolve())
 
     def test_relink_accepts_an_already_moved_library(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -103,7 +109,9 @@ class LibraryRelocationTests(unittest.TestCase):
             coordinator.prepare(source, destination, "relink", "fast")
             coordinator._run()
             self.assertEqual(coordinator.status()["status"], "complete")
-            self.assertEqual(Path(repository.get_downloaded_track(track_id)["file_path"]), new_track.resolve())
+            relinked_track = repository.get_downloaded_track(track_id)
+            assert relinked_track is not None
+            self.assertEqual(Path(relinked_track["file_path"]), new_track.resolve())
 
 
 if __name__ == "__main__":

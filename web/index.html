@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20261005-199">
+  <link rel="stylesheet" href="/assets/styles.css?v=20261009-201">
 </head>
 <body>
   <header class="topbar">
@@ -280,7 +280,7 @@
         <form id="set-builder-form" class="panel set-controls">
           <div class="set-control-head"><div><p class="eyebrow">SET BRIEF</p><h2>Plan the journey</h2><small>Start with the essentials. Refine constraints only when the set needs them.</small></div><button id="reset-set-brief" type="button" class="button tertiary">Reset brief</button></div>
           <section class="set-intention-card">
-            <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>Optional</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div></div>
+            <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>Optional</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div><span id="set-provider-status" class="set-provider-status checking">Checking local AI…</span></div>
             <textarea id="set-intention" rows="4" maxlength="1200" placeholder="Example: Build a driving Latin electronic set with a Techno foundation, Spanish vocals, dembow or Latin percussion, and an Ecuadorian party feel. Allow Latin House and Cumbia edits as bridges."></textarea>
             <div class="set-intention-actions"><small>We’ll turn this into editable preferences before generating.</small><button id="interpret-set-intention" type="button" class="button secondary">Interpret intention</button></div>
             <div id="set-intention-interpretation" class="set-intention-interpretation" hidden>
@@ -291,6 +291,11 @@
                 <label>Limit or avoid<input id="set-intention-avoided" type="text" placeholder="Generic instrumental Techno"></label>
                 <label>Genre drift<select id="set-intention-drift"><option value="none">None · direct genres only</option><option value="low">Low · close variants</option><option value="moderate" selected>Moderate · musical bridges</option><option value="wide">Wide · context before genre</option></select></label>
               </div>
+              <section id="set-journey-preview" class="set-journey-preview" hidden>
+                <header><div><strong>Planned journey</strong><small id="set-journey-summary">Review the sections before generating tracks.</small></div><span id="set-journey-evidence"></span></header>
+                <div id="set-journey-sections" class="set-journey-sections"></div>
+                <p id="set-journey-total" class="set-journey-total"></p>
+              </section>
               <ol id="set-fallback-policy" class="set-fallback-policy"></ol>
             </div>
           </section>
@@ -311,13 +316,31 @@
               <label>Minimum set health<select id="set-minimum-health"><option value="55">55 · Flexible</option><option value="65" selected>65 · Balanced</option><option value="75">75 · Strong</option><option value="85">85 · Strict</option></select></label>
           </div></details>
           <details class="set-advanced set-track-constraints"><summary><span><strong>Required and excluded tracks</strong><small>Pin must-play tracks or remove songs from consideration</small></span><b id="set-rule-count">0 rules</b></summary><div class="set-track-rules"><label>Required track<select id="set-required"><option value="">Choose a track</option></select></label><button id="add-required-track" type="button" class="button secondary">Add required</button><label>Exclude track<select id="set-excluded"><option value="">Choose a track</option></select></label><button id="add-excluded-track" type="button" class="button secondary">Exclude</button></div><div id="set-rule-chips" class="set-rule-chips"></div></details>
-          <div class="set-generate-row"><button id="set-generate" type="submit">Generate set plan</button><p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p></div>
+          <div class="set-generate-row">
+            <label class="set-planning-mode">Planning mode<select id="set-planning-mode"><option value="ai-planned" selected>AI Planned · chooses and orders tracks</option><option value="interpreted">AI Interpreted · rules choose tracks</option><option value="classic">Classic · rules only</option></select></label>
+            <button id="set-generate" type="submit">Generate set plan</button>
+            <button id="set-cancel-planning" type="button" class="button secondary" hidden>Cancel planning</button>
+            <p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p>
+          </div>
         </form>
         <aside class="panel saved-sets-panel">
           <p class="eyebrow">SAVED SETS</p><h2>Your plans</h2>
           <select id="saved-set-select"><option value="">No saved set selected</option></select>
           <div class="saved-set-actions"><button id="load-set" type="button" class="button primary">Load</button><button id="duplicate-set" type="button" class="button secondary">Duplicate</button><button id="delete-set" type="button" class="button destructive">Delete</button></div>
           <p>Set plans stay on this Mac in your browser. Audio files remain in DJ Library.</p>
+          <details class="set-preference-panel">
+            <summary><span><strong>Learned preferences</strong><small id="set-preference-status">Loading local feedback…</small></span></summary>
+            <p>Set Builder learns only after the same signal appears across 3 distinct tracks. Hard requirements, exclusions, and unavailable files always win.</p>
+            <label class="set-preference-toggle"><input id="set-personalization-enabled" type="checkbox" checked> Use my accepted and rejected choices</label>
+            <div id="set-preference-summary" class="set-preference-summary"></div>
+            <button id="reset-set-preferences" type="button" class="button tertiary">Reset learned preferences</button>
+          </details>
+          <details class="set-preference-panel">
+            <summary><span><strong>AI operations</strong><small id="set-ai-operations-status">Loading planning history…</small></span></summary>
+            <p>Local operational evidence only. Track audio and catalog contents are never sent in this report.</p>
+            <div id="set-ai-operations-summary" class="set-ai-operations-summary"></div>
+            <button id="refresh-set-ai-operations" type="button" class="button tertiary">Refresh AI status</button>
+          </details>
         </aside>
       </div>
       <section id="set-result" class="panel set-result" hidden>
@@ -328,6 +351,13 @@
         </section>
         <details id="set-health" class="set-health"></details>
         <details id="set-selection-summary" class="set-selection-summary" open><summary>Selection summary</summary><div></div></details>
+        <details id="set-review-panel" class="set-review-panel">
+          <summary><span><strong>Review this set</strong><small>Teach Set Builder what worked after listening.</small></span></summary>
+          <div class="set-review-overall" role="group" aria-label="Overall set decision"><button type="button" data-set-decision="accept" class="button secondary">Approve running order</button><button type="button" data-set-decision="reject" class="button secondary">Needs changes</button></div>
+          <label>Review notes<textarea id="set-review-notes" rows="2" maxlength="2000" placeholder="What worked, what felt wrong, or what should change next time?"></textarea></label>
+          <div class="set-review-actions"><button id="submit-set-review" type="button">Save review</button><span id="set-review-status" role="status">Review individual tracks and transitions below, then save.</span></div>
+          <div id="set-calibration-summary" class="set-calibration-summary"></div>
+        </details>
         <div id="set-export-status" class="set-export-status"><span>Rekordbox paths will be checked before export.</span></div>
         <div id="set-add-track-panel-host"></div>
         <details class="set-journey" open><summary>Energy and BPM journey</summary><div class="set-curves"><div><span>Energy journey</span><svg id="set-energy-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div><div><span>BPM journey</span><svg id="set-bpm-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div></div></details>
@@ -613,6 +643,6 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20261005-237" type="module"></script>
+  <script src="/assets/app.js?v=20261009-239" type="module"></script>
 </body>
 </html>
