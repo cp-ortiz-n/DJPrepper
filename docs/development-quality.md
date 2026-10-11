@@ -33,7 +33,7 @@ The reports were regenerated from this checkout, not inferred from older HTML. P
 
 | Surface | Statements/lines | Branches | Functions |
 | --- | ---: | ---: | ---: |
-| Python application | 65.9% (7,522 / 11,406) | 46.7% (1,375 / 2,946; 497 partial) | n/a |
+| Python application | 66.0% (7,525 / 11,406) | 46.7% (1,376 / 2,946; 498 partial) | n/a |
 | JavaScript application | 12.95% (657 / 5,072) | 57.23% (174 / 304) | 52.13% (61 / 117) |
 
 The combined Python line-and-branch score reported by coverage.py is 62.0%.

@@ -15,6 +15,11 @@ it to decide where a manual change belongs before editing.
 
 Run the app with `python3 web_app.py`.
 
+The current HTTP surface, delivery shell, startup side effects, runtime roots,
+response shapes, and restart expectations are frozen in
+[`web-composition-contracts.md`](web-composition-contracts.md). Update those
+contracts deliberately whenever an approved public API change is made.
+
 ## Package ownership
 
 | Package | Responsibility |

@@ -20,11 +20,15 @@ compatibility rather than relying on visual inspection.
   documented command. Evidence: [ARCH-012](docs/architecture-audit.md#arch-012--quality-enforcement-has-gaps-and-the-checked-out-baseline-is-not-lint-clean).
   Completed 2026-10-11: `./scripts/check_quality.sh` is green; the measured
   baseline and coverage limitations are recorded in `docs/development-quality.md`.
-- [ ] **ARCH-001A — Capture web composition compatibility contracts.** Priority:
+- [x] **ARCH-001A — Capture web composition compatibility contracts.** Priority:
   P0. Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance: record the
   FastAPI route inventory, successful/error response shapes, startup side
   effects, path roots, and restart behavior in automated characterization
   tests; no runtime behavior changes. Evidence: [ARCH-001](docs/architecture-audit.md#arch-001--legacy-web-application-remains-an-architectural-bottleneck).
+  Completed 2026-10-11: executable contracts now freeze the 152-route HTTP
+  inventory, delivery shell, response/error shapes, startup provider reporting,
+  runtime roots, dependency wiring, disconnected-library behavior, and existing
+  restart persistence. See `docs/web-composition-contracts.md`.
 - [ ] **ARCH-003A — Establish musical-policy ownership and golden fixtures.**
   Priority: P0. Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance:
   document authoritative owners for normalized key/Camelot, energy, roles,
