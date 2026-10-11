@@ -244,6 +244,99 @@ test('Set Builder recognizes future catalog vocabulary without another hard-code
   assert.ok(!result.preferred.includes('future genre not requested'));
 });
 
+test('Set Builder converts exact percentages into track allocations', () => {
+  assert.deepEqual(setBuilder.genreAllocationTargets(
+    ['Latin / Cumbia', 'Latin / Salsa', 'Latin / Dembow', 'Electronic / House / Latin House'],
+    {
+      'Latin / Cumbia': 25,
+      'Latin / Salsa': 25,
+      'Latin / Dembow': 25,
+      'Electronic / House / Latin House': 25,
+    },
+    16,
+  ), {
+    'Latin / Cumbia': 4,
+    'Latin / Salsa': 4,
+    'Latin / Dembow': 4,
+    'Electronic / House / Latin House': 4,
+  });
+  assert.deepEqual(
+    setBuilder.genreAllocationTargets(['A', 'B', 'C'], {A:33, B:33, C:34}, 10),
+    {A:3, B:3, C:4},
+  );
+});
+
+test('Set Builder interprets an intention into editable deterministic preferences', () => {
+  const result = setBuilder.interpretSetIntention(
+    'Build a driving Latin electronic set with a Techno foundation. Favor Spanish vocals, dembow or Latin percussion for an Ecuadorian party crowd. Avoid generic instrumental Techno.',
+  );
+  assert.equal(result.drift, 'moderate');
+  assert.ok(result.preferred.includes('techno foundation'));
+  assert.ok(result.preferred.includes('spanish vocals'));
+  assert.ok(result.preferred.includes('dembow'));
+  assert.ok(result.preferred.includes('ecuadorian party'));
+  assert.deepEqual(result.avoided, ['generic instrumental techno']);
+  assert.equal(result.fallbackPolicy.length, 5);
+});
+
+test('Set Builder derives identity separately from catalog genre', () => {
+  const tags = setBuilder.inferredTrackIdentity({
+    source_name: 'Cumbia Anthem (Techno Edit).wav',
+    _genre: 'Electronic / Techno',
+    _detailedGenre: 'Latin Techno',
+  }, ['Ecuadorian Party']);
+  assert.ok(tags.includes('techno foundation'));
+  assert.ok(tags.includes('latin identity'));
+  assert.ok(tags.includes('recognizable material'));
+  assert.ok(tags.includes('ecuadorian party'));
+});
+
+test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {
+  const result=setBuilder.interpretSetIntention(
+    'Build a latin reggaeton and dembow mix that also includes some rab/rap, hip hop for a chill party, kickback. Some dancing will take place as well. Add something melodic in the beginning.',
+  );
+  for(const term of ['dembow','reggaeton','r&b','rap','hip hop','chill kickback','dance-friendly'])assert.ok(result.preferred.includes(term),term);
+  assert.equal(result.vibe,'balanced');
+  assert.equal(result.opening,'melodic');
+  assert.deepEqual(result.requestedGenres,['reggaeton','dembow','r&b','hip hop','rap']);
+  assert.deepEqual(result.avoided,[]);
+});
+
+test('Set Builder keeps Latin Techno, Latin House, and available Schranz distinct from generic Latin genres', () => {
+  const result=setBuilder.interpretSetIntention(
+    'We need a latin techno, latin house set that combines a bit of schranz if we have any. Start with something melodic to warm up and have varying waves',
+    ['Latin Techno','Latin House','Schranz','Bachata','Reggaeton'],
+  );
+  assert.deepEqual(result.requestedGenres,['latin techno','latin house','schranz']);
+  assert.equal(result.opening,'melodic');
+  assert.equal(result.vibe,'warm-up');
+  assert.equal(result.curve,'waves');
+  assert.equal(setBuilder.trackMatchesIntendedGenre({_genre:'Electronic / Techno',_detailedGenre:'Latin Techno'},'latin techno'),true);
+  assert.equal(setBuilder.trackMatchesIntendedGenre({_genre:'Latin / Bachata',_detailedGenre:'Bachata'},'latin techno'),false);
+  assert.equal(setBuilder.trackMatchesIntendedGenre({_genre:'Latin / Reggaeton',_detailedGenre:'Reggaeton'},'latin house'),false);
+});
+
+test('Set Builder preserves a multi-section Latin party journey in performance order', () => {
+  const result=setBuilder.interpretSetIntention(
+    'Start with melodic Latin songs. From there add cumbia and merengue. Then bachata and salsa. End with Latin Techno and Schranz.',
+    ['Cumbia','Merengue','Bachata','Salsa','Latin Techno','Schranz'],
+  );
+  assert.deepEqual(result.genreSequence,['cumbia','merengue','bachata','salsa','latin techno','schranz']);
+  assert.equal(result.opening,'melodic');
+  assert.equal(setBuilder.intendedGenreForPosition(result,0,12),'cumbia');
+  assert.equal(setBuilder.intendedGenreForPosition(result,5,12),'bachata');
+  assert.equal(setBuilder.intendedGenreForPosition(result,11,12),'schranz');
+});
+
+test('Set Builder recognizes future catalog vocabulary without another hard-coded parser rule', () => {
+  const result=setBuilder.interpretSetIntention(
+    'Start with jersey club, then bridge into something unfamiliar.',
+    ['Jersey Club','Future Genre Not Requested'],
+  );
+  assert.ok(result.preferred.includes('jersey club'));
+  assert.ok(!result.preferred.includes('future genre not requested'));
+});
+
 test('Set Builder feature declares every musical classifier used during generation', () => {
   const path = fileURLToPath(new URL('../web/set-builder.js', import.meta.url));
   const source = readFileSync(path, 'utf8');

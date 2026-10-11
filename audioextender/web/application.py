@@ -65,6 +65,7 @@ from audioextender.library.relocation import LibraryRelocationCoordinator
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.web_jobs import WebJobService
 from audioextender.reporting.feedback import append_web_feedback
+from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.repositories.facade import JobRepository
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
