@@ -59,3 +59,9 @@ versioned `tests/fixtures/musical_policy_golden.json` is exercised by Python and
 Node so cross-runtime drift fails the standard quality gate. `ARCH-003A` changes
 no weights or algorithms; consolidation remains scoped to `ARCH-003B`.
 
+`tests/test_background_operation_contract.py` validates that the Phase 0
+background-operation inventory retains all ten audited families and a complete
+lifecycle description. It is a documentation contract, not a claim that those
+families already share an executor. Current differences and known gaps are
+recorded in `docs/background-operation-lifecycles.md` for `ARCH-004B`.
+

@@ -38,11 +38,14 @@ compatibility rather than relying on visual inspection.
   Completed 2026-10-11: authoritative and compatibility owners are recorded in
   `docs/musical-policy-ownership.md`; one versioned JSON fixture now drives
   Python catalog/Set-transition tests and browser profile/Library-score tests.
-- [ ] **ARCH-004A — Document the background-operation lifecycle matrix.**
+- [x] **ARCH-004A — Document the background-operation lifecycle matrix.**
   Priority: P1. Effort: S. Risk: Low. Dependencies: ARCH-012A. Acceptance: every
   job type lists states, persistence, cancellation checkpoints, retry rules,
   restart disposition, timestamps, errors, and receipt behavior; intentional
   differences are justified. Evidence: [ARCH-004](docs/architecture-audit.md#arch-004--background-operations-have-fragmented-lifecycle-contracts).
+  Completed 2026-10-11: ten user-visible operation families, their lifecycle
+  gaps, and their persistence/cancellation/retry contracts are recorded in
+  `docs/background-operation-lifecycles.md` and its validated JSON companion.
 
 Phase acceptance: the baseline is green, compatibility contracts are executable,
 and the musical/job ownership decisions are documented.

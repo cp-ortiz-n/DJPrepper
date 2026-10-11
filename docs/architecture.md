@@ -23,6 +23,9 @@ contracts deliberately whenever an approved public API change is made.
 Current musical classifications and scoring boundaries are documented in
 [`musical-policy-ownership.md`](musical-policy-ownership.md). Its shared golden
 fixture freezes Python and browser behavior before the `ARCH-003B` consolidation.
+Background job state, persistence, cancellation, retry, errors, timestamps, and
+receipts are inventoried in
+[`background-operation-lifecycles.md`](background-operation-lifecycles.md).
 
 ## Package ownership
 
