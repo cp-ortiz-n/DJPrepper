@@ -1399,14 +1399,22 @@ and every JavaScript file under `web/`. The recommended **Code Coverage**
 extension by Markis Taylor is configured to load both reports automatically.
 Tests, dependencies, caches, and generated output are not coverage targets.
 
+Use Node 20 or newer for JavaScript coverage (`nvm use 22` is recommended).
 Run the complete local quality gate after installing the development
 requirements:
 
 ```bash
-python3 -m ruff check .
-python3 -m mypy
-npm run coverage
+./scripts/check_quality.sh
+./scripts/check_coverage.sh
 ```
+
+The quality command is the authoritative standard check and does not modify
+source files. Coverage is a separate diagnostic tier, while
+`./scripts/run_stability_gate.sh` remains the extended check for high-risk
+persistence, import, relocation, export, and Set Builder changes. See
+[`docs/development-quality.md`](docs/development-quality.md) for the verified
+tool versions, current coverage, formatting debt ratchets, exclusions, and
+regression policy. Permanent contribution rules are in [`AGENTS.md`](AGENTS.md).
 
 The tests follow the same separation as the application modules: domain logic
 is tested independently from file I/O, terminal presentation, and expensive

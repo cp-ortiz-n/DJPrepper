@@ -126,6 +126,7 @@ export function createDjLibraryFeature({
   jobAction, jobElement,
   descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
 }) {
+  let visibleDownloadedTracks = [];
   const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied){notify(`Added inferred identity tags to ${result.applied} tracks. Manual tags were preserved.`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
   const bindIdentityProtection=(editor,track)=>{const input=editor.querySelector('.descriptor-inference-protection input');if(!input||!track)return;input.checked=Boolean(track.identity_inference_locked);input.onchange=async()=>{const wanted=input.checked;input.disabled=true;try{const response=await fetch(`/api/downloaded-library/tracks/${Number(track.id)}/inference-protection`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({protected:wanted})}),result=await response.json();if(!response.ok)throw new Error(result.detail||'Inference protection could not be saved.');track.identity_inference_locked=Boolean(result.protected_from_inference);input.checked=track.identity_inference_locked;notify(`${track.title||'Track'}: ${input.checked?'protected from automatic inference':'eligible for re-inference'}. Survives restart: Yes.`,'success');}catch(error){input.checked=!wanted;notify(error.message,'danger');}finally{input.disabled=false;}};};
   async function revealLibraryTrack(jobId, sourceName) {
@@ -183,6 +184,7 @@ export function createDjLibraryFeature({
     const allJobs = (catalog.tracks || []).map(track => track.job);
     const report = {songs:Object.fromEntries((catalog.tracks || []).map((track,index) => [index, track.analysis || {}]))};
     const downloadedTracks = (catalog.tracks || []).map(track => track.downloaded).filter(Boolean);
+    visibleDownloadedTracks = downloadedTracks;
     const downloaded = {tracks:downloadedTracks, genres:catalog.facets?.categories || {}};
     const downloadedByJob = new Map((downloaded.tracks || []).filter(track => track.completed_library_job_id).map(track => [Number(track.completed_library_job_id), track]));
     $('#library-genre-options').replaceChildren(...[...new Set([...Object.keys(downloaded.genres || {}),...ELECTRONIC_GENRE_CATEGORIES,...LATIN_GENRE_CATEGORIES])].sort().map(name => option(name, name)));
@@ -539,7 +541,7 @@ export function createDjLibraryFeature({
       const selectedCards=boxes.filter(box=>box.checked).map(box=>box.closest('.library-card'));
       const trackIds=selectedCards.map(card=>Number(card.dataset.downloadedId)).filter(Boolean);
       if(!trackIds.length||trackIds.length!==selectedCards.length)return;
-      const single=trackIds.length===1,currentTrack=single?downloadedTracks.find(track=>Number(track.id)===trackIds[0]):null,saved=currentTrack?.descriptors||[];
+      const single=trackIds.length===1,currentTrack=single?visibleDownloadedTracks.find(track=>Number(track.id)===trackIds[0]):null,saved=currentTrack?.descriptors||[];
       const selectedBoxIndex=single?boxes.findIndex(box=>box.checked):-1,previousBox=selectedBoxIndex>0?boxes[selectedBoxIndex-1]:null,nextBox=selectedBoxIndex>=0?boxes[selectedBoxIndex+1]:null;
       const {editor,close}=openDescriptorEditorDialog({descriptors:saved,bulk:!single,protectedFromInference:single?Boolean(currentTrack?.identity_inference_locked):null,title:single?`Edit identity · ${currentTrack?.title||'Selected track'}`:'Edit identity for selected tracks',subtitle:single?`Track ${selectedBoxIndex+1} of ${boxes.length} in the current filtered list.`:`Apply descriptors to ${trackIds.length} selected tracks.`});
       if(single)bindIdentityProtection(editor,currentTrack);

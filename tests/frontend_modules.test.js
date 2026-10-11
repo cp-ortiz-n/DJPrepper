@@ -49,7 +49,7 @@ test('identity editing keeps saved single-track values and opens without page re
   assert.match(sharedSource, /export function openDescriptorEditorDialog/);
   assert.match(sharedSource, /descriptorChipsMarkup\(descriptors,\{detailed:true\}\)/);
   assert.match(musicSource, /descriptors:single\?\(selected\[0\]\.descriptors\|\|\[\]\)/);
-  assert.match(librarySource, /currentTrack=single\?downloadedTracks\.find\(track=>Number\(track\.id\)===trackIds\[0\]\):null,saved=currentTrack\?\.descriptors/);
+  assert.match(librarySource, /currentTrack=single\?visibleDownloadedTracks\.find\(track=>Number\(track\.id\)===trackIds\[0\]\):null,saved=currentTrack\?\.descriptors/);
   assert.equal(musicSource.includes("document.querySelector('.downloaded-selection').after(panel)"), false);
   assert.equal(librarySource.includes("document.querySelector('.library-selection').after(panel)"), false);
   assert.match(sharedSource, /type="radio" name="descriptor-mode" value="add" checked/);

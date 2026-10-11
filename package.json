@@ -4,11 +4,18 @@
   "description": "A local macOS command-line tool that analyzes an existing track, selects strong beat-aligned phrases near the beginning and end, and exports a stereo WAV with a DJ-friendly intro and outro. The full original track remains present between the added sections.",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
-    "check": "node --check web/app.js && node --check web/request-state-controller.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/set-planning-client.js && node --check web/settings.js && node --check web/reporting.js && node --check web/import-queue.js && node --test tests/*.test.js",
+    "check": "npm run check:syntax && node --test tests/*.test.js",
+    "check:syntax": "node --check web/app.js && node --check web/request-state-controller.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/set-planning-client.js && node --check web/settings.js && node --check web/reporting.js && node --check web/import-queue.js",
+    "lint": "eslint web tests/*.test.js scripts/*.mjs",
+    "format:check": "node scripts/check_frontend_format.mjs",
+    "quality": "npm run lint && npm run format:check && npm run check",
     "coverage": "npm run coverage:js && npm run coverage:python",
     "coverage:js": "c8 --all --include='web/**/*.js' --reporter=lcov --reporter=text-summary --reports-dir=coverage node --test tests/*.test.js",
-    "coverage:python": "python3 -m coverage run -m unittest discover -s tests && python3 -m coverage report -m && python3 -m coverage lcov -o coverage/lcov-python.info"
+    "coverage:python": ".venv/bin/python -m coverage erase && .venv/bin/python -m coverage run -m unittest discover -s tests && .venv/bin/python -m coverage report -m && .venv/bin/python -m coverage json && .venv/bin/python -m coverage lcov -o coverage/lcov-python.info"
   },
   "repository": {
     "type": "git",
@@ -25,6 +32,8 @@
     "wavesurfer.js": "^7.12.12"
   },
   "devDependencies": {
-    "c8": "^12.0.0"
+    "c8": "^12.0.0",
+    "eslint": "^8.57.1",
+    "prettier": "^3.6.2"
   }
 }

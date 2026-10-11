@@ -92,7 +92,7 @@ export function createSettingsFeature({
     const payload = await fetch('/api/settings', { method:'DELETE' }).then(r => r.json());
     localStorage.setItem('music-files-page-size', '50'); localStorage.setItem('dj-library-page-size', '50');
     localStorage.setItem('audioextender-key-view', 'both'); downloadedUiState.pageSize = 50;
-    appConfig.effective = payload.effective; appConfig.overrides = {};
+    setAppConfig({effective:payload.effective,overrides:{}});
     applyEffectiveSettings(payload.effective); $('#settings-form').classList.remove('is-dirty'); $('#settings-message').textContent = operationReceiptText(payload.receipt);
   });
 
@@ -190,7 +190,7 @@ export function createSettingsFeature({
     $('#quality-scan-message').textContent=batch.status==='complete'?`Complete · ${batch.processed} analyzed${batch.failed?` · ${batch.failed} unavailable`:''}`:`${batch.processed} of ${batch.total} · ${batch.current||'Preparing…'}`;
     $('#scan-audio-quality').disabled=batch.status==='processing';$('#scan-audio-quality').textContent=batch.status==='processing'?'Analyzing…':'Analyze audio quality';
     if(batch.summary)renderAudioQualitySummary(batch.summary);
-    if(batch.status==='processing'){clearTimeout(qualityScanTimer);qualityScanTimer=setTimeout(()=>pollAudioQualityScan(batchId),900);}else{downloadedLoadedAt=0;await loadLibraryStatus();}
+    if(batch.status==='processing'){clearTimeout(qualityScanTimer);qualityScanTimer=setTimeout(()=>pollAudioQualityScan(batchId),900);}else{invalidateCatalogs();await loadLibraryStatus();}
   }
   $('#scan-audio-quality').addEventListener('click',async()=>{const button=$('#scan-audio-quality');button.disabled=true;button.textContent='Starting…';const response=await fetch('/api/downloaded-library/audio-quality',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent='Analyze audio quality';$('#quality-scan-message').textContent=batch.detail||'Could not start quality analysis.';return;}pollAudioQualityScan(batch.batch_id);});
   fetch('/api/downloaded-library/audio-quality-latest',{cache:'no-store'}).then(response=>response.json()).then(batch=>{if(batch.summary)renderAudioQualitySummary(batch.summary);if(batch.status==='processing')pollAudioQualityScan(batch.batch_id);}).catch(()=>{});

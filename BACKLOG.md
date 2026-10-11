@@ -1,5 +1,224 @@
 # AudioExtender Backlog
 
+# Architecture Modernization & Technical Debt Reduction
+
+This roadmap comes from [`docs/architecture-audit.md`](docs/architecture-audit.md).
+It preserves the modular monolith, existing APIs, data, musical behavior, and
+completed backlog work. Confirmed refactors and investigation-only items are
+distinguished explicitly. Completion marks below reflect verified implementation.
+
+## Phase 0 — Baseline and Architecture Audit
+
+Objective: establish stable compatibility evidence before structural changes.
+Dependencies: none. Benefit: every later extraction can prove behavior and data
+compatibility rather than relying on visual inspection.
+
+- [x] **ARCH-012A — Restore and freeze a clean quality baseline.** Priority: P0.
+  Effort: S. Risk: Low. Dependencies: none. Acceptance: remove the duplicate
+  `IntentionPlanner` import in an approved implementation change; Ruff, MyPy,
+  Python tests, and `npm run check` all pass from a clean checkout through one
+  documented command. Evidence: [ARCH-012](docs/architecture-audit.md#arch-012--quality-enforcement-has-gaps-and-the-checked-out-baseline-is-not-lint-clean).
+  Completed 2026-10-11: `./scripts/check_quality.sh` is green; the measured
+  baseline and coverage limitations are recorded in `docs/development-quality.md`.
+- [ ] **ARCH-001A — Capture web composition compatibility contracts.** Priority:
+  P0. Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance: record the
+  FastAPI route inventory, successful/error response shapes, startup side
+  effects, path roots, and restart behavior in automated characterization
+  tests; no runtime behavior changes. Evidence: [ARCH-001](docs/architecture-audit.md#arch-001--legacy-web-application-remains-an-architectural-bottleneck).
+- [ ] **ARCH-003A — Establish musical-policy ownership and golden fixtures.**
+  Priority: P0. Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance:
+  document authoritative owners for normalized key/Camelot, energy, roles,
+  vocals, timing, Library match score, and Set transition cost; golden fixtures
+  cover current Python and browser outputs without changing weights. Evidence:
+  [ARCH-003](docs/architecture-audit.md#arch-003--shared-musical-classification-is-duplicated-across-backend-and-browser).
+- [ ] **ARCH-004A — Document the background-operation lifecycle matrix.**
+  Priority: P1. Effort: S. Risk: Low. Dependencies: ARCH-012A. Acceptance: every
+  job type lists states, persistence, cancellation checkpoints, retry rules,
+  restart disposition, timestamps, errors, and receipt behavior; intentional
+  differences are justified. Evidence: [ARCH-004](docs/architecture-audit.md#arch-004--background-operations-have-fragmented-lifecycle-contracts).
+
+Phase acceptance: the baseline is green, compatibility contracts are executable,
+and the musical/job ownership decisions are documented.
+
+## Phase 1 — Code Quality and Technical Debt
+
+Objective: remove low-risk noise and expose stable contracts before extraction.
+Dependencies: Phase 0. Benefit: clearer failures and less brittle test feedback.
+
+- [ ] **ARCH-011A — Replace duplicate/brittle frontend tests with behavior
+  coverage.** Priority: P1. Effort: M. Risk: Low. Dependencies: ARCH-012A.
+  Acceptance: repeated Set Builder tests occur once; key user workflows execute
+  controller/DOM behavior; only true architecture boundaries use source-text
+  assertions; all existing scenarios remain covered. Evidence: [ARCH-011](docs/architecture-audit.md#arch-011--frontend-tests-contain-brittle-source-assertions-and-duplicated-cases).
+- [ ] **ARCH-010A — Inventory and normalize error contracts.** Priority: P1.
+  Effort: M. Risk: Medium. Dependencies: ARCH-001A. Acceptance: expected domain,
+  unavailable-resource, cancellation, and unexpected errors have documented
+  mappings; broad catches remain only at justified boundaries with structured
+  logs; the browser uses one backward-compatible parser. Evidence: [ARCH-010](docs/architecture-audit.md#arch-010--error-handling-and-api-failure-contracts-are-inconsistent).
+- [ ] **ARCH-002A — Characterize the processing pipeline stages.** Priority: P1.
+  Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance: tests freeze stage
+  order, progress, cache behavior, artifacts, result timing, and injected
+  failures for representative configurations without restructuring the method.
+  Evidence: [ARCH-002](docs/architecture-audit.md#arch-002--track-processing-is-concentrated-in-one-long-transaction-script).
+
+Phase acceptance: no duplicated test cases, failure contracts are explicit, and
+the long processing workflow has stage-level characterization.
+
+## Phase 2 — Backend Architecture and Shared Services
+
+Objective: finish backend separation while preserving public behavior.
+Dependencies: Phases 0–1. Benefit: independently testable workflows and smaller
+change surfaces for new backend features.
+
+- [ ] **ARCH-001B — Introduce explicit application composition.** Priority: P0.
+  Effort: L. Risk: High. Dependencies: ARCH-001A, ARCH-010A. Acceptance:
+  `create_app()` receives/creates an explicit runtime container under temporary
+  roots; importing the module no longer performs uncontrolled production-path
+  recovery or constructs unrelated mutable registries; `web_app.py` and public
+  endpoints remain compatible. Evidence: [ARCH-001](docs/architecture-audit.md#arch-001--legacy-web-application-remains-an-architectural-bottleneck).
+- [ ] **ARCH-006A — Extract remaining route workflows into focused services.**
+  Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-001B. Acceptance:
+  settings cleanup, descriptor inference, integrity work, downloaded catalog,
+  reprocessing, and job creation handlers translate HTTP to service calls;
+  filesystem/business workflows have isolated tests; endpoint URLs and payloads
+  remain unchanged. Evidence: [ARCH-006](docs/architecture-audit.md#arch-006--route-modules-still-contain-substantial-application-workflows).
+- [ ] **ARCH-003B — Add an authoritative versioned musical profile.** Priority:
+  P0. Effort: L. Risk: High. Dependencies: ARCH-003A. Acceptance: Python owns
+  normalized key/Camelot, energy, roles, vocals, timing, confidence, provenance,
+  and version; existing outputs are unchanged; browser and Set Builder consume
+  the serialized profile; intentionally distinct scorers remain named and
+  tested separately. Evidence: [ARCH-003](docs/architecture-audit.md#arch-003--shared-musical-classification-is-duplicated-across-backend-and-browser).
+- [ ] **ARCH-002B — Decompose `TrackProcessor.process` into cohesive stages.**
+  Priority: P1. Effort: L. Risk: High. Dependencies: ARCH-002A. Acceptance:
+  analysis, selection, render construction, export, and result assembly have
+  typed stage results; `process` remains the public transaction boundary;
+  musical/audio outputs and progress behavior match the baseline. Evidence:
+  [ARCH-002](docs/architecture-audit.md#arch-002--track-processing-is-concentrated-in-one-long-transaction-script).
+- [ ] **ARCH-004B — Standardize background lifecycle contracts without forcing
+  one executor.** Priority: P1. Effort: L. Risk: High. Dependencies: ARCH-004A,
+  ARCH-010A. Acceptance: common status/receipt/cancellation/retry DTOs and
+  conformance tests cover audio jobs, imports, metadata batches, planning, and
+  relocation; feature-specific persistence and rollback remain; adapters keep
+  endpoint payloads compatible. Evidence: [ARCH-004](docs/architecture-audit.md#arch-004--background-operations-have-fragmented-lifecycle-contracts).
+- [ ] **ARCH-005A — Narrow repository capabilities and modularize schema
+  initialization.** Priority: P2. Effort: L. Risk: High. Dependencies:
+  ARCH-001B. Acceptance: new/extracted services receive only required repository
+  capabilities; `JobRepository` remains a compatibility facade; initialization
+  is an ordered idempotent sequence; existing databases and backups open with
+  no data/schema behavior change. Evidence: [ARCH-005](docs/architecture-audit.md#arch-005--repository-compatibility-facade-and-catalog-mixin-are-too-broad).
+
+Phase acceptance: backend composition is explicit, shared musical facts have one
+owner, and extracted services remain compatible with existing data and APIs.
+
+## Phase 3 — Frontend Architecture
+
+Objective: make frequent UI changes local and behavior-testable without adopting
+a framework. Dependencies: authoritative backend contracts from Phase 2.
+Benefit: fewer regressions from shared closure state and broad callback wiring.
+
+- [ ] **ARCH-007A — Add a shared frontend API/error adapter and narrow feature
+  contracts.** Priority: P1. Effort: M. Risk: Medium. Dependencies: ARCH-010A.
+  Acceptance: Music Files, DJ Library, Settings, Reporting, and Set Builder use a
+  shared request/error contract; feature factories receive cohesive collaborators
+  rather than long callback lists; stale-response behavior remains intact.
+  Evidence: [ARCH-007](docs/architecture-audit.md#arch-007--frontend-composition-still-carries-feature-implementation-and-broad-callback-wiring).
+- [ ] **ARCH-008A — Decompose Set Builder state, API, commands, and views.**
+  Priority: P0. Effort: L. Risk: High. Dependencies: ARCH-003B, ARCH-007A,
+  ARCH-011A. Acceptance: one feature entry composes a testable state store,
+  planning API, edit commands, classic fallback, and render/view helpers; AI,
+  deterministic, save/load, undo/redo, alternatives, preview, and review
+  workflows match characterization tests. Evidence: [ARCH-008](docs/architecture-audit.md#arch-008--set-builder-browser-module-owns-too-many-change-axes).
+- [ ] **ARCH-007B — Reduce `app.js` to durable composition and navigation.**
+  Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-007A, ARCH-008A.
+  Acceptance: processing/import feature behavior has an explicit owner; `app.js`
+  contains bootstrap, navigation, and feature composition; its size ceiling is
+  ratcheted downward rather than raised; DOM workflows pass. Evidence:
+  [ARCH-007](docs/architecture-audit.md#arch-007--frontend-composition-still-carries-feature-implementation-and-broad-callback-wiring).
+- [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
+  Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
+  Acceptance: editable set ownership and backup scope are explicit; version-1
+  localStorage records migrate without loss; restart/browser-clear behavior,
+  planning receipts, and M3U8 export are tested. Evidence: [ARCH-009](docs/architecture-audit.md#arch-009--saved-set-ownership-is-split-between-browser-and-durable-backend-artifacts).
+- [ ] **ARCH-013A — Investigate CSS ownership and responsive/accessibility
+  regressions.** Priority: P3. Effort: S. Risk: Low. Dependencies: ARCH-011A.
+  Acceptance: selector ownership, unused/overlapping rules, supported viewports,
+  keyboard focus, and reduced motion are measured; create a split task only if
+  the evidence shows cascade or ownership problems. Evidence: [ARCH-013](docs/architecture-audit.md#arch-013--stylesheet-ownership-may-become-a-frontend-bottleneck).
+
+Phase acceptance: feature behavior is independently testable, `app.js` is a
+composition root, and no storage or UI workflow compatibility is lost.
+
+## Phase 4 — Testing and Architecture Enforcement
+
+Objective: prevent the confirmed problems from returning. Dependencies: stable
+boundaries from Phases 2–3. Benefit: contributors receive fast, actionable gates.
+
+- [ ] **ARCH-012B — Add automated architecture boundary checks.** Priority: P1.
+  Effort: M. Risk: Low. Dependencies: ARCH-001B, ARCH-003B. Acceptance: tests
+  detect Python cycles, domain imports from `web`, SQL outside repositories,
+  growth of designated composition/orchestration hotspots, and reintroduction of
+  browser musical derivation; limits are ratchets tied to current responsibilities.
+  Evidence: [ARCH-012](docs/architecture-audit.md#arch-012--quality-enforcement-has-gaps-and-the-checked-out-baseline-is-not-lint-clean).
+  Phase 0 foundation complete: cycle, dependency-direction, SQL-boundary, and
+  hotspot-growth ratchets now run in the standard gate. This remains open until
+  `ARCH-003B` supplies the browser musical-policy boundary required by acceptance.
+- [ ] **ARCH-014A — Investigate manual-correction propagation and cache
+  invalidation.** Priority: P1. Effort: M. Risk: Medium. Dependencies: ARCH-003B.
+  Acceptance: a matrix/test covers manual BPM, key, genre, and identity changes
+  across catalog, search index, DJ Library, Set Builder, refresh, and restart;
+  any confirmed gap receives a separate refactor item. Evidence: [ARCH-014](docs/architecture-audit.md#arch-014--manual-musical-corrections-may-not-flow-through-every-derived-cache).
+- [ ] **ARCH-015A — Measure concurrent job and SQLite behavior.** Priority: P2.
+  Effort: M. Risk: Low. Dependencies: ARCH-004B. Acceptance: an opt-in disposable
+  catalog harness runs simultaneous representative operations with bounded
+  resources and reports lock waits, latency, stale results, and errors; redesign
+  work is added only for measured failures. Evidence: [ARCH-015](docs/architecture-audit.md#arch-015--production-scale-concurrency-behavior-needs-measurement).
+- [ ] **ARCH-011B — Add browser workflow and accessibility smoke coverage.**
+  Priority: P2. Effort: M. Risk: Low. Dependencies: ARCH-007B, ARCH-008A.
+  Acceptance: save/refresh/restart, overlapping search, drive reconnect, import
+  path safety, single audio playback, dialog focus, keyboard navigation, and
+  supported viewports have automated or explicitly documented release checks.
+  Evidence: [ARCH-011](docs/architecture-audit.md#arch-011--frontend-tests-contain-brittle-source-assertions-and-duplicated-cases).
+
+Phase acceptance: architectural violations and critical behavior regressions
+fail with clear messages before merge.
+
+## Phase 5 — Documentation and Developer Experience
+
+Objective: make placement and dependency rules discoverable. Dependencies:
+Phases 2–4. Benefit: future contributors and coding agents extend the intended
+boundary rather than rebuilding legacy coupling.
+
+- [ ] **ARCH-DEV-001 — Update architecture maps and contribution recipes.**
+  Priority: P2. Effort: M. Risk: Low. Dependencies: ARCH-012B. Acceptance:
+  `docs/architecture.md`, `docs/repository-map.md`, and README explain runtime
+  composition, dependency direction, API/feature placement, musical-profile
+  ownership, job lifecycles, provider additions, test placement, and quality
+  commands; Graphify is refreshed. Evidence: audit sections 3, 14, and 18.
+- [ ] **ARCH-DEV-002 — Record compatibility and architecture decisions.**
+  Priority: P3. Effort: S. Risk: Low. Dependencies: product decisions for
+  ARCH-009A and open questions. Acceptance: short decision records explain saved
+  sets, musical authority, job contracts, schema migration, and why the project
+  remains a modular monolith with vanilla JavaScript. Evidence: audit section 19.
+
+Phase acceptance: a new contributor can locate the correct backend/frontend
+owner and required tests without reading the composition roots end to end.
+
+## Phase 6 — Final Regression and Stability Verification
+
+Objective: prove modernization preserved the local DJ application. Dependencies:
+all approved implementation phases. Benefit: evidence-based release confidence.
+
+- [ ] **ARCH-VERIFY-001 — Run the full compatibility and rollback release gate.**
+  Priority: P0. Effort: M. Risk: Low. Dependencies: all implemented architecture
+  tasks. Acceptance: Ruff, MyPy, Python/JS tests, stability gate, backup/restore,
+  old database/saved-set fixtures, CLI, endpoint inventory, exports, catalog-scale
+  Set Builder evaluation, optional live Ollama acceptance, and manual core DJ
+  workflows pass; rollback is rehearsed; intentional differences are documented.
+  Evidence: audit sections 16–18.
+
+Phase acceptance: all protected interfaces, data, musical behavior, and workflows
+match the Phase 0 baseline or have an explicitly approved compatibility note.
+
 ## Next work
 
 - [x] **Extract downloaded-library metadata batch operations.** Move genre
