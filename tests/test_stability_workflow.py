@@ -30,6 +30,9 @@ class StabilityWorkflowTests(unittest.TestCase):
     """Regression gate for user-owned data that must survive the full workflow."""
 
     def test_catalog_data_survives_reimport_relocation_restart_reanalysis_and_export(self) -> None:
+        # Resolve the compatibility proxy explicitly: importing the composition
+        # module no longer creates repositories or other runtime state.
+        web_module.app.openapi()
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             database = root / "state" / "audioextender.sqlite3"

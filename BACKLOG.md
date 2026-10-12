@@ -94,12 +94,18 @@ Objective: finish backend separation while preserving public behavior.
 Dependencies: Phases 0–1. Benefit: independently testable workflows and smaller
 change surfaces for new backend features.
 
-- [ ] **ARCH-001B — Introduce explicit application composition.** Priority: P0.
+- [x] **ARCH-001B — Introduce explicit application composition.** Priority: P0.
   Effort: L. Risk: High. Dependencies: ARCH-001A, ARCH-010A. Acceptance:
   `create_app()` receives/creates an explicit runtime container under temporary
   roots; importing the module no longer performs uncontrolled production-path
   recovery or constructs unrelated mutable registries; `web_app.py` and public
   endpoints remain compatible. Evidence: [ARCH-001](docs/architecture-audit.md#arch-001--legacy-web-application-remains-an-architectural-bottleneck).
+  Completed 2026-10-12: `ApplicationPaths` and `ApplicationRuntime` now own
+  filesystem roots, repositories, services, registries, locks, and caches;
+  `create_app()` accepts either explicit paths or a runtime; import leaves the
+  default app unresolved; repository recovery runs only at FastAPI startup; the
+  152-route public inventory and `web_app.py` compatibility entry point remain
+  unchanged. See `docs/web-composition-contracts.md`.
 - [ ] **ARCH-006A — Extract remaining route workflows into focused services.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-001B. Acceptance:
   settings cleanup, descriptor inference, integrity work, downloaded catalog,

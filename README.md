@@ -435,7 +435,8 @@ AudioExtender/
 │   ├── repositories/    # Jobs, catalog, analysis, feedback, and system-state persistence
 │   ├── set_builder/     # Natural-language intention planning and provider fallback
 │   └── web/
-│       ├── application.py               # FastAPI composition and legacy routes
+│       ├── application.py               # FastAPI factory, wiring, and legacy routes
+│       ├── composition.py               # Explicit paths and owned runtime dependencies
 │       ├── job_routes.py                 # Queue lifecycle
 │       ├── job_media_routes.py           # Audio, waveform, cues, and downloads
 │       ├── library_routes.py             # Paginated DJ Library catalog

@@ -45,12 +45,21 @@ Runtime roots are derived from the checkout containing `web_app.py`:
 - database: `<project>/output/reports/audioextender.sqlite3`;
 - browser files: `<project>/web`.
 
-Import currently constructs the repository and services, initializes the
-database schema, and recovers interrupted jobs. This import-time behavior is a
-legacy constraint captured for the later `ARCH-001B` extraction, not the desired
-final design. Application startup reports whether the configured Set Builder AI
-provider is available. Tests isolate provider status and filesystem state; they
-must never access or modify the user's music library.
+`ApplicationPaths` defines every mutable filesystem location. Production uses
+paths derived from the checkout, while tests can create a complete path set
+under a temporary root and retain the real browser-asset directory.
+
+`ApplicationRuntime` owns the repository, processing service, relocation
+coordinator, task/batch registries, locks, queues, and process-local caches.
+`create_app()` accepts an explicit runtime or paths and stores the selected
+runtime on `app.state.runtime`. Passing both is rejected.
+
+Importing `audioextender.web.application` leaves the compatibility `app` proxy
+unresolved: it does not construct the repository, registries, services, or run
+recovery. Uvicorn uses `create_app` as an application factory. Interrupted-job
+recovery and Set Builder provider reporting run at FastAPI startup. Tests verify
+temporary-root ownership, deferred recovery, and import laziness without
+accessing the user's music library.
 
 ## Safe refactoring rule
 

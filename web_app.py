@@ -15,8 +15,9 @@ sys.modules[__name__] = _application
 
 if __name__ == "__main__":
     _application.uvicorn.run(
-        "audioextender.web.application:app",
+        "audioextender.web.application:create_app",
         host="127.0.0.1",
         port=8765,
         reload=False,
+        factory=True,
     )

@@ -9,11 +9,17 @@ it to decide where a manual change belongs before editing.
 | --- | --- |
 | `main.py` | CLI parsing and batch execution |
 | `web_app.py` | Small compatibility launcher; never add feature logic here |
-| `audioextender/web/application.py` | FastAPI composition, shared service construction, dependency injection, and remaining legacy routes |
+| `audioextender/web/application.py` | FastAPI factory, dependency wiring, compatibility facade, and remaining legacy routes |
+| `audioextender/web/composition.py` | Explicit application paths, owned services, registries, locks, queues, and caches |
 | `web/index.html` | Browser shell and workspace markup |
 | `web/app.js` | Browser composition, navigation, processing workspace, and import wiring |
 
 Run the app with `python3 web_app.py`.
+
+`create_app()` accepts an explicit `ApplicationRuntime` or `ApplicationPaths`.
+The default `app` is a lazy compatibility proxy; importing the module performs
+no repository recovery or runtime construction. Uvicorn invokes the factory,
+and startup performs interrupted-job recovery against the selected runtime.
 
 The current HTTP surface, delivery shell, startup side effects, runtime roots,
 response shapes, and restart expectations are frozen in
