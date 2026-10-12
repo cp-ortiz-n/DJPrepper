@@ -26,6 +26,10 @@ fixture freezes Python and browser behavior before the `ARCH-003B` consolidation
 Background job state, persistence, cancellation, retry, errors, timestamps, and
 receipts are inventoried in
 [`background-operation-lifecycles.md`](background-operation-lifecycles.md).
+The single-track processing stage order, progress, cache, artifact, timing, and
+failure contracts are frozen in
+[`processing-pipeline-contracts.md`](processing-pipeline-contracts.md) before the
+ARCH-002B stage extraction.
 
 ## Package ownership
 

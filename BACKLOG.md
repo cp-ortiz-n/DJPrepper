@@ -75,11 +75,15 @@ Dependencies: Phase 0. Benefit: clearer failures and less brittle test feedback.
   code/category/message/retryability metadata. Validation, expected domain, and
   unexpected failures share one delivery mapping; browser request clients use
   the backward-compatible parser. See `docs/error-contracts.md`.
-- [ ] **ARCH-002A — Characterize the processing pipeline stages.** Priority: P1.
+- [x] **ARCH-002A — Characterize the processing pipeline stages.** Priority: P1.
   Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance: tests freeze stage
   order, progress, cache behavior, artifacts, result timing, and injected
   failures for representative configurations without restructuring the method.
   Evidence: [ARCH-002](docs/architecture-audit.md#arch-002--track-processing-is-concentrated-in-one-long-transaction-script).
+  Completed 2026-10-12: behavioral tests freeze full stage order and progress,
+  analysis cache miss/hit/refresh behavior, stem and non-stem configurations,
+  artifact/result timing, and loading-through-export failure propagation. See
+  `docs/processing-pipeline-contracts.md`.
 
 Phase acceptance: no duplicated test cases, failure contracts are explicit, and
 the long processing workflow has stage-level characterization.
