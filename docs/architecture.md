@@ -381,6 +381,12 @@ model. `tests/test_local_intention_acceptance.py` is an opt-in Ollama suite for
 chill Latin kickbacks, Latin Techno/House with optional Schranz, Afro House
 lounge warmups, and peak-time Techno journeys.
 
+HTTP failure normalization is owned by `audioextender/web/error_contracts.py`.
+It preserves legacy FastAPI `detail` values while adding machine-readable error
+metadata. Browser parsing is owned by `web/api-client.js`; feature modules do
+not need to interpret validation lists or object-valued details independently.
+See `docs/error-contracts.md` for mappings and exception-boundary rules.
+
 ## Project hygiene
 
 - Never add general-purpose source files under `helpers/`.

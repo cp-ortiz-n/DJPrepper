@@ -85,9 +85,11 @@ class WebCompositionContractTests(unittest.TestCase):
             {"presets", "preset_details", "bar_counts", "defaults", "effective", "overrides"},
         )
         self.assertEqual(missing.status_code, 404)
-        self.assertEqual(missing.json(), {"detail": "Not Found"})
+        self.assertEqual(missing.json()["detail"], "Not Found")
+        self.assertEqual(missing.json()["error"]["code"], "not_found")
         self.assertEqual(invalid.status_code, 422)
-        self.assertEqual(set(invalid.json()), {"detail"})
+        self.assertEqual(set(invalid.json()), {"detail", "error"})
+        self.assertEqual(invalid.json()["error"]["category"], "validation")
         self.assertTrue(invalid.json()["detail"])
         self.assertEqual(
             {"type", "loc", "msg", "input"},

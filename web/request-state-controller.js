@@ -1,3 +1,5 @@
+import {apiResponseJson} from './api-client.js';
+
 const memoryStorage = new Map();
 
 function fallbackStorage() {
@@ -106,8 +108,7 @@ export function createRequestStateController({
     onLoading(true);
     try {
       const response=await fetchImpl(url,{cache:'no-store',...options,signal:controller.signal});
-      if (!response.ok) throw new Error(options.errorMessage||'The catalog could not be loaded.');
-      const payload=await response.json();
+      const payload=await apiResponseJson(response,options.errorMessage||'The catalog could not be loaded.');
       if (requestSequence!==sequence) return {status:'stale',payload:null};
       return {status:'applied',payload};
     } catch (error) {

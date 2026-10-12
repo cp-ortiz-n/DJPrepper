@@ -113,7 +113,7 @@ export function compatibility(left, right) {
 }
 
 export function createDjLibraryFeature({
-  $, $$, getAppConfig, libraryUiState, libraryRequestState, getLoadedAt, setLoadedAt,
+  $, $$, apiErrorMessage, getAppConfig, libraryUiState, libraryRequestState, getLoadedAt, setLoadedAt,
   invalidateMusicFiles, VIEW_CACHE_MS, escapeHtml, genreFolderTree,
   bindGenreFolderState, option, refreshSearchableSelects, compactAudioMarkup,
   genreEditorMarkup, bindGenreEditor, bindCompactAudio, renderTrackPagination,
@@ -128,7 +128,7 @@ export function createDjLibraryFeature({
 }) {
   let visibleDownloadedTracks = [];
   const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied){notify(`Added inferred identity tags to ${result.applied} tracks. Manual tags were preserved.`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
-  const bindIdentityProtection=(editor,track)=>{const input=editor.querySelector('.descriptor-inference-protection input');if(!input||!track)return;input.checked=Boolean(track.identity_inference_locked);input.onchange=async()=>{const wanted=input.checked;input.disabled=true;try{const response=await fetch(`/api/downloaded-library/tracks/${Number(track.id)}/inference-protection`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({protected:wanted})}),result=await response.json();if(!response.ok)throw new Error(result.detail||'Inference protection could not be saved.');track.identity_inference_locked=Boolean(result.protected_from_inference);input.checked=track.identity_inference_locked;notify(`${track.title||'Track'}: ${input.checked?'protected from automatic inference':'eligible for re-inference'}. Survives restart: Yes.`,'success');}catch(error){input.checked=!wanted;notify(error.message,'danger');}finally{input.disabled=false;}};};
+  const bindIdentityProtection=(editor,track)=>{const input=editor.querySelector('.descriptor-inference-protection input');if(!input||!track)return;input.checked=Boolean(track.identity_inference_locked);input.onchange=async()=>{const wanted=input.checked;input.disabled=true;try{const response=await fetch(`/api/downloaded-library/tracks/${Number(track.id)}/inference-protection`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({protected:wanted})}),result=await response.json();if(!response.ok)throw new Error(apiErrorMessage(result,'Inference protection could not be saved.'));track.identity_inference_locked=Boolean(result.protected_from_inference);input.checked=track.identity_inference_locked;notify(`${track.title||'Track'}: ${input.checked?'protected from automatic inference':'eligible for re-inference'}. Survives restart: Yes.`,'success');}catch(error){input.checked=!wanted;notify(error.message,'danger');}finally{input.disabled=false;}};};
   async function revealLibraryTrack(jobId, sourceName) {
     let card = document.querySelector(`.library-card[data-job-id="${jobId}"]`);
     if (!card) {
@@ -291,7 +291,7 @@ export function createDjLibraryFeature({
       try {
         const card = history.closest('.library-card');
         const payload = await fetch(`/api/library/jobs/${card.dataset.jobId}/details`).then(async response => {
-          if (!response.ok) throw new Error((await response.json()).detail || 'Could not load version history.');
+          if (!response.ok) throw new Error(apiErrorMessage(await response.json(), 'Could not load version history.'));
           return response.json();
         });
         const versions = payload.versions || [];
@@ -446,7 +446,7 @@ export function createDjLibraryFeature({
       if (!await confirmAction(`Remove ${latest.source_name} and all of its generations from the Library? Exported audio files will remain in the output folder.`, {title:'Remove Library track', acceptLabel:'Remove', danger:true})) return;
       button.disabled = true; button.textContent = 'Removing…';
       const response = await fetch(`/api/library/${encodeURIComponent(latest.source_name)}`, {method:'DELETE'});
-      if (!response.ok) { alert((await response.json()).detail || 'Could not remove the track.'); button.disabled = false; button.textContent = 'Remove from library'; return; }
+      if (!response.ok) { alert(apiErrorMessage(await response.json(), 'Could not remove the track.')); button.disabled = false; button.textContent = 'Remove from library'; return; }
       await Promise.all([loadLibrary(), loadAnalysis(), loadReports()]);
     });
   }
@@ -530,7 +530,7 @@ export function createDjLibraryFeature({
       try {
         const response = await fetch('/api/downloaded-library/genre', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({track_ids:trackIds, genre_category:genre})});
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || 'Could not change genre.');
+        if (!response.ok) throw new Error(apiErrorMessage(payload, 'Could not change genre.'));
         notify(operationReceiptText(payload.receipt), payload.receipt?.failures?.length ? 'danger' : 'success', {timeout:9000});
         genreInput.value = '';
         await Promise.all([loadLibrary(), loadDownloadedLibrary()]);
@@ -560,7 +560,7 @@ export function createDjLibraryFeature({
       for (const card of selectedCards) {
         try {
           const response = await fetch(`/api/library/${encodeURIComponent(card.dataset.sourceName)}`, {method:'DELETE'});
-          if (!response.ok) throw new Error((await response.json()).detail || 'Could not remove the track.');
+          if (!response.ok) throw new Error(apiErrorMessage(await response.json(), 'Could not remove the track.'));
           removed.push(card.dataset.sourceName);
         } catch (error) { failures.push(`${card.dataset.sourceName}: ${error.message}`); }
       }
@@ -573,7 +573,7 @@ export function createDjLibraryFeature({
       const trackIds = selectedCards.map(card => Number(card.dataset.downloadedId)).filter(Boolean);
       if (!trackIds.length || trackIds.length !== selectedCards.length || !await confirmAction(`Reanalyze ${trackIds.length} selected track${trackIds.length===1?'':'s'}? Audio files, metadata, artwork, and verified keys will be preserved.`, {title:'Reanalyze selected tracks', acceptLabel:'Reanalyze'})) return;
       reanalyzeButton.disabled=true; reanalyzeButton.textContent='Adding to queue…';
-      try { const response=await fetch('/api/downloaded-library/reanalyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});const result=await response.json();if(!response.ok)throw new Error(result.detail||'Could not queue reanalysis.');showView('workspace-view');await loadJobs(); }
+      try { const response=await fetch('/api/downloaded-library/reanalyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});const result=await response.json();if(!response.ok)throw new Error(apiErrorMessage(result,'Could not queue reanalysis.'));showView('workspace-view');await loadJobs(); }
       catch(error){alert(error.message);reanalyzeButton.textContent='Reanalyze';refreshSelection();}
     };
     keyAnalyzeButton.onclick=()=>{const cards=boxes.filter(box=>box.checked).map(box=>box.closest('.library-card'));const ids=cards.map(card=>Number(card.dataset.downloadedId)).filter(Boolean);startKeyAnalysis(ids,keyAnalyzeButton,async()=>{setLoadedAt(0);await Promise.all([loadLibrary(),loadReports()]);});};
@@ -583,7 +583,7 @@ export function createDjLibraryFeature({
       button.disabled = true; button.textContent = 'Preparing download…';
       try {
         const response = await fetch('/api/library/download', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job_ids:jobIds, file_types:fileTypes})});
-        if (!response.ok) throw new Error((await response.json()).detail || 'Could not prepare download.');
+        if (!response.ok) throw new Error(apiErrorMessage(await response.json(), 'Could not prepare download.'));
         const url = URL.createObjectURL(await response.blob());
         const link = document.createElement('a'); link.href = url; link.download = 'DJ Library Studio Selected Tracks.zip'; link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);

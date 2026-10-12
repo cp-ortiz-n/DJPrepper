@@ -33,10 +33,10 @@ The reports were regenerated from this checkout, not inferred from older HTML. P
 
 | Surface | Statements/lines | Branches | Functions |
 | --- | ---: | ---: | ---: |
-| Python application | 66.3% (7,558 / 11,406) | 47.4% (1,396 / 2,946; 500 partial) | n/a |
-| JavaScript application | 14.16% (725 / 5,118) | 68.32% (274 / 401) | 57.98% (69 / 119) |
+| Python application | 66.4% (7,622 / 11,472) | 47.6% (1,411 / 2,964; 503 partial) | n/a |
+| JavaScript application | 14.92% (769 / 5,153) | 70.23% (302 / 430) | 59.50% (72 / 121) |
 
-The combined Python line-and-branch score reported by coverage.py is 62.4%.
+The combined Python line-and-branch score reported by coverage.py is 62.6%.
 Representative modules: `set_builder/candidate_retriever.py` 91%,
 `set_builder/plan_validator.py` 98%, `set_builder/track_planner.py` 86%,
 `repositories/track_catalog.py` 79%, `analysis/key_detection.py` 79%,
@@ -72,4 +72,9 @@ source inspection is limited to deliberate architecture contracts: the `app.js`
 composition-root size/ownership ratchet and shared CSS accessibility/responsive
 tokens. Focused suites own request cancellation and stale-response rejection,
 single-player behavior, Set planning lifecycle, imports, and musical policy.
+
+`ARCH-010A` adds behavioral contract coverage for legacy and normalized HTTP
+errors, validation lists, expected domain failures, sanitized unexpected errors,
+and browser recovery metadata. The contract is additive: success payloads and
+existing `detail` values remain compatible.
 

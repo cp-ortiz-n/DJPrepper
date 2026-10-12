@@ -81,6 +81,7 @@ from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
+from audioextender.web.error_contracts import install_error_handlers
 from audioextender.web.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
@@ -164,8 +165,7 @@ STORAGE_INVENTORY_SNAPSHOT = OUTPUT / "reports" / "storage_inventory.json"
 
 
 def create_app() -> FastAPI:
-    """Create the FastAPI delivery shell; domain dependencies are composed below."""
-    application = FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None)
+    application = install_error_handlers(FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None))
     application.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     application.mount(
         "/vendor/wavesurfer",

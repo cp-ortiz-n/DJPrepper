@@ -1,3 +1,5 @@
+import {apiErrorMessage} from './api-client.js';
+
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
 
@@ -44,13 +46,13 @@ export async function inferDescriptorEditor(editor, trackIds) {
   const bulkMode=Boolean(editor.querySelector('.descriptor-mode'));
   if(ids.length===1&&!bulkMode){
     const response=await fetch(`/api/downloaded-library/tracks/${ids[0]}/descriptor-suggestions`,{cache:'no-store'}),payload=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':payload.detail||'Identity suggestions could not be created.');
+    if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':apiErrorMessage(payload,'Identity suggestions could not be created.'));
     for(const suggestion of payload.suggestions||[]){const input=editor.querySelector(`[data-descriptor-category="${suggestion.category}"]`);if(!input)continue;const values=String(input.value||'').split(',').map(value=>value.trim()).filter(Boolean);if(!values.some(value=>value.toLowerCase()===suggestion.value.toLowerCase()))values.push(suggestion.value);input.value=values.join(', ');}
     const crates=(payload.playlists_considered||[]).join(', ');status.textContent=`Suggested ${payload.suggestions?.length||0} tags from catalog, analysis${crates?`, and playlists: ${crates}`:''}. Review them, then save.`;
     return {...payload,applied:false};
   }
   const response=await fetch('/api/downloaded-library/descriptors/infer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:ids,apply:true})}),payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':payload.detail||'Identity inference could not be applied.');
+  if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':apiErrorMessage(payload,'Identity inference could not be applied.'));
   status.textContent=`Added inferred tags to ${payload.applied} of ${payload.processed} tracks.${payload.skipped_protected?.length?` Skipped ${payload.skipped_protected.length} manually protected track${payload.skipped_protected.length===1?'':'s'}.`:''} Manual tags were preserved.`;
   return payload;
 }
@@ -63,7 +65,7 @@ export async function saveDescriptorEditor(editor, trackIds) {
   const protection=editor.querySelector('.descriptor-inference-protection input');
   const response=await fetch(url,{method:ids.length===1?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...(ids.length===1?{protect_from_inference:Boolean(protection?.checked)}:{track_ids:ids}),descriptors,mode})});
   const payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(payload.detail?.message||payload.detail||'Musical identity could not be saved.');
+  if(!response.ok)throw new Error(apiErrorMessage(payload,'Musical identity could not be saved.'));
   return payload;
 }
 
@@ -130,16 +132,7 @@ export function escapeHtml(value) {
   return node.innerHTML;
 }
 
-export function apiErrorMessage(payload, fallback = 'The request could not be completed.') {
-  const detail = payload?.detail;
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) return detail.map(item => {
-    const field = Array.isArray(item?.loc) ? item.loc.filter(value => value !== 'body').join(' → ') : '';
-    return `${field ? `${field}: ` : ''}${item?.msg || 'Invalid value'}`;
-  }).join(' · ');
-  if (detail && typeof detail === 'object') return detail.message || JSON.stringify(detail);
-  return fallback;
-}
+export {apiErrorMessage};
 
 export function operationReceiptText(receipt) {
   if (!receipt) return '';
@@ -162,13 +155,13 @@ export async function startKeyAnalysis(trackIds, button, onComplete = async () =
       body:JSON.stringify({track_ids:trackIds}),
     });
     let batch = await response.json();
-    if (!response.ok) throw new Error(batch.detail || 'Could not start key analysis.');
+    if (!response.ok) throw new Error(apiErrorMessage(batch, 'Could not start key analysis.'));
     while (batch.status === 'processing') {
       button.textContent = `Analyzing keys ${batch.processed}/${batch.total}`;
       await new Promise(resolve => setTimeout(resolve, 700));
       const status = await fetch(`/api/downloaded-library/key-analysis/${batch.batch_id}`, {cache:'no-store'});
       batch = await status.json();
-      if (!status.ok) throw new Error(batch.detail || 'Key-analysis status was lost.');
+      if (!status.ok) throw new Error(apiErrorMessage(batch, 'Key-analysis status was lost.'));
     }
     button.textContent = batch.failed
       ? `${batch.completed} complete · ${batch.failed} failed`

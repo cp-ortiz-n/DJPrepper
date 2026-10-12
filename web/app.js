@@ -199,7 +199,7 @@ function runBackgroundTask({key, url, load=null, interval=1000, active=state => 
       else {
         const response = await fetch(typeof url === 'function' ? url() : url, {cache:'no-store',signal:task.controller.signal});
         state = await response.json();
-        if (!response.ok) throw new Error(state.detail || 'Background task status is unavailable.');
+        if (!response.ok) throw new Error(apiErrorMessage(state, 'Background task status is unavailable.'));
       }
       update(state);
       if (task.cancelled) return;
@@ -301,7 +301,7 @@ function bindGenreEditor(editor, trackIds, afterSave) {
     const save = editor.querySelector('[type="submit"]'); save.disabled = true; save.textContent = 'Moving…';
     try {
       const response = await fetch('/api/downloaded-library/genre', {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds(),genre_category:genre})});
-      const payload = await response.json(); if (!response.ok) throw new Error(payload.detail || 'Could not change genre.');
+      const payload = await response.json(); if (!response.ok) throw new Error(apiErrorMessage(payload, 'Could not change genre.'));
       notify(operationReceiptText(payload.receipt), payload.receipt?.failures?.length ? 'danger' : 'success', {timeout:9000});
       await afterSave(payload);
     } catch (error) { alert(error.message); save.disabled = false; save.textContent = 'Save & move'; }
@@ -428,7 +428,7 @@ function scheduleInsertionScore(editor) {
       });
       const result = await response.json();
       if (token !== editor._scoreToken) return;
-      if (!response.ok) throw new Error(result.detail || 'Score unavailable');
+      if (!response.ok) throw new Error(apiErrorMessage(result, 'Score unavailable'));
       const metrics = [
         ['Grid',result.grid],['Harmony',result.harmony],['Energy',result.energy],
         ['Bass',result.bass],['Rhythm',result.rhythm],['Vocals',result.vocals],
@@ -643,14 +643,14 @@ async function retryImportFailures(ids){
   if(!ids.length)return;const status=$('#import-retry-status');status.hidden=false;status.querySelector('strong').textContent=`Preparing ${ids.length} retr${ids.length===1?'y':'ies'}`;status.querySelector('span').textContent='0%';status.querySelector('progress').value=0;status.querySelector('p').textContent='Searching for a fresh source before downloading again.';
   $$('#import-failure-toolbar button,.retry-import-failure').forEach(button=>button.disabled=true);
   const response=await fetch('/api/imports/failures/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({failure_ids:ids})});const payload=await response.json();
-  if(!response.ok){status.querySelector('strong').textContent='Retry could not start';status.querySelector('p').textContent=payload.detail||'Try again later.';await loadImportFailures();return;}
-  const poll=async()=>{try{const result=await fetch(`/api/imports/creative-commons/${payload.batch_id}`,{cache:'no-store'});const state=await result.json();if(!result.ok)throw new Error(result.status===404?'This retry was interrupted by an app restart. Your completed imports were kept; start Retry all again for the remaining tracks.':state.detail||'The retry status could not be loaded.');status.querySelector('strong').textContent=state.stage||'Retrying imports';status.querySelector('span').textContent=`${Math.round(Number(state.progress||0))}%`;status.querySelector('progress').value=Number(state.progress||0);const counts=state.counts||{};status.querySelector('p').textContent=`${counts.downloaded||0} imported · ${counts.already_downloaded||0} already present · ${counts.failed||0} still need attention`;if(state.status==='processing'){setTimeout(poll,1000);return;}await loadImportFailures();if(state.status==='complete'){status.querySelector('strong').textContent='Retry complete';}else{status.querySelector('strong').textContent='Retry stopped';status.querySelector('p').textContent=state.error||'The retry could not finish.';}}catch(error){status.querySelector('strong').textContent='Retry interrupted';status.querySelector('span').textContent='';status.querySelector('p').textContent=error.message||'Reload the import issues and try again.';await loadImportFailures();}};poll();
+  if(!response.ok){status.querySelector('strong').textContent='Retry could not start';status.querySelector('p').textContent=apiErrorMessage(payload,'Try again later.');await loadImportFailures();return;}
+  const poll=async()=>{try{const result=await fetch(`/api/imports/creative-commons/${payload.batch_id}`,{cache:'no-store'});const state=await result.json();if(!result.ok)throw new Error(result.status===404?'This retry was interrupted by an app restart. Your completed imports were kept; start Retry all again for the remaining tracks.':apiErrorMessage(state,'The retry status could not be loaded.'));status.querySelector('strong').textContent=state.stage||'Retrying imports';status.querySelector('span').textContent=`${Math.round(Number(state.progress||0))}%`;status.querySelector('progress').value=Number(state.progress||0);const counts=state.counts||{};status.querySelector('p').textContent=`${counts.downloaded||0} imported · ${counts.already_downloaded||0} already present · ${counts.failed||0} still need attention`;if(state.status==='processing'){setTimeout(poll,1000);return;}await loadImportFailures();if(state.status==='complete'){status.querySelector('strong').textContent='Retry complete';}else{status.querySelector('strong').textContent='Retry stopped';status.querySelector('p').textContent=state.error||'The retry could not finish.';}}catch(error){status.querySelector('strong').textContent='Retry interrupted';status.querySelector('span').textContent='';status.querySelector('p').textContent=error.message||'Reload the import issues and try again.';await loadImportFailures();}};poll();
 }
 async function loadImportFailures() {
   const panel=$('#import-failures-panel'),root=$('#import-failures-list'),empty=$('#import-failures-empty'),counter=$('#import-failure-count'),toolbar=$('#import-failure-toolbar');
   if(!panel||!root)return;
   try{
-    const response=await fetch('/api/imports/failures',{cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(payload.detail||'Import issues could not be loaded.');
+    const response=await fetch('/api/imports/failures',{cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(apiErrorMessage(payload,'Import issues could not be loaded.'));
     currentImportFailures=payload.failures||[];counter.textContent=String(currentImportFailures.length);empty.hidden=Boolean(currentImportFailures.length);toolbar.hidden=!currentImportFailures.length;
     const render=()=>{const query=$('#import-failure-search').value.trim().toLowerCase(),selected=new Set($$('.failure-select:checked').map(input=>Number(input.value)));const visible=currentImportFailures.filter(item=>!query||`${item.title} ${item.artist} ${item.playlist_name} ${item.error}`.toLowerCase().includes(query));empty.hidden=Boolean(visible.length);empty.textContent=currentImportFailures.length?'No import issues match this search.':'No unresolved import failures.';
       root.innerHTML=visible.map(item=>{const spotifyId=String(item.spotify_uri||'').startsWith('spotify:track:')?String(item.spotify_uri).split(':').pop():'';const spotifyUrl=spotifyId?`https://open.spotify.com/track/${encodeURIComponent(spotifyId)}`:'';const source=item.youtube_url||spotifyUrl;const [summary,badge]=importFailureKind(item.error);const attempts=Number(item.attempts||1);return `<article class="import-failure-row" data-id="${item.id}"><input class="failure-select" type="checkbox" value="${item.id}" aria-label="Select ${escapeHtml(item.title||'track')}"${selected.has(Number(item.id))?' checked':''}><div><strong>${escapeHtml(item.title||'Unknown track')}</strong><span>${escapeHtml(item.artist||'Unknown artist')} · ${escapeHtml(item.playlist_name||'Imported playlist')}</span></div><div><div class="failure-summary"><b>${escapeHtml(summary)}</b><em>${escapeHtml(badge)}</em></div><small>${attempts} attempt${attempts===1?'':'s'} · ${escapeHtml(item.updated_at||'')}</small><details class="failure-error"><summary>Technical details</summary><p>${escapeHtml(item.error||'Download failed')}</p></details></div><div class="import-failure-actions"><button type="button" class="retry-import-failure">Retry</button>${source?`<a class="button secondary" href="${escapeHtml(source)}" target="_blank" rel="noopener">Open source</a>`:''}<button type="button" class="button secondary dismiss-import-failure">Dismiss</button></div></article>`;}).join('');
@@ -663,7 +663,7 @@ async function loadImportFailures() {
 }
 
 const musicFilesFeature = createMusicFilesFeature({
-  $, $$, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
+  $, $$, apiErrorMessage, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
   getLoadedAt: () => downloadedLoadedAt,
   setLoadedAt: value => { downloadedLoadedAt=value; },
   invalidateLibrary: () => { libraryLoadedAt=0; }, VIEW_CACHE_MS,
@@ -678,7 +678,7 @@ const musicFilesFeature = createMusicFilesFeature({
 });
 const {loadDownloadedLibrary} = musicFilesFeature;
 const djLibraryFeature = createDjLibraryFeature({
-  $, $$, getAppConfig: () => appConfig, libraryUiState, libraryRequestState,
+  $, $$, apiErrorMessage, getAppConfig: () => appConfig, libraryUiState, libraryRequestState,
   getLoadedAt: () => libraryLoadedAt, setLoadedAt: value => { libraryLoadedAt=value; },
   invalidateMusicFiles: () => { downloadedLoadedAt=0; }, VIEW_CACHE_MS,
   escapeHtml, genreFolderTree, bindGenreFolderState, option, refreshSearchableSelects,
@@ -808,7 +808,7 @@ form.addEventListener('submit', async (event) => {
     try {
       const response = await fetch('/api/imports/local-audio', {method:'POST', body:importData});
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.detail || 'Could not start the import.');
+      if (!response.ok) throw new Error(apiErrorMessage(payload, 'Could not start the import.'));
       $('#upload-message').textContent = `Converting ${payload.track_count} tracks from ${payload.playlist_name}…`;
       pollWorkspaceLocalAudioImport(payload.batch_id);
     } catch (error) {
@@ -845,7 +845,7 @@ form.addEventListener('submit', async (event) => {
   try {
     const response = await fetch('/api/jobs', { method: 'POST', body: data });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || 'Upload failed');
+    if (!response.ok) throw new Error(apiErrorMessage(payload, 'Upload failed'));
     $('#upload-message').textContent = `${payload.job_ids.length} track${payload.job_ids.length === 1 ? '' : 's'} added.`;
     form.reset(); stagedFiles = []; applyEffectiveSettings(appConfig.effective); describeFiles(); await loadJobs();
   } catch (error) { $('#upload-message').textContent = error.message; }
@@ -891,7 +891,7 @@ async function matchSpotifySource(url) {
   try {
     const response = await fetch('/api/imports/source-match', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || 'The source could not be matched.');
+    if (!response.ok) throw new Error(apiErrorMessage(payload, 'The source could not be matched.'));
     currentSourceMetadata = payload;
     if (!payload.youtube_url) {
       result.innerHTML = `<div class="source-match-copy"><span class="source-match-label">Spotify track</span><strong>${escapeHtml(payload.title)}</strong><p>${escapeHtml(payload.artist || 'Artist unavailable')}</p><small>No reliable YouTube match was selected.</small></div>`;
@@ -916,7 +916,7 @@ async function inspectSoundCloudSource(url) {
   try {
     const response=await fetch('/api/imports/source-match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
     const payload=await response.json();
-    if(!response.ok)throw new Error(payload.detail||'The SoundCloud source could not be inspected.');
+    if(!response.ok)throw new Error(apiErrorMessage(payload,'The SoundCloud source could not be inspected.'));
     currentSourceMetadata=payload;
     result.innerHTML=`${payload.thumbnail_url?`<img src="${escapeHtml(payload.thumbnail_url)}" alt="" loading="lazy">`:'<span class="source-match-art">♫</span>'}<div class="source-match-copy"><span class="source-match-label">SoundCloud ${Number(payload.duration||0)>1200?'mix':'track'}</span><strong>${escapeHtml(payload.title||'Untitled')}</strong><p>${escapeHtml(payload.artist||'Uploader unavailable')}</p><small>${payload.duration?clock(payload.duration):'Duration unavailable'} · authorization required</small></div>`;
   } catch(error) {
@@ -946,7 +946,7 @@ $('#authorized-url').addEventListener('input', event => {
 async function waitForAuthorizedImport(importId,url,onProgress){
   while(true){
     const response=await fetch(`/api/imports/${importId}`,{cache:'no-store'}),state=await response.json();
-    if(!response.ok)throw new Error(state.detail||'Import status could not be loaded.');
+    if(!response.ok)throw new Error(apiErrorMessage(state,'Import status could not be loaded.'));
     onProgress(Number(state.progress||0),state.stage||'Importing');
     if(state.status!=='processing')return {url,importId,...state};
     await new Promise(resolve=>setTimeout(resolve,900));
@@ -1032,7 +1032,7 @@ $('#local-audio-import-form').addEventListener('submit', async event => {
   const button=$('#local-audio-import-submit'); button.disabled=true; button.textContent='Uploading…';
   const data=new FormData(); localAudioFiles.forEach(file=>data.append('files',file,file.name)); data.append('playlist_name',$('#local-playlist-name').value.trim()||'Local Playlist');
   const response=await fetch('/api/imports/local-audio',{method:'POST',body:data}); const payload=await response.json(); button.textContent='Convert and organize';
-  if(!response.ok){button.disabled=false;$('#local-audio-import-message').textContent=payload.detail||'Could not start the local import.';return;}
+  if(!response.ok){button.disabled=false;$('#local-audio-import-message').textContent=apiErrorMessage(payload,'Could not start the local import.');return;}
   $('#local-audio-import-message').textContent=`Converting ${payload.track_count} tracks from ${payload.playlist_name}…`;
   pollLocalAudioImport(payload.batch_id);
 });
@@ -1128,7 +1128,7 @@ $('#download-creative-commons').addEventListener('click', async () => {
   $('#creative-commons-result').textContent = `Checking Creative Commons licenses for ${tracks.length} matches…`;
   const response = await fetch('/api/imports/creative-commons', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({tracks, playlist_name:currentPlaylistName})});
   const payload = await response.json();
-  if (!response.ok) { button.disabled = false; $('#creative-commons-result').textContent = payload.detail || 'Could not start verification.'; return; }
+  if (!response.ok) { button.disabled = false; $('#creative-commons-result').textContent = apiErrorMessage(payload, 'Could not start verification.'); return; }
   pollCreativeCommonsBatch(payload.batch_id);
 });
 async function pollSpotifyMatches(matchId) {
@@ -1160,7 +1160,7 @@ $('#playlist-csv-form').addEventListener('submit', async event => {
   const data = new FormData(); data.append('file', file);
   const response = await fetch('/api/imports/playlist-file/matches', {method:'POST', body:data});
   const payload = await response.json();
-  if (!response.ok) { button.disabled = false; $('#spotify-playlist-message').textContent = payload.detail || 'Could not read that CSV.'; return; }
+  if (!response.ok) { button.disabled = false; $('#spotify-playlist-message').textContent = apiErrorMessage(payload, 'Could not read that CSV.'); return; }
   currentPlaylistName = payload.playlist_name || file.name.replace(/\.csv$/i, '') || 'Imported Playlist';
   $('#spotify-playlist-message').textContent = `${payload.track_count} tracks loaded from ${currentPlaylistName}. Finding YouTube matches…`;
   await pollSpotifyMatches(payload.match_id);
@@ -1245,7 +1245,7 @@ async function jobAction(id, action, body = null) {
   const options = { method:'POST' };
   if (body) { options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify(body); }
   const response = await fetch(`/api/jobs/${id}/${action}`, options);
-  if (!response.ok) { alert((await response.json()).detail || `Could not ${action} job.`); return false; }
+  if (!response.ok) { alert(apiErrorMessage(await response.json(), `Could not ${action} job.`)); return false; }
   await loadJobs();
   return true;
 }
@@ -1255,7 +1255,7 @@ $('#clear-queue').addEventListener('click', async () => {
   const button = $('#clear-queue'); button.disabled = true; button.textContent = 'Clearing…';
   try {
     const response = await fetch('/api/jobs/clear', {method:'POST'});
-    if (!response.ok) throw new Error((await response.json()).detail || 'Could not clear the queue.');
+    if (!response.ok) throw new Error(apiErrorMessage(await response.json(), 'Could not clear the queue.'));
     await Promise.all([loadJobs(), loadAnalysis()]);
   } catch (error) { alert(error.message); }
   finally { button.textContent = 'Clear queue'; }

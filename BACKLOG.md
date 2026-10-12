@@ -66,11 +66,15 @@ Dependencies: Phase 0. Benefit: clearer failures and less brittle test feedback.
   size/ownership ratchet and shared CSS accessibility/responsive contracts.
   Request cancellation, stale responses, playback ownership, and planning
   lifecycle behavior remain covered by their focused suites.
-- [ ] **ARCH-010A — Inventory and normalize error contracts.** Priority: P1.
+- [x] **ARCH-010A — Inventory and normalize error contracts.** Priority: P1.
   Effort: M. Risk: Medium. Dependencies: ARCH-001A. Acceptance: expected domain,
   unavailable-resource, cancellation, and unexpected errors have documented
   mappings; broad catches remain only at justified boundaries with structured
   logs; the browser uses one backward-compatible parser. Evidence: [ARCH-010](docs/architecture-audit.md#arch-010--error-handling-and-api-failure-contracts-are-inconsistent).
+  Completed 2026-10-12: FastAPI failures preserve `detail` and add stable
+  code/category/message/retryability metadata. Validation, expected domain, and
+  unexpected failures share one delivery mapping; browser request clients use
+  the backward-compatible parser. See `docs/error-contracts.md`.
 - [ ] **ARCH-002A — Characterize the processing pipeline stages.** Priority: P1.
   Effort: M. Risk: Low. Dependencies: ARCH-012A. Acceptance: tests freeze stage
   order, progress, cache behavior, artifacts, result timing, and injected
