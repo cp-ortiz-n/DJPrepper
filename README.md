@@ -487,6 +487,8 @@ Use this table before searching through the larger composition files:
 | Settings, storage, backup, or relocation | `web/settings_routes.py` and `audioextender/library/` |
 | Library health and post-reconnect verification | `web/settings_routes.py` (`/api/settings/library-health`) |
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
+| Import failure review and retries | `web/import-issues.js` |
+| Cancellable browser polling | `web/background-task-controller.js` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
 | Set Builder UI composition | `web/set-builder.js` and `web/styles.css` |

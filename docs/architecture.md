@@ -372,6 +372,8 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `reporting.js` | Analysis & Feedback and key-verification rendering |
 | `request-state-controller.js` | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence |
 | `import-queue.js` | Pause/resume/cancel/retry/reorder import state |
+| `import-issues.js` | Import-failure filtering, selection, retry progress, and dismissal |
+| `background-task-controller.js` | Keyed cancellable polling with stale-task replacement and terminal callbacks |
 | `styles.css` | Shared visual system and responsive behavior |
 
 Do not create a second audio player, dropdown implementation, notification

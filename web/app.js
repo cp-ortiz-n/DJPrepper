@@ -12,6 +12,8 @@ import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261013-1';
 import {createSetBuilderFeature} from './set-builder.js?v=20261013-2';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261013-1';
+import {createBackgroundTaskController} from './background-task-controller.js';
+import {createImportIssuesFeature} from './import-issues.js';
 
 const api = createApiClient();
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
@@ -172,50 +174,17 @@ const libraryUiState = createLibraryUiState();
 const downloadedRequestState=createRequestStateController({namespace:'music',state:downloadedUiState,defaults:createMusicFilesUiState(downloadedUiState.pageSize),debounceMs:220,onLoading:loading=>$('#downloads-view')?.classList.toggle('view-refreshing',loading)});
 const libraryRequestState=createRequestStateController({namespace:'dj',state:libraryUiState,defaults:createLibraryUiState(libraryUiState.pageSize),debounceMs:240,onLoading:loading=>$('#library-view')?.classList.toggle('view-refreshing',loading)});
 const VIEW_CACHE_MS = 30000;
-const backgroundTasks = new Map();
+const backgroundTaskController = createBackgroundTaskController({
+  loadJson: (url, signal) => api.get(url, {cache:'no-store', signal}, 'Background task status is unavailable.'),
+});
 
 $$('.import-method').forEach(method => method.addEventListener('toggle', () => {
   if (!method.open) return;
   $$('.import-method').forEach(other => { if (other !== method) other.open = false; });
 }));
 
-function stopBackgroundTask(key) {
-  const task = backgroundTasks.get(key);
-  if (!task) return;
-  task.cancelled = true;
-  clearTimeout(task.timer);
-  task.controller?.abort();
-  backgroundTasks.delete(key);
-}
-
-function runBackgroundTask({key, url, load=null, interval=1000, active=state => state.status === 'processing', update=()=>{}, complete=()=>{}, fail=()=>{}}) {
-  stopBackgroundTask(key);
-  const task = {cancelled:false,timer:null,controller:null};
-  backgroundTasks.set(key, task);
-  const tick = async () => {
-    if (task.cancelled) return;
-    task.controller = new AbortController();
-    try {
-      let state;
-      if (load) state = await load(task.controller.signal);
-      else {
-        const response = await fetch(typeof url === 'function' ? url() : url, {cache:'no-store',signal:task.controller.signal});
-        state = await response.json();
-        if (!response.ok) throw new Error(apiErrorMessage(state, 'Background task status is unavailable.'));
-      }
-      update(state);
-      if (task.cancelled) return;
-      if (active(state)) task.timer = setTimeout(tick, interval);
-      else { backgroundTasks.delete(key); await complete(state); }
-    } catch (error) {
-      if (error.name === 'AbortError' || task.cancelled) return;
-      backgroundTasks.delete(key);
-      fail(error);
-    }
-  };
-  tick();
-  return () => stopBackgroundTask(key);
-}
+const runBackgroundTask = options => backgroundTaskController.run(options);
+const stopBackgroundTask = key => backgroundTaskController.stop(key);
 const LATIN_GENRE_CATEGORIES = ['Latin / Reggaeton','Latin / Salsa','Latin / Cumbia','Latin / Merengue','Latin / Zapateado','Latin / Corridos','Latin / Regional Mexican','Latin / Bachata','Latin / Dembow','Latin / Latin Pop','Latin / Latin Jazz','Latin / Bolero','Latin / Vallenato','Latin / Brazilian','Latin / Flamenco','Latin / Latin Rock','Latin / Latin Indie','Latin / Latin Ska','Latin / Latin Hip-Hop','Latin / Latin R&B','Latin / Other'];
 const ELECTRONIC_GENRE_CATEGORIES = [
   'Electronic / Techno / Techno','Electronic / Techno / Schranz','Electronic / Techno / Hard Techno','Electronic / Techno / Acid Techno','Electronic / Techno / Melodic Techno','Electronic / Techno / Minimal Techno','Electronic / Techno / Industrial Techno','Electronic / Techno / Hypnotic Techno','Electronic / Techno / Peak-Time Techno',
@@ -639,32 +608,9 @@ function applyEffectiveSettings(values) {
   $('#setting-key-display').value = libraryKeyMode();
 }
 
-let currentImportFailures=[];
-const importFailureKind=error=>{const value=String(error||'').toLowerCase();if(value.includes('age')||value.includes('sign in'))return ['Age-restricted source','Restricted'];if(value.includes('403')||value.includes('forbidden'))return ['Source blocked the download','Blocked'];if(value.includes('unavailable')||value.includes('removed'))return ['Source is unavailable','Unavailable'];if(value.includes('no reliable')||value.includes('no youtube'))return ['No reliable source match','No match'];return ['Download could not complete','Failed'];};
-async function retryImportFailures(ids){
-  if(!ids.length)return;const status=$('#import-retry-status');status.hidden=false;status.querySelector('strong').textContent=`Preparing ${ids.length} retr${ids.length===1?'y':'ies'}`;status.querySelector('span').textContent='0%';status.querySelector('progress').value=0;status.querySelector('p').textContent='Searching for a fresh source before downloading again.';
-  $$('#import-failure-toolbar button,.retry-import-failure').forEach(button=>button.disabled=true);
-  const response=await fetch('/api/imports/failures/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({failure_ids:ids})});const payload=await response.json();
-  if(!response.ok){status.querySelector('strong').textContent='Retry could not start';status.querySelector('p').textContent=apiErrorMessage(payload,'Try again later.');await loadImportFailures();return;}
-  const poll=async()=>{try{const result=await fetch(`/api/imports/creative-commons/${payload.batch_id}`,{cache:'no-store'});const state=await result.json();if(!result.ok)throw new Error(result.status===404?'This retry was interrupted by an app restart. Your completed imports were kept; start Retry all again for the remaining tracks.':apiErrorMessage(state,'The retry status could not be loaded.'));status.querySelector('strong').textContent=state.stage||'Retrying imports';status.querySelector('span').textContent=`${Math.round(Number(state.progress||0))}%`;status.querySelector('progress').value=Number(state.progress||0);const counts=state.counts||{};status.querySelector('p').textContent=`${counts.downloaded||0} imported · ${counts.already_downloaded||0} already present · ${counts.failed||0} still need attention`;if(state.status==='processing'){setTimeout(poll,1000);return;}await loadImportFailures();if(state.status==='complete'){status.querySelector('strong').textContent='Retry complete';}else{status.querySelector('strong').textContent='Retry stopped';status.querySelector('p').textContent=state.error||'The retry could not finish.';}}catch(error){status.querySelector('strong').textContent='Retry interrupted';status.querySelector('span').textContent='';status.querySelector('p').textContent=error.message||'Reload the import issues and try again.';await loadImportFailures();}};poll();
-}
-async function loadImportFailures() {
-  const panel=$('#import-failures-panel'),root=$('#import-failures-list'),empty=$('#import-failures-empty'),counter=$('#import-failure-count'),toolbar=$('#import-failure-toolbar');
-  if(!panel||!root)return;
-  try{
-    const response=await fetch('/api/imports/failures',{cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(apiErrorMessage(payload,'Import issues could not be loaded.'));
-    currentImportFailures=payload.failures||[];counter.textContent=String(currentImportFailures.length);empty.hidden=Boolean(currentImportFailures.length);toolbar.hidden=!currentImportFailures.length;
-    const render=()=>{const query=$('#import-failure-search').value.trim().toLowerCase(),selected=new Set($$('.failure-select:checked').map(input=>Number(input.value)));const visible=currentImportFailures.filter(item=>!query||`${item.title} ${item.artist} ${item.playlist_name} ${item.error}`.toLowerCase().includes(query));empty.hidden=Boolean(visible.length);empty.textContent=currentImportFailures.length?'No import issues match this search.':'No unresolved import failures.';
-      root.innerHTML=visible.map(item=>{const spotifyId=String(item.spotify_uri||'').startsWith('spotify:track:')?String(item.spotify_uri).split(':').pop():'';const spotifyUrl=spotifyId?`https://open.spotify.com/track/${encodeURIComponent(spotifyId)}`:'';const source=item.youtube_url||spotifyUrl;const [summary,badge]=importFailureKind(item.error);const attempts=Number(item.attempts||1);return `<article class="import-failure-row" data-id="${item.id}"><input class="failure-select" type="checkbox" value="${item.id}" aria-label="Select ${escapeHtml(item.title||'track')}"${selected.has(Number(item.id))?' checked':''}><div><strong>${escapeHtml(item.title||'Unknown track')}</strong><span>${escapeHtml(item.artist||'Unknown artist')} · ${escapeHtml(item.playlist_name||'Imported playlist')}</span></div><div><div class="failure-summary"><b>${escapeHtml(summary)}</b><em>${escapeHtml(badge)}</em></div><small>${attempts} attempt${attempts===1?'':'s'} · ${escapeHtml(item.updated_at||'')}</small><details class="failure-error"><summary>Technical details</summary><p>${escapeHtml(item.error||'Download failed')}</p></details></div><div class="import-failure-actions"><button type="button" class="retry-import-failure">Retry</button>${source?`<a class="button secondary" href="${escapeHtml(source)}" target="_blank" rel="noopener">Open source</a>`:''}<button type="button" class="button secondary dismiss-import-failure">Dismiss</button></div></article>`;}).join('');
-      const boxes=$$('.failure-select');const updateSelection=()=>{const checked=$$('.failure-select:checked');$('#retry-selected-imports').disabled=!checked.length;$('#retry-selected-imports').textContent=checked.length?`Retry selected (${checked.length})`:'Retry selected';$('#import-failure-select-all').checked=boxes.length>0&&boxes.every(box=>box.checked);$('#import-failure-select-all').indeterminate=boxes.some(box=>box.checked)&&!$('#import-failure-select-all').checked;};boxes.forEach(box=>box.onchange=updateSelection);updateSelection();
-      root.querySelectorAll('.retry-import-failure').forEach(button=>button.onclick=()=>retryImportFailures([Number(button.closest('.import-failure-row').dataset.id)]));
-      root.querySelectorAll('.dismiss-import-failure').forEach(button=>button.onclick=async()=>{const row=button.closest('.import-failure-row');button.disabled=true;const response=await fetch(`/api/imports/failures/${row.dataset.id}`,{method:'DELETE'});if(response.ok)await loadImportFailures();else button.disabled=false;});
-    };
-    $('#import-failure-search').oninput=render;$('#import-failure-select-all').onchange=event=>{$$('.failure-select').forEach(box=>box.checked=event.target.checked);root.querySelector('.failure-select')?.dispatchEvent(new Event('change'));};$('#retry-selected-imports').onclick=()=>retryImportFailures($$('.failure-select:checked').map(input=>Number(input.value)));$('#retry-all-imports').onclick=()=>retryImportFailures(currentImportFailures.map(item=>Number(item.id)));render();
-  }catch(error){counter.textContent='!';toolbar.hidden=true;empty.hidden=false;empty.textContent=error.message;root.replaceChildren();}
-}
-
 const frontendServices = composeFrontendServices(api);
+const importIssuesFeature = createImportIssuesFeature({services: frontendServices, escapeHtml});
+const {load: loadImportFailures} = importIssuesFeature;
 
 const musicFilesFeature = createMusicFilesFeature({
   services: frontendServices, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,

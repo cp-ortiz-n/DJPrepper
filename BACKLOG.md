@@ -202,6 +202,12 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   contains bootstrap, navigation, and feature composition; its size ceiling is
   ratcheted downward rather than raised; DOM workflows pass. Evidence:
   [ARCH-007](docs/architecture-audit.md#arch-007--frontend-composition-still-carries-feature-implementation-and-broad-callback-wiring).
+  In progress 2026-10-13: import-failure loading, filtering, retry, polling,
+  selection, and dismissal now belong to `import-issues.js`. Generic cancellable
+  polling belongs to `background-task-controller.js` with replacement and abort
+  tests. The `app.js` ceiling is ratcheted from 1,878 to 1,824 lines. Remaining:
+  move authorized/local import orchestration and processing/review rendering into
+  their feature owners before marking this task complete.
 - [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
   Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
   Acceptance: editable set ownership and backup scope are explicit; version-1

@@ -206,8 +206,10 @@ map reflects the current layout; it does not propose moving code.
 │   └── test_web_app.py
 ├── web/
 │   ├── app.js
+│   ├── background-task-controller.js
 │   ├── dj-library.js
 │   ├── import-queue.js
+│   ├── import-issues.js
 │   ├── index.html
 │   ├── music-files.js
 │   ├── playback.js
