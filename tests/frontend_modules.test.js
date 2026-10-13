@@ -65,7 +65,7 @@ test('feature factories share a validated immutable services contract', () => {
 test('app.js remains a feature composition root', () => {
   const path = fileURLToPath(new URL('../web/app.js', import.meta.url));
   const source = readFileSync(path, 'utf8');
-  assert.ok(source.split('\n').length <= 1825, 'app.js exceeded the composition-root size ceiling');
+  assert.ok(source.split('\n').length <= 1805, 'app.js exceeded the composition-root size ceiling');
   for (const factory of [
     'createMusicFilesFeature',
     'createDjLibraryFeature',

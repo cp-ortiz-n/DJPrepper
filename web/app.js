@@ -12,11 +12,12 @@ import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261013-1';
 import {createSetBuilderFeature} from './set-builder.js?v=20261013-2';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261013-1';
-import {addLocalAudioFiles, authorizedSourceUrls as parseAuthorizedSourceUrls, playlistTrackKey, sourceUrlType} from './import-workspace.js';
+import {addLocalAudioFiles, authorizedSourceUrls as parseAuthorizedSourceUrls, createImportWorkspaceApi, playlistTrackKey, sourceUrlType} from './import-workspace.js';
 import {createBackgroundTaskController} from './background-task-controller.js';
 import {createImportIssuesFeature} from './import-issues.js';
 
 const api = createApiClient();
+const importWorkspaceApi = createImportWorkspaceApi(api);
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
 // to structured inline messages and richer recovery actions.
 window.alert = message => notify(message, 'danger');
@@ -827,9 +828,7 @@ async function matchSpotifySource(url) {
   result.hidden = false;
   result.innerHTML = '<p>Finding Spotify metadata and ranking YouTube matches…</p>';
   try {
-    const response = await fetch('/api/imports/source-match', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url})});
-    const payload = await response.json();
-    if (!response.ok) throw new Error(apiErrorMessage(payload, 'The source could not be matched.'));
+    const payload = await importWorkspaceApi.matchSource(url);
     currentSourceMetadata = payload;
     if (!payload.youtube_url) {
       result.innerHTML = `<div class="source-match-copy"><span class="source-match-label">Spotify track</span><strong>${escapeHtml(payload.title)}</strong><p>${escapeHtml(payload.artist || 'Artist unavailable')}</p><small>No reliable YouTube match was selected.</small></div>`;
@@ -852,9 +851,7 @@ async function inspectSoundCloudSource(url) {
   result.hidden=false;
   result.innerHTML='<p>Reading SoundCloud track or mix metadata…</p>';
   try {
-    const response=await fetch('/api/imports/source-match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
-    const payload=await response.json();
-    if(!response.ok)throw new Error(apiErrorMessage(payload,'The SoundCloud source could not be inspected.'));
+    const payload=await importWorkspaceApi.matchSource(url);
     currentSourceMetadata=payload;
     result.innerHTML=`${payload.thumbnail_url?`<img src="${escapeHtml(payload.thumbnail_url)}" alt="" loading="lazy">`:'<span class="source-match-art">♫</span>'}<div class="source-match-copy"><span class="source-match-label">SoundCloud ${Number(payload.duration||0)>1200?'mix':'track'}</span><strong>${escapeHtml(payload.title||'Untitled')}</strong><p>${escapeHtml(payload.artist||'Uploader unavailable')}</p><small>${payload.duration?clock(payload.duration):'Duration unavailable'} · authorization required</small></div>`;
   } catch(error) {
@@ -883,8 +880,7 @@ $('#authorized-url').addEventListener('input', event => {
 });
 async function waitForAuthorizedImport(importId,url,onProgress){
   while(true){
-    const response=await fetch(`/api/imports/${importId}`,{cache:'no-store'}),state=await response.json();
-    if(!response.ok)throw new Error(apiErrorMessage(state,'Import status could not be loaded.'));
+    const state=await importWorkspaceApi.authorizedStatus(importId);
     onProgress(Number(state.progress||0),state.stage||'Importing');
     if(state.status!=='processing')return {url,importId,...state};
     await new Promise(resolve=>setTimeout(resolve,900));

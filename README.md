@@ -488,6 +488,7 @@ Use this table before searching through the larger composition files:
 | Library health and post-reconnect verification | `web/settings_routes.py` (`/api/settings/library-health`) |
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
 | Import failure review and retries | `web/import-issues.js` |
+| Authorized/local import browser state and API routes | `web/import-workspace.js` |
 | Cancellable browser polling | `web/background-task-controller.js` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |

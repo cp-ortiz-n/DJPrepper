@@ -205,7 +205,10 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   In progress 2026-10-13: import-failure loading, filtering, retry, polling,
   selection, and dismissal now belong to `import-issues.js`. Generic cancellable
   polling belongs to `background-task-controller.js` with replacement and abort
-  tests. The `app.js` ceiling is ratcheted from 1,878 to 1,824 lines. Remaining:
+  tests. `import-workspace.js` now also owns source normalization, local-file
+  deduplication, stable playlist identities, source matching, and import lifecycle
+  route serialization. The `app.js` ceiling is ratcheted from 1,878 to 1,804
+  lines. Remaining:
   move authorized/local import orchestration and processing/review rendering into
   their feature owners before marking this task complete.
 - [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.

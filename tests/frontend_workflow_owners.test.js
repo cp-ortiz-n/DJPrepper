@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createBackgroundTaskController } from '../web/background-task-controller.js';
 import { importFailureKind } from '../web/import-issues.js';
+import { authorizedSourceUrls, createImportWorkspaceApi, sourceUrlType } from '../web/import-workspace.js';
 
 test('background task controller completes inactive work and releases ownership', async () => {
   let completeState = null;
@@ -48,4 +49,34 @@ test('import issue ownership maps technical failures to actionable labels', () =
   assert.deepEqual(importFailureKind('HTTP 403 Forbidden'), ['Source blocked the download', 'Blocked']);
   assert.deepEqual(importFailureKind('No reliable YouTube match'), ['No reliable source match', 'No match']);
   assert.deepEqual(importFailureKind('connection reset'), ['Download could not complete', 'Failed']);
+});
+
+test('import workspace classifies sources and owns route serialization', async () => {
+  assert.equal(sourceUrlType('https://youtu.be/example'), 'youtube');
+  assert.equal(sourceUrlType('https://open.spotify.com/track/1'), 'spotify');
+  assert.deepEqual(authorizedSourceUrls('https://youtu.be/a\nhttps://youtu.be/a'), ['https://youtu.be/a']);
+  const calls = [];
+  const api = {
+    get: async (path) => {
+      calls.push(['get', path]);
+      return {};
+    },
+    post: async (path, body) => {
+      calls.push(['post', path, body]);
+      return {};
+    },
+    request: async (path, options) => {
+      calls.push(['request', path, options.method]);
+      return {};
+    },
+  };
+  const client = createImportWorkspaceApi(api);
+  await client.matchSource('https://youtu.be/a');
+  await client.authorizedStatus('job-1');
+  await client.startCreativeCommons([{ title: 'Track' }], 'Party');
+  assert.deepEqual(calls, [
+    ['post', '/api/imports/source-match', { url: 'https://youtu.be/a' }],
+    ['get', '/api/imports/job-1'],
+    ['post', '/api/imports/creative-commons', { tracks: [{ title: 'Track' }], playlist_name: 'Party' }],
+  ]);
 });
