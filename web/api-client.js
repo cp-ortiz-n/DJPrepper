@@ -44,3 +44,29 @@ export async function apiResponseJson(response, fallback = 'The request could no
 export async function apiRequest(url, options = {}, { fetchImpl = fetch, fallback } = {}) {
   return apiResponseJson(await fetchImpl(url, options), fallback);
 }
+
+export function createApiClient({ fetchImpl = (...args) => fetch(...args) } = {}) {
+  const raw = (url, options = {}) => fetchImpl(url, options);
+  const request = async (url, options = {}, fallback) => apiResponseJson(await raw(url, options), fallback);
+  const json = (method, url, body, options = {}, fallback) =>
+    request(
+      url,
+      {
+        ...options,
+        method,
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      },
+      fallback,
+    );
+  return Object.freeze({
+    raw,
+    request,
+    errorMessage: apiErrorMessage,
+    get: (url, options, fallback) => request(url, options, fallback),
+    post: (url, body, options, fallback) => json('POST', url, body, options, fallback),
+    put: (url, body, options, fallback) => json('PUT', url, body, options, fallback),
+    patch: (url, body, options, fallback) => json('PATCH', url, body, options, fallback),
+    delete: (url, options, fallback) => request(url, { ...options, method: 'DELETE' }, fallback),
+  });
+}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ApiRequestError, apiErrorMessage, apiRequest, apiResponseJson } from '../web/api-client.js';
+import { ApiRequestError, apiErrorMessage, apiRequest, apiResponseJson, createApiClient } from '../web/api-client.js';
 
 function response(payload, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => payload };
@@ -52,4 +52,63 @@ test('API request accepts an injected transport and returns successful JSON', as
   );
   assert.deepEqual(result, { saved: true });
   assert.deepEqual(calls, [{ url: '/api/example', options: { method: 'POST' } }]);
+});
+
+test('feature API client provides one immutable transport and error contract', async () => {
+  const calls = [];
+  const api = createApiClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return response({ saved: true });
+    },
+  });
+
+  assert.equal(Object.isFrozen(api), true);
+  assert.equal(api.errorMessage({ detail: 'Invalid track.' }), 'Invalid track.');
+  assert.deepEqual(await api.post('/api/tracks', { title: 'Cumbia' }, { headers: { 'X-Request-Id': 'request-1' } }), {
+    saved: true,
+  });
+  assert.deepEqual(calls, [
+    {
+      url: '/api/tracks',
+      options: {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Request-Id': 'request-1' },
+        body: JSON.stringify({ title: 'Cumbia' }),
+      },
+    },
+  ]);
+});
+
+test('feature API client retains raw response access for streaming and compatibility workflows', async () => {
+  const nativeResponse = response({ queued: true }, { status: 202 });
+  const api = createApiClient({ fetchImpl: async () => nativeResponse });
+
+  assert.equal(await api.raw('/api/jobs'), nativeResponse);
+});
+
+test('feature API client normalizes failed requests with recovery metadata', async () => {
+  const api = createApiClient({
+    fetchImpl: async () =>
+      response(
+        {
+          error: {
+            code: 'drive_offline',
+            category: 'unavailable',
+            message: 'Reconnect the library drive.',
+            retryable: true,
+          },
+        },
+        { ok: false, status: 503 },
+      ),
+  });
+
+  await assert.rejects(
+    api.get('/api/library', {}, 'Library unavailable.'),
+    (error) =>
+      error instanceof ApiRequestError &&
+      error.message === 'Reconnect the library drive.' &&
+      error.code === 'drive_offline' &&
+      error.retryable === true,
+  );
 });

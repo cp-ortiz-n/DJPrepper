@@ -68,7 +68,11 @@ server does.
 The browser code is split by user-facing feature: Music Files, DJ Library, Set
 Builder, Settings, and Analysis & Feedback each own their rendering and state.
 `web/app.js` is the composition/navigation entry point; shared request state,
-audio playback, and reusable controls live in dedicated modules. See
+audio playback, and reusable controls live in dedicated modules. These features
+receive one validated frontend-services contract for API access, feedback, DOM
+access, and musical-identity editing. Direct global network calls are prohibited
+inside the five feature modules, while overlapping search requests continue to
+use the shared cancellation and stale-response controller. See
 [`docs/architecture.md`](docs/architecture.md) before making frontend changes.
 
 ### Optional local AI for Set Builder

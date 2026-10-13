@@ -1,7 +1,23 @@
 import {apiErrorMessage} from './api-client.js';
+import {createFrontendServices} from './frontend-services.js';
 
 export const $ = selector => document.querySelector(selector);
 export const $$ = selector => [...document.querySelectorAll(selector)];
+
+export function composeFrontendServices(api) {
+  return createFrontendServices({
+    api,
+    dom: {$, $$},
+    feedback: {notify, confirmAction, operationReceiptText},
+    descriptors: {
+      chipsMarkup: descriptorChipsMarkup,
+      editorMarkup: descriptorEditorMarkup,
+      openEditorDialog: openDescriptorEditorDialog,
+      saveEditor: saveDescriptorEditor,
+      inferEditor: inferDescriptorEditor,
+    },
+  });
+}
 
 export const DESCRIPTOR_CATEGORIES = [
   ['cultural','Cultural / regional influence'], ['rhythm','Rhythmic influence'],

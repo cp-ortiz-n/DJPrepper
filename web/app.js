@@ -3,15 +3,17 @@ import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
 import {AuthorizedImportQueue} from '/assets/import-queue.js?v=20260930-1';
-import {$, $$, apiErrorMessage, captureTextFilter, clock, confirmAction, descriptorChipsMarkup, descriptorEditorMarkup, escapeHtml, fraction, inferDescriptorEditor, notify, openDescriptorEditorDialog, operationReceiptText, option, pct, renderTrackPagination, reportDate, saveDescriptorEditor, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261005-7';
+import {createApiClient} from './api-client.js';
+import {$, $$, apiErrorMessage, captureTextFilter, clock, composeFrontendServices, confirmAction, descriptorChipsMarkup, descriptorEditorMarkup, escapeHtml, fraction, inferDescriptorEditor, notify, openDescriptorEditorDialog, operationReceiptText, option, pct, renderTrackPagination, reportDate, saveDescriptorEditor, startKeyAnalysis, syncControlUnlessEditing} from './shared-components.js?v=20261013-1';
 import {bindCompactAudio, bindLazyAudio, closeDownloadedInspector, compactAudioIsWithin, compactAudioMarkup, stopCompactAudio, stopNativeAudio} from './playback.js';
-import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js?v=20261005-5';
-import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261005-15';
+import {LIBRARY_ROLE_INFO, camelotKey, compatibility, createDjLibraryFeature, createLibraryUiState, effectivePreset, energyBand, formatLibraryKey, harmonicCompatibility, libraryKeyMode, libraryQuery, libraryRoles, normalizedKey, songEnergy, timingProfile, vocalProfile} from './dj-library.js?v=20261013-1';
+import {createMusicFilesFeature, createMusicFilesUiState} from './music-files.js?v=20261013-1';
 import {createRequestStateController} from './request-state-controller.js';
-import {createReportingFeature} from './reporting.js?v=20261003-1';
-import {createSetBuilderFeature} from './set-builder.js?v=20261009-10';
-import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261003-1';
+import {createReportingFeature} from './reporting.js?v=20261013-1';
+import {createSetBuilderFeature} from './set-builder.js?v=20261013-1';
+import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261013-1';
 
+const api = createApiClient();
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
 // to structured inline messages and richer recovery actions.
 window.alert = message => notify(message, 'danger');
@@ -662,52 +664,50 @@ async function loadImportFailures() {
   }catch(error){counter.textContent='!';toolbar.hidden=true;empty.hidden=false;empty.textContent=error.message;root.replaceChildren();}
 }
 
+const frontendServices = composeFrontendServices(api);
+
 const musicFilesFeature = createMusicFilesFeature({
-  $, $$, apiErrorMessage, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
+  services: frontendServices, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
   getLoadedAt: () => downloadedLoadedAt,
   setLoadedAt: value => { downloadedLoadedAt=value; },
   invalidateLibrary: () => { libraryLoadedAt=0; }, VIEW_CACHE_MS,
-  operationReceiptText, escapeHtml, genreFolderTree, detailedGenreSummary,
+  escapeHtml, genreFolderTree, detailedGenreSummary,
   compactAudioMarkup, genreEditorMarkup, metadataEditorMarkup, option,
   syncControlUnlessEditing, refreshSearchableSelects, runBackgroundTask,
-  confirmAction, loadLibrary: (...args) => loadLibrary(...args), notify, renderTrackPagination, captureTextFilter,
+  loadLibrary: (...args) => loadLibrary(...args), renderTrackPagination, captureTextFilter,
   bindGenreEditor, startKeyAnalysis,
   showView, loadJobs, closeDownloadedInspector, clock, stopNativeAudio, bindCompactAudio, bindLazyAudio,
   compactAudioIsWithin, stopCompactAudio, collapsedGenreFolders, bindGenreFolderState,
-  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
 });
 const {loadDownloadedLibrary} = musicFilesFeature;
 const djLibraryFeature = createDjLibraryFeature({
-  $, $$, apiErrorMessage, getAppConfig: () => appConfig, libraryUiState, libraryRequestState,
+  services: frontendServices, getAppConfig: () => appConfig, libraryUiState, libraryRequestState,
   getLoadedAt: () => libraryLoadedAt, setLoadedAt: value => { libraryLoadedAt=value; },
   invalidateMusicFiles: () => { downloadedLoadedAt=0; }, VIEW_CACHE_MS,
   escapeHtml, genreFolderTree, bindGenreFolderState, option, refreshSearchableSelects,
   compactAudioMarkup, genreEditorMarkup, bindGenreEditor, bindCompactAudio,
-  renderTrackPagination, confirmAction, notify, clock, pct, loadJobs,
+  renderTrackPagination, clock, pct, loadJobs,
   loadDownloadedLibrary, loadReports: (...args) => loadReports(...args), showView,
   startKeyAnalysis,
   compactAudioIsWithin, stopCompactAudio, normalizedGenreCategory,
   ELECTRONIC_GENRE_CATEGORIES, LATIN_GENRE_CATEGORIES, libraryReprocessForm, reportDate,
   bindLazyAudio,
-  syncControlUnlessEditing, captureTextFilter, operationReceiptText,
-  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
+  syncControlUnlessEditing, captureTextFilter,
   loadAnalysis: (...args) => loadAnalysis(...args),
   jobAction: (...args) => jobAction(...args),
   jobElement: (...args) => jobElement(...args),
 });
 const {loadLibrary, renderLibraryIntelligence} = djLibraryFeature;
 const reportingFeature = createReportingFeature({
-  $, $$, loadJobs, renderLibraryIntelligence,
-  startKeyAnalysis, notify,
+  services: frontendServices, loadJobs, renderLibraryIntelligence, startKeyAnalysis,
 });
 const {loadAnalysis, loadReports} = reportingFeature;
 const setBuilderFeature = createSetBuilderFeature({
-  $, $$, option, escapeHtml, clock, confirmAction, decodedAudio, WaveSurfer,
+  services: frontendServices, option, escapeHtml, clock, decodedAudio, WaveSurfer,
   compatibility, harmonicCompatibility, camelotKey, formatLibraryKey,
   energyBand, songEnergy, LIBRARY_ROLE_INFO,
   libraryRoles, timingProfile, vocalProfile, bindCompactAudio, compactAudioMarkup,
-  stopNativeAudio, stopCompactAudio, notify,
-  descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor,
+  stopNativeAudio, stopCompactAudio,
 });
 const {loadSetBuilder} = setBuilderFeature;
 
@@ -1864,13 +1864,13 @@ function libraryReprocessForm(job, config) {
 }
 
 const settingsFeature = createSettingsFeature({
-  $, apiErrorMessage, operationReceiptText, downloadedUiState,
+  services: frontendServices, downloadedUiState,
   setAppConfig: payload => { appConfig.effective=payload.effective;appConfig.overrides=payload.overrides; },
   applyEffectiveSettings, loadConfig, loadPresets, editPreset,
   getPresetLibrary: () => presetLibrary,
   loadJobs, loadAnalysis, loadDownloadedLibrary, loadLibrary,
   invalidateCatalogs: () => { downloadedLoadedAt=0;libraryLoadedAt=0; },
-  loadPerformanceDiagnostics, escapeHtml, confirmAction, reportDate,
+  loadPerformanceDiagnostics, escapeHtml, reportDate,
   libraryAvailabilityView,
 });
 const {loadLibraryHealth, loadLibraryStatus, loadRelocationState, loadBackups, loadStorageManager} = settingsFeature;

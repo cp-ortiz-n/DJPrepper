@@ -1,3 +1,5 @@
+import {useFrontendServices} from './frontend-services.js';
+
 export function createMusicFilesUiState(pageSize = Number(localStorage.getItem('music-files-page-size') || 50)) {
   return {search:'', genre:'all', detailedGenre:'all', playlist:'all', analysis:'all', artwork:'all', quality:'all', sort:'newest', page:1, pageSize};
 }
@@ -11,19 +13,19 @@ export function musicFilesQuery(state) {
 }
 
 export function createMusicFilesFeature({
-  $, $$, apiErrorMessage, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
+  services, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
   getLoadedAt, setLoadedAt, invalidateLibrary, VIEW_CACHE_MS,
-  operationReceiptText, escapeHtml, genreFolderTree, detailedGenreSummary,
+  escapeHtml, genreFolderTree, detailedGenreSummary,
   compactAudioMarkup, genreEditorMarkup, metadataEditorMarkup, option,
   syncControlUnlessEditing, refreshSearchableSelects, runBackgroundTask,
-  confirmAction, loadLibrary, notify, renderTrackPagination, captureTextFilter,
+  loadLibrary, renderTrackPagination, captureTextFilter,
   bindGenreEditor, startKeyAnalysis, showView, loadJobs, closeDownloadedInspector,
   clock, stopNativeAudio, bindCompactAudio, bindLazyAudio, compactAudioIsWithin, stopCompactAudio,
   collapsedGenreFolders, bindGenreFolderState,
-  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
 }) {
+  const {api, $, $$, notify, confirmAction, operationReceiptText, descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor} = useFrontendServices(services);
   let metadataReview = null;
-  const bindIdentityProtection=(editor,track)=>{const input=editor.querySelector('.descriptor-inference-protection input');if(!input||!track)return;input.checked=Boolean(track.identity_inference_locked);input.onchange=async()=>{const wanted=input.checked;input.disabled=true;try{const response=await fetch(`/api/downloaded-library/tracks/${Number(track.id)}/inference-protection`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({protected:wanted})}),result=await response.json();if(!response.ok)throw new Error(apiErrorMessage(result,'Inference protection could not be saved.'));track.identity_inference_locked=Boolean(result.protected_from_inference);input.checked=track.identity_inference_locked;notify(`${track.title||track.filename}: ${input.checked?'protected from automatic inference':'eligible for re-inference'}. Survives restart: Yes.`,'success');}catch(error){input.checked=!wanted;notify(error.message,'danger');}finally{input.disabled=false;}};};
+  const bindIdentityProtection=(editor,track)=>{const input=editor.querySelector('.descriptor-inference-protection input');if(!input||!track)return;input.checked=Boolean(track.identity_inference_locked);input.onchange=async()=>{const wanted=input.checked;input.disabled=true;try{const response=await api.raw(`/api/downloaded-library/tracks/${Number(track.id)}/inference-protection`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({protected:wanted})}),result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Inference protection could not be saved.'));track.identity_inference_locked=Boolean(result.protected_from_inference);input.checked=track.identity_inference_locked;notify(`${track.title||track.filename}: ${input.checked?'protected from automatic inference':'eligible for re-inference'}. Survives restart: Yes.`,'success');}catch(error){input.checked=!wanted;notify(error.message,'danger');}finally{input.disabled=false;}};};
   const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied||result.skipped_protected?.length){notify(`Added inferred identity tags to ${result.applied} tracks.${result.skipped_protected?.length?` Skipped ${result.skipped_protected.length} manually protected.`:''}`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
   async function loadDownloadedLibrary() {
     const parameters = musicFilesQuery(downloadedUiState);
@@ -169,8 +171,8 @@ export function createMusicFilesFeature({
     const integrityGroups={missing_files:['Missing WAV files','remove-missing','Remove catalog entries'],uncataloged_files:['Uncataloged WAV files','catalog-uncataloged','Add to catalog'],duplicate_records:['Possible duplicate records',null,null],stale_sidecars:['Stale metadata records','delete-stale-sidecars','Delete stale records'],broken_analysis_links:['Broken analysis links',null,null],tag_mismatches:['WAV tags differ from catalog','retag-mismatches','Rewrite tags from catalog'],unreadable_tags:['Unreadable WAV metadata',null,null]};
     const runIntegrityRepair=async(action,items,label)=>{
       if(!items.length||!await confirmAction(`${label} for ${items.length} item${items.length===1?'':'s'}? Only this listed issue group will be changed.`, {title:'Apply integrity repair', acceptLabel:label}))return;
-      const response=await fetch('/api/downloaded-library/integrity-repair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,item_ids:items.map(item=>item.id)})}); const payload=await response.json();
-      if(!response.ok){integrityStatus.textContent=apiErrorMessage(payload,'The repair could not be completed.');return;}
+      const response=await api.raw('/api/downloaded-library/integrity-repair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,item_ids:items.map(item=>item.id)})}); const payload=await response.json();
+      if(!response.ok){integrityStatus.textContent=api.errorMessage(payload,'The repair could not be completed.');return;}
       integrityStatus.textContent=`${operationReceiptText(payload.receipt)} · Run the scan again to verify.`; await loadDownloadedLibrary(); integrityRoot.open=true;
     };
     const duplicateFindingMarkup=item=>{
@@ -182,11 +184,11 @@ export function createMusicFilesFeature({
       integrityStatus.textContent=groups.length?`${groups.reduce((sum,[key])=>sum+(findings[key]||[]).length,0)} findings across ${groups.length} categories. Review each group before applying a repair.`:'No catalog, file, path, or WAV-tag integrity issues were found.';
       integrityResults.innerHTML=groups.map(([key,[label,action,actionLabel]])=>{const items=findings[key]||[];const rows=key==='duplicate_records'?items.slice(0,25).map(duplicateFindingMarkup).join(''):items.slice(0,25).map(item=>`<li><strong>${escapeHtml(item.title||'Unknown item')}</strong><span>${escapeHtml((item.fields||[]).join(', ')||item.error||item.status||'')}</span><small>${escapeHtml(item.path||'')}</small></li>`).join('');return `<details class="integrity-group" data-key="${key}"><summary><span>${escapeHtml(label)}</span><b>${items.length}</b></summary><ul>${rows}</ul>${items.length>25?`<p>+ ${items.length-25} more findings</p>`:''}${action?`<button type="button" class="button secondary integrity-repair">${escapeHtml(actionLabel)}</button>`:key==='duplicate_records'?'<p>Select the file to retain in the catalog. Merging keeps the other WAV on disk.</p>':'<p>Review manually; no automatic repair is applied for this group.</p>'}</details>`;}).join('');
       integrityResults.querySelectorAll('.integrity-repair').forEach(button=>{const group=button.closest('.integrity-group');const [label,action,actionLabel]=integrityGroups[group.dataset.key];button.onclick=()=>runIntegrityRepair(action,findings[group.dataset.key]||[],actionLabel||label);});
-      integrityResults.querySelectorAll('.merge-duplicate').forEach(button=>button.onclick=async()=>{const ids=button.dataset.ids.split(',').map(Number);const survivor=Number(button.closest('li').querySelector('input:checked')?.value||ids[0]);const duplicate=ids.find(id=>id!==survivor);if(!duplicate||!await confirmAction('Merge these catalog records? Analysis, playlists, feedback, and verified keys will follow the selected recording. The other WAV will remain on disk.', {title:'Merge duplicate records', acceptLabel:'Merge records'}))return;button.disabled=true;const response=await fetch('/api/downloaded-library/merge-duplicate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({survivor_id:survivor,duplicate_id:duplicate})});const result=await response.json();if(!response.ok){button.disabled=false;alert(apiErrorMessage(result,'Could not merge the duplicate.'));return;}await loadDownloadedLibrary();integrityButton.click();});
-      integrityResults.querySelectorAll('.keep-duplicate-separate').forEach(button=>button.onclick=async()=>{const id=Number(button.dataset.id);if(!id)return;button.disabled=true;const response=await fetch(`/api/downloaded-library/tracks/${id}/keep-separate`,{method:'POST'});const result=await response.json();if(!response.ok){button.disabled=false;alert(apiErrorMessage(result,'Could not separate the recording.'));return;}await loadDownloadedLibrary();integrityButton.click();});
+      integrityResults.querySelectorAll('.merge-duplicate').forEach(button=>button.onclick=async()=>{const ids=button.dataset.ids.split(',').map(Number);const survivor=Number(button.closest('li').querySelector('input:checked')?.value||ids[0]);const duplicate=ids.find(id=>id!==survivor);if(!duplicate||!await confirmAction('Merge these catalog records? Analysis, playlists, feedback, and verified keys will follow the selected recording. The other WAV will remain on disk.', {title:'Merge duplicate records', acceptLabel:'Merge records'}))return;button.disabled=true;const response=await api.raw('/api/downloaded-library/merge-duplicate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({survivor_id:survivor,duplicate_id:duplicate})});const result=await response.json();if(!response.ok){button.disabled=false;alert(api.errorMessage(result,'Could not merge the duplicate.'));return;}await loadDownloadedLibrary();integrityButton.click();});
+      integrityResults.querySelectorAll('.keep-duplicate-separate').forEach(button=>button.onclick=async()=>{const id=Number(button.dataset.id);if(!id)return;button.disabled=true;const response=await api.raw(`/api/downloaded-library/tracks/${id}/keep-separate`,{method:'POST'});const result=await response.json();if(!response.ok){button.disabled=false;alert(api.errorMessage(result,'Could not separate the recording.'));return;}await loadDownloadedLibrary();integrityButton.click();});
     };
     const watchIntegrityScan=batchId=>runBackgroundTask({key:'integrity-scan',url:`/api/downloaded-library/integrity-scan/${batchId}`,interval:700,update:batch=>{integrityRoot.open=true;integrityButton.disabled=true;integrityButton.textContent='Scanning…';integrityStatus.textContent=`${batch.stage} · ${Math.round(batch.progress||0)}%`;},complete:batch=>{integrityButton.disabled=false;integrityButton.textContent='Scan collection';renderIntegrityResults(batch);},fail:error=>{integrityButton.disabled=false;integrityButton.textContent='Scan collection';integrityStatus.textContent=error.message;}});
-    integrityButton.onclick=async()=>{integrityButton.disabled=true;integrityButton.textContent='Starting…';integrityResults.replaceChildren();integrityStatus.textContent='Indexing catalog and music folders…';const response=await fetch('/api/downloaded-library/integrity-scan',{method:'POST'});const batch=await response.json();if(!response.ok){integrityButton.disabled=false;integrityButton.textContent='Scan collection';integrityStatus.textContent=apiErrorMessage(batch,'Could not start integrity scan.');return;}watchIntegrityScan(batch.batch_id);};
+    integrityButton.onclick=async()=>{integrityButton.disabled=true;integrityButton.textContent='Starting…';integrityResults.replaceChildren();integrityStatus.textContent='Indexing catalog and music folders…';const response=await api.raw('/api/downloaded-library/integrity-scan',{method:'POST'});const batch=await response.json();if(!response.ok){integrityButton.disabled=false;integrityButton.textContent='Scan collection';integrityStatus.textContent=api.errorMessage(batch,'Could not start integrity scan.');return;}watchIntegrityScan(batch.batch_id);};
     summary.querySelector('.sidebar-rescan').onclick = () => rescanGenres.click();
     summary.querySelector('.sidebar-reconcile').onclick = () => reconcileFiles.click();
     summary.querySelector('.sidebar-artwork').onclick = () => syncArtwork.click();
@@ -194,11 +196,11 @@ export function createMusicFilesFeature({
       const dialog=$('#identity-vocabulary-dialog'),list=dialog.querySelector('.identity-vocabulary-list'),summaryRoot=dialog.querySelector('.identity-vocabulary-summary');
       dialog.showModal();list.innerHTML='<p>Scanning playlist vocabulary…</p>';
       try{
-        const response=await fetch('/api/downloaded-library/descriptors/vocabulary',{cache:'no-store'}),payload=await response.json();if(!response.ok)throw new Error(apiErrorMessage(payload,'Vocabulary review could not be loaded.'));
+        const response=await api.raw('/api/downloaded-library/descriptors/vocabulary',{cache:'no-store'}),payload=await response.json();if(!response.ok)throw new Error(api.errorMessage(payload,'Vocabulary review could not be loaded.'));
         summaryRoot.textContent=`${payload.unreviewed} unreviewed · ${payload.approved} approved · ${payload.ignored} ignored`;
         const categories=[['cultural','Cultural / regional'],['rhythm','Rhythmic influence'],['sound','Sound character'],['vocal','Vocal identity'],['role','Energy / DJ role'],['context','Context / crate'],['familiarity','Audience familiarity']];
         list.innerHTML=(payload.items||[]).map(item=>{const rule=item.rule||{},status=rule.status||'unreviewed';return `<article class="identity-vocabulary-row" data-signal="${escapeHtml(item.signal)}" data-status="${escapeHtml(status)}"><div><strong>${escapeHtml(item.signal)}</strong><span>${item.track_count} affected track${item.track_count===1?'':'s'}</span><small>${escapeHtml((item.examples||[]).join(' · '))}</small></div><label>Category<select class="vocabulary-category"><option value="">Choose a category…</option>${categories.map(([value,label])=>`<option value="${value}"${rule.category===value?' selected':''}>${label}</option>`).join('')}</select></label><label>Normalized meaning<input class="vocabulary-meaning" value="${escapeHtml(rule.value||item.signal)}" placeholder="Reusable identity tag"></label><div><button type="button" class="approve-vocabulary">Approve</button><button type="button" class="button secondary ignore-vocabulary">Ignore</button></div></article>`;}).join('')||'<p>No unreviewed playlist vocabulary remains.</p>';
-        const saveRule=async(row,status,button)=>{const category=row.querySelector('.vocabulary-category')?.value||'',value=row.querySelector('.vocabulary-meaning')?.value.trim()||'';if(status==='approved'&&(!category||!value)){notify('Choose a category and a specific normalized meaning before approving.','danger');return;}button.disabled=true;const request={signal:row.dataset.signal,status,category:status==='approved'?category:'',value:status==='approved'?value:''};try{const result=await fetch('/api/downloaded-library/descriptors/vocabulary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)}),body=await result.json();if(!result.ok)throw new Error(apiErrorMessage(body,'Vocabulary rule could not be saved.'));row.remove();if(!list.querySelector('.identity-vocabulary-row'))list.innerHTML='<p>No unreviewed playlist vocabulary remains.</p>';notify(`${request.signal}: ${status}. ${body.updated_tracks} matching tracks refreshed. Survives restart: Yes.`,'success',{timeout:8000});setLoadedAt(0);invalidateLibrary();}catch(error){notify(error.message,'danger');button.disabled=false;}};
+        const saveRule=async(row,status,button)=>{const category=row.querySelector('.vocabulary-category')?.value||'',value=row.querySelector('.vocabulary-meaning')?.value.trim()||'';if(status==='approved'&&(!category||!value)){notify('Choose a category and a specific normalized meaning before approving.','danger');return;}button.disabled=true;const request={signal:row.dataset.signal,status,category:status==='approved'?category:'',value:status==='approved'?value:''};try{const result=await api.raw('/api/downloaded-library/descriptors/vocabulary',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)}),body=await result.json();if(!result.ok)throw new Error(api.errorMessage(body,'Vocabulary rule could not be saved.'));row.remove();if(!list.querySelector('.identity-vocabulary-row'))list.innerHTML='<p>No unreviewed playlist vocabulary remains.</p>';notify(`${request.signal}: ${status}. ${body.updated_tracks} matching tracks refreshed. Survives restart: Yes.`,'success',{timeout:8000});setLoadedAt(0);invalidateLibrary();}catch(error){notify(error.message,'danger');button.disabled=false;}};
         list.querySelectorAll('.approve-vocabulary').forEach(button=>button.onclick=()=>saveRule(button.closest('.identity-vocabulary-row'),'approved',button));
         list.querySelectorAll('.ignore-vocabulary').forEach(button=>button.onclick=()=>saveRule(button.closest('.identity-vocabulary-row'),'ignored',button));
       }catch(error){list.innerHTML=`<p class="danger-text">${escapeHtml(error.message)}</p>`;}
@@ -208,7 +210,7 @@ export function createMusicFilesFeature({
       if(!paginationData.catalog_total||!await confirmAction(`Infer musical identity for every catalog track that has no inferred or playlist-derived tags? Existing manual tags will be preserved.`,{title:'Infer missing identities',acceptLabel:'Infer identities'}))return;
       inferMissingIdentities.disabled=true;inferMissingIdentities.textContent='Inferring identities…';
       renderMaintenanceProgress('Inferring missing identities',{total:paginationData.catalog_total,processed:0,status:'processing'},'Reading genre, playlist, title, vocal, energy, role, and timing evidence…');
-      try{const response=await fetch('/api/downloaded-library/descriptors/infer-missing',{method:'POST'}),result=await response.json();if(!response.ok)throw new Error(apiErrorMessage(result,'Identity inference failed.'));renderMaintenanceProgress('Identity inference complete',{total:result.requested,processed:result.processed,status:'complete'},`${result.applied} tracks updated · ${result.suggestions_added} tags added · ${result.no_suggestions.length} had insufficient evidence · manual tags preserved · survives restart`);notify(`Identity inference complete: ${result.applied} tracks updated with ${result.suggestions_added} tags.`,'success',{timeout:9000});setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
+      try{const response=await api.raw('/api/downloaded-library/descriptors/infer-missing',{method:'POST'}),result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Identity inference failed.'));renderMaintenanceProgress('Identity inference complete',{total:result.requested,processed:result.processed,status:'complete'},`${result.applied} tracks updated · ${result.suggestions_added} tags added · ${result.no_suggestions.length} had insufficient evidence · manual tags preserved · survives restart`);notify(`Identity inference complete: ${result.applied} tracks updated with ${result.suggestions_added} tags.`,'success',{timeout:9000});setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
       catch(error){renderProgressError('Identity inference failed',error);notify(error.message,'danger');}
       finally{inferMissingIdentities.disabled=false;inferMissingIdentities.textContent='Infer missing identities';}
     };
@@ -216,7 +218,7 @@ export function createMusicFilesFeature({
       if(!paginationData.catalog_total||!await confirmAction('Replace machine-generated identity on every track that is not marked “Manually tagged—do not infer”? Manually protected tracks will be skipped.',{title:'Re-infer unprotected tracks',acceptLabel:'Re-infer tracks'}))return;
       reinferUnprotected.disabled=true;reinferUnprotected.textContent='Re-inferring…';
       renderMaintenanceProgress('Re-inferring unprotected identities',{total:paginationData.catalog_total,processed:0,status:'processing'},'Protected manual identities will not be changed.');
-      try{const response=await fetch('/api/downloaded-library/descriptors/reinfer-unprotected',{method:'POST'}),result=await response.json();if(!response.ok)throw new Error(apiErrorMessage(result,'Identity re-inference failed.'));renderMaintenanceProgress('Identity re-inference complete',{total:result.requested,processed:result.processed,status:'complete'},`${result.updated} unprotected tracks refreshed · ${result.suggestions_added} tags added · ${result.no_suggestions.length} had insufficient evidence · protected tracks skipped · survives restart`);notify(`Re-inference complete: ${result.updated} unprotected tracks refreshed.`,'success',{timeout:9000});setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
+      try{const response=await api.raw('/api/downloaded-library/descriptors/reinfer-unprotected',{method:'POST'}),result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Identity re-inference failed.'));renderMaintenanceProgress('Identity re-inference complete',{total:result.requested,processed:result.processed,status:'complete'},`${result.updated} unprotected tracks refreshed · ${result.suggestions_added} tags added · ${result.no_suggestions.length} had insufficient evidence · protected tracks skipped · survives restart`);notify(`Re-inference complete: ${result.updated} unprotected tracks refreshed.`,'success',{timeout:9000});setLoadedAt(0);invalidateLibrary();await loadDownloadedLibrary();}
       catch(error){renderProgressError('Identity re-inference failed',error);notify(error.message,'danger');}
       finally{reinferUnprotected.disabled=false;reinferUnprotected.textContent='Re-infer unprotected';}
     };
@@ -236,9 +238,9 @@ export function createMusicFilesFeature({
       renderMaintenanceProgress('Rescanning genre folders', {total:paginationData.catalog_total,processed:0,status:'processing'}, `0 of ${paginationData.catalog_total} checked · preparing library scan`);
       $('#downloaded-rescan-message').textContent = '';
       try {
-        const response = await fetch('/api/downloaded-library/rescan-genres', {method:'POST'});
+        const response = await api.raw('/api/downloaded-library/rescan-genres', {method:'POST'});
         const result = await response.json();
-        if (!response.ok) throw new Error(apiErrorMessage(result, 'Genre rescan failed.'));
+        if (!response.ok) throw new Error(api.errorMessage(result, 'Genre rescan failed.'));
         watchGenreRescan(result.batch_id);
       } catch (error) { renderProgressError('Genre rescan could not start', error); rescanGenres.disabled=false; retagAll.disabled=false; rescanGenres.textContent='Rescan genres'; }
     };
@@ -250,7 +252,7 @@ export function createMusicFilesFeature({
     });
     reconcileFiles.onclick=async()=>{
       reconcileFiles.disabled=true;reconcileFiles.textContent='Starting…';renderMaintenanceProgress('Reconciling changed files',{total:0,processed:0,status:'processing'},'Indexing source records…');
-      try{const response=await fetch('/api/downloaded-library/reconcile-files',{method:'POST'});const batch=await response.json();if(!response.ok)throw new Error(apiErrorMessage(batch,'Could not start file reconciliation.'));reconcileFiles.textContent='Reconciling…';watchReconcile(batch.batch_id);}catch(error){renderProgressError('File reconciliation could not start',error);reconcileFiles.disabled=false;reconcileFiles.textContent='Reconcile files';}
+      try{const response=await api.raw('/api/downloaded-library/reconcile-files',{method:'POST'});const batch=await response.json();if(!response.ok)throw new Error(api.errorMessage(batch,'Could not start file reconciliation.'));reconcileFiles.textContent='Reconciling…';watchReconcile(batch.batch_id);}catch(error){renderProgressError('File reconciliation could not start',error);reconcileFiles.disabled=false;reconcileFiles.textContent='Reconcile files';}
     };
     const renderTagFailures = (batch, reportType='wav-tags') => {
       const details = $('#downloaded-retag-errors');
@@ -268,8 +270,8 @@ export function createMusicFilesFeature({
       removeFailed.hidden = !missing.length;
       removeFailed.onclick = async () => {
         if (!missing.length || !await confirmAction(`Remove ${missing.length} missing file entr${missing.length === 1 ? 'y' : 'ies'} from the catalog? This does not delete any files.`, {title:'Remove missing entries', acceptLabel:'Remove entries', danger:true})) return;
-        const response = await fetch('/api/downloaded-library/tracks', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:missing.map(item => item.id)})});
-        if (!response.ok) { alert(apiErrorMessage(await response.json(), 'Could not remove missing entries.')); return; }
+        const response = await api.raw('/api/downloaded-library/tracks', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:missing.map(item => item.id)})});
+        if (!response.ok) { alert(api.errorMessage(await response.json(), 'Could not remove missing entries.')); return; }
         await loadDownloadedLibrary();
       };
     };
@@ -284,9 +286,9 @@ export function createMusicFilesFeature({
       retagAll.disabled = true; rescanGenres.disabled = true; retagAll.textContent = 'Starting…';
       renderMaintenanceProgress('Synchronizing WAV tags', {total:paginationData.catalog_total,processed:0,status:'processing'}, `0 of ${paginationData.catalog_total} checked · preparing metadata sync`);
       try {
-        const response = await fetch('/api/downloaded-library/retag-all', {method:'POST'});
+        const response = await api.raw('/api/downloaded-library/retag-all', {method:'POST'});
         const batch = await response.json();
-        if (!response.ok) throw new Error(apiErrorMessage(batch, 'Could not start WAV metadata synchronization.'));
+        if (!response.ok) throw new Error(api.errorMessage(batch, 'Could not start WAV metadata synchronization.'));
         retagAll.textContent = 'Syncing all…';
         watchTagBatch(batch.batch_id);
       } catch (error) { renderProgressError('WAV tag sync could not start', error); retagAll.disabled = false; rescanGenres.disabled=false; retagAll.textContent = 'Sync all WAV tags'; }
@@ -310,19 +312,19 @@ export function createMusicFilesFeature({
       syncArtwork.disabled=true; rescanGenres.disabled=true; retagAll.disabled=true; syncArtwork.textContent='Starting…';
       renderMaintenanceProgress('Finding and embedding artwork',{total:paginationData.catalog_total,processed:0,status:'processing'},`0 of ${paginationData.catalog_total} checked · preparing artwork sync`);
       try {
-        const response=await fetch('/api/downloaded-library/artwork-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:selectedIds})});
+        const response=await api.raw('/api/downloaded-library/artwork-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:selectedIds})});
         const batch=await response.json();
-        if(!response.ok) throw new Error(apiErrorMessage(batch, 'Could not start artwork synchronization.'));
+        if(!response.ok) throw new Error(api.errorMessage(batch, 'Could not start artwork synchronization.'));
         syncArtwork.textContent='Syncing artwork…';
         watchArtworkBatch(batch.batch_id);
       } catch(error) { renderProgressError('Artwork sync could not start',error); syncArtwork.disabled=false; syncArtwork.textContent='Sync artwork'; rescanGenres.disabled=false; retagAll.disabled=false; }
     };
-    fetch('/api/downloaded-library/rescan-genres-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
+    api.raw('/api/downloaded-library/rescan-genres-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
       if (batch.status !== 'processing') return;
       rescanGenres.disabled=true; retagAll.disabled=true; rescanGenres.textContent='Rescanning…';
       watchGenreRescan(batch.batch_id);
     }).catch(() => {});
-    fetch('/api/downloaded-library/retag-all-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
+    api.raw('/api/downloaded-library/retag-all-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
       if (batch.status === 'none') return;
       renderTagFailures(batch,'wav-tags');
       if (batch.status === 'processing') {
@@ -332,7 +334,7 @@ export function createMusicFilesFeature({
         $('#downloaded-rescan-message').textContent = `Previous WAV metadata sync · ${batch.tagged} updated · ${batch.skipped || 0} already correct · ${batch.failed} unavailable/failed`;
       }
     }).catch(() => {});
-    fetch('/api/downloaded-library/artwork-sync-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
+    api.raw('/api/downloaded-library/artwork-sync-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
       if (batch.status === 'none') return;
       renderTagFailures(batch,'artwork');
       if (batch.status === 'processing') {
@@ -484,9 +486,9 @@ export function createMusicFilesFeature({
       if (!trackIds.length || !await confirmAction(`Write title, artist, genre, and playlist metadata into ${trackIds.length} selected WAV${trackIds.length === 1 ? '' : 's'}?`, {title:'Write WAV metadata', acceptLabel:'Write tags'})) return;
       retagSelected.disabled = true; retagSelected.textContent = 'Syncing tags…';
       try {
-        const response = await fetch('/api/downloaded-library/retag', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
+        const response = await api.raw('/api/downloaded-library/retag', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
         const result = await response.json();
-        if (!response.ok) throw new Error(apiErrorMessage(result, 'Could not update WAV metadata.'));
+        if (!response.ok) throw new Error(api.errorMessage(result, 'Could not update WAV metadata.'));
         notify(operationReceiptText(result.receipt), result.failed.length ? 'danger' : 'success', {timeout:9000});
       } catch (error) { alert(error.message); }
       finally { retagSelected.textContent = 'Sync WAV tags'; refreshSelection(); }
@@ -495,8 +497,8 @@ export function createMusicFilesFeature({
       const trackIds = [...downloadedSelection.values()].filter(track => track.available).map(track => Number(track.id));
       downloadSelected.disabled = true; downloadSelected.textContent = 'Preparing ZIP…';
       try {
-        const response = await fetch('/api/downloaded-library/download', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
-        if (!response.ok) throw new Error(apiErrorMessage(await response.json(), 'Could not prepare the download.'));
+        const response = await api.raw('/api/downloaded-library/download', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
+        if (!response.ok) throw new Error(api.errorMessage(await response.json(), 'Could not prepare the download.'));
         const url = URL.createObjectURL(await response.blob()); const link = document.createElement('a'); link.href = url; link.download = 'Selected Downloaded Tracks - WAVs.zip'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       } catch (error) { alert(error.message); }
       finally { downloadSelected.textContent = 'Download WAVs'; refreshSelection(); }
@@ -506,9 +508,9 @@ export function createMusicFilesFeature({
       if (!trackIds.length) return;
       analyzeSelected.disabled = true; analyzeSelected.textContent = 'Adding to queue…';
       try {
-        const response = await fetch('/api/downloaded-library/analyze', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
+        const response = await api.raw('/api/downloaded-library/analyze', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
         const payload = await response.json();
-        if (!response.ok) throw new Error(apiErrorMessage(payload, 'Could not queue analysis.'));
+        if (!response.ok) throw new Error(api.errorMessage(payload, 'Could not queue analysis.'));
         showView('workspace-view'); await loadJobs();
       } catch (error) { alert(error.message); analyzeSelected.textContent = 'Analyze'; refreshSelection(); }
     };
@@ -517,9 +519,9 @@ export function createMusicFilesFeature({
       if (!analyzableTotal || !await confirmAction(`Add all ${analyzableTotal} matching track${analyzableTotal===1?'':'s'} that still need analysis to the processing queue? Analysis will run with safe automatic concurrency.`, {title:'Analyze matching tracks', acceptLabel:'Add to queue'})) return;
       analyzeMatching.disabled=true; analyzeMatching.textContent='Adding all to queue…';
       try {
-        const response=await fetch('/api/downloaded-library/analyze-matching',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,quality:downloadedUiState.quality,sort:downloadedUiState.sort})});
+        const response=await api.raw('/api/downloaded-library/analyze-matching',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({search:downloadedUiState.search,genre:downloadedUiState.genre,detailed_genre:downloadedUiState.detailedGenre,playlist:downloadedUiState.playlist,analysis:downloadedUiState.analysis,quality:downloadedUiState.quality,sort:downloadedUiState.sort})});
         const result=await response.json();
-        if(!response.ok)throw new Error(apiErrorMessage(result,'Could not queue matching tracks.'));
+        if(!response.ok)throw new Error(api.errorMessage(result,'Could not queue matching tracks.'));
         downloadedSelection.clear();
         showView('workspace-view'); await loadJobs();
       } catch(error) { alert(error.message); analyzeMatching.disabled=false; analyzeMatching.textContent=`Analyze all matching (${analyzableTotal})`; }
@@ -529,8 +531,8 @@ export function createMusicFilesFeature({
       if (!count || !await confirmAction(`Reanalyze ${count} track${count===1?'':'s'} without changing the audio files? Estimated analysis time is about ${estimatedMinutes} minute${estimatedMinutes===1?'':'s'}. Existing artwork, genres, metadata, cues, and verified keys will be preserved.`, {title:'Reanalyze matching tracks', acceptLabel:'Reanalyze'})) return;
       const original = button.textContent; button.disabled = true; button.textContent = 'Adding to queue…';
       try {
-        const response = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const result=await response.json();
-        if(!response.ok)throw new Error(apiErrorMessage(result,'Could not queue reanalysis.'));
+        const response = await api.raw(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}); const result=await response.json();
+        if(!response.ok)throw new Error(api.errorMessage(result,'Could not queue reanalysis.'));
         downloadedSelection.clear(); showView('workspace-view'); await loadJobs();
         if(result.skipped?.length)alert(`${result.job_ids.length} queued · ${result.skipped.length} already active and skipped.`);
       } catch(error) { alert(error.message); button.disabled=false; }
@@ -543,8 +545,8 @@ export function createMusicFilesFeature({
       if (!trackIds.length || !await confirmAction(`Remove ${trackIds.length} selected track${trackIds.length === 1 ? '' : 's'} from the catalog? WAV files that still exist will remain on disk.`, {title:'Remove catalog entries', acceptLabel:'Remove', danger:true})) return;
       removeSelected.disabled = true; removeSelected.textContent = 'Removing…';
       try {
-        const response = await fetch('/api/downloaded-library/tracks', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
-        if (!response.ok) throw new Error(apiErrorMessage(await response.json(), 'Could not remove the selected tracks.'));
+        const response = await api.raw('/api/downloaded-library/tracks', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});
+        if (!response.ok) throw new Error(api.errorMessage(await response.json(), 'Could not remove the selected tracks.'));
         trackIds.forEach(id => downloadedSelection.delete(Number(id)));
         await loadDownloadedLibrary();
       } catch (error) { alert(error.message); removeSelected.textContent = 'Remove'; refreshSelection(); }
@@ -552,7 +554,7 @@ export function createMusicFilesFeature({
     root.querySelectorAll('.remove-downloaded').forEach(button => button.onclick = async () => {
       const card = button.closest('.downloaded-card');
       if (!await confirmAction('Remove this track from the master catalog? The WAV file will remain on disk.', {title:'Remove track', acceptLabel:'Remove', danger:true})) return;
-      await fetch(`/api/downloaded-library/tracks/${card.dataset.id}`, {method:'DELETE'}); await reloadCollectionViews();
+      await api.raw(`/api/downloaded-library/tracks/${card.dataset.id}`, {method:'DELETE'}); await reloadCollectionViews();
     });
     root.querySelectorAll('.view-downloaded-library').forEach(button => button.onclick = () => showView('library-view'));
     root.querySelectorAll('.edit-downloaded-genre').forEach(button => button.onclick = () => { const card=button.closest('.downloaded-card'); const editor=card.querySelector('.inline-genre-editor'); const opening=editor.hidden; root.querySelectorAll('.inline-genre-editor,.track-metadata-editor').forEach(item=>item.hidden=true); editor.hidden=!opening; button.closest('details')?.removeAttribute('open'); if (!editor.hidden) editor.querySelector('select').focus(); });
@@ -584,8 +586,8 @@ export function createMusicFilesFeature({
         save.disabled=true; save.textContent='Saving…'; message.textContent='Writing WAV tags, artwork, and synchronizing the catalog…';
         const body=Object.fromEntries(new FormData(editor).entries()); body.rename_file=editor.elements.rename_file.checked;
         try {
-          const response=await fetch(`/api/downloaded-library/tracks/${card.dataset.id}/metadata`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-          const payload=await response.json(); if(!response.ok) throw new Error(apiErrorMessage(payload,'Could not update metadata.'));
+          const response=await api.raw(`/api/downloaded-library/tracks/${card.dataset.id}/metadata`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+          const payload=await response.json(); if(!response.ok) throw new Error(api.errorMessage(payload,'Could not update metadata.'));
           notify(operationReceiptText(payload.receipt), payload.receipt?.failures?.length ? 'danger' : 'success', {timeout:9000});
           downloadedSelection.delete(Number(card.dataset.id));const nextCard=metadataCards[index+1]||null;
           if(advance)metadataReview={id:nextCard?Number(nextCard.dataset.id):null};
@@ -631,8 +633,8 @@ export function createMusicFilesFeature({
       bindGenreEditor(inspectorGenreEditor,()=>[Number(track.id)],async payload=>{await applyTrackPatch(card,{genre_category:payload.genre_category});inspectorGenreEditor.hidden=true;inspector.querySelector('.inspector-genre-trigger b').textContent=payload.genre_category;});
       inspector.querySelector('.inspector-library')?.addEventListener('click', () => { closeDownloadedInspector(); showView('library-view'); });
       inspector.querySelector('.inspector-copy-path')?.addEventListener('click', async event => {try{await navigator.clipboard.writeText(track.absolute_path||'');event.currentTarget.textContent='Path copied';}catch(_){event.currentTarget.textContent='Copy failed';}});
-      inspector.querySelector('.inspector-reveal')?.addEventListener('click', async event => {const response=await fetch(`/api/downloaded-library/tracks/${track.id}/reveal`,{method:'POST'}),payload=await response.json();event.currentTarget.textContent=response.ok?'Revealed in Finder':apiErrorMessage(payload,'Could not reveal');});
-      inspector.querySelector('.inspector-analyze-key')?.addEventListener('click',async event=>{const action=event.currentTarget,status=inspector.querySelector('.key-analysis-result');action.disabled=true;action.textContent='Analyzing key…';status.textContent='Comparing tonal estimates; all other analysis remains unchanged.';try{const response=await fetch(`/api/downloaded-library/tracks/${track.id}/analyze-key`,{method:'POST'}),payload=await response.json();if(!response.ok)throw new Error(apiErrorMessage(payload,'Key analysis failed.'));track.detected_key=payload.detected_key;track.key_confidence=payload.key_confidence;track.key_analyzed_at=payload.key_analyzed_at;inspector.querySelector('.inspector-key-value').textContent=payload.detected_key||'Unknown';inspector.querySelector('.inspector-key-value').nextElementSibling.textContent=`Key · ${Math.round(Number(payload.key_confidence||0))}%`;status.textContent=`Complete · ${payload.detected_key} is the current estimate.`;action.textContent='Analyze key again';}catch(error){status.textContent=error.message;action.textContent='Try key analysis again';}finally{action.disabled=false;}});
+      inspector.querySelector('.inspector-reveal')?.addEventListener('click', async event => {const response=await api.raw(`/api/downloaded-library/tracks/${track.id}/reveal`,{method:'POST'}),payload=await response.json();event.currentTarget.textContent=response.ok?'Revealed in Finder':api.errorMessage(payload,'Could not reveal');});
+      inspector.querySelector('.inspector-analyze-key')?.addEventListener('click',async event=>{const action=event.currentTarget,status=inspector.querySelector('.key-analysis-result');action.disabled=true;action.textContent='Analyzing key…';status.textContent='Comparing tonal estimates; all other analysis remains unchanged.';try{const response=await api.raw(`/api/downloaded-library/tracks/${track.id}/analyze-key`,{method:'POST'}),payload=await response.json();if(!response.ok)throw new Error(api.errorMessage(payload,'Key analysis failed.'));track.detected_key=payload.detected_key;track.key_confidence=payload.key_confidence;track.key_analyzed_at=payload.key_analyzed_at;inspector.querySelector('.inspector-key-value').textContent=payload.detected_key||'Unknown';inspector.querySelector('.inspector-key-value').nextElementSibling.textContent=`Key · ${Math.round(Number(payload.key_confidence||0))}%`;status.textContent=`Complete · ${payload.detected_key} is the current estimate.`;action.textContent='Analyze key again';}catch(error){status.textContent=error.message;action.textContent='Try key analysis again';}finally{action.disabled=false;}});
       const familyForm=inspector.querySelector('.inspector-family-link'),familyContent=inspector.querySelector('.inspector-family-content'),familySuggestions=inspector.querySelector('.inspector-family-suggestions');
       const familySection=inspector.querySelector('.inspector-family');
       familySection.classList.add('is-collapsed');
@@ -649,8 +651,8 @@ export function createMusicFilesFeature({
         }
         if(!familyForm.hidden)familyForm.elements.target.focus();
       };
-      const loadFamily=async()=>{const response=await fetch(`/api/downloaded-library/tracks/${track.id}/family`),payload=await response.json();if(!response.ok){familyContent.innerHTML=`<p>${escapeHtml(apiErrorMessage(payload,'Related versions could not be loaded.'))}</p>`;return;}familyContent.innerHTML=payload.family.map(member=>`<article><div><b>${escapeHtml(member.title||member.filename)}</b><span>${escapeHtml(member.artist||'Unknown artist')} · ${escapeHtml(member.recording_code)}-${escapeHtml(member.version_code||'ORG')}</span></div>${Number(member.id)===Number(track.id)?'<em>Current</em>':`<button type="button" data-family-target="${member.id}">View</button>`}</article>`).join('');if(payload.family.length>1)familyContent.insertAdjacentHTML('beforeend','<button type="button" class="button secondary inspector-family-unlink">Unlink current track</button>');familySuggestions.innerHTML=payload.suggestions.length?`<b>Suggested families</b>${payload.suggestions.map(item=>`<button type="button" data-suggestion-id="${escapeHtml(item.track.recording_code)}-${escapeHtml(item.track.version_code||'ORG')}"><span>${escapeHtml(item.track.title||item.track.filename)} · ${escapeHtml(item.track.artist||'Unknown artist')}</span><small>${item.score}% · ${escapeHtml(item.reasons.join(', '))}</small></button>`).join('')}`:'<small>No strong automatic suggestions. Enter a target track ID to link manually.</small>';familySuggestions.querySelectorAll('[data-suggestion-id]').forEach(option=>option.onclick=()=>{familyForm.hidden=false;familyForm.elements.target.value=option.dataset.suggestionId;familyForm.elements.relationship.focus();});familyContent.querySelector('.inspector-family-unlink')?.addEventListener('click',async()=>{if(!await confirmAction('Unlink this version into its own recording family? You can link it again later.', {title:'Unlink recording version', acceptLabel:'Unlink'}))return;const result=await fetch(`/api/downloaded-library/tracks/${track.id}/unlink-version`,{method:'POST'});if(result.ok){await loadDownloadedLibrary();closeDownloadedInspector();}});};
-      familyForm.onsubmit=async event=>{event.preventDefault();const target=familyForm.elements.target.value.trim();if(!target){familyForm.querySelector('small').textContent='Enter a valid track ID.';return;}const response=await fetch(`/api/downloaded-library/tracks/${track.id}/link-version`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_identity:target,relationship:familyForm.elements.relationship.value})}),payload=await response.json();if(!response.ok){familyForm.querySelector('small').textContent=apiErrorMessage(payload,'Could not link this version.');return;}await loadDownloadedLibrary();closeDownloadedInspector();};
+      const loadFamily=async()=>{const response=await api.raw(`/api/downloaded-library/tracks/${track.id}/family`),payload=await response.json();if(!response.ok){familyContent.innerHTML=`<p>${escapeHtml(api.errorMessage(payload,'Related versions could not be loaded.'))}</p>`;return;}familyContent.innerHTML=payload.family.map(member=>`<article><div><b>${escapeHtml(member.title||member.filename)}</b><span>${escapeHtml(member.artist||'Unknown artist')} · ${escapeHtml(member.recording_code)}-${escapeHtml(member.version_code||'ORG')}</span></div>${Number(member.id)===Number(track.id)?'<em>Current</em>':`<button type="button" data-family-target="${member.id}">View</button>`}</article>`).join('');if(payload.family.length>1)familyContent.insertAdjacentHTML('beforeend','<button type="button" class="button secondary inspector-family-unlink">Unlink current track</button>');familySuggestions.innerHTML=payload.suggestions.length?`<b>Suggested families</b>${payload.suggestions.map(item=>`<button type="button" data-suggestion-id="${escapeHtml(item.track.recording_code)}-${escapeHtml(item.track.version_code||'ORG')}"><span>${escapeHtml(item.track.title||item.track.filename)} · ${escapeHtml(item.track.artist||'Unknown artist')}</span><small>${item.score}% · ${escapeHtml(item.reasons.join(', '))}</small></button>`).join('')}`:'<small>No strong automatic suggestions. Enter a target track ID to link manually.</small>';familySuggestions.querySelectorAll('[data-suggestion-id]').forEach(option=>option.onclick=()=>{familyForm.hidden=false;familyForm.elements.target.value=option.dataset.suggestionId;familyForm.elements.relationship.focus();});familyContent.querySelector('.inspector-family-unlink')?.addEventListener('click',async()=>{if(!await confirmAction('Unlink this version into its own recording family? You can link it again later.', {title:'Unlink recording version', acceptLabel:'Unlink'}))return;const result=await api.raw(`/api/downloaded-library/tracks/${track.id}/unlink-version`,{method:'POST'});if(result.ok){await loadDownloadedLibrary();closeDownloadedInspector();}});};
+      familyForm.onsubmit=async event=>{event.preventDefault();const target=familyForm.elements.target.value.trim();if(!target){familyForm.querySelector('small').textContent='Enter a valid track ID.';return;}const response=await api.raw(`/api/downloaded-library/tracks/${track.id}/link-version`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_identity:target,relationship:familyForm.elements.relationship.value})}),payload=await response.json();if(!response.ok){familyForm.querySelector('small').textContent=api.errorMessage(payload,'Could not link this version.');return;}await loadDownloadedLibrary();closeDownloadedInspector();};
     });
     summary.querySelectorAll('.filter-downloaded-genre').forEach(button => button.onclick = () => { downloadedUiState.genre=button.dataset.value;downloadedUiState.detailedGenre='all'; requestPage(1); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth'}); });
     summary.querySelectorAll('.filter-detailed-genre').forEach(button => button.onclick = () => { downloadedUiState.genre='all';downloadedUiState.detailedGenre=button.dataset.value; requestPage(1); document.querySelector('.downloaded-toolbar').scrollIntoView({behavior:'smooth'}); });

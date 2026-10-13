@@ -35,6 +35,32 @@ const setBuilder = await import('../web/set-builder.js');
 const settings = await import('../web/settings.js');
 const shared = await import('../web/shared-components.js');
 const requests = await import('../web/request-state-controller.js');
+const frontendServices = await import('../web/frontend-services.js');
+
+test('feature factories share a validated immutable services contract', () => {
+  const noop = () => {};
+  const services = frontendServices.createFrontendServices({
+    api: { raw: noop, request: noop, errorMessage: noop },
+    dom: { $: noop, $$: noop },
+    feedback: { notify: noop, confirmAction: noop, operationReceiptText: noop },
+    descriptors: {
+      chipsMarkup: noop,
+      editorMarkup: noop,
+      openEditorDialog: noop,
+      saveEditor: noop,
+      inferEditor: noop,
+    },
+  });
+
+  assert.equal(Object.isFrozen(services), true);
+  assert.equal(Object.isFrozen(services.api), true);
+  assert.equal(frontendServices.useFrontendServices(services).notify, noop);
+  assert.throws(
+    () => frontendServices.createFrontendServices({ api: {}, dom: {}, feedback: {}, descriptors: {} }),
+    /require raw/,
+  );
+  assert.throws(() => frontendServices.useFrontendServices({}), /shared frontend services contract/);
+});
 
 test('app.js remains a feature composition root', () => {
   const path = fileURLToPath(new URL('../web/app.js', import.meta.url));

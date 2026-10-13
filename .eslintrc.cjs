@@ -19,6 +19,12 @@ module.exports = {
   },
   overrides: [
     {
+      files: ['web/music-files.js', 'web/dj-library.js', 'web/settings.js', 'web/reporting.js', 'web/set-builder.js'],
+      rules: {
+        'no-restricted-globals': ['error', { name: 'fetch', message: 'Use the injected frontend API service.' }],
+      },
+    },
+    {
       files: ['tests/*.test.js', 'scripts/*.mjs'],
       env: { browser: false, node: true },
     },

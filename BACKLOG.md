@@ -168,12 +168,20 @@ Objective: make frequent UI changes local and behavior-testable without adopting
 a framework. Dependencies: authoritative backend contracts from Phase 2.
 Benefit: fewer regressions from shared closure state and broad callback wiring.
 
-- [ ] **ARCH-007A — Add a shared frontend API/error adapter and narrow feature
+- [x] **ARCH-007A — Add a shared frontend API/error adapter and narrow feature
   contracts.** Priority: P1. Effort: M. Risk: Medium. Dependencies: ARCH-010A.
   Acceptance: Music Files, DJ Library, Settings, Reporting, and Set Builder use a
   shared request/error contract; feature factories receive cohesive collaborators
   rather than long callback lists; stale-response behavior remains intact.
   Evidence: [ARCH-007](docs/architecture-audit.md#arch-007--frontend-composition-still-carries-feature-implementation-and-broad-callback-wiring).
+  Completed 2026-10-13: `api-client.js` owns injected transport, normalized JSON
+  requests, typed failures, and compatibility-level raw responses.
+  `frontend-services.js` validates and groups API, DOM, feedback, and musical-
+  identity editor capabilities before composition. Music Files, DJ Library,
+  Settings, Reporting, and Set Builder now consume that immutable contract;
+  lint prevents those modules from returning to global `fetch`. Existing
+  debounce, abort, loading ownership, URL/session persistence, and stale-response
+  rejection tests remain green.
 - [ ] **ARCH-008A — Decompose Set Builder state, API, commands, and views.**
   Priority: P0. Effort: L. Risk: High. Dependencies: ARCH-003B, ARCH-007A,
   ARCH-011A. Acceptance: one feature entry composes a testable state store,

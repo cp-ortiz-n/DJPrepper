@@ -1,8 +1,10 @@
-import {apiErrorMessage, clock, escapeHtml, fraction, option, pct, renderTrackPagination, reportDate} from './shared-components.js';
+import {clock, escapeHtml, fraction, option, pct, renderTrackPagination, reportDate} from './shared-components.js';
+import {useFrontendServices} from './frontend-services.js';
 
 export function createReportingFeature({
-  $, $$, loadJobs, renderLibraryIntelligence, startKeyAnalysis, notify,
+  services, loadJobs, renderLibraryIntelligence, startKeyAnalysis,
 }) {
+  const {api, $, $$, notify} = useFrontendServices(services);
   let reportSongs = [];
   let reportJobs = [];
   let reportFeedback = [];
@@ -11,7 +13,7 @@ export function createReportingFeature({
   let reportPage = 1;
   let reportPageSize = 50;
   async function loadAnalysis(jobs = null) {
-    const availableJobs = jobs || await fetch('/api/jobs', {cache:'no-store'}).then(r => r.json());
+    const availableJobs = jobs || await api.raw('/api/jobs', {cache:'no-store'}).then(r => r.json());
     const songs = availableJobs.filter(job => job.status === 'complete').slice(0, 4);
     const root = $('#analysis'); root.className = 'analysis-list';
     if (!songs.length) {
@@ -91,9 +93,9 @@ export function createReportingFeature({
       event.preventDefault();
       const button = form.querySelector('button'); const message = form.querySelector('.feedback-message');
       button.disabled = true; message.textContent = 'Saving…';
-      const response = await fetch('/api/report-feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, position:form.elements.position.value, accepted:form.elements.accepted.value === 'true', tags:form.elements.tags.value, notes:form.elements.notes.value})});
+      const response = await api.raw('/api/report-feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, position:form.elements.position.value, accepted:form.elements.accepted.value === 'true', tags:form.elements.tags.value, notes:form.elements.notes.value})});
       button.disabled = false;
-      if (!response.ok) { message.textContent = apiErrorMessage(await response.json(), 'Could not save feedback.'); return; }
+      if (!response.ok) { message.textContent = api.errorMessage(await response.json(), 'Could not save feedback.'); return; }
       message.textContent = 'Feedback saved'; await loadReports();
       });
     });
@@ -104,12 +106,12 @@ export function createReportingFeature({
         event.preventDefault();
         const message = form.querySelector('.key-review-message'); message.textContent = 'Saving…';
         const song = reportSongs.find(item => item.source_name === form.dataset.source);
-        const response = await fetch(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, verified_key:form.elements.verified_key.value, detected_key:form.dataset.detected, candidates:song?.key_candidates || [], notes:form.elements.notes.value})});
-        if (!response.ok) { message.textContent = apiErrorMessage(await response.json(), 'Could not verify key.'); return; }
+        const response = await api.raw(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, verified_key:form.elements.verified_key.value, detected_key:form.dataset.detected, candidates:song?.key_candidates || [], notes:form.elements.notes.value})});
+        if (!response.ok) { message.textContent = api.errorMessage(await response.json(), 'Could not verify key.'); return; }
         message.textContent = 'Key verified'; await loadReports();
       });
       const clear = form.querySelector('.clear-key-verification');
-      if (clear) clear.onclick = async () => { clear.disabled = true; await fetch(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'DELETE'}); await loadReports(); };
+      if (clear) clear.onclick = async () => { clear.disabled = true; await api.raw(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'DELETE'}); await loadReports(); };
     });
   }
   
@@ -174,7 +176,7 @@ export function createReportingFeature({
   }
   
   async function loadReports() {
-    const [report, analytics, jobs, feedback, keyStats] = await Promise.all([fetch('/api/report').then(r => r.json()), fetch('/api/analytics').then(r => r.json()), fetch('/api/report-audio-index').then(r => r.json()), fetch('/api/report-feedback').then(r => r.json()), fetch('/api/key-verifications').then(r => r.json())]);
+    const [report, analytics, jobs, feedback, keyStats] = await Promise.all([api.raw('/api/report').then(r => r.json()), api.raw('/api/analytics').then(r => r.json()), api.raw('/api/report-audio-index').then(r => r.json()), api.raw('/api/report-feedback').then(r => r.json()), api.raw('/api/key-verifications').then(r => r.json())]);
     reportSongs = Object.values(report.songs || {}).filter(song => song.status !== 'removed').reverse();
     reportKeyVerificationStats = keyStats;
     const verificationMap = new Map((keyStats.items || []).map(item => [item.source_name.toLowerCase(), item]));

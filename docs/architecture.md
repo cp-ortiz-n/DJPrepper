@@ -356,6 +356,8 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 
 | Module | Ownership |
 | --- | --- |
+| `api-client.js` | Browser transport, normalized response parsing, typed request failures, and compatibility raw responses |
+| `frontend-services.js` | Validated immutable feature contract for API, DOM, feedback, and musical-identity editor capabilities |
 | `shared-components.js` | DOM helpers, messages, formatting, pagination |
 | `playback.js` | Single audio-preview owner |
 | `music-files.js` | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector |
@@ -372,6 +374,16 @@ system, or pagination helper inside a feature. Extend the shared module first.
 `app.js` composes these features and owns global navigation; page-specific
 rendering, filters, inspectors, and maintenance actions belong in their feature
 module. `tests/frontend_modules.test.js` enforces this boundary and a size ceiling.
+
+The five primary feature factories receive `frontendServices` rather than loose
+transport, error, notification, confirmation, DOM, and identity-editor
+callbacks. `app.js` creates that contract once. Feature modules must use its
+injected `api` capability; an ESLint boundary rejects direct global `fetch`
+calls in Music Files, DJ Library, Settings, Reporting, and Set Builder. The
+client deliberately offers both normalized JSON requests and a raw-response
+escape hatch so streaming/download workflows retain native browser semantics.
+Request cancellation and stale-response ownership remain in
+`request-state-controller.js`.
 
 ## Where to make common changes
 
