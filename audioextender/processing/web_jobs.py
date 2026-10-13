@@ -25,7 +25,7 @@ from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.track_processor import process_file
 from audioextender.reporting.feedback import append_candidate_feedback
 from audioextender.reporting.processing import update_processing_report
-from audioextender.repositories.facade import JobRepository
+from audioextender.repositories.capabilities import JobQueueRepository
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_INTRO_BARS,
@@ -58,7 +58,7 @@ def _stage_duration(seconds: float) -> str:
 class DatabaseProgress(ProgressReporter):
     def __init__(
         self,
-        repository: JobRepository,
+        repository: JobQueueRepository,
         job_id: int,
         run_gate: threading.Event | None = None,
     ) -> None:
@@ -105,7 +105,7 @@ class DatabaseProgress(ProgressReporter):
 class WebJobService:
     """Run lightweight analysis in parallel while keeping heavy edits exclusive."""
 
-    def __init__(self, project: Path, repository: JobRepository) -> None:
+    def __init__(self, project: Path, repository: JobQueueRepository) -> None:
         self.project = project
         self.repository = repository
         self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="audioextender")

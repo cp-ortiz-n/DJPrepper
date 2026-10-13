@@ -147,12 +147,17 @@ change surfaces for new backend features.
   jobs, imports, metadata batches, planning, and relocation expose the shared
   internal view while retaining their own executors, persistence, recovery,
   rollback behavior, stored state, and public HTTP payloads.
-- [ ] **ARCH-005A — Narrow repository capabilities and modularize schema
+- [x] **ARCH-005A — Narrow repository capabilities and modularize schema
   initialization.** Priority: P2. Effort: L. Risk: High. Dependencies:
   ARCH-001B. Acceptance: new/extracted services receive only required repository
   capabilities; `JobRepository` remains a compatibility facade; initialization
   is an ordered idempotent sequence; existing databases and backups open with
   no data/schema behavior change. Evidence: [ARCH-005](docs/architecture-audit.md#arch-005--repository-compatibility-facade-and-catalog-mixin-are-too-broad).
+  Completed 2026-10-12: `JobRepository` remains the compatibility facade while
+  `WebJobService` depends on a narrow job-queue protocol. Schema initialization
+  is now a named seven-step idempotent sequence covering jobs, feedback, catalog,
+  recording identities, relations, search, and system state. Fresh, legacy,
+  restarted, backed-up, and restored databases retain their data and behavior.
 
 Phase acceptance: backend composition is explicit, shared musical facts have one
 owner, and extracted services remain compatible with existing data and APIs.

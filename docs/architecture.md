@@ -88,6 +88,20 @@ Lower layers must not import `audioextender.web.application`. Routers receive
 collaborators through dependency dataclasses instead of importing application
 globals.
 
+## Repository and schema ownership
+
+`repositories/facade.py::JobRepository` is the compatibility composition root
+for existing callers; application services should depend on the smallest
+protocol in `repositories/capabilities.py` that covers their work. The web audio
+scheduler, for example, receives only job lookup, listing, update, and catalog
+path lookup instead of settings, feedback, and the full catalog API.
+
+`repositories/schema.py` owns the ordered idempotent schema bootstrap. Its seven
+named steps run jobs before feedback foreign keys, catalog core before recording
+identity migration and relations, then search and system state. Keep migrations
+inside the owning step, preserve old columns and rows, and test both legacy
+database and backup opening whenever this sequence changes.
+
 ## FastAPI ownership
 
 | Module | Routes and behavior |

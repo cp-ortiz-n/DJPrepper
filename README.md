@@ -549,6 +549,12 @@ the result survives restart. Use `core/operation_feedback.py` for new saves and
 the batch registry for new background work; do not invent route-specific
 success strings that can drift from the actual result.
 
+`repositories/facade.py::JobRepository` remains the backwards-compatible
+repository entry point. New services should accept a narrow protocol from
+`repositories/capabilities.py`. Database creation and compatibility migrations
+belong to the named, ordered steps in `repositories/schema.py`; do not add new
+table setup to the facade constructor.
+
 ### Architecture boundaries
 
 The application keeps musical policy separate from delivery and signal

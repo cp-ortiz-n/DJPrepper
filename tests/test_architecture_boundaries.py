@@ -106,6 +106,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "audioextender/processing/track_processor.py": 835,
             "audioextender/processing/track_processing_stages.py": 300,
             "audioextender/infrastructure/operation_lifecycle.py": 275,
+            "audioextender/repositories/facade.py": 150,
+            "audioextender/repositories/schema.py": 275,
             "web/app.js": 1878,
             "web/set-builder.js": 675,
         }
