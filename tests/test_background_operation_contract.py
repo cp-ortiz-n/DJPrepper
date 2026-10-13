@@ -23,9 +23,26 @@ EXPECTED_OPERATIONS = {
 class BackgroundOperationContractTests(unittest.TestCase):
     def test_contract_covers_every_audited_operation_family(self) -> None:
         operations = CONTRACT["operations"]
-        self.assertEqual(CONTRACT["schema_version"], 1)
+        self.assertEqual(CONTRACT["schema_version"], 2)
         self.assertEqual({item["id"] for item in operations}, EXPECTED_OPERATIONS)
         self.assertEqual(len(operations), len(EXPECTED_OPERATIONS))
+
+    def test_machine_contract_names_the_canonical_internal_projection(self) -> None:
+        canonical = CONTRACT["canonical_contract"]
+        self.assertEqual(
+            canonical["implementation"],
+            "audioextender/infrastructure/operation_lifecycle.py",
+        )
+        self.assertEqual(
+            set(canonical["active_states"]),
+            {"queued", "pending", "planned", "processing", "canceling"},
+        )
+        self.assertEqual(
+            set(canonical["terminal_states"]),
+            {"complete", "failed", "canceled", "rolled_back"},
+        )
+        self.assertIn("capabilities", canonical["fields"])
+        self.assertEqual(set(canonical["actions"]), {"cancel", "retry", "pause", "rollback"})
 
     def test_every_operation_has_a_complete_lifecycle_description(self) -> None:
         required = {

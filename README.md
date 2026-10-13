@@ -537,6 +537,12 @@ so progress, cancellation, retry, results, and structured errors remain
 consistent with genre, WAV-tag, artwork, catalog-propagation, and relocation
 operations.
 
+All user-visible background work also has an executor-neutral internal view in
+`infrastructure/operation_lifecycle.py`. Use its immutable projection,
+capability, error, and action-receipt types when code must inspect multiple
+operation families. Keep feature-specific execution and persistence in the
+owning service, and preserve existing endpoint serializers for compatibility.
+
 Mutation APIs return an operation `receipt` with five user-facing facts: what
 was requested, what changed, where data was written, what failed, and whether
 the result survives restart. Use `core/operation_feedback.py` for new saves and

@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from audioextender.infrastructure.operation_lifecycle import AUTHORIZED_IMPORTS, LifecycleProjection
+
 
 class AuthorizedImport(Protocol):
     url: str
@@ -162,6 +164,9 @@ class ImportService:
             if state is None:
                 raise ImportNotFoundError("Import not found")
             return {key: value for key, value in state.items() if key != "file_path"}
+
+    def lifecycle_status(self, import_id: str) -> LifecycleProjection:
+        return AUTHORIZED_IMPORTS.project(self.status(import_id))
 
     def download_path(self, import_id: str) -> Path:
         with self._lock:

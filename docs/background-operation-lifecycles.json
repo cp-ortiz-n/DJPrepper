@@ -1,5 +1,12 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "canonical_contract": {
+    "implementation": "audioextender/infrastructure/operation_lifecycle.py",
+    "active_states": ["queued", "pending", "planned", "processing", "canceling"],
+    "terminal_states": ["complete", "failed", "canceled", "rolled_back"],
+    "fields": ["family", "operation_id", "status", "stage", "progress", "retryable", "persistence", "capabilities", "created_at", "updated_at", "completed_at", "retry_of", "errors", "receipt", "result"],
+    "actions": ["cancel", "retry", "pause", "rollback"]
+  },
   "operations": [
     {
       "id": "audio-jobs",

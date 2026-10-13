@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
+from audioextender.infrastructure.operation_lifecycle import CREATIVE_COMMONS_IMPORTS, LifecycleProjection
 
 
 class CreativeCommonsNotFoundError(LookupError):
@@ -77,6 +78,9 @@ class CreativeCommonsImportService:
         if state is None:
             raise CreativeCommonsNotFoundError("Creative Commons import not found")
         return dict(state) if private else {key: value for key, value in state.items() if not key.endswith("_path")}
+
+    def lifecycle_status(self, batch_id: str) -> LifecycleProjection:
+        return CREATIVE_COMMONS_IMPORTS.project(self.status(batch_id))
 
     def has_active_imports(self) -> bool:
         return any(state.get("status") == "processing" for state in self.registry.values())

@@ -36,6 +36,10 @@ matching and Set transition scoring intentionally remain separate policies.
 Background job state, persistence, cancellation, retry, errors, timestamps, and
 receipts are inventoried in
 [`background-operation-lifecycles.md`](background-operation-lifecycles.md).
+`infrastructure/operation_lifecycle.py` provides their immutable common status,
+capability, error, and action-receipt vocabulary. Family adapters normalize
+legacy state for internal consumers while each service retains its executor,
+persistence, recovery, rollback, and public response contract.
 The single-track processing stage order, progress, cache, artifact, timing, and
 failure contracts are frozen in
 [`processing-pipeline-contracts.md`](processing-pipeline-contracts.md). ARCH-002B

@@ -1,9 +1,23 @@
 # Background-operation lifecycle matrix
 
-This is the Phase 0 contract for every user-visible background operation. It
-records current behavior, including gaps; it does not imply that all operations
-already use one executor or response shape. The machine-readable companion is
+This is the contract for every user-visible background operation. It records
+feature-specific behavior without requiring one executor or public response
+shape. The machine-readable companion is
 [`background-operation-lifecycles.json`](background-operation-lifecycles.json).
+
+## Canonical internal contract
+
+`infrastructure/operation_lifecycle.py` defines immutable lifecycle projections,
+capability declarations, errors, and action receipts. Each operation family has
+an adapter that accepts its existing state shape, including legacy camelCase and
+snake_case fields. Services expose `lifecycle_status()` for internal consumers;
+their existing `status()`, cancel, retry, pause, rollback, persistence, and HTTP
+payloads remain unchanged.
+
+The shared contract standardizes vocabulary and inspection, not execution.
+Audio jobs remain in SQLite, planning and relocation retain their JSON recovery
+rules, and memory-only imports and batches remain memory-only. Unsupported
+actions are explicit capabilities instead of implied missing methods.
 
 ## Lifecycle summary
 
@@ -39,15 +53,16 @@ already use one executor or response shape. The machine-readable companion is
 
 ## Known lifecycle gaps
 
-These are explicit inputs to `ARCH-004B`, not hidden assumptions:
+Remaining operational limitations are explicit rather than hidden:
 
 1. Integrity and audio-quality worker exceptions do not consistently publish a
    terminal `failed` state.
 2. Six operation families keep lifecycle state only in memory.
-3. Only metadata/maintenance batches use the generic operation receipt; Set
-   planning has a separate domain receipt and the other families have none.
-4. Timestamp coverage and field naming differ (`snake_case`, `camelCase`, or no
-   timestamps).
+3. Only metadata/maintenance batches publish the generic operation receipt in
+   their public payload; the canonical projection preserves domain receipts and
+   represents absent receipts explicitly.
+4. Source timestamp coverage and field naming still differ, but adapters expose
+   consistent `created_at`, `updated_at`, and `completed_at` fields.
 5. Active audio processing can pause but cannot be cooperatively canceled.
 6. Creative Commons, local import, and playlist-match states do not share the
    authorized-import cancellation/error contract.
@@ -57,8 +72,7 @@ These are explicit inputs to `ARCH-004B`, not hidden assumptions:
 
 ## Change rule
 
-Any new user-visible background operation must be added to the JSON contract and
-this summary. `ARCH-004B` may introduce common status, receipt, cancellation,
-and retry DTOs, but feature-specific persistence and rollback behavior must
-remain explicit. Public endpoints and stored jobs remain compatible unless a
-separate migration is approved.
+Any new user-visible background operation must be added to the JSON contract,
+the `LIFECYCLE_FAMILIES` registry, and this summary. Feature-specific persistence
+and rollback behavior must remain explicit. Public endpoints and stored jobs
+remain compatible unless a separate migration is approved.

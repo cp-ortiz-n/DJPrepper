@@ -19,6 +19,7 @@ from audioextender.audio.wav_metadata import split_artist_title, write_wav_metad
 from audioextender.core.config import EditConfig
 from audioextender.core.interfaces import ProgressReporter
 from audioextender.core.presets import EditPreset, get_preset
+from audioextender.infrastructure.operation_lifecycle import AUDIO_JOBS, LifecycleProjection
 from audioextender.library.cue_export import write_rekordbox_xml
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.track_processor import process_file
@@ -191,6 +192,13 @@ class WebJobService:
                 "pending": list(self._pending),
                 "pause_requested": bool(any(not gate.is_set() for gate in self._run_gates.values())),
             }
+
+    def lifecycle_status(self, job_id: int) -> LifecycleProjection:
+        """Project a persisted audio job into the shared lifecycle contract."""
+        job = self.repository.get(job_id)
+        if job is None:
+            raise KeyError("Audio job was not found")
+        return AUDIO_JOBS.project(job)
 
     def pause(self, job_id: int) -> bool:
         with self._lock:

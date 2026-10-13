@@ -7,6 +7,8 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
+from audioextender.infrastructure.operation_lifecycle import PLAYLIST_MATCHES, LifecycleProjection
+
 
 class PlaylistMatchNotFoundError(LookupError):
     pass
@@ -71,6 +73,9 @@ class PlaylistMatchService:
             if state is None:
                 raise PlaylistMatchNotFoundError("Playlist match job not found")
             return dict(state)
+
+    def lifecycle_status(self, match_id: str) -> LifecycleProjection:
+        return PLAYLIST_MATCHES.project(self.status(match_id))
 
     def has_active_imports(self) -> bool:
         with self._lock:

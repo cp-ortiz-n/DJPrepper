@@ -136,12 +136,17 @@ change surfaces for new backend features.
   selection, render, export, and result-assembly stages with immutable typed
   results. `process()` retains input validation, failure cleanup, and ordering;
   characterization, stage, integration, and stability tests preserve behavior.
-- [ ] **ARCH-004B — Standardize background lifecycle contracts without forcing
+- [x] **ARCH-004B — Standardize background lifecycle contracts without forcing
   one executor.** Priority: P1. Effort: L. Risk: High. Dependencies: ARCH-004A,
   ARCH-010A. Acceptance: common status/receipt/cancellation/retry DTOs and
   conformance tests cover audio jobs, imports, metadata batches, planning, and
   relocation; feature-specific persistence and rollback remain; adapters keep
   endpoint payloads compatible. Evidence: [ARCH-004](docs/architecture-audit.md#arch-004--background-operations-have-fragmented-lifecycle-contracts).
+  Completed 2026-10-12: immutable lifecycle projections, capability declarations,
+  normalized errors, and action receipts now cover every audited family. Audio
+  jobs, imports, metadata batches, planning, and relocation expose the shared
+  internal view while retaining their own executors, persistence, recovery,
+  rollback behavior, stored state, and public HTTP payloads.
 - [ ] **ARCH-005A — Narrow repository capabilities and modularize schema
   initialization.** Priority: P2. Effort: L. Risk: High. Dependencies:
   ARCH-001B. Acceptance: new/extracted services receive only required repository

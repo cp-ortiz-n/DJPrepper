@@ -10,6 +10,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from audioextender.infrastructure.operation_lifecycle import LOCAL_AUDIO_IMPORTS, LifecycleProjection
+
 
 class LocalImportNotFoundError(LookupError):
     pass
@@ -94,6 +96,9 @@ class LocalAudioImportService:
             if state is None:
                 raise LocalImportNotFoundError("Local audio import not found")
             return dict(state)
+
+    def lifecycle_status(self, batch_id: str) -> LifecycleProjection:
+        return LOCAL_AUDIO_IMPORTS.project(self.status(batch_id))
 
     def has_active_imports(self) -> bool:
         with self._lock:
