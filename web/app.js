@@ -12,6 +12,7 @@ import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261013-1';
 import {createSetBuilderFeature} from './set-builder.js?v=20261013-2';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261013-1';
+import {addLocalAudioFiles, authorizedSourceUrls as parseAuthorizedSourceUrls, playlistTrackKey, sourceUrlType} from './import-workspace.js';
 import {createBackgroundTaskController} from './background-task-controller.js';
 import {createImportIssuesFeature} from './import-issues.js';
 
@@ -818,15 +819,6 @@ $('#restore-batch-defaults').addEventListener('click', () => {
 function pollAuthorizedImport(importId) {
   runBackgroundTask({key:'authorized-import',url:`/api/imports/${importId}`,update:state=>{const progress=$('#authorized-import-progress');progress.hidden=false;progress.querySelector('span').style.width=`${Math.max(2,Number(state.progress||0))}%`;progress.querySelector('small').textContent=`${state.stage} · ${Math.round(state.progress||0)}%`;},complete:async state=>{$('#authorized-import-submit').disabled=false;if(state.status==='complete'){const action=state.processed_with_extender?'imported and added to the DJ Library Studio queue':'converted to WAV without creating an extended edit';$('#authorized-import-message').innerHTML=`${escapeHtml(state.filename)} ${action}. <a href="/api/imports/${importId}/download">Download WAV</a>`;$('#authorized-import-form').reset();await loadJobs();}else $('#authorized-import-message').textContent=state.error||'The authorized import failed.';},fail:error=>{$('#authorized-import-submit').disabled=false;$('#authorized-import-message').textContent=error.message;}});
 }
-function sourceUrlType(value) {
-  try {
-    const host = new URL(value).hostname.toLowerCase();
-    if (host === 'open.spotify.com' || host.endsWith('.spotify.com')) return 'spotify';
-    if (host === 'youtu.be' || host === 'youtube.com' || host.endsWith('.youtube.com')) return 'youtube';
-    if (host === 'soundcloud.com' || host.endsWith('.soundcloud.com')) return 'soundcloud';
-  } catch (_) {}
-  return 'unknown';
-}
 let sourceMatchTimer = null;
 let currentSourceMetadata = null;
 async function matchSpotifySource(url) {
@@ -870,7 +862,7 @@ async function inspectSoundCloudSource(url) {
   }
 }
 function authorizedSourceUrls(value=$('#authorized-url').value) {
-  return [...new Set(String(value||'').split(/\r?\n/).map(url=>url.trim()).filter(Boolean))];
+  return parseAuthorizedSourceUrls(value);
 }
 $('#authorized-url').addEventListener('input', event => {
   clearTimeout(sourceMatchTimer);
@@ -933,13 +925,8 @@ $('#authorized-import-form').addEventListener('submit', async event => {
 });
 
 let localAudioFiles = [];
-const supportedLocalAudio = /\.(mp3|m4a|aac|flac|ogg|opus|wav|aiff?|aif)$/i;
 function stageLocalAudio(files) {
-  const known = new Set(localAudioFiles.map(file => `${file.name}|${file.size}|${file.lastModified}`));
-  [...files].filter(file => supportedLocalAudio.test(file.name)).forEach(file => {
-    const key = `${file.name}|${file.size}|${file.lastModified}`;
-    if (!known.has(key)) { localAudioFiles.push(file); known.add(key); }
-  });
+  localAudioFiles = addLocalAudioFiles(localAudioFiles, files);
   const root = $('#local-audio-staged');
   root.innerHTML = localAudioFiles.length
     ? `${localAudioFiles.slice(0,20).map(file => `<div><strong>${escapeHtml(file.name)}</strong><span>${(file.size/1024/1024).toFixed(1)} MB</span></div>`).join('')}${localAudioFiles.length > 20 ? `<span>+ ${localAudioFiles.length-20} more tracks</span>` : ''}`
@@ -987,9 +974,6 @@ let spotifyMatchTimer = null;
 const playlistPermissions = new Map();
 let currentPlaylistMatches = [];
 let currentPlaylistName = 'Imported Playlist';
-function playlistTrackKey(track, index) {
-  return track.spotify_uri || track.youtube_url || `${track.artist}|${track.title}|${index}`;
-}
 function updatePlaylistSelectionCount() {
   const selected = $$('#spotify-match-results .match-select:checked').length;
   $('#spotify-selected-count').textContent = `${selected} selected`;
