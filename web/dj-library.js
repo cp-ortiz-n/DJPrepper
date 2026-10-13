@@ -12,6 +12,7 @@ const CAMELOT_KEYS = {
   'A minor':'8A','E minor':'9A','B minor':'10A','F# minor':'11A','C# minor':'12A','G# minor':'1A','D# minor':'2A','A# minor':'3A','F minor':'4A','C minor':'5A','G minor':'6A','D minor':'7A',
   'C major':'8B','G major':'9B','D major':'10B','A major':'11B','E major':'12B','B major':'1B','F# major':'2B','C# major':'3B','G# major':'4B','D# major':'5B','A# major':'6B','F major':'7B',
 };
+export const MUSICAL_PROFILE_VERSION = 1;
 
 export function createLibraryUiState(pageSize = Number(localStorage.getItem('dj-library-page-size') || 50)) {
   return {search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1,pageSize};
@@ -30,6 +31,7 @@ export function libraryQuery(state) {
 }
 
 export function libraryRoles(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && Array.isArray(song.musical_profile.roles)) return song.musical_profile.roles;
   if (Array.isArray(song._roles) && song._roles.length) return song._roles;
   const style = String(song.detected_style || '').toLowerCase();
   const timing = String(song.timing || '').toLowerCase();
@@ -46,13 +48,23 @@ export function libraryRoles(song) {
   return [...roles];
 }
 
-export function normalizedKey(value) {
-  return String(value || '').replace(/^Db /,'C# ').replace(/^Eb /,'D# ').replace(/^Gb /,'F# ').replace(/^Ab /,'G# ').replace(/^Bb /,'A# ');
+function serializedProfile(value) {
+  return value && typeof value === 'object' && Number(value.musical_profile?.version) === MUSICAL_PROFILE_VERSION
+    ? value.musical_profile
+    : null;
 }
-export function camelotKey(value) { return CAMELOT_KEYS[normalizedKey(value)] || '—'; }
+export function normalizedKey(value) {
+  const profile = serializedProfile(value);
+  const key = profile ? profile.key : (value && typeof value === 'object' ? value.key : value);
+  return String(key || '').replace(/^Db /,'C# ').replace(/^Eb /,'D# ').replace(/^Gb /,'F# ').replace(/^Ab /,'G# ').replace(/^Bb /,'A# ');
+}
+export function camelotKey(value) {
+  const profile = serializedProfile(value);
+  return String(profile?.camelot || CAMELOT_KEYS[normalizedKey(value)] || '—');
+}
 export function libraryKeyMode() { return localStorage.getItem('audioextender-key-view') || 'both'; }
 export function formatLibraryKey(value, mode=libraryKeyMode()) {
-  const standard = value || 'Unknown key';
+  const standard = normalizedKey(value) || 'Unknown key';
   const camelot = camelotKey(value);
   if (mode === 'standard') return standard;
   if (mode === 'camelot') return camelot === '—' ? 'Unknown Camelot' : camelot;
@@ -60,6 +72,7 @@ export function formatLibraryKey(value, mode=libraryKeyMode()) {
 }
 
 export function songEnergy(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && Number.isFinite(Number(song.musical_profile.energy))) return Number(song.musical_profile.energy);
   if (Number.isFinite(Number(song._energy))) return Number(song._energy);
   const values = (song.section_profiles || []).map(section => Number(String(section.reason || '').match(/energy\s+([\d.]+)/i)?.[1])).filter(Number.isFinite);
   if (values.length) return values.reduce((sum,value) => sum + value, 0) / values.length;
@@ -68,11 +81,13 @@ export function songEnergy(song) {
 }
 export function energyBand(value) { return value >= .67 ? 'high' : value < .4 ? 'low' : 'medium'; }
 export function vocalProfile(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && song.musical_profile.vocals) return song.musical_profile.vocals;
   if (song._vocals) return song._vocals;
   const instrumental = Math.max(Number(song.intro?.instrumentalness || 0), Number(song.outro?.instrumentalness || 0));
   return instrumental >= .72 ? 'vocal-safe' : instrumental < .45 ? 'vocal-forward' : 'mixed';
 }
 export function timingProfile(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && song.musical_profile.timing) return song.musical_profile.timing;
   if (song._timing) return song._timing;
   const timing = String(song.timing || '').toLowerCase();
   return timing.includes('live') || timing.includes('variable') || Number(song.tempo_drift || 0) >= .08 ? 'variable' : 'steady';
@@ -240,8 +255,8 @@ export function createDjLibraryFeature({
       card.dataset.preset = resolvedPreset;
       card.dataset.requestedPreset = String(latest.preset || 'default').toLowerCase();
       card.dataset.roles = roles.join('|');
-      card.dataset.key = normalizedKey(analysis.key || '');
-      card.dataset.camelot = camelotKey(analysis.key);
+      card.dataset.key = normalizedKey(analysis);
+      card.dataset.camelot = camelotKey(analysis);
       card.dataset.bpm = Number(analysis.bpm || latest.bpm || 0);
       card.dataset.energy = energyBand(energy);
       card.dataset.energyValue = energy;
@@ -254,8 +269,8 @@ export function createDjLibraryFeature({
       const presetLabel = card.dataset.requestedPreset === 'auto' ? `auto → ${resolvedPreset}` : resolvedPreset;
       description.textContent = `${category}${downloadedTrack ? ' · library genre' : ' · detected category'} · ${presetLabel} · ${description.textContent}`;
       const keyValue = card.querySelector('.library-key-value');
-      keyValue.dataset.standard = analysis.key || '';
-      keyValue.textContent = formatLibraryKey(analysis.key);
+      keyValue.dataset.standard = normalizedKey(analysis);
+      keyValue.textContent = formatLibraryKey(analysis);
       card.querySelector('.library-head-actions').insertAdjacentHTML('beforeend', '<button class="button secondary remove-library-track">Remove from library</button>');
       if (downloadedTrack) {
         card.querySelector('.library-head-actions').insertAdjacentHTML('afterbegin', '<button class="button secondary edit-library-identity">Edit identity</button><button class="button secondary edit-library-genre">Edit genre</button>');
@@ -278,7 +293,7 @@ export function createDjLibraryFeature({
       const qualityTarget=downloadedTrack?.audio_quality?.target_status;
       const qualitySuffix=qualityTarget==='meets_target'?' · Target met':qualityTarget==='below_target'?' · Below target':qualityTarget==='unverified'?' · Unverified':'';
       const qualityText=qualityScore==null?'Quality pending':`Quality ${Math.round(Number(qualityScore))}${qualitySuffix}`;
-      card.insertAdjacentHTML('afterbegin', `<div class="library-compact-row" role="button" tabindex="0" aria-expanded="false" aria-label="Show DJ details for ${escapeHtml(trackTitle)}"><label class="library-track-select"><input type="checkbox" value="${card.dataset.jobId}" aria-label="Select ${escapeHtml(trackTitle)}"><span></span></label><div class="library-row-icon">${trackArtwork}</div><div class="library-row-title"><h3>${escapeHtml(trackTitle)}</h3><span class="library-row-artist">${escapeHtml(trackArtist)}</span><small>${escapeHtml(category)}${identity?` · ${escapeHtml(identity)}`:''}</small></div><div class="library-row-metric"><b>${Number(analysis.bpm || latest.bpm || 0).toFixed(1)}</b><span>BPM</span></div><div class="library-row-metric"><b>${escapeHtml(formatLibraryKey(analysis.key))}</b><span>Key / Camelot</span></div><div class="library-row-metric"><b>${escapeHtml(energyBand(energy))}</b><span>Energy</span></div><div class="library-row-role">${roles.slice(0,2).map(role => `<span>${escapeHtml(LIBRARY_ROLE_INFO[role]?.[0] || role)}</span>`).join('')}</div><span class="library-result" data-result="${card.dataset.result}">${resultLabel}<small>${escapeHtml(qualityText)}</small></span>${compactAudioMarkup(`/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}`,latest.duration_seconds||analysis.duration_seconds||0)}<details class="library-row-actions"><summary aria-label="Library track actions">•••</summary><div><button type="button" class="compact-remove danger-text">Remove from Library</button></div></details></div>`);
+      card.insertAdjacentHTML('afterbegin', `<div class="library-compact-row" role="button" tabindex="0" aria-expanded="false" aria-label="Show DJ details for ${escapeHtml(trackTitle)}"><label class="library-track-select"><input type="checkbox" value="${card.dataset.jobId}" aria-label="Select ${escapeHtml(trackTitle)}"><span></span></label><div class="library-row-icon">${trackArtwork}</div><div class="library-row-title"><h3>${escapeHtml(trackTitle)}</h3><span class="library-row-artist">${escapeHtml(trackArtist)}</span><small>${escapeHtml(category)}${identity?` · ${escapeHtml(identity)}`:''}</small></div><div class="library-row-metric"><b>${Number(analysis.bpm || latest.bpm || 0).toFixed(1)}</b><span>BPM</span></div><div class="library-row-metric"><b>${escapeHtml(formatLibraryKey(analysis))}</b><span>Key / Camelot</span></div><div class="library-row-metric"><b>${escapeHtml(energyBand(energy))}</b><span>Energy</span></div><div class="library-row-role">${roles.slice(0,2).map(role => `<span>${escapeHtml(LIBRARY_ROLE_INFO[role]?.[0] || role)}</span>`).join('')}</div><span class="library-result" data-result="${card.dataset.result}">${resultLabel}<small>${escapeHtml(qualityText)}</small></span>${compactAudioMarkup(`/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}`,latest.duration_seconds||analysis.duration_seconds||0)}<details class="library-row-actions"><summary aria-label="Library track actions">•••</summary><div><button type="button" class="compact-remove danger-text">Remove from Library</button></div></details></div>`);
       if(downloadedTrack?.descriptors?.length)card.querySelector('.library-row-title').insertAdjacentHTML('beforeend',descriptorChipsMarkup(downloadedTrack.descriptors));
     });
     bindLazyAudio(root);

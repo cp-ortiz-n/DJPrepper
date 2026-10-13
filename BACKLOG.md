@@ -116,12 +116,16 @@ change surfaces for new backend features.
   creation/reprocessing, settings cleanup, and integrity scan lifecycle now run
   through focused services. Route handlers retain HTTP validation and error
   translation, while the application factory injects runtime dependencies.
-- [ ] **ARCH-003B — Add an authoritative versioned musical profile.** Priority:
+- [x] **ARCH-003B — Add an authoritative versioned musical profile.** Priority:
   P0. Effort: L. Risk: High. Dependencies: ARCH-003A. Acceptance: Python owns
   normalized key/Camelot, energy, roles, vocals, timing, confidence, provenance,
   and version; existing outputs are unchanged; browser and Set Builder consume
   the serialized profile; intentionally distinct scorers remain named and
   tested separately. Evidence: [ARCH-003](docs/architecture-audit.md#arch-003--shared-musical-classification-is-duplicated-across-backend-and-browser).
+  Completed 2026-10-12: `library/musical_profile.py` now owns the versioned
+  profile and catalog serialization. DJ Library and Set Builder prefer it over
+  compatibility fields; cross-runtime golden tests preserve prior musical
+  behavior and keep Library match and Set transition scorers distinct.
 - [ ] **ARCH-002B — Decompose `TrackProcessor.process` into cohesive stages.**
   Priority: P1. Effort: L. Risk: High. Dependencies: ARCH-002A. Acceptance:
   analysis, selection, render construction, export, and result assembly have

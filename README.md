@@ -548,6 +548,10 @@ success strings that can drift from the actual result.
 The application keeps musical policy separate from delivery and signal
 processing:
 
+- `library/musical_profile.py` owns the versioned musical facts delivered to
+  DJ Library and Set Builder: normalized key/Camelot, energy, DJ roles, vocals,
+  timing, confidence, and provenance. Change its shared Python/browser golden
+  fixture whenever the policy intentionally changes.
 - `candidate_selection.py` accepts one typed `SelectionRequest` for either an
   intro or outro. Automatic-length policy can be tested without the CLI.
 - `selection_coordinator.py` applies the same protected-boundary retries,

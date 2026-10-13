@@ -1,6 +1,5 @@
 {
   "python": [
-    "audioextender/set_builder/candidate_retriever.py",
     "audioextender/set_builder/intention_planner.py",
     "audioextender/set_builder/journey_planner.py",
     "audioextender/set_builder/plan_comparator.py",
@@ -12,7 +11,6 @@
     "tests/test_local_intention_acceptance.py",
     "tests/test_plan_comparator.py",
     "tests/test_proposal_repairer.py",
-    "tests/test_set_candidate_planning.py",
     "tests/test_transition_optimizer.py"
   ],
   "frontend": [

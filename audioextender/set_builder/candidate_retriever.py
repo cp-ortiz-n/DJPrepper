@@ -7,19 +7,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from audioextender.library.musical_profile import MUSICAL_PROFILE_VERSION
 from audioextender.set_builder.preference_learning import PersonalizedCandidateRanker
 
-SET_BUILDER_CATALOG_VERSION = 4
+SET_BUILDER_CATALOG_VERSION = 5
 
 
 def _terms(value: Any) -> list[str]:
     values = value if isinstance(value, list) else [value]
-    return [
-        term
-        for item in values
-        for raw in re.split(r"[,/|]", str(item or ""))
-        if (term := raw.strip().casefold())
-    ]
+    return [term for item in values for raw in re.split(r"[,/|]", str(item or "")) if (term := raw.strip().casefold())]
 
 
 def _track_id(item: dict[str, Any]) -> str:
@@ -42,6 +38,8 @@ def _descriptors(item: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
     analysis = item.get("analysis") or {}
+    serialized_profile = analysis.get("musical_profile") or {}
+    profile = serialized_profile if serialized_profile.get("version") == MUSICAL_PROFILE_VERSION else {}
     job = item.get("job") or {}
     descriptors = _descriptors(item)
     path = _selected_path(item)
@@ -64,13 +62,13 @@ def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
             if value.get("value")
         ],
         "bpm": round(float(analysis.get("bpm") or 0), 2),
-        "key": str(analysis.get("key") or ""),
-        "camelot": str(analysis.get("_camelot") or ""),
-        "energy": round(float(analysis.get("_energy") or 0.5), 3),
+        "key": str(profile.get("key") or analysis.get("key") or ""),
+        "camelot": str(profile.get("camelot") or analysis.get("_camelot") or ""),
+        "energy": round(float(profile.get("energy", analysis.get("_energy", 0.5))), 3),
         "durationSeconds": round(float(analysis.get("duration_seconds") or 0), 2),
-        "vocals": str(analysis.get("_vocals") or "mixed"),
-        "timing": str(analysis.get("_timing") or "steady"),
-        "roles": [str(role) for role in analysis.get("_roles", []) if role],
+        "vocals": str(profile.get("vocals") or analysis.get("_vocals") or "mixed"),
+        "timing": str(profile.get("timing") or analysis.get("_timing") or "steady"),
+        "roles": [str(role) for role in profile.get("roles", analysis.get("_roles", [])) if role],
         "path": path,
         "available": bool(path and Path(path).is_file()),
     }
@@ -149,7 +147,8 @@ class SetCandidateRetriever:
         total_cap = max(1, min(total_limit or self.maximum_total, self.maximum_total))
         compact = [_compact_track(item) for item in catalog]
         compact = [
-            track for track in compact
+            track
+            for track in compact
             if track["id"]
             and track["id"] not in excluded
             and (track["id"] in required | locked or _matches_constraints(track, constraints or {}))
@@ -165,12 +164,11 @@ class SetCandidateRetriever:
                 technical_score = score
                 preference_adjustment, preference_reasons = (
                     self.preference_ranker.adjustment(track, str((constraints or {}).get("vibe") or "balanced"))
-                    if self.preference_ranker else (0.0, [])
+                    if self.preference_ranker
+                    else (0.0, [])
                 )
                 score += preference_adjustment
-                reasons.extend(
-                    {"evidence": "estimated", "text": reason} for reason in preference_reasons
-                )
+                reasons.extend({"evidence": "estimated", "text": reason} for reason in preference_reasons)
                 if track["id"] in required | locked:
                     score += 1000
                     technical_score += 1000
@@ -179,10 +177,13 @@ class SetCandidateRetriever:
             ranked.sort(key=lambda value: (-value[0], value[2]["artist"].casefold(), value[2]["title"].casefold()))
             baseline_ranks = {
                 value[2]["id"]: index
-                for index, value in enumerate(sorted(
-                    ranked,
-                    key=lambda value: (-value[5], value[2]["artist"].casefold(), value[2]["title"].casefold()),
-                ), start=1)
+                for index, value in enumerate(
+                    sorted(
+                        ranked,
+                        key=lambda value: (-value[5], value[2]["artist"].casefold(), value[2]["title"].casefold()),
+                    ),
+                    start=1,
+                )
             }
             personalized_ranks = {value[2]["id"]: index for index, value in enumerate(ranked, start=1)}
             selected: list[dict[str, Any]] = []
@@ -195,34 +196,38 @@ class SetCandidateRetriever:
                 artist = track["artist"].strip().casefold()
                 if artist and artist_counts.get(artist, 0) >= 2 and track["id"] not in required | locked:
                     continue
-                selected.append({
-                    **track,
-                    "matchTier": tier,
-                    "relevanceScore": round(score, 2),
-                    "technicalScore": round(technical_score, 2),
-                    "preferenceAdjustment": preference_adjustment,
-                    "baselineRank": baseline_ranks[track["id"]],
-                    "personalizedRank": personalized_ranks[track["id"]],
-                    "rankDelta": baseline_ranks[track["id"]] - personalized_ranks[track["id"]],
-                    "required": track["id"] in required,
-                    "locked": track["id"] in locked,
-                    "eligibleSectionIds": [section_id],
-                    "reasons": reasons,
-                })
+                selected.append(
+                    {
+                        **track,
+                        "matchTier": tier,
+                        "relevanceScore": round(score, 2),
+                        "technicalScore": round(technical_score, 2),
+                        "preferenceAdjustment": preference_adjustment,
+                        "baselineRank": baseline_ranks[track["id"]],
+                        "personalizedRank": personalized_ranks[track["id"]],
+                        "rankDelta": baseline_ranks[track["id"]] - personalized_ranks[track["id"]],
+                        "required": track["id"] in required,
+                        "locked": track["id"] in locked,
+                        "eligibleSectionIds": [section_id],
+                        "reasons": reasons,
+                    }
+                )
                 emitted.add(track["id"])
                 if artist:
                     artist_counts[artist] = artist_counts.get(artist, 0) + 1
-            sections.append({
-                "sectionId": section_id,
-                "requestedGenres": _terms(section.get("genres", [])),
-                "candidates": selected,
-                "scarcity": {
-                    "direct": sum(candidate["matchTier"] == "direct" for candidate in selected),
-                    "identity": sum(candidate["matchTier"] == "identity" for candidate in selected),
-                    "bridge": sum(candidate["matchTier"] == "bridge" for candidate in selected),
-                    "fallback": sum(candidate["matchTier"] == "fallback" for candidate in selected),
-                },
-            })
+            sections.append(
+                {
+                    "sectionId": section_id,
+                    "requestedGenres": _terms(section.get("genres", [])),
+                    "candidates": selected,
+                    "scarcity": {
+                        "direct": sum(candidate["matchTier"] == "direct" for candidate in selected),
+                        "identity": sum(candidate["matchTier"] == "identity" for candidate in selected),
+                        "bridge": sum(candidate["matchTier"] == "bridge" for candidate in selected),
+                        "fallback": sum(candidate["matchTier"] == "fallback" for candidate in selected),
+                    },
+                }
+            )
         available_ids = {track["id"] for track in compact if track["available"]}
         return {
             "version": 1,

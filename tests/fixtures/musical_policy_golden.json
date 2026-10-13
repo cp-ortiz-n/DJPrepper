@@ -59,11 +59,22 @@
   ],
   "browser_overrides": {
     "song": {
+      "musical_profile": {
+        "version": 1,
+        "key": "C# major",
+        "camelot": "3B",
+        "roles": ["closing"],
+        "energy": 0.67,
+        "energy_band": "high",
+        "vocals": "vocal-safe",
+        "timing": "variable"
+      },
       "_roles": ["closing"],
       "_energy": 0.67,
       "_vocals": "vocal-safe",
       "_timing": "variable",
       "bpm": 130,
+      "key": "A minor",
       "detected_style": "peak"
     },
     "roles": ["closing"],

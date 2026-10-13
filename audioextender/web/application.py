@@ -66,6 +66,7 @@ from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
     TrackMetadataMutationService,
 )
+from audioextender.library.musical_profile import CAMELOT_KEYS, musical_profile
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.job_workflows import (
     JobCreationCommand,
@@ -3007,53 +3008,15 @@ def report_audio_index() -> list[dict]:
 
 
 def _library_roles(song: dict) -> list[str]:
-    style = str(song.get("detected_style") or "").casefold()
-    timing = str(song.get("timing") or "").casefold()
-    bpm = float(song.get("bpm") or 0)
-    intro = song.get("intro") or {}
-    outro = song.get("outro") or {}
-    roles: set[str] = set()
-    if "ambient" in style or "sparse" in style:
-        roles.add("ambient")
-    if "melodic" in style or "harmonic" in style or float(song.get("key_confidence") or 0) >= 0.65:
-        roles.add("melodic")
-    if (
-        "vocal-safe" in style
-        or max(float(intro.get("instrumentalness") or 0), float(outro.get("instrumentalness") or 0)) >= 0.72
-    ):
-        roles.add("vocal-safe")
-    if "live" in timing or "variable" in timing or float(song.get("tempo_drift") or 0) >= 0.08:
-        roles.add("live timing")
-    if "peak" in style or "high-energy" in style or (bpm >= 122 and "ambient" not in roles):
-        roles.add("peak-time")
-    if "slow" in style or "subtle" in style or (bpm and bpm < 120) or "ambient" in roles:
-        roles.add("warm-up")
-    readiness = song.get("dj_readiness") or {}
-    if "closing" in style or float(readiness.get("outro_mixable_bars") or 0) >= 8 or outro.get("section") == "closing":
-        roles.add("closing")
-    if not roles:
-        roles.add("peak-time" if bpm >= 122 else "warm-up")
-    return sorted(roles)
+    return musical_profile(song)["roles"]
 
 
 def _library_energy(song: dict) -> float:
-    values: list[float] = []
-    for section in song.get("section_profiles") or []:
-        match = re.search(r"energy\s+([\d.]+)", str(section.get("reason") or ""), re.I)
-        if match:
-            try:
-                values.append(float(match.group(1)))
-            except ValueError:
-                pass
-    if values:
-        return sum(values) / len(values)
-    style = str(song.get("detected_style") or "").casefold()
-    return (
-        0.8 if "high-energy" in style or "peak" in style else 0.25 if "ambient" in style or "sparse" in style else 0.5
-    )
+    return float(musical_profile(song)["energy"])
 
 
 def _set_builder_analysis(song: dict, *, roles: list[str], energy: float, vocals: str, timing: str) -> dict:
+    profile = musical_profile(song | {"_roles": roles, "_energy": energy, "_vocals": vocals, "_timing": timing})
     base_fields = {
         "source_name",
         "bpm",
@@ -3071,6 +3034,7 @@ def _set_builder_analysis(song: dict, *, roles: list[str], energy: float, vocals
             "_energy": energy,
             "_vocals": vocals,
             "_timing": timing,
+            "musical_profile": profile,
             "intro": {
                 key: value for key, value in (song.get("intro") or {}).items() if key in {"instrumentalness", "section"}
             },
@@ -3122,7 +3086,7 @@ def _build_set_builder_catalog_payload() -> dict:
                 },
             }
         )
-    return {"version": 4, "tracks": tracks, "total": len(tracks)}
+    return {"version": 5, "tracks": tracks, "total": len(tracks)}
 
 
 def _write_set_builder_catalog_cache() -> None:
@@ -3133,32 +3097,7 @@ def _write_set_builder_catalog_cache() -> None:
     temporary.replace(SET_BUILDER_CATALOG_CACHE)
 
 
-_CAMELOT_KEYS = {
-    "A minor": "8A",
-    "E minor": "9A",
-    "B minor": "10A",
-    "F# minor": "11A",
-    "C# minor": "12A",
-    "G# minor": "1A",
-    "D# minor": "2A",
-    "A# minor": "3A",
-    "F minor": "4A",
-    "C minor": "5A",
-    "G minor": "6A",
-    "D minor": "7A",
-    "C major": "8B",
-    "G major": "9B",
-    "D major": "10B",
-    "A major": "11B",
-    "E major": "12B",
-    "B major": "1B",
-    "F# major": "2B",
-    "C# major": "3B",
-    "G# major": "4B",
-    "D# major": "5B",
-    "A# major": "6B",
-    "F major": "7B",
-}
+_CAMELOT_KEYS = CAMELOT_KEYS
 
 
 def _refresh_library_search_index() -> None:
@@ -3284,7 +3223,7 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
     report_signature = (report_path.stat().st_mtime_ns, report_path.stat().st_size) if report_path.exists() else (0, 0)
     source_signature = repository.library_index_source_signature()
     signature_text = json.dumps(
-        {"version": 4, "report": report_signature, "sources": source_signature}, separators=(",", ":")
+        {"version": 5, "report": report_signature, "sources": source_signature}, separators=(",", ":")
     )
     signature = (report_signature, (hash(source_signature), len(source_signature)))
     with library_catalog_cache_lock:
@@ -3306,7 +3245,7 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
         _refresh_library_search_index()
         source_signature = repository.library_index_source_signature()
         signature_text = json.dumps(
-            {"version": 4, "report": report_signature, "sources": source_signature}, separators=(",", ":")
+            {"version": 5, "report": report_signature, "sources": source_signature}, separators=(",", ":")
         )
         signature = (report_signature, (hash(source_signature), len(source_signature)))
         repository.set_system_state("library_search_index_signature", signature_text)
@@ -3325,7 +3264,7 @@ def _refresh_library_index_background() -> None:
         )
         source_signature = repository.library_index_source_signature()
         signature_text = json.dumps(
-            {"version": 4, "report": report_signature, "sources": source_signature},
+            {"version": 5, "report": report_signature, "sources": source_signature},
             separators=(",", ":"),
         )
         repository.set_system_state("library_search_index_signature", signature_text)

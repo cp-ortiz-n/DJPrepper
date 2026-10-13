@@ -27,8 +27,12 @@ response shapes, and restart expectations are frozen in
 contracts deliberately whenever an approved public API change is made.
 
 Current musical classifications and scoring boundaries are documented in
-[`musical-policy-ownership.md`](musical-policy-ownership.md). Its shared golden
-fixture freezes Python and browser behavior before the `ARCH-003B` consolidation.
+[`musical-policy-ownership.md`](musical-policy-ownership.md). The versioned
+`library/musical_profile.py` profile is the single owner of normalized key and
+Camelot, energy, roles, vocals, timing, confidence, and provenance. Catalog
+routes serialize it; DJ Library and Set Builder consume it. Their older local
+derivations remain compatibility-only fallbacks, while interactive Library
+matching and Set transition scoring intentionally remain separate policies.
 Background job state, persistence, cancellation, retry, errors, timestamps, and
 receipts are inventoried in
 [`background-operation-lifecycles.md`](background-operation-lifecycles.md).

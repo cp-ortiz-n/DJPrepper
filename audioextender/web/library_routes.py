@@ -11,6 +11,8 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
+from audioextender.library.musical_profile import musical_profile
+
 
 @dataclass(frozen=True)
 class LibraryRouteDependencies:
@@ -108,15 +110,7 @@ def create_library_router(deps: LibraryRouteDependencies) -> APIRouter:
             {
                 "job_id": item["job_id"],
                 "source_name": item["source_name"],
-                "analysis": {
-                    "source_name": item["source_name"],
-                    "bpm": item["bpm"],
-                    "key": item["musical_key"],
-                    "_roles": str(item.get("roles") or "").strip("|").split("|"),
-                    "_energy": item["energy"],
-                    "_vocals": item["vocals"],
-                    "_timing": item["timing"],
-                },
+                "analysis": _serialized_analysis(item),
             }
             for item in facets.pop("intelligence")
         ]
@@ -134,6 +128,19 @@ def create_library_router(deps: LibraryRouteDependencies) -> APIRouter:
     return router
 
 
+def _serialized_analysis(item: dict[str, Any]) -> dict[str, Any]:
+    analysis = {
+        "source_name": item["source_name"],
+        "bpm": item["bpm"],
+        "key": item["musical_key"],
+        "_roles": str(item.get("roles") or "").strip("|").split("|"),
+        "_energy": item["energy"],
+        "_vocals": item["vocals"],
+        "_timing": item["timing"],
+    }
+    return analysis | {"musical_profile": musical_profile(analysis)}
+
+
 def _catalog_track(row: dict[str, Any], generalized_genre: Callable[[str], str]) -> dict:
     row.pop("analysis_json", None)
     analysis = {
@@ -145,6 +152,7 @@ def _catalog_track(row: dict[str, Any], generalized_genre: Callable[[str], str])
         "_vocals": row.get("vocals") or "mixed",
         "_timing": row.get("timing") or "steady",
     }
+    analysis["musical_profile"] = musical_profile(analysis)
     downloaded = None
     if row.get("downloaded_id"):
         try:

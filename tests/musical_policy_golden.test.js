@@ -37,6 +37,21 @@ test('serialized backend profile values take precedence in the browser', () => {
   assert.equal(policy.energyBand(policy.songEnergy(song)), band);
   assert.equal(policy.vocalProfile(song), vocals);
   assert.equal(policy.timingProfile(song), timing);
+  assert.equal(policy.normalizedKey(song), 'C# major');
+  assert.equal(policy.camelotKey(song), '3B');
+  assert.equal(policy.formatLibraryKey(song, 'both'), 'C# major · 3B');
+});
+
+test('unknown profile versions fall back to legacy catalog facts', () => {
+  const song = {
+    key: 'A minor',
+    _energy: 0.25,
+    _roles: ['warm-up'],
+    musical_profile: { version: 99, key: 'C# major', camelot: '3B', energy: 0.9, roles: ['peak-time'] },
+  };
+  assert.equal(policy.formatLibraryKey(song, 'both'), 'A minor · 8A');
+  assert.equal(policy.songEnergy(song), 0.25);
+  assert.deepEqual(policy.libraryRoles(song), ['warm-up']);
 });
 
 test('DJ Library match scores match the versioned golden fixture', () => {
