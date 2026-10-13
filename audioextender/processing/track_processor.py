@@ -219,6 +219,7 @@ class TrackProcessor:
 
             def report_analysis(fraction: float, label: str) -> None:
                 nonlocal analysis_stage_started, analysis_stage_label
+                now = time.monotonic()
                 if label != analysis_stage_label:
                     stage_timings.append((analysis_stage_label, now - analysis_stage_started))
                     analysis_stage_started = now
