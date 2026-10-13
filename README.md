@@ -489,7 +489,11 @@ Use this table before searching through the larger composition files:
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
-| Set Builder UI | `web/set-builder.js` and `web/styles.css` |
+| Set Builder UI composition | `web/set-builder.js` and `web/styles.css` |
+| Set Builder state and edit history | `web/set-builder-state.js`, `web/set-builder-commands.js` |
+| Set Builder browser API and planning lifecycle | `web/set-builder-api.js`, `web/set-planning-client.js` |
+| Deterministic proposal/fallback policy | `web/set-builder-classic-planner.js` |
+| Set Builder presentation helpers | `web/set-builder-view-model.js` |
 | Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
 | Set Builder candidate shortlists or plan validation | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py` |
 | AI track ordering, comparison, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_comparator.py`, `proposal_repairer.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |

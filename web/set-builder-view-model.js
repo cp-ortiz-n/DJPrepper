@@ -48,3 +48,30 @@ export function intentionProviderView(status = {}) {
           : 'Start Ollama to enable local language interpretation.',
   };
 }
+
+export function fallbackPolicyMarkup(policy, escapeHtml) {
+  return policy.map((step, index) => `<li><strong>${index + 1}.</strong> ${escapeHtml(step)}</li>`).join('');
+}
+
+export function setProposalMarkup(proposals, activeProposal, escapeHtml) {
+  return proposals
+    .map((proposal) => {
+      const active = proposal.id === activeProposal;
+      const score = Math.max(0, proposal.health?.score ?? 0);
+      return `<button type="button" class="set-proposal${active ? ' active' : ''}${proposal.accepted ? '' : ' unavailable'}" role="radio" aria-checked="${active}" data-proposal="${escapeHtml(proposal.id)}" ${proposal.accepted ? '' : 'disabled'}><span><b>${escapeHtml(proposal.label)}</b><em>${proposal.accepted ? `${score}/100 health` : `Below target · ${score}/100`}</em></span><strong>${escapeHtml(proposal.summary)}</strong><small>${escapeHtml(proposal.detail)}</small></button>`;
+    })
+    .join('');
+}
+
+export function aiObservabilityCards(report, escapeHtml) {
+  return [
+    ['AI selected', report.aiSelectedCount],
+    ['Safety fallback', `${Math.round((report.fallbackRate || 0) * 100)}%`],
+    ['Plans repaired', report.repairedCount],
+    ['Average time', report.averageDurationMs ? `${(report.averageDurationMs / 1000).toFixed(1)}s` : '—'],
+  ]
+    .map(
+      ([label, value]) => `<article><b>${escapeHtml(String(value))}</b><small>${escapeHtml(label)}</small></article>`,
+    )
+    .join('');
+}

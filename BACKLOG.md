@@ -182,12 +182,20 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   lint prevents those modules from returning to global `fetch`. Existing
   debounce, abort, loading ownership, URL/session persistence, and stale-response
   rejection tests remain green.
-- [ ] **ARCH-008A — Decompose Set Builder state, API, commands, and views.**
+- [x] **ARCH-008A — Decompose Set Builder state, API, commands, and views.**
   Priority: P0. Effort: L. Risk: High. Dependencies: ARCH-003B, ARCH-007A,
   ARCH-011A. Acceptance: one feature entry composes a testable state store,
   planning API, edit commands, classic fallback, and render/view helpers; AI,
   deterministic, save/load, undo/redo, alternatives, preview, and review
   workflows match characterization tests. Evidence: [ARCH-008](docs/architecture-audit.md#arch-008--set-builder-browser-module-owns-too-many-change-axes).
+  Completed 2026-10-13: `set-builder.js` is now a composition-oriented feature
+  entry over dedicated state, API, command, classic-planning, and view-model
+  modules. The API boundary owns all Set Builder routes and planning lifecycle;
+  the command boundary owns bounded history, moves, undo, and redo; and the
+  deterministic proposal loop is independently testable. Behavioral tests cover
+  snapshots, restoration, command history, route serialization, classic fallback,
+  and escaped render evidence. The entry-module size ceiling is ratcheted from
+  675 to 663 lines.
 - [ ] **ARCH-007B — Reduce `app.js` to durable composition and navigation.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-007A, ARCH-008A.
   Acceptance: processing/import feature behavior has an explicit owner; `app.js`

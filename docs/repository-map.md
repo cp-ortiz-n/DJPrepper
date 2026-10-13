@@ -213,6 +213,11 @@ map reflects the current layout; it does not propose moving code.
 │   ├── playback.js
 │   ├── reporting.js
 │   ├── request-state-controller.js
+│   ├── set-builder-api.js
+│   ├── set-builder-classic-planner.js
+│   ├── set-builder-commands.js
+│   ├── set-builder-state.js
+│   ├── set-builder-view-model.js
 │   ├── set-builder.js
 │   ├── set-planning-client.js
 │   ├── settings.js

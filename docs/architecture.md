@@ -362,7 +362,12 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `playback.js` | Single audio-preview owner |
 | `music-files.js` | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector |
 | `dj-library.js` | DJ Library rendering, filtering, selection actions, and compatibility helpers |
-| `set-builder.js` | Set Builder rendering, mutable state, and proposal policy |
+| `set-builder.js` | Set Builder feature composition, event binding, and cross-workflow coordination |
+| `set-builder-state.js` | Mutable Set Builder session state plus plan snapshot and restoration |
+| `set-builder-api.js` | Set Builder HTTP routes and asynchronous planning-client boundary |
+| `set-builder-commands.js` | Plan edit commands, bounded history, undo, redo, and movement |
+| `set-builder-classic-planner.js` | Deterministic proposal generation, acceptance, and safe fallback selection |
+| `set-builder-view-model.js` | Escaped proposal, fallback-policy, and AI-observability presentation models |
 | `settings.js` | Settings forms, library health, relocation, backups, storage, and refresh coordination |
 | `reporting.js` | Analysis & Feedback and key-verification rendering |
 | `request-state-controller.js` | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence |
