@@ -424,6 +424,93 @@ class SettingsRouteService:
             path.unlink(missing_ok=True)
         return count
 
+    def cleanup_storage(self, target: str) -> dict[str, Any]:
+        deps = self.dependencies
+        active = [
+            job
+            for job in deps.repository().list_jobs(limit=10_000)
+            if job.get("status") in {"queued", "processing", "paused"}
+        ]
+        if active:
+            raise HTTPException(409, "Finish or cancel active analysis jobs before cleaning storage")
+        inventory = self.storage_inventory(refresh=True)
+        key = "_stale_cache" if target == "stale-cache" else "_orphaned_outputs"
+        removed_files = removed_bytes = 0
+        for value in inventory[key]:
+            path = Path(value)
+            try:
+                removed_bytes += path.stat().st_size
+                path.unlink()
+                removed_files += 1
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise HTTPException(500, f"Could not remove {path.name}: {error}") from error
+        with deps.storage_inventory_lock:
+            deps.storage_inventory_cache.update(payload=None, expires_at=0.0)
+        return {
+            "removed_files": removed_files,
+            "removed_bytes": removed_bytes,
+            "storage": self.public_inventory(self.storage_inventory(refresh=True)),
+        }
+
+    def cleanup_application(self, confirmation: str) -> dict[str, Any]:
+        deps = self.dependencies
+        if confirmation != "DELETE EVERYTHING":
+            raise HTTPException(400, "Type DELETE EVERYTHING exactly to confirm the reset")
+        active = [
+            job
+            for job in deps.repository().list_jobs(limit=10_000)
+            if job["status"] in {"queued", "processing", "paused"}
+        ]
+        if active or any(item.has_active_imports() for item in deps.import_services):
+            raise HTTPException(409, "Cancel or finish all processing and imports before cleaning up the app")
+        downloaded = [
+            Path(track["file_path"]) for track in deps.repository().list_downloaded_tracks() if track.get("file_path")
+        ]
+        deps.repository().reset_track_data()
+        removed = 0
+        for path in downloaded:
+            if path.is_file():
+                path.unlink()
+                removed += 1
+            source_record = deps.source_metadata_path(path)
+            if source_record.is_file():
+                source_record.unlink()
+                removed += 1
+        managed = (
+            deps.input_root,
+            deps.project / deps.cache_folder_name,
+            *(
+                deps.output_root / name
+                for name in ("cue_sheets", "extended", "previews", "rekordbox", "versions", "wav")
+            ),
+        )
+        for path in managed:
+            removed += self.remove_managed_path(path, deps.project)
+        if deps.output_root.exists():
+            for child in deps.output_root.iterdir():
+                if child.name != "reports":
+                    removed += self.remove_managed_path(child, deps.project)
+        reports = deps.output_root / "reports"
+        if reports.exists():
+            retained = {
+                deps.database.name,
+                f"{deps.database.name}-wal",
+                f"{deps.database.name}-shm",
+                deps.presets_path.name,
+            }
+            for child in reports.iterdir():
+                if child.name not in retained:
+                    removed += self.remove_managed_path(child, deps.project)
+        removed += self.remove_managed_path(deps.overrides_path, deps.project)
+        deps.input_root.mkdir(parents=True, exist_ok=True)
+        deps.output_root.mkdir(parents=True, exist_ok=True)
+        reports.mkdir(parents=True, exist_ok=True)
+        for item in deps.import_services:
+            item.clear()
+        return {"reset": True, "removed_files": removed}
+
 
 def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
     router = APIRouter()
@@ -529,33 +616,7 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
 
     @router.post("/api/settings/storage/cleanup")
     def cleanup_storage(request: StorageCleanupRequest) -> dict:
-        active = [
-            job
-            for job in deps.repository().list_jobs(limit=10_000)
-            if job.get("status") in {"queued", "processing", "paused"}
-        ]
-        if active:
-            raise HTTPException(409, "Finish or cancel active analysis jobs before cleaning storage")
-        inventory = service.storage_inventory(refresh=True)
-        key = "_stale_cache" if request.target == "stale-cache" else "_orphaned_outputs"
-        removed_files = removed_bytes = 0
-        for value in inventory[key]:
-            path = Path(value)
-            try:
-                removed_bytes += path.stat().st_size
-                path.unlink()
-                removed_files += 1
-            except FileNotFoundError:
-                continue
-            except OSError as error:
-                raise HTTPException(500, f"Could not remove {path.name}: {error}") from error
-        with deps.storage_inventory_lock:
-            deps.storage_inventory_cache.update(payload=None, expires_at=0.0)
-        return {
-            "removed_files": removed_files,
-            "removed_bytes": removed_bytes,
-            "storage": service.public_inventory(service.storage_inventory(refresh=True)),
-        }
+        return service.cleanup_storage(request.target)
 
     @router.post("/api/settings/library-relocation/plan")
     def plan_relocation(request: LibraryRelocationRequest) -> dict:
@@ -684,60 +745,6 @@ def create_settings_router(deps: SettingsRouteDependencies) -> APIRouter:
 
     @router.post("/api/settings/cleanup")
     def cleanup_application(request: ApplicationCleanupRequest) -> dict:
-        if request.confirmation != "DELETE EVERYTHING":
-            raise HTTPException(400, "Type DELETE EVERYTHING exactly to confirm the reset")
-        active_jobs = [
-            job
-            for job in deps.repository().list_jobs(limit=10_000)
-            if job["status"] in {"queued", "processing", "paused"}
-        ]
-        if active_jobs or any(item.has_active_imports() for item in deps.import_services):
-            raise HTTPException(409, "Cancel or finish all processing and imports before cleaning up the app")
-        downloaded = [
-            Path(track["file_path"]) for track in deps.repository().list_downloaded_tracks() if track.get("file_path")
-        ]
-        deps.repository().reset_track_data()
-        removed = 0
-        for path in downloaded:
-            if path.is_file():
-                path.unlink()
-                removed += 1
-            source_record = deps.source_metadata_path(path)
-            if source_record.is_file():
-                source_record.unlink()
-                removed += 1
-        for path in (
-            deps.input_root,
-            deps.project / deps.cache_folder_name,
-            deps.output_root / "cue_sheets",
-            deps.output_root / "extended",
-            deps.output_root / "previews",
-            deps.output_root / "rekordbox",
-            deps.output_root / "versions",
-            deps.output_root / "wav",
-        ):
-            removed += service.remove_managed_path(path, deps.project)
-        if deps.output_root.exists():
-            for child in deps.output_root.iterdir():
-                if child.name != "reports":
-                    removed += service.remove_managed_path(child, deps.project)
-        reports = deps.output_root / "reports"
-        if reports.exists():
-            retained = {
-                deps.database.name,
-                f"{deps.database.name}-wal",
-                f"{deps.database.name}-shm",
-                deps.presets_path.name,
-            }
-            for child in reports.iterdir():
-                if child.name not in retained:
-                    removed += service.remove_managed_path(child, deps.project)
-        removed += service.remove_managed_path(deps.overrides_path, deps.project)
-        deps.input_root.mkdir(parents=True, exist_ok=True)
-        deps.output_root.mkdir(parents=True, exist_ok=True)
-        reports.mkdir(parents=True, exist_ok=True)
-        for item in deps.import_services:
-            item.clear()
-        return {"reset": True, "removed_files": removed}
+        return service.cleanup_application(request.confirmation)
 
     return router

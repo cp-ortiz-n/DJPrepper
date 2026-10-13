@@ -37,6 +37,13 @@ failure contracts are frozen in
 [`processing-pipeline-contracts.md`](processing-pipeline-contracts.md) before the
 ARCH-002B stage extraction.
 
+ARCH-006A moves the remaining substantial route workflows behind application
+services. `DescriptorService` owns durable descriptor inference and vocabulary
+decisions, `DownloadedCatalogQueryService` builds the catalog read model, and
+`JobWorkflowService` owns upload/job creation and reprocessing policy. Existing
+settings and library-maintenance services now own cleanup and integrity-scan
+lifecycle operations; FastAPI handlers only translate requests and errors.
+
 ## Package ownership
 
 | Package | Responsibility |

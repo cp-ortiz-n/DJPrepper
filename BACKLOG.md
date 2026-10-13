@@ -106,12 +106,16 @@ change surfaces for new backend features.
   default app unresolved; repository recovery runs only at FastAPI startup; the
   152-route public inventory and `web_app.py` compatibility entry point remain
   unchanged. See `docs/web-composition-contracts.md`.
-- [ ] **ARCH-006A — Extract remaining route workflows into focused services.**
+- [x] **ARCH-006A — Extract remaining route workflows into focused services.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-001B. Acceptance:
   settings cleanup, descriptor inference, integrity work, downloaded catalog,
   reprocessing, and job creation handlers translate HTTP to service calls;
   filesystem/business workflows have isolated tests; endpoint URLs and payloads
   remain unchanged. Evidence: [ARCH-006](docs/architecture-audit.md#arch-006--route-modules-still-contain-substantial-application-workflows).
+  Completed 2026-10-12: descriptor inference, downloaded-catalog queries, job
+  creation/reprocessing, settings cleanup, and integrity scan lifecycle now run
+  through focused services. Route handlers retain HTTP validation and error
+  translation, while the application factory injects runtime dependencies.
 - [ ] **ARCH-003B — Add an authoritative versioned musical profile.** Priority:
   P0. Effort: L. Risk: High. Dependencies: ARCH-003A. Acceptance: Python owns
   normalized key/Camelot, energy, roles, vocals, timing, confidence, provenance,

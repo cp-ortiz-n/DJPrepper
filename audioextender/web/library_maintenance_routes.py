@@ -215,6 +215,47 @@ class LibraryMaintenanceService:
                 ),
             )
 
+    def start_integrity_scan(self) -> dict:
+        self.dependencies.require_library_online()
+        batch_id = uuid.uuid4().hex
+        total = len(self.repository.list_downloaded_tracks())
+        batch = {
+            "batch_id": batch_id,
+            "status": "processing",
+            "stage": "Indexing catalog and files",
+            "progress": 0,
+            "processed": 0,
+            "total": total,
+            "findings": {},
+            "counts": {},
+            "receipt": operation_receipt(
+                operation="library-integrity-scan",
+                requested=f"Verify {total} catalog tracks and the configured library folder",
+                requested_count=total,
+                changed="No changes; verification is running",
+                changed_count=0,
+                survives_restart=False,
+                durability="The read-only scan must be run again after an application restart.",
+                status="processing",
+            ),
+        }
+        with self.dependencies.integrity_lock:
+            self.dependencies.integrity_batches[batch_id] = batch
+        threading.Thread(
+            target=self.run_integrity_scan,
+            args=(batch_id,),
+            daemon=True,
+            name=f"integrity-scan-{batch_id[:8]}",
+        ).start()
+        return dict(batch)
+
+    def integrity_status(self, batch_id: str) -> dict:
+        with self.dependencies.integrity_lock:
+            batch = self.dependencies.integrity_batches.get(batch_id)
+            if batch is None:
+                raise KeyError(batch_id)
+            return dict(batch)
+
     def repair(self, request: IntegrityRepairRequest) -> dict:
         root = self.dependencies.music_library_root()
         repository = self.repository
@@ -302,45 +343,14 @@ def create_library_maintenance_router(
 
     @router.post("/integrity-scan", status_code=202)
     def start_integrity_scan() -> dict:
-        dependencies.require_library_online()
-        batch_id = uuid.uuid4().hex
-        total = len(service.repository.list_downloaded_tracks())
-        with dependencies.integrity_lock:
-            dependencies.integrity_batches[batch_id] = {
-                "batch_id": batch_id,
-                "status": "processing",
-                "stage": "Indexing catalog and files",
-                "progress": 0,
-                "processed": 0,
-                "total": total,
-                "findings": {},
-                "counts": {},
-                "receipt": operation_receipt(
-                    operation="library-integrity-scan",
-                    requested=f"Verify {total} catalog tracks and the configured library folder",
-                    requested_count=total,
-                    changed="No changes; verification is running",
-                    changed_count=0,
-                    survives_restart=False,
-                    durability="The read-only scan must be run again after an application restart.",
-                    status="processing",
-                ),
-            }
-        threading.Thread(
-            target=service.run_integrity_scan,
-            args=(batch_id,),
-            daemon=True,
-            name=f"integrity-scan-{batch_id[:8]}",
-        ).start()
-        return dict(dependencies.integrity_batches[batch_id])
+        return service.start_integrity_scan()
 
     @router.get("/integrity-scan/{batch_id}")
     def integrity_scan_status(batch_id: str) -> dict:
-        with dependencies.integrity_lock:
-            batch = dependencies.integrity_batches.get(batch_id)
-            if not batch:
-                raise HTTPException(404, "Integrity scan was not found")
-            return dict(batch)
+        try:
+            return service.integrity_status(batch_id)
+        except KeyError as error:
+            raise HTTPException(404, "Integrity scan was not found") from error
 
     @router.post("/integrity-repair")
     def integrity_repair(request: IntegrityRepairRequest) -> dict:

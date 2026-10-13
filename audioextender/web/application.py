@@ -58,11 +58,21 @@ from audioextender.imports.service import (
     authorized_source_provider,
     scdl_download_command,
 )
+from audioextender.library.catalog_query_service import (
+    DownloadedCatalogQuery,
+    DownloadedCatalogQueryService,
+)
 from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
     TrackMetadataMutationService,
 )
 from audioextender.library.track_overrides import load_track_overrides
+from audioextender.processing.job_workflows import (
+    JobCreationCommand,
+    JobWorkflowError,
+    JobWorkflowService,
+    UploadedAudio,
+)
 from audioextender.reporting.feedback import append_web_feedback
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
@@ -1858,10 +1868,9 @@ def downloaded_library(
     quality: str = Query(default="all", pattern="^(all|excellent|good|review|poor|below-target|unanalyzed)$"),
     sort: str = Query(default="newest", max_length=30),
 ) -> dict:
-    _ensure_downloaded_catalog_migrated()
-    if paged:
-        facets = repository.downloaded_catalog_facets()
-        tracks, filtered_total = repository.page_downloaded_tracks(
+    return downloaded_catalog_query_service.execute(
+        DownloadedCatalogQuery(
+            paged=paged,
             page=page,
             page_size=page_size,
             search=search,
@@ -1873,114 +1882,7 @@ def downloaded_library(
             quality=quality,
             sort=sort,
         )
-        if analysis in {
-            "complete",
-            "active",
-            "attention",
-            "missing_title",
-            "missing_artist",
-            "missing_genre",
-            "missing_artwork",
-            "unmapped_genre",
-            "broad_genre",
-        }:
-            analyzable_total = 0
-        else:
-            _, analyzable_total = repository.page_downloaded_tracks(
-                page=1,
-                page_size=1,
-                search=search,
-                genre=genre,
-                detailed_genre=detailed_genre,
-                playlist=playlist,
-                artwork=artwork,
-                quality=quality,
-                analysis=("failed" if analysis == "failed" else "needs"),
-                sort=sort,
-            )
-        total_pages = max(1, (filtered_total + page_size - 1) // page_size)
-        if page > total_pages:
-            page = total_pages
-            tracks, filtered_total = repository.page_downloaded_tracks(
-                page=page,
-                page_size=page_size,
-                search=search,
-                genre=genre,
-                detailed_genre=detailed_genre,
-                playlist=playlist,
-                analysis=analysis,
-                artwork=artwork,
-                quality=quality,
-                sort=sort,
-            )
-        genres: dict[str, int] = {}
-        for raw_genre, count in facets["genres"].items():
-            normalized = _normalize_genre_category(raw_genre)
-            genres[normalized] = genres.get(normalized, 0) + int(count)
-        playlists = facets["playlists"]
-    else:
-        tracks = repository.list_downloaded_tracks_with_jobs()
-        genres = {}
-        playlists = {}
-        for track in tracks:
-            track_genre = _normalize_genre_category(str(track.get("genre_category") or "Other"))
-            genres[track_genre] = genres.get(track_genre, 0) + 1
-            for track_playlist in track.get("playlists", []):
-                playlists[track_playlist] = playlists.get(track_playlist, 0) + 1
-        filtered_total = len(tracks)
-
-        def review_flags(track: dict) -> dict[str, bool]:
-            title = str(track.get("title") or "").strip().casefold()
-            artist = str(track.get("artist") or "").strip().casefold()
-            detailed_genre = str(track.get("genre") or "").strip()
-            category = str(track.get("genre_category") or "Other")
-            return {
-                "missing_title": title in {"", "unknown title", "untitled"},
-                "missing_artist": artist in {"", "unknown artist", "unknown", "unavailable"},
-                "missing_genre": not detailed_genre,
-                "missing_artwork": not str(track.get("artwork_path") or "").strip(),
-                "unmapped_genre": bool(detailed_genre) and category == "Other",
-                "broad_genre": category.endswith(" / General") or category.endswith(" / Other"),
-            }
-
-        track_review_flags = [review_flags(track) for track in tracks]
-        facets = {
-            "total": len(tracks),
-            "review_states": {
-                **{
-                    issue: sum(flags[issue] for flags in track_review_flags)
-                    for issue in (track_review_flags[0] if track_review_flags else review_flags({}))
-                },
-                "needs_attention": sum(any(flags.values()) for flags in track_review_flags),
-            },
-        }
-        total_pages = 1
-        analyzable_total = sum(
-            (track.get("analysis_status") or "not_analyzed") not in {"queued", "processing", "complete"}
-            for track in tracks
-        )
-    return {
-        "tracks": [
-            _downloaded_track_payload(track)
-            | {
-                "analysis_status": track.get("analysis_status") or "not_analyzed",
-            }
-            for track in tracks
-        ],
-        "genres": dict(sorted(genres.items())),
-        "detailed_genres": dict(sorted(facets.get("detailed_genres", {}).items())),
-        "detailed_genres_by_category": facets.get("detailed_genres_by_category", {}),
-        "playlists": dict(sorted(playlists.items())),
-        "review_states": facets.get("review_states", {}),
-        "pagination": {
-            "page": page,
-            "page_size": page_size,
-            "filtered_total": filtered_total,
-            "analyzable_total": analyzable_total,
-            "catalog_total": facets["total"],
-            "total_pages": total_pages,
-        },
-    }
+    )
 
 
 @legacy_router.get("/api/downloaded-library/tracks/{track_id}/audio")
@@ -2583,6 +2485,13 @@ def remove_library_track(source_name: str) -> dict:
 
 @legacy_router.post("/api/jobs/{job_id}/reprocess", status_code=202)
 def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
+    try:
+        return job_workflow_service.reprocess(job_id, request.model_dump() if request is not None else None)
+    except JobWorkflowError as error:
+        raise HTTPException(error.status_code, error.detail) from error
+
+
+def _legacy_reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
     job = repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
@@ -2813,6 +2722,66 @@ async def create_jobs(
     maximum_bass_reset_risk_percent: Annotated[float | None, Form()] = None,
     minimum_stem_reliability_percent: Annotated[float | None, Form()] = None,
     analysis_only: Annotated[bool, Form()] = False,
+) -> dict:
+    overrides = {
+        "auto_bars": auto_bars,
+        "minimum_intro_loop_quality": minimum_intro_loop_quality,
+        "minimum_outro_loop_quality": minimum_outro_loop_quality,
+        "maximum_repetitions": maximum_repetitions,
+        "crossfade_ms": crossfade_ms,
+        "pcm_bits": pcm_bits,
+        "preview_seconds": preview_seconds,
+        "export_cues": export_cues,
+        "candidate_count": candidate_count,
+        "intro_search_seconds": intro_search_seconds,
+        "outro_search_seconds": outro_search_seconds,
+        "maximum_vocal_coverage_percent": maximum_vocal_coverage_percent,
+        "maximum_vocal_boundary_risk_percent": maximum_vocal_boundary_risk_percent,
+        "maximum_buildup_risk_percent": maximum_buildup_risk_percent,
+        "maximum_bass_reset_risk_percent": maximum_bass_reset_risk_percent,
+        "minimum_stem_reliability_percent": minimum_stem_reliability_percent,
+    }
+    try:
+        return job_workflow_service.create(
+            [UploadedAudio(Path(upload.filename or "").name, upload.file) for upload in files],
+            JobCreationCommand(
+                preset=preset,
+                intro_bars=intro_bars,
+                outro_bars=outro_bars,
+                use_stems=use_stems,
+                review_candidates=review_candidates,
+                analysis_only=analysis_only,
+                overrides=overrides,
+            ),
+        )
+    except JobWorkflowError as error:
+        raise HTTPException(error.status_code, error.detail) from error
+
+
+async def _legacy_create_jobs(
+    files: Annotated[list[UploadFile], File()],
+    preset: str = "auto",
+    intro_bars: str = "auto",
+    outro_bars: str = "auto",
+    use_stems: bool = False,
+    review_candidates: bool = False,
+    auto_bars: bool | None = None,
+    minimum_intro_loop_quality: float | None = None,
+    minimum_outro_loop_quality: float | None = None,
+    maximum_repetitions: int | None = None,
+    crossfade_ms: float | None = None,
+    pcm_bits: int | None = None,
+    preview_seconds: float | None = None,
+    export_cues: bool | None = None,
+    candidate_count: int | None = None,
+    intro_search_seconds: float | None = None,
+    outro_search_seconds: float | None = None,
+    maximum_vocal_coverage_percent: float | None = None,
+    maximum_vocal_boundary_risk_percent: float | None = None,
+    maximum_buildup_risk_percent: float | None = None,
+    maximum_bass_reset_risk_percent: float | None = None,
+    minimum_stem_reliability_percent: float | None = None,
+    analysis_only: bool = False,
 ) -> dict:
     if preset != "auto" and preset not in _available_presets():
         raise HTTPException(400, "Unknown preset")
@@ -3422,6 +3391,7 @@ def create_app(
     global library_maintenance_service, track_metadata_mutations, metadata_batch_service
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
+    global downloaded_catalog_query_service, job_workflow_service
 
     import_service = ImportService(
         repository=repository,
@@ -3505,6 +3475,22 @@ def create_app(
             registry=metadata_batch_registry,
         )
     )
+    downloaded_catalog_query_service = DownloadedCatalogQueryService(
+        repository=lambda: repository,
+        ensure_catalog_migrated=_ensure_downloaded_catalog_migrated,
+        normalize_genre_category=_normalize_genre_category,
+        track_payload=_downloaded_track_payload,
+    )
+    job_workflow_service = JobWorkflowService(
+        repository=repository,
+        processor=service,
+        input_root=INPUT,
+        supported_extensions=frozenset(SUPPORTED_EXTENSIONS),
+        supported_bar_counts=SUPPORTED_BAR_COUNTS,
+        available_presets=_available_presets,
+        effective_settings=_effective_settings,
+        preset_snapshot=_preset_snapshot,
+    )
     _run_integrity_scan = library_maintenance_service.run_integrity_scan
     intention_planner = IntentionPlanner.from_environment()
     journey_planner = JourneyPlanner(intention_planner)
@@ -3528,6 +3514,8 @@ def create_app(
         library_maintenance_service=library_maintenance_service,
         track_metadata_mutations=track_metadata_mutations,
         metadata_batch_service=metadata_batch_service,
+        downloaded_catalog_query_service=downloaded_catalog_query_service,
+        job_workflow_service=job_workflow_service,
         _run_integrity_scan=_run_integrity_scan,
         intention_planner=intention_planner,
         journey_planner=journey_planner,
