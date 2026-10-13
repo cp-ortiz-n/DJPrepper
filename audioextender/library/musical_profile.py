@@ -68,6 +68,7 @@ def musical_profile(song: dict[str, Any]) -> dict[str, Any]:
         "timing": timing,
         "confidence": {
             "key": key_confidence,
+            "energy": 1.0 if energy_source == "serialized" else 0.8 if energy_source == "analysis" else 0.55,
             "roles": 1.0 if song.get("_roles") else 0.75,
             "vocals": 1.0 if vocals_source == "serialized" else 0.7,
             "timing": 1.0 if timing_source == "serialized" else 0.8,
@@ -101,6 +102,7 @@ def _roles(song: dict[str, Any]) -> list[str]:
         roles.add("vocal-safe")
     if "live" in timing or "variable" in timing or float(song.get("tempo_drift") or 0) >= 0.08:
         roles.add("live timing")
+    if "peak" in style or "high-energy" in style or (bpm >= 122 and "ambient" not in roles):
         roles.add("peak-time")
     if "slow" in style or "subtle" in style or (bpm and bpm < 120) or "ambient" in roles:
         roles.add("warm-up")

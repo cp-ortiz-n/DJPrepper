@@ -38,8 +38,11 @@ receipts are inventoried in
 [`background-operation-lifecycles.md`](background-operation-lifecycles.md).
 The single-track processing stage order, progress, cache, artifact, timing, and
 failure contracts are frozen in
-[`processing-pipeline-contracts.md`](processing-pipeline-contracts.md) before the
-ARCH-002B stage extraction.
+[`processing-pipeline-contracts.md`](processing-pipeline-contracts.md). ARCH-002B
+expresses analysis, selection, render, export, and result assembly through
+immutable stage results in `processing/track_processing_stages.py`.
+`TrackProcessor.process()` remains responsible for ordering, input validation,
+and stopping progress after any stage failure.
 
 ARCH-006A moves the remaining substantial route workflows behind application
 services. `DescriptorService` owns durable descriptor inference and vocabulary

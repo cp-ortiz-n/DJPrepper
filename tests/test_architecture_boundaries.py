@@ -103,7 +103,8 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_known_architecture_hotspots_do_not_grow(self) -> None:
         ceilings = {
             "audioextender/web/application.py": 3692,
-            "audioextender/processing/track_processor.py": 895,
+            "audioextender/processing/track_processor.py": 835,
+            "audioextender/processing/track_processing_stages.py": 300,
             "web/app.js": 1878,
             "web/set-builder.js": 675,
         }
@@ -115,19 +116,15 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_track_processor_process_complexity_does_not_grow(self) -> None:
         path = PACKAGE / "processing" / "track_processor.py"
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        function = next(
-            node
-            for node in ast.walk(tree)
-            if isinstance(node, ast.FunctionDef) and node.name == "process" and node.lineno == 213
-        )
+        function = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "process")
         branches = sum(
             isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.Try, ast.Match, ast.BoolOp))
             for node in ast.walk(function)
         )
         self.assertIsNotNone(function.end_lineno)
         assert function.end_lineno is not None
-        self.assertLessEqual(function.end_lineno - function.lineno + 1, 662)
-        self.assertLessEqual(branches, 75)
+        self.assertLessEqual(function.end_lineno - function.lineno + 1, 70)
+        self.assertLessEqual(branches, 5)
 
 
 if __name__ == "__main__":

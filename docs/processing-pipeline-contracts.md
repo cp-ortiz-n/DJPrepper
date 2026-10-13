@@ -1,8 +1,9 @@
 # Track processing compatibility contract
 
 `TrackProcessor.process` is the public transaction boundary for one source
-track. ARCH-002A freezes its current observable behavior before ARCH-002B
-extracts cohesive stage objects. The characterization suite lives in
+track. ARCH-002A froze its observable behavior; ARCH-002B now implements that
+contract through typed analysis, selection, render, export, and result assembly
+stages. The characterization suite lives in
 `tests/test_track_processor_characterization.py`.
 
 ## Stage order and progress
@@ -54,7 +55,7 @@ remains owned by those services.
 
 ## Safe refactoring rule
 
-ARCH-002B may introduce typed analysis, selection, render, export, and result
-stage values, but it must retain this public method signature, stage ordering,
+The typed analysis, selection, render, export, and result stage values retain
+this public method signature, stage ordering,
 progress behavior, cache semantics, artifacts, and failure propagation unless a
 separate intentional compatibility change updates this contract first.

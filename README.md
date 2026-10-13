@@ -561,9 +561,11 @@ processing:
   temporary-file cleanup, reliability data, and vocal-boundary detection.
 - `export_service.py` writes final WAVs, splice previews, candidate auditions,
   cue points, and per-track cue sheets through one testable artifact boundary.
-- `track_processor.py` is the single-track application service connecting
-  analysis, cache, stems, selection, rendering, and export. `main.py` retains
-  only CLI parsing, batch scheduling, summaries, and a compatibility facade.
+- `track_processor.py` is the single-track transaction boundary connecting
+  typed analysis, selection, rendering, export, and result-assembly stages.
+  `track_processing_stages.py` owns immutable handoff models and public-result
+  assembly. `main.py` retains only CLI parsing, batch scheduling, summaries,
+  and a compatibility facade.
 - `candidate_validator.py` applies one final safety and repetition policy to
   both intro and outro candidates.
 - `config_factory.py` owns CLI → preset → `settings.py` precedence and boundary

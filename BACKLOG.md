@@ -126,12 +126,16 @@ change surfaces for new backend features.
   profile and catalog serialization. DJ Library and Set Builder prefer it over
   compatibility fields; cross-runtime golden tests preserve prior musical
   behavior and keep Library match and Set transition scorers distinct.
-- [ ] **ARCH-002B — Decompose `TrackProcessor.process` into cohesive stages.**
+- [x] **ARCH-002B — Decompose `TrackProcessor.process` into cohesive stages.**
   Priority: P1. Effort: L. Risk: High. Dependencies: ARCH-002A. Acceptance:
   analysis, selection, render construction, export, and result assembly have
   typed stage results; `process` remains the public transaction boundary;
   musical/audio outputs and progress behavior match the baseline. Evidence:
   [ARCH-002](docs/architecture-audit.md#arch-002--track-processing-is-concentrated-in-one-long-transaction-script).
+  Completed 2026-10-12: the transaction now delegates to explicit analysis,
+  selection, render, export, and result-assembly stages with immutable typed
+  results. `process()` retains input validation, failure cleanup, and ordering;
+  characterization, stage, integration, and stability tests preserve behavior.
 - [ ] **ARCH-004B — Standardize background lifecycle contracts without forcing
   one executor.** Priority: P1. Effort: L. Risk: High. Dependencies: ARCH-004A,
   ARCH-010A. Acceptance: common status/receipt/cancellation/retry DTOs and
