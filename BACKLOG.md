@@ -209,10 +209,12 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   deduplication, stable playlist identities, source matching, and import lifecycle
   route serialization. It now owns authorized-source inspection, queue controls,
   status polling, submission, and completion feedback as one injected feature.
-  The `app.js` ceiling is ratcheted from 1,878 to 1,710 lines. Remaining: move
-  local-audio, playlist-file, and Creative Commons import orchestration plus
-  processing/review rendering into their feature owners before marking this task
-  complete.
+  Local-audio staging, both local-import entry points, progress, and results now
+  belong to `local-audio-import.js`; playlist matching, permission management,
+  authorized-source handoff, and Creative Commons verification belong to
+  `playlist-import.js`. The `app.js` ceiling is ratcheted from 1,878 to 1,548
+  lines. Remaining: move processing/review rendering into its feature owner
+  before marking this task complete.
 - [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
   Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
   Acceptance: editable set ownership and backup scope are explicit; version-1

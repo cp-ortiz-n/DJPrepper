@@ -76,6 +76,9 @@ use the shared cancellation and stale-response controller. See
 [`docs/architecture.md`](docs/architecture.md) before making frontend changes.
 Authorized source inspection, queue controls, progress polling, and completion
 feedback are owned by `web/import-workspace.js`, not the composition entry point.
+Local-file imports are owned by `web/local-audio-import.js`; playlist matching,
+permissions, and Creative Commons verification are owned by
+`web/playlist-import.js`.
 
 ### Optional local AI for Set Builder
 
@@ -491,6 +494,8 @@ Use this table before searching through the larger composition files:
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
 | Import failure review and retries | `web/import-issues.js` |
 | Authorized/local import browser state, queue coordination, and API routes | `web/import-workspace.js` |
+| Local-audio staging, progress, and workspace import lifecycle | `web/local-audio-import.js` |
+| Playlist matching, permissions, and Creative Commons verification | `web/playlist-import.js` |
 | Cancellable browser polling | `web/background-task-controller.js` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |

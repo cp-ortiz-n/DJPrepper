@@ -12,9 +12,11 @@ import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261013-1';
 import {createSetBuilderFeature} from './set-builder.js?v=20261013-2';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261013-1';
-import {addLocalAudioFiles, createAuthorizedImportFeature, createImportWorkspaceApi, playlistTrackKey} from './import-workspace.js';
+import {createAuthorizedImportFeature, createImportWorkspaceApi} from './import-workspace.js';
 import {createBackgroundTaskController} from './background-task-controller.js';
 import {createImportIssuesFeature} from './import-issues.js';
+import {createLocalAudioImportFeature} from './local-audio-import.js';
+import {createPlaylistImportFeature} from './playlist-import.js';
 
 const api = createApiClient();
 const importWorkspaceApi = createImportWorkspaceApi(api);
@@ -622,6 +624,14 @@ createAuthorizedImportFeature({
   stopTask: stopBackgroundTask,
   escapeHtml,
 }).bind();
+createPlaylistImportFeature({
+  services: frontendServices,
+  importApi: importWorkspaceApi,
+  runTask: runBackgroundTask,
+  clock,
+  escapeHtml,
+  loadImportFailures,
+}).bind();
 
 const musicFilesFeature = createMusicFilesFeature({
   services: frontendServices, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
@@ -637,6 +647,20 @@ const musicFilesFeature = createMusicFilesFeature({
   compactAudioIsWithin, stopCompactAudio, collapsedGenreFolders, bindGenreFolderState,
 });
 const {loadDownloadedLibrary} = musicFilesFeature;
+const localAudioImportFeature = createLocalAudioImportFeature({
+  services: frontendServices,
+  importApi: importWorkspaceApi,
+  runTask: runBackgroundTask,
+  stopTask: stopBackgroundTask,
+  escapeHtml,
+  showMusicFiles: () => showView('downloads-view'),
+  clearWorkspaceFiles: () => {
+    stagedFiles = [];
+    describeFiles();
+  },
+  loadMusicFiles: loadDownloadedLibrary,
+});
+localAudioImportFeature.bind();
 const djLibraryFeature = createDjLibraryFeature({
   services: frontendServices, getAppConfig: () => appConfig, libraryUiState, libraryRequestState,
   getLoadedAt: () => libraryLoadedAt, setLoadedAt: value => { libraryLoadedAt=value; },
@@ -758,20 +782,7 @@ form.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!stagedFiles.length) { $('#upload-message').textContent = 'Choose at least one track.'; return; }
   if (workspaceMode === 'import') {
-    const button = $('#workspace-import-submit'); button.disabled = true; button.textContent = 'Uploading…';
-    const importData = new FormData();
-    stagedFiles.forEach(file => importData.append('files', file, file.name));
-    importData.append('playlist_name', $('#workspace-import-playlist').value.trim() || 'Local Playlist');
-    try {
-      const response = await fetch('/api/imports/local-audio', {method:'POST', body:importData});
-      const payload = await response.json();
-      if (!response.ok) throw new Error(apiErrorMessage(payload, 'Could not start the import.'));
-      $('#upload-message').textContent = `Converting ${payload.track_count} tracks from ${payload.playlist_name}…`;
-      pollWorkspaceLocalAudioImport(payload.batch_id);
-    } catch (error) {
-      button.disabled = false; button.textContent = 'Convert and organize';
-      $('#upload-message').textContent = error.message;
-    }
+    await localAudioImportFeature.startWorkspace(stagedFiles, $('#workspace-import-playlist').value);
     return;
   }
   const data = new FormData();
@@ -824,179 +835,6 @@ document.addEventListener('keydown', event => {
 $('#restore-batch-defaults').addEventListener('click', () => {
   applyEffectiveSettings(appConfig.effective);
   $('#upload-message').textContent = 'Saved processing defaults restored for this batch.';
-});
-
-let localAudioFiles = [];
-function stageLocalAudio(files) {
-  localAudioFiles = addLocalAudioFiles(localAudioFiles, files);
-  const root = $('#local-audio-staged');
-  root.innerHTML = localAudioFiles.length
-    ? `${localAudioFiles.slice(0,20).map(file => `<div><strong>${escapeHtml(file.name)}</strong><span>${(file.size/1024/1024).toFixed(1)} MB</span></div>`).join('')}${localAudioFiles.length > 20 ? `<span>+ ${localAudioFiles.length-20} more tracks</span>` : ''}`
-    : '<span>No files selected.</span>';
-  $('#local-audio-import-submit').disabled = !localAudioFiles.length;
-  $('#local-audio-import-message').textContent = localAudioFiles.length ? `${localAudioFiles.length} track${localAudioFiles.length===1?'':'s'} ready to convert.` : '';
-}
-$('#local-audio-files').addEventListener('change', event => stageLocalAudio(event.target.files));
-$('#local-audio-folder').addEventListener('change', event => {
-  const files = [...event.target.files];
-  const folder = files[0]?.webkitRelativePath?.split('/')[0];
-  if (folder && $('#local-playlist-name').value === 'Local Playlist') $('#local-playlist-name').value = folder;
-  stageLocalAudio(files);
-});
-function pollLocalAudioImport(batchId) {
-  runBackgroundTask({key:'local-audio-import',url:`/api/imports/local-audio/${batchId}`,interval:900,update:state=>{const progress=$('#local-audio-import-progress');progress.hidden=false;progress.querySelector('span').style.width=`${Math.max(2,Number(state.progress||0))}%`;progress.querySelector('small').textContent=`${state.stage} · ${Math.round(state.progress||0)}%`;},complete:state=>{const button=$('#local-audio-import-submit');button.disabled=false;const result=$('#local-audio-import-result');result.hidden=false;if(state.status==='complete'){
-    const counts = state.counts || {};
-    const genres = {};
-    (state.results || []).filter(item => item.status === 'imported').forEach(item => { const genre=item.genre_category||'Other'; genres[genre]=(genres[genre]||0)+1; });
-    result.innerHTML = `<strong>${escapeHtml(state.playlist_name)} imported</strong><span>${counts.imported||0} converted · ${counts.duplicates||0} duplicates skipped · ${counts.failed||0} failed</span>${Object.keys(genres).length?`<span>${escapeHtml(Object.entries(genres).map(([genre,count])=>`${genre} (${count})`).join(' · '))}</span>`:''}<button type="button" class="button secondary view-local-imports">Open Music Files</button>`;
-    result.querySelector('.view-local-imports').onclick = () => showView('downloads-view');
-    localAudioFiles=[]; stageLocalAudio([]); $('#local-audio-files').value=''; $('#local-audio-folder').value='';
-  } else result.innerHTML=`<strong>Import failed</strong><span>${escapeHtml(state.error||'The local playlist could not be imported.')}</span>`;},fail:error=>{$('#local-audio-import-submit').disabled=false;$('#local-audio-import-message').textContent=error.message;}});
-}
-function pollWorkspaceLocalAudioImport(batchId) {
-  runBackgroundTask({key:'workspace-local-import',url:`/api/imports/local-audio/${batchId}`,interval:900,update:state=>{$('#upload-message').textContent=`${state.stage} · ${Math.round(state.progress||0)}%`;},complete:async state=>{const button=$('#workspace-import-submit');button.disabled=false;button.textContent='Convert and organize';if(state.status==='complete'){
-    const counts = state.counts || {};
-    $('#upload-message').textContent = `${counts.imported || 0} WAV${counts.imported === 1 ? '' : 's'} imported · ${counts.duplicates || 0} duplicates skipped · ${counts.failed || 0} failed. Open Music Files to review them.`;
-    stagedFiles = []; describeFiles(); await loadDownloadedLibrary();
-  }else $('#upload-message').textContent=state.error||'The local playlist import failed.';},fail:error=>{const button=$('#workspace-import-submit');button.disabled=false;button.textContent='Convert and organize';$('#upload-message').textContent=error.message;}});
-}
-$('#local-audio-import-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  if (!localAudioFiles.length) return;
-  stopBackgroundTask('local-audio-import');
-  const button=$('#local-audio-import-submit'); button.disabled=true; button.textContent='Uploading…';
-  const data=new FormData(); localAudioFiles.forEach(file=>data.append('files',file,file.name)); data.append('playlist_name',$('#local-playlist-name').value.trim()||'Local Playlist');
-  const response=await fetch('/api/imports/local-audio',{method:'POST',body:data}); const payload=await response.json(); button.textContent='Convert and organize';
-  if(!response.ok){button.disabled=false;$('#local-audio-import-message').textContent=apiErrorMessage(payload,'Could not start the local import.');return;}
-  $('#local-audio-import-message').textContent=`Converting ${payload.track_count} tracks from ${payload.playlist_name}…`;
-  pollLocalAudioImport(payload.batch_id);
-});
-
-let spotifyMatchTimer = null;
-const playlistPermissions = new Map();
-let currentPlaylistMatches = [];
-let currentPlaylistName = 'Imported Playlist';
-function updatePlaylistSelectionCount() {
-  const selected = $$('#spotify-match-results .match-select:checked').length;
-  $('#spotify-selected-count').textContent = `${selected} selected`;
-  const boxes = $$('#spotify-match-results .match-select');
-  $('#spotify-select-all').checked = boxes.length > 0 && selected === boxes.length;
-  $('#spotify-select-all').indeterminate = selected > 0 && selected < boxes.length;
-}
-function renderSpotifyMatches(results) {
-  currentPlaylistMatches = results;
-  const root = $('#spotify-match-results');
-  root.hidden = false;
-  root.innerHTML = results.map((track, index) => {
-    const key = playlistTrackKey(track, index);
-    const permission = playlistPermissions.get(key) || 'unverified';
-    const duration = track.youtube_duration ? clock(track.youtube_duration) : 'unknown length';
-    const sourceDuration = track.duration_ms ? clock(track.duration_ms / 1000) : 'unknown source length';
-    const match = track.youtube_url
-      ? `<a href="${escapeHtml(track.youtube_url)}" target="_blank" rel="noreferrer">Open YouTube ↗</a><button type="button" class="button secondary use-youtube-match" data-url="${escapeHtml(track.youtube_url)}" data-key="${escapeHtml(key)}" ${permission === 'unverified' ? 'disabled' : ''}>Use for authorized import</button>`
-      : '<span class="match-missing">No likely match found</span>';
-    const sourceDetails = [track.genre_category, track.genre, track.tempo ? `${track.tempo} BPM` : ''].filter(Boolean).join(' · ');
-    const quality = track.youtube_url ? `${track.match_score || 0}% match` : 'No reliable match';
-    const warnings = (track.match_warnings || []).join(' · ');
-    return `<article data-key="${escapeHtml(key)}"><label class="match-check"><input class="match-select" type="checkbox" aria-label="Select ${escapeHtml(track.title)}"></label><span class="match-number">${index + 1}</span><div class="match-copy"><strong>${escapeHtml(track.title)}</strong><small>${escapeHtml(track.artist)}${sourceDetails ? ` · ${escapeHtml(sourceDetails)}` : ''} · source ${sourceDuration}</small><p>${track.youtube_title ? escapeHtml(track.youtube_title) : 'No YouTube result'} · YouTube ${duration} · ${quality}</p>${warnings ? `<p class="match-warning">${escapeHtml(warnings)}</p>` : ''}<label class="match-permission-label">Permission<select class="match-permission"><option value="unverified" ${permission === 'unverified' ? 'selected' : ''}>Unverified</option><option value="own-upload" ${permission === 'own-upload' ? 'selected' : ''}>I own this recording</option><option value="creative-commons" ${permission === 'creative-commons' ? 'selected' : ''}>Creative Commons</option><option value="public-domain" ${permission === 'public-domain' ? 'selected' : ''}>Public domain</option><option value="permission" ${permission === 'permission' ? 'selected' : ''}>Direct permission</option></select></label></div><div class="match-actions">${match}</div></article>`;
-  }).join('');
-  $('#spotify-match-toolbar').hidden = false;
-  root.querySelectorAll('.match-select').forEach(box => box.addEventListener('change', updatePlaylistSelectionCount));
-  root.querySelectorAll('.match-permission').forEach(select => select.addEventListener('change', () => {
-    const card = select.closest('article');
-    playlistPermissions.set(card.dataset.key, select.value);
-    const useButton = card.querySelector('.use-youtube-match');
-    if (useButton) useButton.disabled = select.value === 'unverified';
-  }));
-  root.querySelectorAll('.use-youtube-match').forEach(button => button.addEventListener('click', () => {
-    const permission = playlistPermissions.get(button.dataset.key) || 'unverified';
-    if (permission === 'unverified') return;
-    $('#authorized-url').value = button.dataset.url;
-    $('#rights-basis').value = permission;
-    $('#authorized-url').focus();
-    $('#authorized-import-message').textContent = 'Match and permission copied above. Confirm your rights before importing it.';
-    $('#authorized-import-form').scrollIntoView({behavior:'smooth', block:'center'});
-  }));
-  updatePlaylistSelectionCount();
-}
-$('#spotify-select-all').addEventListener('change', event => {
-  $$('#spotify-match-results .match-select').forEach(box => { box.checked = event.target.checked; });
-  updatePlaylistSelectionCount();
-});
-$('#spotify-apply-permission').addEventListener('click', () => {
-  const permission = $('#spotify-bulk-permission').value;
-  $$('#spotify-match-results article').forEach(card => {
-    if (!card.querySelector('.match-select').checked) return;
-    card.querySelector('.match-permission').value = permission;
-    playlistPermissions.set(card.dataset.key, permission);
-    const useButton = card.querySelector('.use-youtube-match');
-    if (useButton) useButton.disabled = permission === 'unverified';
-  });
-  $('#spotify-playlist-message').textContent = `Permission updated for ${$$('#spotify-match-results .match-select:checked').length} selected tracks.`;
-});
-async function pollCreativeCommonsBatch(batchId) {
-  const state = await fetch(`/api/imports/creative-commons/${batchId}`).then(response => response.json());
-  const root = $('#creative-commons-result'); root.hidden = false;
-  const counts = state.counts || {};
-  root.innerHTML = `<strong>${escapeHtml(state.stage)}</strong><span>${Math.round(state.progress || 0)}% · ${counts.downloaded || 0} downloaded · ${counts.already_downloaded || 0} already present · ${counts.skipped_not_creative_commons || 0} not Creative Commons · ${counts.failed || 0} failed</span>`;
-  if (state.status === 'processing') {
-    setTimeout(() => pollCreativeCommonsBatch(batchId), 1200);
-    return;
-  }
-  $('#download-creative-commons').disabled = false;
-  if (state.status === 'complete') {
-    const folders = Object.entries(state.genre_summary || {}).map(([genre,count]) => `${genre} (${count})`).join(' · ');
-    root.innerHTML += `${folders ? `<span>${escapeHtml(state.playlist_name || currentPlaylistName)} folders: ${escapeHtml(folders)}</span>` : ''}<div><a class="button secondary" href="/api/imports/creative-commons/${batchId}/report">Download ${escapeHtml(state.playlist_name || currentPlaylistName)} report</a>${(counts.downloaded || 0) + (counts.already_downloaded || 0) > 0 ? `<a class="button" href="/api/imports/creative-commons/${batchId}/download">Download ${escapeHtml(state.playlist_name || currentPlaylistName)} WAV ZIP</a>` : ''}</div>`;
-    await loadImportFailures();
-  } else {
-    root.innerHTML += `<p>${escapeHtml(state.error || 'Creative Commons import failed.')}</p>`;
-  }
-}
-$('#download-creative-commons').addEventListener('click', async () => {
-  const tracks = currentPlaylistMatches.filter(track => track.youtube_url).map(track => ({url:track.youtube_url, title:track.title, artist:track.artist, spotify_uri:track.spotify_uri || '', genre:track.genre || '', genre_category:track.genre_category || 'Other', artwork_url:track.artwork_url || ''}));
-  if (!tracks.length) return;
-  const button = $('#download-creative-commons'); button.disabled = true;
-  $('#creative-commons-result').hidden = false;
-  $('#creative-commons-result').textContent = `Checking Creative Commons licenses for ${tracks.length} matches…`;
-  const response = await fetch('/api/imports/creative-commons', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({tracks, playlist_name:currentPlaylistName})});
-  const payload = await response.json();
-  if (!response.ok) { button.disabled = false; $('#creative-commons-result').textContent = apiErrorMessage(payload, 'Could not start verification.'); return; }
-  pollCreativeCommonsBatch(payload.batch_id);
-});
-async function pollSpotifyMatches(matchId) {
-  const response = await fetch(`/api/imports/playlist-matches/${matchId}`);
-  const state = await response.json();
-  const progress = $('#spotify-playlist-progress'); progress.hidden = false;
-  progress.querySelector('span').style.width = `${Math.max(2, Number(state.progress || 0))}%`;
-  progress.querySelector('small').textContent = `${state.stage} · ${Math.round(state.progress || 0)}%`;
-  if (state.status === 'processing') {
-    spotifyMatchTimer = setTimeout(() => pollSpotifyMatches(matchId), 1000);
-    return;
-  }
-  if (state.status === 'complete') {
-    currentPlaylistName = state.playlist_name || currentPlaylistName;
-    $('#spotify-playlist-message').textContent = `${state.results.length} tracks matched. Verify titles and durations before using any result.`;
-    renderSpotifyMatches(state.results);
-  } else {
-    $('#spotify-playlist-message').textContent = state.error || 'Playlist matching failed.';
-  }
-}
-$('#playlist-csv-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  clearTimeout(spotifyMatchTimer);
-  const file = $('#playlist-csv-file').files[0];
-  if (!file) return;
-  const button = $('#playlist-csv-submit'); button.disabled = true;
-  $('#spotify-match-results').hidden = true;
-  $('#spotify-playlist-message').textContent = `Reading ${file.name}…`;
-  const data = new FormData(); data.append('file', file);
-  const response = await fetch('/api/imports/playlist-file/matches', {method:'POST', body:data});
-  const payload = await response.json();
-  if (!response.ok) { button.disabled = false; $('#spotify-playlist-message').textContent = apiErrorMessage(payload, 'Could not read that CSV.'); return; }
-  currentPlaylistName = payload.playlist_name || file.name.replace(/\.csv$/i, '') || 'Imported Playlist';
-  $('#spotify-playlist-message').textContent = `${payload.track_count} tracks loaded from ${currentPlaylistName}. Finding YouTube matches…`;
-  await pollSpotifyMatches(payload.match_id);
-  button.disabled = false;
 });
 
 function jobElement(job) {

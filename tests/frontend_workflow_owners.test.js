@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { createBackgroundTaskController } from '../web/background-task-controller.js';
 import { importFailureKind } from '../web/import-issues.js';
+import { createLocalAudioImportFeature } from '../web/local-audio-import.js';
+import { creativeCommonsTracks } from '../web/playlist-import.js';
 import {
   authorizedSourceUrls,
   createAuthorizedImportFeature,
@@ -174,4 +176,77 @@ test('authorized import feature owns guidance, submission, and completion feedba
   assert.equal(submit.disabled, false);
   assert.equal(form.resetCalled, true);
   assert.equal(jobsLoaded, 1);
+});
+
+test('local audio feature owns workspace import lifecycle and refresh', async () => {
+  const elements = new Map([
+    ['#workspace-import-submit', { disabled: false, textContent: '' }],
+    ['#upload-message', { textContent: '' }],
+  ]);
+  let submitted;
+  let task;
+  let cleared = 0;
+  let refreshed = 0;
+  const feature = createLocalAudioImportFeature({
+    services: { $: (selector) => elements.get(selector) },
+    importApi: {
+      startLocal: async (data) => {
+        submitted = data;
+        return { batch_id: 'local-1', track_count: 2, playlist_name: 'Warmup' };
+      },
+      localStatus: async () => ({}),
+    },
+    runTask: (options) => {
+      task = options;
+    },
+    stopTask() {},
+    escapeHtml: String,
+    showMusicFiles() {},
+    clearWorkspaceFiles: () => {
+      cleared += 1;
+    },
+    loadMusicFiles: async () => {
+      refreshed += 1;
+    },
+  });
+  const files = [
+    Object.assign(new Blob(['one']), { name: 'one.mp3', lastModified: 1 }),
+    Object.assign(new Blob(['two']), { name: 'two.wav', lastModified: 2 }),
+  ];
+
+  await feature.startWorkspace(files, 'Warmup');
+  assert.deepEqual(
+    submitted.getAll('files').map((file) => file.name),
+    ['one.mp3', 'two.wav'],
+  );
+  assert.equal(submitted.get('playlist_name'), 'Warmup');
+  assert.equal(task.key, 'workspace-local-import');
+  assert.equal(elements.get('#upload-message').textContent, 'Converting 2 tracks from Warmup…');
+
+  task.update({ stage: 'Converting', progress: 42 });
+  assert.equal(elements.get('#upload-message').textContent, 'Converting · 42%');
+  await task.complete({ status: 'complete', counts: { imported: 2, duplicates: 0, failed: 0 } });
+  assert.equal(cleared, 1);
+  assert.equal(refreshed, 1);
+  assert.match(elements.get('#upload-message').textContent, /2 WAVs imported/);
+});
+
+test('playlist import sends only downloadable matches to Creative Commons verification', () => {
+  assert.deepEqual(
+    creativeCommonsTracks([
+      { title: 'Ready', artist: 'DJ', youtube_url: 'https://youtu.be/ready', genre: 'House' },
+      { title: 'Missing', artist: 'DJ', youtube_url: '' },
+    ]),
+    [
+      {
+        url: 'https://youtu.be/ready',
+        title: 'Ready',
+        artist: 'DJ',
+        spotify_uri: '',
+        genre: 'House',
+        genre_category: 'Other',
+        artwork_url: '',
+      },
+    ],
+  );
 });

@@ -90,6 +90,7 @@ export function createAuthorizedImportFeature({ services, importApi, Queue, cloc
         $('#use-source-match').onclick = () => {
           $('#authorized-url').value = metadata.youtube_url;
           $('#source-url-guidance').textContent =
+            'Matched from Spotify. Confirm the recording authorization, then import it as WAV.';
           $('#authorized-url').focus();
         };
       } else
