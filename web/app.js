@@ -17,9 +17,11 @@ import {createBackgroundTaskController} from './background-task-controller.js';
 import {createImportIssuesFeature} from './import-issues.js';
 import {createLocalAudioImportFeature} from './local-audio-import.js';
 import {createPlaylistImportFeature} from './playlist-import.js';
+import {annotateProcessingJobs, createProcessingWorkspaceApi, createProcessingWorkspaceController} from './processing-workspace.js';
 
 const api = createApiClient();
 const importWorkspaceApi = createImportWorkspaceApi(api);
+const processingWorkspaceApi = createProcessingWorkspaceApi(api);
 // Keep legacy call sites non-blocking and visually consistent while workflows migrate
 // to structured inline messages and richer recovery actions.
 window.alert = message => notify(message, 'danger');
@@ -161,11 +163,7 @@ const fileInput = $('#files');
 const dropZone = $('#drop-zone');
 const jobsRoot = $('#jobs');
 const template = $('#job-template');
-let workspacePollTimer = null;
-let workspacePollInFlight = false;
-let workspaceAnalysisRefreshAt = 0;
-let jobsLoadPromise = null;
-let queueFilter = 'active';
+let processingWorkspaceController = null;
 let appConfig = null;
 let arrangementPreview = null;
 let stagedFiles = [];
@@ -683,6 +681,13 @@ const reportingFeature = createReportingFeature({
   services: frontendServices, loadJobs, renderLibraryIntelligence, startKeyAnalysis,
 });
 const {loadAnalysis, loadReports} = reportingFeature;
+processingWorkspaceController = createProcessingWorkspaceController({
+  workspaceApi: processingWorkspaceApi,
+  render: renderProcessingWorkspace,
+  onAnalysisRefresh: jobs => loadAnalysis(jobs),
+  clock: window,
+  documentRef: document,
+});
 const setBuilderFeature = createSetBuilderFeature({
   services: frontendServices, option, escapeHtml, clock, decodedAudio, WaveSurfer,
   compatibility, harmonicCompatibility, camelotKey, formatLibraryKey,
@@ -912,31 +917,32 @@ function jobElement(job) {
 }
 
 async function jobAction(id, action, body = null) {
-  const options = { method:'POST' };
-  if (body) { options.headers = {'Content-Type':'application/json'}; options.body = JSON.stringify(body); }
-  const response = await fetch(`/api/jobs/${id}/${action}`, options);
-  if (!response.ok) { alert(apiErrorMessage(await response.json(), `Could not ${action} job.`)); return false; }
-  await loadJobs();
-  return true;
+  try {
+    await processingWorkspaceApi.action(id, action, body || undefined);
+    await loadJobs();
+    return true;
+  } catch (error) {
+    alert(error.message || `Could not ${action} job.`);
+    return false;
+  }
 }
-async function removeJob(id) { if (!await confirmAction('Remove this queue entry? Audio files will remain in output.', {title:'Remove queue entry', acceptLabel:'Remove', danger:true})) return; await fetch(`/api/jobs/${id}`, {method:'DELETE'}); await loadJobs(); }
+async function removeJob(id) { if (!await confirmAction('Remove this queue entry? Audio files will remain in output.', {title:'Remove queue entry', acceptLabel:'Remove', danger:true})) return; await processingWorkspaceApi.remove(id); await loadJobs(); }
 $('#clear-queue').addEventListener('click', async () => {
   if (!await confirmAction('Clear queued and dismissed entries? A track currently processing will continue, and completed audio remains in Library.', {title:'Clear queue history', acceptLabel:'Clear', danger:true})) return;
   const button = $('#clear-queue'); button.disabled = true; button.textContent = 'Clearing…';
   try {
-    const response = await fetch('/api/jobs/clear', {method:'POST'});
-    if (!response.ok) throw new Error(apiErrorMessage(await response.json(), 'Could not clear the queue.'));
+    await processingWorkspaceApi.clear();
     await Promise.all([loadJobs(), loadAnalysis()]);
   } catch (error) { alert(error.message); }
   finally { button.textContent = 'Clear queue'; }
 });
 async function moveJob(id, offset) {
-  const jobs = await fetch('/api/jobs').then(r => r.json());
+  const jobs = annotateProcessingJobs(await processingWorkspaceApi.list());
   const queued = jobs.filter(job => job.status === 'queued').sort((a,b) => a.queue_index - b.queue_index);
   const index = queued.findIndex(job => job.id === id); const target = index + offset;
   if (index < 0 || target < 0 || target >= queued.length) return;
   [queued[index], queued[target]] = [queued[target], queued[index]];
-  await fetch('/api/jobs/reorder', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job_ids:queued.map(job => job.id)})});
+  await processingWorkspaceApi.reorder(queued.map(job => job.id));
   await loadJobs();
 }
 
@@ -1024,12 +1030,7 @@ function createWaveform(container, timeline, arrangement, wave, cues, media) {
 }
 
 async function loadReviews() {
-  const jobs = await fetch('/api/jobs').then(r => r.json());
-  const generations = {};
-  [...jobs].reverse().forEach(job => {
-    const key = job.source_name.toLowerCase();
-    generations[key] = (generations[key] || 0) + 1; job._generation = generations[key];
-  });
+  const jobs = annotateProcessingJobs(await processingWorkspaceApi.list());
   const reviewJobs = jobs.filter(job => {
     try { return job.status === 'complete' && job.review_status === 'pending' && JSON.parse(job.config_json || '{}').review_candidates; }
     catch (_) { return false; }
@@ -1040,8 +1041,8 @@ async function loadReviews() {
   await Promise.all(reviewJobs.map(async job => {
     const card = root.querySelector(`[data-job-id="${job.id}"]`);
     const [data, feedback] = await Promise.all([
-      fetch(`/api/jobs/${job.id}/candidates`).then(r => r.json()),
-      fetch(`/api/jobs/${job.id}/feedback`).then(r => r.json()),
+      processingWorkspaceApi.candidates(job.id),
+      processingWorkspaceApi.feedback(job.id),
     ]);
     renderCandidates(card.querySelector('.candidate-studio'), job, data, feedback);
     card.querySelector('.regenerate-review').onclick = async () => {
@@ -1050,11 +1051,11 @@ async function loadReviews() {
     };
     card.querySelector('.reject-review').onclick = async () => {
       if (!await confirmAction('Dismiss this candidate review? The processed track remains in Library.', {title:'Dismiss candidate review', acceptLabel:'Dismiss'})) return;
-      const response = await fetch(`/api/jobs/${job.id}/review/reject`, {method:'POST'});
-      if (response.ok) {
+      try {
+        await processingWorkspaceApi.rejectReview(job.id);
         await Promise.all([loadReviews(), loadJobs()]);
         showView('workspace-view');
-      }
+      } catch (error) { alert(error.message || 'Could not dismiss this review.'); }
     };
   }));
 }
@@ -1107,8 +1108,9 @@ function renderCandidates(root, job, data, feedback = []) {
     const position = side.dataset.position;
     const rank = Number(card.dataset.rank);
     card.querySelector('[data-choose]').onclick = async () => {
-      const response = await fetch(`/api/jobs/${job.id}/feedback`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({position,candidate_rank:rank,accepted:true,tags:card.querySelector('.tags').value,notes:card.querySelector('.notes').value})});
-      if (!response.ok) return;
+      try {
+        await processingWorkspaceApi.saveFeedback(job.id, {position,candidate_rank:rank,accepted:true,tags:card.querySelector('.tags').value,notes:card.querySelector('.notes').value});
+      } catch (_) { return; }
       selections[position] = rank;
       delete customSelections[position];
       side.querySelectorAll('.candidate-card').forEach(optionCard => {
@@ -1293,8 +1295,8 @@ function renderCandidates(root, job, data, feedback = []) {
       body.clear_insertion = true;
     }
     body.review_candidates = true;
-    const response = await fetch(`/api/jobs/${job.id}/reprocess`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if (!response.ok) { submit.disabled = false; submit.nextElementSibling.textContent = 'Could not queue this selection.'; return; }
+    try { await processingWorkspaceApi.reprocess(job.id, body); }
+    catch (_) { submit.disabled = false; submit.nextElementSibling.textContent = 'Could not queue this selection.'; return; }
     await loadJobs(); showView('workspace-view');
   };
 }
@@ -1411,84 +1413,35 @@ function renderCues(root, jobId, cues) {
 function jobRenderSignature(job) {
   return JSON.stringify([job.status,job.progress,job.stage,job.error,job.pause_requested,job.queue_index,job.review_status,job.updated_at]);
 }
-function scheduleWorkspacePoll(active) {
-  clearTimeout(workspacePollTimer); workspacePollTimer = null;
-  if (!active) return;
-  const delay = document.hidden ? 15000 : 2000;
-  workspacePollTimer = setTimeout(async () => {
-    if (workspacePollInFlight) return scheduleWorkspacePoll(true);
-    workspacePollInFlight = true;
-    try {
-      const jobs = await loadJobs();
-      const stillActive = jobs.some(job => ['queued','processing'].includes(job.status));
-      if (!document.hidden && Date.now() >= workspaceAnalysisRefreshAt) {
-        workspaceAnalysisRefreshAt = Date.now() + 15000;
-        await loadAnalysis(jobs);
-      }
-      if (!stillActive) clearTimeout(workspacePollTimer);
-    } finally { workspacePollInFlight = false; }
-  }, delay);
-}
 document.addEventListener('visibilitychange', () => {
-  if (workspacePollTimer) loadJobs();
+  processingWorkspaceController?.refreshWhenVisible();
 });
 async function loadJobs() {
-  if (jobsLoadPromise) return jobsLoadPromise;
-  jobsLoadPromise = loadJobsSnapshot().finally(() => { jobsLoadPromise = null; });
-  return jobsLoadPromise;
+  return processingWorkspaceController?.load() || [];
 }
-async function loadJobsSnapshot() {
-  const jobs = await fetch('/api/jobs', {cache:'no-store'}).then(r => r.json());
-  const counts = {}; [...jobs].reverse().forEach(job => { const key=job.source_name.toLowerCase(); counts[key]=(counts[key]||0)+1; job._generation=counts[key]; });
-  const completedDurations = jobs.filter(job => job.status==='complete').map(job => (new Date(job.updated_at)-new Date(job.created_at))/1000).filter(value => value>0);
-  const average = completedDurations.length ? completedDurations.reduce((a,b)=>a+b,0)/completedDurations.length : 120;
-  let queuePosition=0; [...jobs].reverse().forEach(job => { if(job.status==='queued'){ queuePosition++; job._eta=`~${Math.round(queuePosition*average/60)} min`; } });
-  const priority = {processing:0, queued:1, review:2, failed:3, canceled:4};
-  const newestByTrack = new Map();
-  jobs.forEach(job => {
-    const key = job.source_name.toLowerCase();
-    if (!newestByTrack.has(key) || job.id > newestByTrack.get(key)) newestByTrack.set(key, job.id);
-  });
-  const categories = {
-    active: jobs.filter(job => ['queued','processing'].includes(job.status)),
-    attention: jobs.filter(job => job.review_status === 'pending' || job.review_status === 'rejected' || ['failed','canceled'].includes(job.status)),
-    history: jobs.filter(job => job.status === 'complete' && !['pending','rejected'].includes(job.review_status) && newestByTrack.get(job.source_name.toLowerCase()) === job.id),
-  };
+async function renderProcessingWorkspace({jobs, categories, filter, sorted, visible}) {
   Object.entries(categories).forEach(([name,items]) => {
     const count = $(`#queue-${name}-count`); if (count) count.textContent = items.length;
   });
-  const filteredJobs = categories[queueFilter].sort((a,b) => {
-    const aState = a.review_status === 'pending' ? 'review' : a.status;
-    const bState = b.review_status === 'pending' ? 'review' : b.status;
-    const statusOrder = (priority[aState] ?? 9) - (priority[bState] ?? 9);
-    if (statusOrder) return statusOrder;
-    if (a.status === 'queued') return (a.queue_index ?? 9999) - (b.queue_index ?? 9999);
-    return b.id - a.id;
-  });
-  const visibleJobs = queueFilter === 'history' ? filteredJobs.slice(0, 20) : filteredJobs;
   const processingCount=jobs.filter(job=>job.status==='processing').length;
   const queuedCount=jobs.filter(job=>job.status==='queued').length;
-  $('#queue-count').textContent = queueFilter === 'active'
+  $('#queue-count').textContent = filter === 'active'
     ? `${processingCount} analyzing · ${queuedCount} queued`
-    : queueFilter === 'history' && filteredJobs.length > visibleJobs.length
-    ? `${visibleJobs.length} newest of ${filteredJobs.length}`
-    : `${visibleJobs.length} track${visibleJobs.length === 1 ? '' : 's'}`;
+    : filter === 'history' && sorted.length > visible.length
+    ? `${visible.length} newest of ${sorted.length}`
+    : `${visible.length} track${visible.length === 1 ? '' : 's'}`;
   $('#clear-queue').disabled = !jobs.some(job => !job.is_active);
   const emptyMessages = {active:'No tracks are currently queued or processing.',attention:'Nothing needs your attention.',history:'No completed processing history yet.'};
-  if (visibleJobs.length) {
+  if (visible.length) {
     const existing=new Map([...jobsRoot.querySelectorAll('.job-card[data-job-id]')].map(node=>[Number(node.dataset.jobId),node]));
-    const nodes=visibleJobs.map(job=>{const current=existing.get(Number(job.id));return current?.dataset.renderSignature===jobRenderSignature(job)?current:jobElement(job);});
+    const nodes=visible.map(job=>{const current=existing.get(Number(job.id));return current?.dataset.renderSignature===jobRenderSignature(job)?current:jobElement(job);});
     jobsRoot.replaceChildren(...nodes);
-  } else jobsRoot.replaceChildren(Object.assign(document.createElement('div'), { className:'empty', textContent:emptyMessages[queueFilter] }));
-  const active = jobs.some(job => ['queued', 'processing'].includes(job.status));
-  scheduleWorkspacePoll(active);
-  return jobs;
+  } else jobsRoot.replaceChildren(Object.assign(document.createElement('div'), { className:'empty', textContent:emptyMessages[filter] }));
 }
 
 $$('[data-queue-filter]').forEach(button => button.addEventListener('click', () => {
-  queueFilter = button.dataset.queueFilter;
   $$('[data-queue-filter]').forEach(item => item.classList.toggle('active', item === button));
-  loadJobs();
+  processingWorkspaceController.setFilter(button.dataset.queueFilter);
 }));
 
 function libraryReprocessForm(job, config) {

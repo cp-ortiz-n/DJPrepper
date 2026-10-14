@@ -213,6 +213,7 @@ map reflects the current layout; it does not propose moving code.
 │   ├── import-workspace.js
 │   ├── local-audio-import.js
 │   ├── playlist-import.js
+│   ├── processing-workspace.js
 │   ├── index.html
 │   ├── music-files.js
 │   ├── playback.js

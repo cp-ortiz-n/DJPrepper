@@ -6,11 +6,159 @@ import { importFailureKind } from '../web/import-issues.js';
 import { createLocalAudioImportFeature } from '../web/local-audio-import.js';
 import { creativeCommonsTracks } from '../web/playlist-import.js';
 import {
+  annotateProcessingJobs,
+  categorizeProcessingJobs,
+  createProcessingWorkspaceApi,
+  createProcessingWorkspaceController,
+  sortProcessingJobs,
+} from '../web/processing-workspace.js';
+import {
   authorizedSourceUrls,
   createAuthorizedImportFeature,
   createImportWorkspaceApi,
   sourceUrlType,
 } from '../web/import-workspace.js';
+
+test('processing workspace derives generations, ETA, and durable queue groups', () => {
+  const jobs = [
+    {
+      id: 5,
+      source_name: 'Same.wav',
+      status: 'processing',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:01:00Z',
+    },
+    {
+      id: 4,
+      source_name: 'Other.wav',
+      status: 'queued',
+      queue_index: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      id: 3,
+      source_name: 'Same.wav',
+      status: 'complete',
+      review_status: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:02:00Z',
+    },
+    {
+      id: 2,
+      source_name: 'Review.wav',
+      status: 'complete',
+      review_status: 'pending',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:02:00Z',
+    },
+    {
+      id: 1,
+      source_name: 'Same.wav',
+      status: 'complete',
+      review_status: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:02:00Z',
+    },
+    {
+      id: 0,
+      source_name: 'Finished.wav',
+      status: 'complete',
+      review_status: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:02:00Z',
+    },
+  ];
+  annotateProcessingJobs(jobs);
+  assert.equal(jobs[0]._generation, 3);
+  assert.equal(jobs[2]._generation, 2);
+  assert.equal(jobs[1]._eta, '~2 min');
+  const groups = categorizeProcessingJobs(jobs);
+  assert.deepEqual(
+    groups.active.map((job) => job.id),
+    [5, 4],
+  );
+  assert.deepEqual(
+    groups.attention.map((job) => job.id),
+    [2],
+  );
+  assert.deepEqual(
+    groups.history.map((job) => job.id),
+    [0],
+  );
+  assert.deepEqual(
+    sortProcessingJobs(groups.active).map((job) => job.id),
+    [5, 4],
+  );
+});
+
+test('processing workspace API owns queue and candidate-review routes', async () => {
+  const calls = [];
+  const client = {
+    get: async (path, options) => {
+      calls.push(['get', path, options]);
+      return [];
+    },
+    post: async (path, body) => {
+      calls.push(['post', path, body]);
+      return {};
+    },
+    request: async (path, options) => {
+      calls.push(['request', path, options]);
+      return {};
+    },
+  };
+  const api = createProcessingWorkspaceApi(client);
+  await api.list();
+  await api.action(9, 'pause');
+  await api.reorder([9, 4]);
+  await api.saveFeedback(9, { accepted: true });
+  await api.rejectReview(9);
+  assert.deepEqual(calls, [
+    ['get', '/api/jobs', { cache: 'no-store' }],
+    ['post', '/api/jobs/9/pause', undefined],
+    ['post', '/api/jobs/reorder', { job_ids: [9, 4] }],
+    ['post', '/api/jobs/9/feedback', { accepted: true }],
+    ['post', '/api/jobs/9/review/reject', undefined],
+  ]);
+});
+
+test('processing workspace controller deduplicates loads and renders selected groups', async () => {
+  let resolveList;
+  let listCalls = 0;
+  const workspaceApi = {
+    list: () => {
+      listCalls += 1;
+      return new Promise((resolve) => {
+        resolveList = resolve;
+      });
+    },
+  };
+  const renders = [];
+  const timers = [];
+  const controller = createProcessingWorkspaceController({
+    workspaceApi,
+    render: (state) => renders.push(state),
+    clock: {
+      setTimeout: (callback) => {
+        timers.push(callback);
+        return timers.length;
+      },
+      clearTimeout() {},
+    },
+    documentRef: { hidden: false },
+  });
+  const first = controller.load();
+  const duplicate = controller.load();
+  assert.equal(first, duplicate);
+  resolveList([
+    { id: 1, source_name: 'Track', status: 'complete', created_at: '2026-01-01', updated_at: '2026-01-02' },
+  ]);
+  await first;
+  assert.equal(listCalls, 1);
+  assert.equal(renders[0].filter, 'active');
+  assert.deepEqual(renders[0].visible, []);
+});
 
 test('background task controller completes inactive work and releases ownership', async () => {
   let completeState = null;

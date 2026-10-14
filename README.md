@@ -78,7 +78,10 @@ Authorized source inspection, queue controls, progress polling, and completion
 feedback are owned by `web/import-workspace.js`, not the composition entry point.
 Local-file imports are owned by `web/local-audio-import.js`; playlist matching,
 permissions, and Creative Commons verification are owned by
-`web/playlist-import.js`.
+`web/playlist-import.js`. Processing queue polling, request serialization,
+generation/ETA derivation, filtering, and candidate-review routes are owned by
+`web/processing-workspace.js`, keeping those lifecycle rules independently
+testable from page composition.
 
 ### Optional local AI for Set Builder
 

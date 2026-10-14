@@ -212,7 +212,10 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   Local-audio staging, both local-import entry points, progress, and results now
   belong to `local-audio-import.js`; playlist matching, permission management,
   authorized-source handoff, and Creative Commons verification belong to
-  `playlist-import.js`. The `app.js` ceiling is ratcheted from 1,878 to 1,548
+  `playlist-import.js`. Processing queue polling, refresh deduplication,
+  filtering, generation/ETA derivation, route serialization, and candidate-review
+  requests now belong to `processing-workspace.js`, with focused behavioral
+  tests. The `app.js` ceiling is ratcheted from 1,878 to 1,501
   lines. Remaining: move processing/review rendering into its feature owner
   before marking this task complete.
 - [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
