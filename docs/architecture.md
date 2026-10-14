@@ -12,7 +12,7 @@ it to decide where a manual change belongs before editing.
 | `audioextender/web/application.py` | FastAPI factory, dependency wiring, compatibility facade, and remaining legacy routes |
 | `audioextender/web/composition.py` | Explicit application paths, owned services, registries, locks, queues, and caches |
 | `web/index.html` | Browser shell and workspace markup |
-| `web/app.js` | Browser composition, navigation, processing workspace, and import wiring |
+| `web/app.js` | Browser composition, navigation, and remaining processing-workspace wiring |
 
 Run the app with `python3 web_app.py`.
 
@@ -373,7 +373,7 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `request-state-controller.js` | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence |
 | `import-queue.js` | Pause/resume/cancel/retry/reorder import state |
 | `import-issues.js` | Import-failure filtering, selection, retry progress, and dismissal |
-| `import-workspace.js` | Authorized/local import normalization and browser API boundary |
+| `import-workspace.js` | Authorized import DOM/queue coordination, local import normalization, and browser API boundary |
 | `background-task-controller.js` | Keyed cancellable polling with stale-task replacement and terminal callbacks |
 | `styles.css` | Shared visual system and responsive behavior |
 

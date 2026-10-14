@@ -12,7 +12,7 @@ import {createRequestStateController} from './request-state-controller.js';
 import {createReportingFeature} from './reporting.js?v=20261013-1';
 import {createSetBuilderFeature} from './set-builder.js?v=20261013-2';
 import {createSettingsFeature, libraryAvailabilityView} from './settings.js?v=20261013-1';
-import {addLocalAudioFiles, authorizedSourceUrls as parseAuthorizedSourceUrls, createImportWorkspaceApi, playlistTrackKey, sourceUrlType} from './import-workspace.js';
+import {addLocalAudioFiles, createAuthorizedImportFeature, createImportWorkspaceApi, playlistTrackKey} from './import-workspace.js';
 import {createBackgroundTaskController} from './background-task-controller.js';
 import {createImportIssuesFeature} from './import-issues.js';
 
@@ -613,6 +613,15 @@ function applyEffectiveSettings(values) {
 const frontendServices = composeFrontendServices(api);
 const importIssuesFeature = createImportIssuesFeature({services: frontendServices, escapeHtml});
 const {load: loadImportFailures} = importIssuesFeature;
+createAuthorizedImportFeature({
+  services: frontendServices,
+  importApi: importWorkspaceApi,
+  Queue: AuthorizedImportQueue,
+  clock,
+  loadJobs,
+  stopTask: stopBackgroundTask,
+  escapeHtml,
+}).bind();
 
 const musicFilesFeature = createMusicFilesFeature({
   services: frontendServices, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
@@ -815,109 +824,6 @@ document.addEventListener('keydown', event => {
 $('#restore-batch-defaults').addEventListener('click', () => {
   applyEffectiveSettings(appConfig.effective);
   $('#upload-message').textContent = 'Saved processing defaults restored for this batch.';
-});
-
-function pollAuthorizedImport(importId) {
-  runBackgroundTask({key:'authorized-import',url:`/api/imports/${importId}`,update:state=>{const progress=$('#authorized-import-progress');progress.hidden=false;progress.querySelector('span').style.width=`${Math.max(2,Number(state.progress||0))}%`;progress.querySelector('small').textContent=`${state.stage} · ${Math.round(state.progress||0)}%`;},complete:async state=>{$('#authorized-import-submit').disabled=false;if(state.status==='complete'){const action=state.processed_with_extender?'imported and added to the DJ Library Studio queue':'converted to WAV without creating an extended edit';$('#authorized-import-message').innerHTML=`${escapeHtml(state.filename)} ${action}. <a href="/api/imports/${importId}/download">Download WAV</a>`;$('#authorized-import-form').reset();await loadJobs();}else $('#authorized-import-message').textContent=state.error||'The authorized import failed.';},fail:error=>{$('#authorized-import-submit').disabled=false;$('#authorized-import-message').textContent=error.message;}});
-}
-let sourceMatchTimer = null;
-let currentSourceMetadata = null;
-async function matchSpotifySource(url) {
-  const result = $('#source-match-result');
-  currentSourceMetadata = null;
-  result.hidden = false;
-  result.innerHTML = '<p>Finding Spotify metadata and ranking YouTube matches…</p>';
-  try {
-    const payload = await importWorkspaceApi.matchSource(url);
-    currentSourceMetadata = payload;
-    if (!payload.youtube_url) {
-      result.innerHTML = `<div class="source-match-copy"><span class="source-match-label">Spotify track</span><strong>${escapeHtml(payload.title)}</strong><p>${escapeHtml(payload.artist || 'Artist unavailable')}</p><small>No reliable YouTube match was selected.</small></div>`;
-      return;
-    }
-    const warning = (payload.match_warnings || []).join(' · ');
-    result.innerHTML = `${payload.thumbnail_url ? `<img src="${escapeHtml(payload.thumbnail_url)}" alt="" loading="lazy">` : '<span class="source-match-art">♫</span>'}<div class="source-match-copy"><span class="source-match-label">Spotify track</span><strong>${escapeHtml(payload.title)}</strong><p>${escapeHtml(payload.artist || 'Artist unavailable')}</p><small>Best YouTube match · ${payload.match_score || 0}% confidence</small><b>${escapeHtml(payload.youtube_title || '')}</b>${warning ? `<em>${escapeHtml(warning)}</em>` : ''}</div><button type="button" id="use-source-match" class="button secondary">Use match</button>`;
-    $('#use-source-match').addEventListener('click', () => {
-      $('#authorized-url').value = payload.youtube_url;
-      $('#source-url-guidance').textContent = 'Matched from Spotify. Confirm the recording authorization, then import it as WAV.';
-      $('#authorized-url').focus();
-    });
-  } catch (error) {
-    result.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
-  }
-}
-async function inspectSoundCloudSource(url) {
-  const result=$('#source-match-result');
-  currentSourceMetadata=null;
-  result.hidden=false;
-  result.innerHTML='<p>Reading SoundCloud track or mix metadata…</p>';
-  try {
-    const payload=await importWorkspaceApi.matchSource(url);
-    currentSourceMetadata=payload;
-    result.innerHTML=`${payload.thumbnail_url?`<img src="${escapeHtml(payload.thumbnail_url)}" alt="" loading="lazy">`:'<span class="source-match-art">♫</span>'}<div class="source-match-copy"><span class="source-match-label">SoundCloud ${Number(payload.duration||0)>1200?'mix':'track'}</span><strong>${escapeHtml(payload.title||'Untitled')}</strong><p>${escapeHtml(payload.artist||'Uploader unavailable')}</p><small>${payload.duration?clock(payload.duration):'Duration unavailable'} · authorization required</small></div>`;
-  } catch(error) {
-    result.innerHTML=`<p>${escapeHtml(error.message)}</p>`;
-  }
-}
-function authorizedSourceUrls(value=$('#authorized-url').value) {
-  return parseAuthorizedSourceUrls(value);
-}
-$('#authorized-url').addEventListener('input', event => {
-  clearTimeout(sourceMatchTimer);
-  const urls=authorizedSourceUrls(event.target.value);
-  const type = urls.length===1?sourceUrlType(urls[0]):'bulk';
-  const guidance = $('#source-url-guidance');
-  if(urls.length>1){currentSourceMetadata=null;$('#source-match-result').hidden=true;const supported=urls.filter(url=>['youtube','soundcloud'].includes(sourceUrlType(url))).length;guidance.textContent=`${urls.length} unique URLs queued · ${supported} downloadable sources recognized.`;return;}
-  if (type === 'spotify') {
-    guidance.textContent = 'Spotify source detected. Looking up its metadata and searching for a matching YouTube recording…';
-    sourceMatchTimer = setTimeout(() => matchSpotifySource(urls[0]), 500);
-  }
-  else if (type === 'youtube') guidance.textContent = 'YouTube source detected. The recording can be imported after you confirm its download authorization.';
-  else if (type === 'soundcloud') {
-    guidance.textContent = 'SoundCloud source detected. Reading its track or mix metadata…';
-    sourceMatchTimer = setTimeout(() => inspectSoundCloudSource(urls[0]), 500);
-  }
-  else guidance.textContent = 'Paste a Spotify link or an authorized YouTube or SoundCloud recording.';
-});
-async function waitForAuthorizedImport(importId,url,onProgress){
-  while(true){
-    const state=await importWorkspaceApi.authorizedStatus(importId);
-    onProgress(Number(state.progress||0),state.stage||'Importing');
-    if(state.status!=='processing')return {url,importId,...state};
-    await new Promise(resolve=>setTimeout(resolve,900));
-  }
-}
-const authorizedImportQueue = new AuthorizedImportQueue({
-  select: $,
-  escapeHtml,
-  waitForImport: waitForAuthorizedImport,
-  onComplete: async queue => {
-    const completed=queue.items.filter(item=>item.status==='complete'),failed=queue.items.filter(item=>item.status!=='complete'),message=$('#authorized-import-message');
-    message.innerHTML=`<strong>${completed.length} of ${queue.items.length} sources imported.</strong>${failed.length?`<span>${failed.length} failed or canceled. Use Retry in the queue when ready.</span>`:''}${completed.length===1?` <a href="/api/imports/${completed[0].importId}/download">Download WAV</a>`:''}`;
-    $('#authorized-import-submit').disabled=false;
-    if(!failed.length)$('#authorized-import-form').reset();
-    await loadJobs();
-  },
-});
-async function importAuthorizedSources(urls,basePayload){
-  const metadata=urls.length===1?{title:currentSourceMetadata?.title||'',artist:currentSourceMetadata?.artist||'',spotify_uri:currentSourceMetadata?.spotify_uri||'',artwork_url:currentSourceMetadata?.thumbnail_url||''}:{title:'',artist:'',spotify_uri:'',artwork_url:''};
-  await authorizedImportQueue.start(urls,basePayload,metadata);
-}
-$('#authorized-import-pause').onclick=()=>authorizedImportQueue.togglePause();
-$('#authorized-import-retry').onclick=()=>authorizedImportQueue.retryFailed();
-$('#authorized-import-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const urls=authorizedSourceUrls();
-  if(!urls.length)return;
-  if(urls.length>100){$('#authorized-import-message').textContent='Import at most 100 URLs in one batch.';return;}
-  const unsupported=urls.filter(url=>!['youtube','soundcloud'].includes(sourceUrlType(url)));
-  if (unsupported.length) {
-    $('#authorized-import-message').textContent = `${unsupported.length} URL${unsupported.length===1?' is':'s are'} unsupported. Spotify supplies metadata only; bulk imports require direct YouTube or SoundCloud URLs.`;
-    return;
-  }
-  stopBackgroundTask('authorized-import');
-  const button = $('#authorized-import-submit'); button.disabled = true;
-  $('#authorized-import-message').textContent = `Preparing ${urls.length} authorized source${urls.length===1?'':'s'}…`;
-  await importAuthorizedSources(urls,{rights_basis:$('#rights-basis').value,confirmation:$('#rights-confirmation').checked,process_with_extender:$('#process-import-with-extender').checked});
 });
 
 let localAudioFiles = [];

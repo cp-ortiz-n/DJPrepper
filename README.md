@@ -74,6 +74,8 @@ access, and musical-identity editing. Direct global network calls are prohibited
 inside the five feature modules, while overlapping search requests continue to
 use the shared cancellation and stale-response controller. See
 [`docs/architecture.md`](docs/architecture.md) before making frontend changes.
+Authorized source inspection, queue controls, progress polling, and completion
+feedback are owned by `web/import-workspace.js`, not the composition entry point.
 
 ### Optional local AI for Set Builder
 
@@ -488,7 +490,7 @@ Use this table before searching through the larger composition files:
 | Library health and post-reconnect verification | `web/settings_routes.py` (`/api/settings/library-health`) |
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
 | Import failure review and retries | `web/import-issues.js` |
-| Authorized/local import browser state and API routes | `web/import-workspace.js` |
+| Authorized/local import browser state, queue coordination, and API routes | `web/import-workspace.js` |
 | Cancellable browser polling | `web/background-task-controller.js` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |

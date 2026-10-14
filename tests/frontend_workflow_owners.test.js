@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 
 import { createBackgroundTaskController } from '../web/background-task-controller.js';
 import { importFailureKind } from '../web/import-issues.js';
-import { authorizedSourceUrls, createImportWorkspaceApi, sourceUrlType } from '../web/import-workspace.js';
+import {
+  authorizedSourceUrls,
+  createAuthorizedImportFeature,
+  createImportWorkspaceApi,
+  sourceUrlType,
+} from '../web/import-workspace.js';
 
 test('background task controller completes inactive work and releases ownership', async () => {
   let completeState = null;
@@ -79,4 +84,94 @@ test('import workspace classifies sources and owns route serialization', async (
     ['get', '/api/imports/job-1'],
     ['post', '/api/imports/creative-commons', { tracks: [{ title: 'Track' }], playlist_name: 'Party' }],
   ]);
+});
+
+test('authorized import feature owns guidance, submission, and completion feedback', async () => {
+  const elements = new Map();
+  const element = (id, values = {}) => {
+    const listeners = new Map();
+    const node = {
+      id,
+      value: '',
+      checked: false,
+      disabled: false,
+      hidden: false,
+      textContent: '',
+      innerHTML: '',
+      addEventListener(type, listener) {
+        listeners.set(type, listener);
+      },
+      listener(type) {
+        return listeners.get(type);
+      },
+      focus() {},
+      reset() {
+        this.resetCalled = true;
+      },
+      ...values,
+    };
+    elements.set(`#${id}`, node);
+    return node;
+  };
+  const source = element('authorized-url', { value: 'https://youtu.be/example' });
+  const guidance = element('source-url-guidance');
+  element('source-match-result');
+  element('authorized-import-pause');
+  element('authorized-import-retry');
+  const form = element('authorized-import-form');
+  const submit = element('authorized-import-submit');
+  const message = element('authorized-import-message');
+  element('rights-basis', { value: 'owned-recording' });
+  element('rights-confirmation', { checked: true });
+  element('process-import-with-extender', { checked: true });
+
+  let queueOptions;
+  let started;
+  class Queue {
+    constructor(options) {
+      queueOptions = options;
+    }
+    async start(urls, payload, metadata) {
+      started = { urls, payload, metadata };
+    }
+    togglePause() {}
+    retryFailed() {}
+  }
+  const stopped = [];
+  let jobsLoaded = 0;
+  const feature = createAuthorizedImportFeature({
+    services: { $: (selector) => elements.get(selector) },
+    importApi: { matchSource: async () => ({}), authorizedStatus: async () => ({ status: 'complete' }) },
+    Queue,
+    clock: String,
+    loadJobs: async () => {
+      jobsLoaded += 1;
+    },
+    stopTask: (key) => stopped.push(key),
+    escapeHtml: String,
+  });
+
+  feature.bind();
+  source.listener('input')({ target: source });
+  assert.match(guidance.textContent, /YouTube source detected/);
+
+  await form.listener('submit')({ preventDefault() {} });
+  assert.deepEqual(stopped, ['authorized-import']);
+  assert.equal(submit.disabled, true);
+  assert.equal(message.textContent, 'Preparing 1 authorized source…');
+  assert.deepEqual(started, {
+    urls: ['https://youtu.be/example'],
+    payload: {
+      rights_basis: 'owned-recording',
+      confirmation: true,
+      process_with_extender: true,
+    },
+    metadata: { title: '', artist: '', spotify_uri: '', artwork_url: '' },
+  });
+
+  await queueOptions.onComplete({ items: [{ status: 'complete', importId: 'import-1' }] });
+  assert.match(message.innerHTML, /\/api\/imports\/import-1\/download/);
+  assert.equal(submit.disabled, false);
+  assert.equal(form.resetCalled, true);
+  assert.equal(jobsLoaded, 1);
 });

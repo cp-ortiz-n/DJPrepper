@@ -207,10 +207,12 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   polling belongs to `background-task-controller.js` with replacement and abort
   tests. `import-workspace.js` now also owns source normalization, local-file
   deduplication, stable playlist identities, source matching, and import lifecycle
-  route serialization. The `app.js` ceiling is ratcheted from 1,878 to 1,804
-  lines. Remaining:
-  move authorized/local import orchestration and processing/review rendering into
-  their feature owners before marking this task complete.
+  route serialization. It now owns authorized-source inspection, queue controls,
+  status polling, submission, and completion feedback as one injected feature.
+  The `app.js` ceiling is ratcheted from 1,878 to 1,710 lines. Remaining: move
+  local-audio, playlist-file, and Creative Commons import orchestration plus
+  processing/review rendering into their feature owners before marking this task
+  complete.
 - [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
   Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
   Acceptance: editable set ownership and backup scope are explicit; version-1

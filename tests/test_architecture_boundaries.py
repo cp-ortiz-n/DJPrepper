@@ -108,7 +108,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "audioextender/infrastructure/operation_lifecycle.py": 275,
             "audioextender/repositories/facade.py": 150,
             "audioextender/repositories/schema.py": 275,
-            "web/app.js": 1804,
+            "web/app.js": 1710,
             "web/set-builder.js": 663,
         }
         for relative, maximum in ceilings.items():

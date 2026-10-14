@@ -25,6 +25,7 @@ class ValidationResult:
 class CandidateValidator:
     """Apply one consistent final safety policy to either side of an edit."""
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-return-statements
     def validate(
         self,
         candidate: SectionCandidate | None,
@@ -34,6 +35,7 @@ class CandidateValidator:
         vocal_analysis_available: bool,
         position: str | None = None,
     ) -> ValidationResult:
+        """Validate a candidate against the final safety policy for the selected edit side."""
         if candidate is None:
             return ValidationResult(None, None, False)
 
