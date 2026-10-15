@@ -63,10 +63,11 @@ legacy-cache fallback without allowing another browser policy authority to grow.
 
 Manual-correction propagation is governed by
 `docs/manual-correction-propagation.json`. Its behavioral suite verifies durable
-key and identity propagation and characterizes the current genre projection
-delay. Confirmed gaps are tracked separately as ARCH-014B (verified BPM) and
-ARCH-014C (synchronous projection invalidation), rather than being hidden behind
-browser refresh behavior.
+key, BPM, and identity propagation and characterizes the current genre
+projection delay. Verified BPM preserves detected analysis as evidence while a
+durable user correction controls Library and Set Builder delivery. The remaining
+gap is tracked as ARCH-014C (synchronous projection invalidation), rather than
+being hidden behind browser refresh behavior.
 
 Current musical-policy owners remain intentionally separate: Python `analysis/`
 owns processing-time BPM/key/section and splice policy; `set_builder/` owns

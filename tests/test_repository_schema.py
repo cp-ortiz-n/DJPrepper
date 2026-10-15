@@ -104,8 +104,15 @@ class RepositorySchemaTests(unittest.TestCase):
             with closing(sqlite3.connect(database)) as connection:
                 job_columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)")}
                 track_columns = {row[1] for row in connection.execute("PRAGMA table_info(downloaded_tracks)")}
+                bpm_verification_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(bpm_verifications)").fetchall()
+                }
             self.assertIn("review_status", job_columns)
             self.assertIn("identity_inference_locked", track_columns)
+            self.assertEqual(
+                bpm_verification_columns,
+                {"source_name", "verified_bpm", "detected_bpm", "notes", "created_at", "updated_at"},
+            )
             self.assertIn("audio_quality_json", track_columns)
 
     def test_sqlite_backup_opens_through_the_same_initializer(self) -> None:

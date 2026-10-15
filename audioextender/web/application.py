@@ -66,6 +66,7 @@ from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
     TrackMetadataMutationService,
 )
+from audioextender.library.musical_corrections import MusicalCorrectionIndex
 from audioextender.library.musical_profile import CAMELOT_KEYS, musical_profile
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.job_workflows import (
@@ -3020,6 +3021,8 @@ def _set_builder_analysis(song: dict, *, roles: list[str], energy: float, vocals
     base_fields = {
         "source_name",
         "bpm",
+        "detected_bpm",
+        "bpm_verified",
         "key",
         "key_confidence",
         "beat_grid_confidence",
@@ -3112,16 +3115,11 @@ def _refresh_library_search_index() -> None:
         for track in downloaded_tracks
         if track.get("completed_library_job_id")
     }
-    key_verifications = {str(item["source_name"]).casefold(): item for item in repository.key_verifications()}
+    corrections = MusicalCorrectionIndex.from_records(repository.key_verifications(), repository.bpm_verifications())
     entries = []
     for job in repository.list_latest_completed_jobs():
         song = dict(analysis_by_name.get(str(job.get("source_name") or "").casefold(), {}))
-        verification = key_verifications.get(str(job.get("source_name") or "").casefold())
-        if verification:
-            song["detected_key"] = song.get("key")
-            song["key"] = verification["verified_key"]
-            song["key_confidence"] = 1.0
-            song["key_verified"] = True
+        song = corrections.apply(song, str(job.get("source_name") or ""), detected_bpm_fallback=job.get("bpm"))
         downloaded = downloaded_by_job.get(int(job["id"])) or downloaded_by_path.get(str(job.get("source_path") or ""))
         if downloaded and downloaded.get("key_analyzed_at"):
             song["key"] = downloaded.get("detected_key") or song.get("key")

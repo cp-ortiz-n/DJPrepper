@@ -3,15 +3,15 @@
   "corrections": [
     {
       "field": "bpm",
-      "authoritative_write": "unsupported",
-      "catalog": "gap",
-      "search_index": "gap",
-      "dj_library": "gap",
-      "set_builder": "gap",
-      "refresh": "gap",
-      "restart": "gap",
-      "status": "confirmed-gap",
-      "follow_up": "ARCH-014B"
+      "authoritative_write": "bpm_verifications",
+      "catalog": "durable",
+      "search_index": "synchronous-rebuild",
+      "dj_library": "updated",
+      "set_builder": "updated",
+      "refresh": "updated",
+      "restart": "durable",
+      "status": "covered",
+      "follow_up": ""
     },
     {
       "field": "key",

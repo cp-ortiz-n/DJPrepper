@@ -95,6 +95,25 @@ class ManualCorrectionPropagationTests(unittest.TestCase):
         assert verification is not None
         self.assertEqual(verification["verified_key"], "G minor")
 
+    def test_verified_bpm_reaches_library_set_builder_and_survives_reanalysis(self) -> None:
+        self.repository.set_bpm_verification(self.audio.name, 126.25, 124.0, "Checked against the grid")
+        payload = self.rebuild_projections()
+        rows, total = self.repository.page_library_tracks(page=1, page_size=10, bpm_min=126, bpm_max=126.5)
+        self.assertEqual(total, 1)
+        self.assertEqual(rows[0]["library_bpm"], 126.25)
+        self.assertEqual(payload["tracks"][0]["analysis"]["bpm"], 126.25)
+        self.assertEqual(payload["tracks"][0]["analysis"]["detected_bpm"], 124.0)
+        self.repository.update(self.job_id, bpm=132.0)
+        self.report["songs"]["track"]["bpm"] = 132.0
+        refreshed = self.rebuild_projections()
+        self.assertEqual(refreshed["tracks"][0]["analysis"]["bpm"], 126.25)
+        self.assertEqual(refreshed["tracks"][0]["analysis"]["detected_bpm"], 132.0)
+        restarted = JobRepository(self.database)
+        verification = restarted.bpm_verification(self.audio.name)
+        self.assertIsNotNone(verification)
+        assert verification is not None
+        self.assertEqual(verification["verified_bpm"], 126.25)
+
     def test_identity_is_live_in_search_and_durable_for_set_builder(self) -> None:
         self.rebuild_projections()
         self.repository.update_track_descriptors(

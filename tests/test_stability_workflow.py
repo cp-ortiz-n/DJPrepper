@@ -96,6 +96,7 @@ class StabilityWorkflowTests(unittest.TestCase):
                 [{"key": "A minor", "detectors": "manual"}],
                 "Checked by ear",
             )
+            repository.set_bpm_verification(source_track.name, 125.25, 124.0, "Checked against the grid")
             repository.add_track_feedback(
                 source_track.name,
                 "whole-track",
@@ -127,6 +128,9 @@ class StabilityWorkflowTests(unittest.TestCase):
             verification = restarted.key_verification(source_track.name)
             assert verification is not None
             self.assertEqual(verification["verified_key"], "A minor")
+            bpm_verification = restarted.bpm_verification(source_track.name)
+            assert bpm_verification is not None
+            self.assertEqual(bpm_verification["verified_bpm"], 125.25)
             self.assertEqual(restarted.track_feedback(source_track.name)[0]["notes"], "Mixes cleanly")
 
             # Reanalysis links a new generation without replacing user-owned data.
@@ -146,6 +150,9 @@ class StabilityWorkflowTests(unittest.TestCase):
             verification = restarted.key_verification(source_track.name)
             assert verification is not None
             self.assertEqual(verification["verified_key"], "A minor")
+            bpm_verification = restarted.bpm_verification(source_track.name)
+            assert bpm_verification is not None
+            self.assertEqual(bpm_verification["verified_bpm"], 125.25)
             self.assertEqual(len(restarted.track_feedback(source_track.name)), 1)
 
             preflight = web_module.set_builder_export_preflight(SetExportPreflightRequest(paths=[str(relocated_track)]))

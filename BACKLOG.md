@@ -264,11 +264,16 @@ boundaries from Phases 2–3. Benefit: contributors receive fast, actionable gat
   durable storage, search, DJ Library, Set Builder, refresh, and restart. Key and
   identity propagation are covered. The investigation confirmed two follow-ups:
   ARCH-014B and ARCH-014C.
-- [ ] **ARCH-014B — Add durable verified BPM corrections.** Priority: P1.
+- [x] **ARCH-014B — Add durable verified BPM corrections.** Priority: P1.
   Effort: M. Risk: Medium. Dependencies: ARCH-014A. Acceptance: users can save or
   clear a verified BPM; catalog delivery, DJ Library, Set Builder, refresh,
   restart, and reanalysis consistently prefer the durable verified value while
   preserving the detected BPM as evidence.
+  Completed 2026-10-14: BPM verification now has a dedicated durable table and
+  reporting API/UI. Saving or clearing a verified BPM synchronously rebuilds the
+  Library and Set Builder projections; reanalysis remains detected evidence and
+  cannot overwrite the verified value. Repository, route, propagation, restart,
+  and reanalysis behavior are covered by tests.
 - [ ] **ARCH-014C — Publish metadata corrections through one synchronous catalog
   invalidation boundary.** Priority: P1. Effort: M. Risk: Medium. Dependencies:
   ARCH-014A. Acceptance: genre and general metadata writes atomically invalidate

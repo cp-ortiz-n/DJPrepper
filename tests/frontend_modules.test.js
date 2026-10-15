@@ -36,6 +36,7 @@ const settings = await import('../web/settings.js');
 const shared = await import('../web/shared-components.js');
 const requests = await import('../web/request-state-controller.js');
 const frontendServices = await import('../web/frontend-services.js');
+const reporting = await import('../web/reporting.js');
 
 test('feature factories share a validated immutable services contract', () => {
   const noop = () => {};
@@ -375,4 +376,16 @@ test('shared request controller resets pagination when filters change', () => {
   });
   controller.update({ search: 'all characters 123' });
   assert.deepEqual(state, { search: 'all characters 123', page: 1 });
+});
+
+test('verified BPM overrides reanalysis while preserving detected evidence', () => {
+  const result = reporting.applyReportVerifications(
+    [{ source_name: 'Track.wav', bpm: 132, key: 'C major', key_confidence: 0.8 }],
+    [],
+    { items: [] },
+    { items: [{ source_name: 'track.wav', verified_bpm: 126.25, detected_bpm: 124 }] },
+  );
+  assert.equal(result[0].bpm, 126.25);
+  assert.equal(result[0].detected_bpm, 132);
+  assert.equal(result[0].bpm_verified, true);
 });

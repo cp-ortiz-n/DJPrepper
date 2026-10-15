@@ -7,6 +7,8 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from audioextender.repositories.musical_verification_schema import initialize_musical_verifications
+
 SchemaAction = Callable[[sqlite3.Connection], None]
 
 
@@ -107,12 +109,9 @@ def _initialize_settings_and_feedback(connection: sqlite3.Connection) -> None:
         accepted INTEGER NOT NULL, tags TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_track_feedback_source
-        ON track_feedback(source_name COLLATE NOCASE, created_at DESC);
-        CREATE TABLE IF NOT EXISTS key_verifications (
-        source_name TEXT PRIMARY KEY COLLATE NOCASE, verified_key TEXT NOT NULL,
-        detected_key TEXT NOT NULL DEFAULT '', candidates_json TEXT NOT NULL DEFAULT '[]',
-        notes TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);"""
+        ON track_feedback(source_name COLLATE NOCASE, created_at DESC);"""
     )
+    initialize_musical_verifications(connection)
 
 
 def _initialize_catalog_core(connection: sqlite3.Connection) -> None:

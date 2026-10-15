@@ -12,20 +12,12 @@ projection behavior against a disposable catalog.
 
 | Correction | Durable owner | Music Files/catalog | DJ Library | Set Builder | Refresh/restart | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| BPM | None | No supported manual write | No propagation | No propagation | No durable correction | Confirmed gap: ARCH-014B |
+| BPM | `bpm_verifications` | Verification survives restart and preserves detected BPM | Synchronous index rebuild applies the verified BPM | Catalog cache is rewritten with verified and detected BPM | Immediate after save; protected across reanalysis and restart | Covered |
 | Key | `key_verifications` | Verification survives restart | Synchronous index rebuild applies the verified key | Catalog cache is rewritten with the verified key | Immediate after save; durable after restart | Covered |
 | Genre | `downloaded_tracks`, WAV tags, source sidecar, file location | Durable and searchable | Index source signature schedules a background rebuild | A version-valid catalog file can be read before that rebuild finishes | Eventually correct; durable after restart | Confirmed stale-read gap: ARCH-014C |
 | Musical identity | `downloaded_track_descriptors` | Durable and searched through the descriptor table | Descriptor values are joined live | Descriptor service removes the Set Builder cache before the next read | Immediate after save; durable after restart | Covered |
 
 ## Confirmed gaps
-
-### ARCH-014B — durable manual BPM correction
-
-There is no supported command or persistence field for a user-confirmed BPM.
-Job BPM remains analysis output, so reanalysis can replace it and neither the
-Library nor Set Builder has a durable manual value to prefer. The follow-up must
-add an explicit verified BPM owner and the same precedence guarantees already
-used for verified keys.
 
 ### ARCH-014C — synchronous projection invalidation after catalog metadata writes
 
