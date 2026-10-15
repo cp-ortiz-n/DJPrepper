@@ -235,11 +235,24 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   replacing newer server records; localStorage remains a recovery cache only.
   M3U8 remains an optional export artifact, and its failure no longer makes the
   durable editable-save result ambiguous.
-- [ ] **ARCH-013A — Investigate CSS ownership and responsive/accessibility
+- [x] **ARCH-013A — Investigate CSS ownership and responsive/accessibility
   regressions.** Priority: P3. Effort: S. Risk: Low. Dependencies: ARCH-011A.
   Acceptance: selector ownership, unused/overlapping rules, supported viewports,
   keyboard focus, and reduced motion are measured; create a split task only if
   the evidence shows cascade or ownership problems. Evidence: [ARCH-013](docs/architecture-audit.md#arch-013--stylesheet-ownership-may-become-a-frontend-bottleneck).
+  Completed 2026-10-15: the audit measured 656 class selectors, 68 media-query
+  blocks across 15 conditions, 17 static-reference cleanup candidates, and
+  substantial interleaved feature ownership. Playwright now verifies 1440 px,
+  720 px, and 390 px layouts without page overflow, visible keyboard focus,
+  computed reduced-motion behavior, and serious/critical WCAG findings. The
+  evidence confirms a behavior-preserving ownership split is warranted.
+- [ ] **ARCH-013B — Split CSS by explicit feature ownership.** Priority: P2.
+  Effort: M. Risk: Medium. Dependencies: ARCH-013A. Acceptance: tokens/base,
+  shared components, shell, imports/processing, Music Files, DJ Library, Set
+  Builder, and Settings/reporting styles have explicit owners behind one ordered
+  entry point; confirmed dead rules are removed, equivalent owner-local media
+  conditions are consolidated, and computed behavior remains compatible at all
+  supported viewports. Evidence: `docs/css-ownership-audit.md`.
 
 Phase acceptance: feature behavior is independently testable, `app.js` is a
 composition root, and no storage or UI workflow compatibility is lost.

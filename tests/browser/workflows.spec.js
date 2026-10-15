@@ -154,12 +154,33 @@ test('primary workflows remain usable at supported viewports and pass serious ac
   for (const viewport of [
     { width: 1440, height: 900 },
     { width: 720, height: 900 },
+    { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
     await openSettings(page);
     await expect(page.locator('#settings-form')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save settings' })).toBeVisible();
+    const saveSettings = page.getByRole('button', { name: 'Save settings' });
+    await expect(saveSettings).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      `Settings overflowed horizontally at ${viewport.width}px`,
+    ).toBe(true);
   }
+
+  await page.evaluate(() => {
+    const probe = document.createElement('button');
+    probe.id = 'keyboard-focus-probe';
+    probe.textContent = 'Keyboard focus probe';
+    document.body.prepend(probe);
+    document.body.tabIndex = -1;
+    document.body.focus();
+  });
+  await page.keyboard.press('Tab');
+  const focusProbe = page.locator('#keyboard-focus-probe');
+  await expect(focusProbe).toBeFocused();
+  expect(await focusProbe.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe('solid');
+  expect(await focusProbe.evaluate((node) => getComputedStyle(node).outlineWidth)).toBe('2px');
+  await focusProbe.evaluate((node) => node.remove());
 
   const results = await new AxeBuilder({ page })
     .include('header')
@@ -168,4 +189,27 @@ test('primary workflows remain usable at supported viewports and pass serious ac
     .analyze();
   const serious = results.violations.filter((item) => ['serious', 'critical'].includes(item.impact));
   expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
+});
+
+test('reduced-motion preference suppresses application animation and transitions', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openSettings(page);
+  const durations = await page.evaluate(() => {
+    const probe = document.createElement('button');
+    probe.className = 'button';
+    probe.setAttribute('aria-busy', 'true');
+    document.body.append(probe);
+    const buttonStyle = getComputedStyle(probe);
+    const spinnerStyle = getComputedStyle(probe, '::after');
+    const result = {
+      transition: buttonStyle.transitionDuration,
+      animation: spinnerStyle.animationDuration,
+      iterations: spinnerStyle.animationIterationCount,
+    };
+    probe.remove();
+    return result;
+  });
+  expect(Number.parseFloat(durations.transition)).toBeLessThanOrEqual(0.00001);
+  expect(Number.parseFloat(durations.animation)).toBeLessThanOrEqual(0.00001);
+  expect(durations.iterations).toBe('1');
 });

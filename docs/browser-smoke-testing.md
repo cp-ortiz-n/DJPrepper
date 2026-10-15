@@ -34,7 +34,11 @@ Playwright traces are retained only for failed checks.
 | Imports never silently fall back to local or temporary folders | `tests/test_import_service.py` verifies a disconnected configured drive rejects the import and leaves a possible local fallback untouched. |
 | Only one preview plays | Playwright runs the real playback module with browser media elements; the focused JavaScript suite covers ownership transfer and Quick View cleanup. |
 | Dialog and keyboard behavior | Playwright verifies initial dialog focus, Escape dismissal, and focus restoration. |
-| Supported layouts and accessibility | Playwright checks 1440 px and 720 px layouts and fails on serious or critical WCAG A/AA axe findings in navigation and Settings. |
+| Supported layouts and accessibility | Playwright checks 1440 px, 720 px, and 390 px layouts for horizontal overflow, verifies visible keyboard focus and reduced-motion behavior, and fails on serious or critical WCAG A/AA axe findings in navigation and Settings. |
+
+The current selector-ownership evidence and the boundary for a future
+behavior-preserving stylesheet split are recorded in
+[`css-ownership-audit.md`](css-ownership-audit.md).
 
 The browser gate is deliberately complementary: deterministic unit and API
 tests retain restart, path-safety, and failure-edge coverage that would be less
