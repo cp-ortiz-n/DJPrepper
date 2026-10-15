@@ -558,15 +558,22 @@ Run all local gates, stability workflows, catalog-scale evaluation, live provide
 
 Each phase should be delivered as focused pull requests: characterization first, one boundary extraction second, cleanup/guard third.
 
-## 19. Open Questions
+## 19. Decision status and remaining questions
 
-1. Should editable saved sets survive browser data loss and be included in backup/restore, or is M3U8 plus browser-local editing the intended product contract?
-2. Which musical values are user-authoritative when manual key, genre, descriptors, and analysis disagree?
-3. Is browser Classic planning required offline indefinitely, or may the backend provide deterministic planning even when Ollama is unavailable?
-4. Which job status fields can be standardized without breaking existing frontend contracts?
-5. What catalog size and concurrent workload represent the supported upper bound on target Macs?
-6. Which browsers/viewports and accessibility standards are release requirements?
-7. Should schema initialization remain implicit at startup or gain an explicit version/migration command?
+The compatibility questions about saved-set durability, musical authority,
+operation contracts, schema migration, and the project's application shape are
+resolved in the [`docs/decisions/`](decisions/README.md) records. Classic
+planning remains available through deterministic backend fallback when Ollama
+is unavailable; the local model is an optional planner, not an availability
+dependency.
+
+The remaining release-capacity questions are empirical rather than architecture
+decisions:
+
+1. What catalog size and concurrent workload represent the supported upper
+   bound on target Macs?
+2. Which additional browsers and viewports, beyond the current Chromium smoke
+   matrix, are release requirements?
 
 ## 20. Conclusion
 

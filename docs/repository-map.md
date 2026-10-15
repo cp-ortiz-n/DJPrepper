@@ -361,6 +361,7 @@ reports under `coverage/` for the Python application/scripts and browser code.
 | --- | --- |
 | `README.md` | Setup, user workflows, tests, and maintainer quick guide |
 | `BACKLOG.md` | Planned and audited product work |
+| `docs/decisions/` | Indexed architecture decisions and compatibility guarantees |
 | `pyproject.toml`, `.flake8` | Python coverage, lint, and type-check configuration |
 | `requirements.txt` | Runtime Python dependencies |
 | `requirements-dev.txt` | Development/test tools, including coverage.py |

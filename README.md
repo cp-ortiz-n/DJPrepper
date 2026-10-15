@@ -481,7 +481,9 @@ themselves remain part of the project.
 See [`docs/architecture.md`](docs/architecture.md) for package ownership,
 dependency rules, contribution recipes, and the verification matrix. The
 current file inventory and test locations are in
-[`docs/repository-map.md`](docs/repository-map.md).
+[`docs/repository-map.md`](docs/repository-map.md). Compatibility-sensitive
+rationale and revisit conditions are indexed in
+[`docs/decisions/`](docs/decisions/README.md).
 
 ## Maintainer quick guide
 
@@ -523,7 +525,7 @@ Use this table before searching through the larger composition files:
 | Preview playback behavior | `web/playback.js` |
 | Shared frontend API, DOM, feedback, or descriptor capabilities | `web/frontend-services.js`, `web/api-client.js` |
 | Browser workflow, focus, responsive, or accessibility regression | `tests/browser/workflows.spec.js`, `docs/browser-smoke-testing.md` |
-| Architecture dependency or placement rule | `docs/architecture.md`, `tests/test_architecture_boundaries.py` |
+| Architecture dependency or placement rule | `docs/architecture.md`, `docs/decisions/`, `tests/test_architecture_boundaries.py` |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
 `audioextender/web/application.py`, which constructs services and injects them

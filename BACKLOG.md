@@ -339,11 +339,17 @@ boundary rather than rebuilding legacy coupling.
   changes. The repository map reflects current services, safeguards, browser
   tests, and commands; the README points contributors to the authoritative
   standard and risk-based release gates. Graphify was refreshed after the update.
-- [ ] **ARCH-DEV-002 — Record compatibility and architecture decisions.**
+- [x] **ARCH-DEV-002 — Record compatibility and architecture decisions.**
   Priority: P3. Effort: S. Risk: Low. Dependencies: product decisions for
   ARCH-009A and open questions. Acceptance: short decision records explain saved
   sets, musical authority, job contracts, schema migration, and why the project
   remains a modular monolith with vanilla JavaScript. Evidence: audit section 19.
+  Completed 2026-10-15: five indexed ADRs now record backend-owned saved sets,
+  authoritative musical-profile precedence, shared operation contracts with
+  specialized executors, ordered idempotent SQLite migrations, and the decision
+  to retain the modular monolith and vanilla JavaScript. Each record states its
+  compatibility guarantees, consequences, and explicit revisit conditions; the
+  architecture guide, repository map, and audit link to the decision index.
 
 Phase acceptance: a new contributor can locate the correct backend/frontend
 owner and required tests without reading the composition roots end to end.

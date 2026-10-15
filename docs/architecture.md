@@ -3,6 +3,11 @@
 This is the maintainer map for DJ Library Studio and the AudioExtender CLI. Use
 it to decide where a manual change belongs before editing.
 
+Compatibility-sensitive rationale is recorded in the
+[`decisions/` index](decisions/README.md). Read the relevant decision before
+changing saved-set durability, musical authority, operation lifecycles, schema
+migration, or the application's deployment/frontend shape.
+
 ## Runtime entry points
 
 | Entry point | Purpose |
