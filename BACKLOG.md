@@ -319,12 +319,18 @@ Objective: make placement and dependency rules discoverable. Dependencies:
 Phases 2–4. Benefit: future contributors and coding agents extend the intended
 boundary rather than rebuilding legacy coupling.
 
-- [ ] **ARCH-DEV-001 — Update architecture maps and contribution recipes.**
+- [x] **ARCH-DEV-001 — Update architecture maps and contribution recipes.**
   Priority: P2. Effort: M. Risk: Low. Dependencies: ARCH-012B. Acceptance:
   `docs/architecture.md`, `docs/repository-map.md`, and README explain runtime
   composition, dependency direction, API/feature placement, musical-profile
   ownership, job lifecycles, provider additions, test placement, and quality
   commands; Graphify is refreshed. Evidence: audit sections 3, 14, and 18.
+  Completed 2026-10-15: the architecture guide now documents runtime dependency
+  direction, focused backend/frontend ownership, and concrete recipes for API,
+  persistence, browser, musical-policy, background-operation, and provider
+  changes. The repository map reflects current services, safeguards, browser
+  tests, and commands; the README points contributors to the authoritative
+  standard and risk-based release gates. Graphify was refreshed after the update.
 - [ ] **ARCH-DEV-002 — Record compatibility and architecture decisions.**
   Priority: P3. Effort: S. Risk: Low. Dependencies: product decisions for
   ARCH-009A and open questions. Acceptance: short decision records explain saved

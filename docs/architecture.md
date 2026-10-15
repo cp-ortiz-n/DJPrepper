@@ -12,7 +12,7 @@ it to decide where a manual change belongs before editing.
 | `audioextender/web/application.py` | FastAPI factory, dependency wiring, compatibility facade, and remaining legacy routes |
 | `audioextender/web/composition.py` | Explicit application paths, owned services, registries, locks, queues, and caches |
 | `web/index.html` | Browser shell and workspace markup |
-| `web/app.js` | Browser composition, navigation, and remaining processing-workspace wiring |
+| `web/app.js` | Browser composition, global navigation, and feature registration only |
 
 Run the app with `python3 web_app.py`.
 
@@ -417,17 +417,110 @@ Request cancellation and stale-response ownership remain in
 | Set Builder language interpretation/provider policy | `set_builder/intention_planner.py`, `web/set_builder_routes.py` |
 | Persistent setting | `web/settings_routes.py`, `repositories/system_state.py`; `settings.py` only for shipped defaults |
 
+## Contribution recipes
+
+These are placement rules, not templates to copy mechanically. Start with the
+smallest recipe that owns the requested behavior and preserve the public
+contract unless the change explicitly approves a migration.
+
+### Add a backend API workflow
+
+1. Put request/response translation in the focused `audioextender/web/*_routes.py`
+   module. Create a router module only when no existing route family owns it.
+2. Put orchestration or policy in the owning `library`, `processing`, `imports`,
+   `reporting`, or `set_builder` service. A route must not become the workflow.
+3. Describe collaborators with a dependency dataclass or narrow repository
+   protocol from `repositories/capabilities.py`.
+4. Wire the dependency and router in `web/composition.py` and
+   `web/application.py`; never import application globals from a route.
+5. Normalize failures with `web/error_contracts.py` and return an operation
+   receipt for state-changing work.
+6. Add service tests, route-contract tests, and an endpoint-inventory update when
+   the public surface changes.
+
+### Add or change persistence
+
+1. Place SQL in the repository mixin that owns the data; do not add SQL to a
+   route, service, or `repositories/facade.py`.
+2. Expose only the capability required by new callers.
+3. Add an ordered, idempotent step in `repositories/schema.py` when the schema
+   changes. Preserve legacy rows and opening behavior.
+4. Test a new database, a representative old database, restart behavior, and
+   backup/restore when the data belongs in backups.
+
+### Add a browser workflow
+
+1. Put feature state, rendering, and page events in the owning `web/*.js`
+   feature module. Keep `app.js` limited to composition and navigation.
+2. Consume `frontend-services.js` for API, DOM, feedback, and descriptor-editor
+   capabilities. Extend a shared capability instead of adding loose callbacks.
+3. Use `request-state-controller.js` for catalog request cancellation and stale
+   response rejection, `background-task-controller.js` for keyed polling, and
+   `playback.js` for previews.
+4. Add pure or injected behavioral coverage in `tests/*.test.js`. Add a
+   Playwright scenario only when browser integration, focus, layout, or actual
+   DOM lifecycle is the behavior under test.
+5. Keep CSS in the shared visual system until ARCH-013A demonstrates a safer
+   ownership split.
+
+### Add musical policy
+
+1. Check `docs/musical-policy-ownership.md` before changing an algorithm.
+2. Put processing-time analysis in `analysis`, catalog delivery facts in
+   `library/musical_profile.py`, and set-construction policy in `set_builder`.
+3. Do not derive a second musical profile in the browser. Compatibility helpers
+   remain confined to `dj-library.js`.
+4. Update the shared golden fixture and both Python and JavaScript consumers for
+   intentional cross-runtime policy changes.
+
+### Add a background operation
+
+1. Keep execution and durable recovery in the owning feature service.
+2. Publish the common status, capability, error, and receipt vocabulary from
+   `infrastructure/operation_lifecycle.py`.
+3. Use `infrastructure/batch_operations.py` for metadata-style cancellable and
+   retryable batches; do not force unrelated executors into that registry.
+4. Document intentional lifecycle differences and test start, progress,
+   cancellation, retry, terminal failure, restart, and truthful feedback.
+
+### Add an intention or track-planning provider
+
+1. Implement the existing provider protocol in `set_builder/intention_planner.py`
+   or `set_builder/track_planner.py`; provider code translates structured input
+   and output but does not own validation or catalog access.
+2. Keep candidate retrieval bounded and catalog-backed. Never send audio,
+   unrestricted catalog rows, or filesystem paths to a model.
+3. Preserve deterministic schema validation, repair limits, fallback, plan
+   comparison, and release gates.
+4. Test provider failure, malformed output, invented IDs, timeouts, fallback,
+   privacy boundaries, and a successful structured response without requiring a
+   live provider in the standard suite.
+
+## Verification matrix
+
+| Change risk | Required checks |
+| --- | --- |
+| Any maintained source | `./scripts/check_quality.sh` and `git diff --check` |
+| Coverage-sensitive logic | `./scripts/check_coverage.sh` |
+| Persistence, imports, relocation, export, or Set Builder durability | `./scripts/run_stability_gate.sh` |
+| Browser workflow, focus, responsive layout, or accessibility | `npm run check:browser` |
+| Architecture/module relationships | `graphify . --update --code-only --no-viz` plus the standard gate |
+| Live local-model behavior | Opt-in `AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1` acceptance suite |
+
+Install Chromium for the browser gate once with
+`npm run check:browser:install`. The Playwright server uses an isolated temporary
+catalog and library; see `browser-smoke-testing.md`. Standard quality, coverage,
+and stability details live in `development-quality.md`.
+
 ## Safe manual-change workflow
 
 1. Find the owning module above.
 2. Add/update a focused test under `tests/` before changing cross-layer behavior.
 3. Keep HTTP parsing in routers, domain behavior below them, and SQL in repositories.
-4. Run:
+4. Run the authoritative standard gate:
 
    ```bash
-   .venv/bin/python -m unittest discover -s tests -q
-   npm run check
-   .venv/bin/ruff check <changed-python-files>
+   ./scripts/check_quality.sh
    git diff --check
    ```
 

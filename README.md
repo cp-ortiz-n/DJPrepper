@@ -461,7 +461,9 @@ AudioExtender/
 │       ├── set_builder_routes.py          # Set catalog and playlist exports
 │       └── settings_routes.py             # Settings, storage, backup, relocation
 ├── web/                  # Browser shell, feature modules, shared UI, and styles
-├── tests/               # Fast unit tests and synthetic test fixtures
+├── tests/               # Unit/contract tests, fixtures, and isolated browser smoke workflows
+├── scripts/             # Quality, coverage, stability, browser-smoke, and evaluation commands
+├── docs/                # Architecture, ownership contracts, audits, and operating guides
 ├── input/               # Drop source songs here
 ├── output/
 │   ├── wav/             # Straight PCM WAV conversions of the source files
@@ -476,7 +478,10 @@ AudioExtender/
 The contents of `input/` and `output/` are ignored by Git, while the directories
 themselves remain part of the project.
 
-See [`docs/architecture.md`](docs/architecture.md) for package ownership and dependency rules.
+See [`docs/architecture.md`](docs/architecture.md) for package ownership,
+dependency rules, contribution recipes, and the verification matrix. The
+current file inventory and test locations are in
+[`docs/repository-map.md`](docs/repository-map.md).
 
 ## Maintainer quick guide
 
@@ -516,6 +521,9 @@ Use this table before searching through the larger composition files:
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
 | Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
+| Shared frontend API, DOM, feedback, or descriptor capabilities | `web/frontend-services.js`, `web/api-client.js` |
+| Browser workflow, focus, responsive, or accessibility regression | `tests/browser/workflows.spec.js`, `docs/browser-smoke-testing.md` |
+| Architecture dependency or placement rule | `docs/architecture.md`, `tests/test_architecture_boundaries.py` |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
 `audioextender/web/application.py`, which constructs services and injects them
@@ -533,14 +541,25 @@ The music-library path saved in Settings is durable SQLite state. Import code
 must obtain it through the injected library-root callback, reject an offline
 external drive, and never silently write to `~/Music` or a temporary folder.
 
-Before committing a manual change, run:
+Before committing any maintained-source change, run the authoritative standard
+gate:
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -q
-npm run check
-.venv/bin/ruff check path/to/changed_python_file.py
+./scripts/check_quality.sh
 git diff --check
 ```
+
+Add the relevant extended gate for the risk being changed:
+
+```bash
+./scripts/check_coverage.sh       # coverage-sensitive behavior
+./scripts/run_stability_gate.sh  # persistence/import/relocation/export/Set Builder durability
+npm run check:browser            # browser workflow, focus, viewport, or accessibility
+```
+
+Install the pinned Chromium binary once with
+`npm run check:browser:install`. Browser smoke tests use a temporary database and
+library and never open the user's configured catalog or music folder.
 
 Provider fallback, schema, and sanitization tests do not require a running
 model. The live local-model acceptance suite is opt-in:
