@@ -207,6 +207,7 @@ map reflects the current layout; it does not propose moving code.
 ├── web/
 │   ├── app.js
 │   ├── background-task-controller.js
+│   ├── candidate-review.js
 │   ├── dj-library.js
 │   ├── import-queue.js
 │   ├── import-issues.js

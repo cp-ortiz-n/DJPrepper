@@ -378,6 +378,7 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `playlist-import.js` | Playlist matching, permissions, source handoff, and Creative Commons verification |
 | `processing-workspace.js` | Processing queue state, polling, categorization, ETA/generation derivation, and candidate-review API boundary |
 | `processing-workspace-view.js` | Processing-card view models, action binding, artifact links, and incremental queue rendering |
+| `candidate-review.js` | Candidate decisions, custom waveform regions, insertion previews, transition scoring, and review reprocessing |
 | `background-task-controller.js` | Keyed cancellable polling with stale-task replacement and terminal callbacks |
 | `styles.css` | Shared visual system and responsive behavior |
 

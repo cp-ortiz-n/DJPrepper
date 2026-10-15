@@ -72,6 +72,8 @@ export function createProcessingWorkspaceApi(api) {
     rejectReview: (id) => api.post(`/api/jobs/${id}/review/reject`),
     saveFeedback: (id, body) => api.post(`/api/jobs/${id}/feedback`, body),
     reprocess: (id, body) => api.post(`/api/jobs/${id}/reprocess`, body),
+    waveform: (id, kind) => api.get(`/api/jobs/${id}/waveform/${kind}`),
+    transitionScore: (id, body) => api.post(`/api/jobs/${id}/transition-score`, body),
   };
 }
 

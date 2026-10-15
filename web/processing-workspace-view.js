@@ -1,3 +1,5 @@
+import { useFrontendServices } from './frontend-services.js';
+
 export function processingJobSignature(job) {
   return JSON.stringify([
     job.status,
@@ -64,7 +66,7 @@ export function createProcessingWorkspaceView({
   showView,
   loadLibrary,
 }) {
-  const { $, $$ } = services;
+  const { $, $$ } = useFrontendServices(services);
 
   const jobElement = (job) => {
     const node = template.content.firstElementChild.cloneNode(true);

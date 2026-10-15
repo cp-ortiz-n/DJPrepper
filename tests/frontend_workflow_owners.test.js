@@ -5,6 +5,7 @@ import { createBackgroundTaskController } from '../web/background-task-controlle
 import { importFailureKind } from '../web/import-issues.js';
 import { createLocalAudioImportFeature } from '../web/local-audio-import.js';
 import { creativeCommonsTracks } from '../web/playlist-import.js';
+import { createCandidateReviewFeature, reviewableProcessingJobs } from '../web/candidate-review.js';
 import {
   annotateProcessingJobs,
   categorizeProcessingJobs,
@@ -12,7 +13,11 @@ import {
   createProcessingWorkspaceController,
   sortProcessingJobs,
 } from '../web/processing-workspace.js';
-import { processingJobSignature, processingJobViewModel } from '../web/processing-workspace-view.js';
+import {
+  createProcessingWorkspaceView,
+  processingJobSignature,
+  processingJobViewModel,
+} from '../web/processing-workspace-view.js';
 import {
   authorizedSourceUrls,
   createAuthorizedImportFeature,
@@ -115,13 +120,65 @@ test('processing workspace API owns queue and candidate-review routes', async ()
   await api.reorder([9, 4]);
   await api.saveFeedback(9, { accepted: true });
   await api.rejectReview(9);
+  await api.waveform(9, 'extended');
+  await api.transitionScore(9, { destination: 32 });
   assert.deepEqual(calls, [
     ['get', '/api/jobs', { cache: 'no-store' }],
     ['post', '/api/jobs/9/pause', undefined],
     ['post', '/api/jobs/reorder', { job_ids: [9, 4] }],
     ['post', '/api/jobs/9/feedback', { accepted: true }],
     ['post', '/api/jobs/9/review/reject', undefined],
+    ['get', '/api/jobs/9/waveform/extended', undefined],
+    ['post', '/api/jobs/9/transition-score', { destination: 32 }],
   ]);
+});
+
+test('candidate review feature selects only valid completed review jobs', () => {
+  const jobs = [
+    { id: 1, status: 'complete', review_status: 'pending', config_json: '{"review_candidates":true}' },
+    { id: 2, status: 'complete', review_status: 'pending', config_json: '{"review_candidates":false}' },
+    { id: 3, status: 'processing', review_status: 'pending', config_json: '{"review_candidates":true}' },
+    { id: 4, status: 'complete', review_status: 'pending', config_json: '{broken' },
+  ];
+  assert.deepEqual(
+    reviewableProcessingJobs(jobs).map((job) => job.id),
+    [1],
+  );
+});
+
+test('processing and candidate views consume the shared frontend services contract', () => {
+  const services = Object.freeze({
+    api: Object.freeze({}),
+    dom: Object.freeze({ $: () => null, $$: () => [] }),
+    feedback: Object.freeze({ notify() {}, confirmAction: async () => true }),
+    descriptors: Object.freeze({}),
+  });
+  const processingView = createProcessingWorkspaceView({
+    services,
+    template: {},
+    jobsRoot: {},
+    action() {},
+    remove() {},
+    move() {},
+    hydrate() {},
+    showView() {},
+    loadLibrary() {},
+  });
+  const review = createCandidateReviewFeature({
+    services,
+    processingWorkspaceApi: {},
+    annotateJobs: (jobs) => jobs,
+    decodedAudio() {},
+    renderArrangementTimeline() {},
+    WaveSurfer: {},
+    RegionsPlugin: {},
+    TimelinePlugin: {},
+    jobAction() {},
+    loadJobs() {},
+    showView() {},
+  });
+  assert.equal(typeof processingView.render, 'function');
+  assert.equal(typeof review.load, 'function');
 });
 
 test('processing workspace controller deduplicates loads and renders selected groups', async () => {

@@ -196,13 +196,13 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   snapshots, restoration, command history, route serialization, classic fallback,
   and escaped render evidence. The entry-module size ceiling is ratcheted from
   675 to 663 lines.
-- [ ] **ARCH-007B — Reduce `app.js` to durable composition and navigation.**
+- [x] **ARCH-007B — Reduce `app.js` to durable composition and navigation.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-007A, ARCH-008A.
   Acceptance: processing/import feature behavior has an explicit owner; `app.js`
   contains bootstrap, navigation, and feature composition; its size ceiling is
   ratcheted downward rather than raised; DOM workflows pass. Evidence:
   [ARCH-007](docs/architecture-audit.md#arch-007--frontend-composition-still-carries-feature-implementation-and-broad-callback-wiring).
-  In progress 2026-10-13: import-failure loading, filtering, retry, polling,
+  Completed 2026-10-14: import-failure loading, filtering, retry, polling,
   selection, and dismissal now belong to `import-issues.js`. Generic cancellable
   polling belongs to `background-task-controller.js` with replacement and abort
   tests. `import-workspace.js` now also owns source normalization, local-file
@@ -217,9 +217,11 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   requests now belong to `processing-workspace.js`, with focused behavioral
   tests. Processing-card presentation, action binding, completed-artifact links,
   and incremental DOM reuse now belong to `processing-workspace-view.js`, backed
-  by pure view-model tests. The `app.js` ceiling is ratcheted from 1,878 to 1,418
-  lines. Remaining: move the candidate-review studio and waveform rendering into
-  its feature owner before marking this task complete.
+  by pure view-model tests. `candidate-review.js` owns review loading, candidate
+  decisions, custom regions, insertion previews, transition scoring, waveforms,
+  and reprocessing. The processing API owns every associated route. Behavioral
+  and structural tests protect the boundary, and the `app.js` ceiling is
+  ratcheted from 1,878 to 918 lines.
 - [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
   Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
   Acceptance: editable set ownership and backup scope are explicit; version-1

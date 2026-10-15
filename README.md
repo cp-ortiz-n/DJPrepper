@@ -82,7 +82,9 @@ permissions, and Creative Commons verification are owned by
 generation/ETA derivation, filtering, and candidate-review routes are owned by
 `web/processing-workspace.js`, keeping those lifecycle rules independently
 testable from page composition. Processing-card presentation and DOM action
-binding are owned by `web/processing-workspace-view.js`.
+binding are owned by `web/processing-workspace-view.js`. Candidate decisions,
+custom waveform regions, insertion previews, transition scoring, and review
+reprocessing are owned by `web/candidate-review.js`.
 
 ### Optional local AI for Set Builder
 
