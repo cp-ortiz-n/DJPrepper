@@ -93,6 +93,7 @@ test('disconnect and reconnect clear the stale offline presentation', async ({ p
 test('dialogs trap initial focus, close by keyboard, and restore focus', async ({ page }) => {
   await page.evaluate(async () => {
     const { confirmAction } = await import('/assets/shared-components.js');
+    document.querySelector('[data-view="settings-view"]').id = 'dialog-launcher';
     document.querySelector('#dialog-launcher').focus();
     window.__dialogResult = confirmAction('Confirm keyboard behavior', { title: 'Keyboard test' });
   });
