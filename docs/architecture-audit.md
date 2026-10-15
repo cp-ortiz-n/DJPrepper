@@ -297,7 +297,7 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 
 ### ARCH-013 — Stylesheet ownership may become a frontend bottleneck
 
-**Status:** Suspected / Needs Investigation  
+**Status:** Suspected / Needs Investigation
 **Category:** Frontend  
 **Severity:** Low  
 **Affected files:** `web/styles.css`  
@@ -327,7 +327,7 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 
 ### ARCH-015 — Production-scale concurrency behavior needs measurement
 
-**Status:** Suspected / Needs Investigation  
+**Status:** Measured / No correctness failure observed
 **Category:** Performance / Persistence  
 **Severity:** Medium  
 **Affected files:** `audioextender/repositories/base.py`, `audioextender/repositories/facade.py`, background services  
@@ -339,6 +339,17 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 **Estimated effort:** M investigation  
 **Regression risk:** Low  
 **Validation:** repeatable latency/error report; no user library access.
+
+**Follow-up measurement (2026-10-15):**
+`scripts/measure_repository_concurrency.py` now creates an isolated temporary
+catalog and exercises bounded concurrent job writes, catalog/descriptor writes,
+system-state writes, and catalog reads. A 25-round run with six workers completed
+100 operations with zero errors, zero SQLite lock failures, zero stale committed
+reads, and correct final counts. A small number of overlapping catalog reads
+exceeded the conservative 100 ms observation threshold across repeated runs;
+these are retained as latency evidence, not classified as correctness failures. No repository
+redesign is currently justified; rerun the harness on target Macs as catalog and
+workload sizes grow.
 
 ## 7. Backend Findings
 

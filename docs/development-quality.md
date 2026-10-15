@@ -97,3 +97,9 @@ errors, validation lists, expected domain failures, sanitized unexpected errors,
 and browser recovery metadata. The contract is additive: success payloads and
 existing `detail` values remain compatible.
 
+Repository concurrency can be measured safely with
+`scripts/measure_repository_concurrency.py`. The opt-in probe uses only a
+temporary catalog, enforces bounded workers and iterations, and reports latency,
+SQLite lock errors, suspected waits, stale committed reads, and final
+invariants. See `docs/concurrency-measurement.md` for interpretation.
+

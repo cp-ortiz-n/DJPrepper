@@ -284,11 +284,17 @@ boundaries from Phases 2–3. Benefit: contributors receive fast, actionable gat
   and the persisted Set Builder catalog before synchronously rebuilding both
   projections and recording their shared source signature. Track metadata,
   genre, descriptor, verification, and metadata-batch writes use this boundary.
-- [ ] **ARCH-015A — Measure concurrent job and SQLite behavior.** Priority: P2.
+- [x] **ARCH-015A — Measure concurrent job and SQLite behavior.** Priority: P2.
   Effort: M. Risk: Low. Dependencies: ARCH-004B. Acceptance: an opt-in disposable
   catalog harness runs simultaneous representative operations with bounded
   resources and reports lock waits, latency, stale results, and errors; redesign
   work is added only for measured failures. Evidence: [ARCH-015](docs/architecture-audit.md#arch-015--production-scale-concurrency-behavior-needs-measurement).
+  Completed 2026-10-14: an opt-in harness now runs bounded job, catalog,
+  descriptor, system-state, and catalog-read operations against a temporary
+  SQLite database. It reports per-operation p50/p95/max latency, SQLite lock
+  errors, overlapping slow operations, stale committed reads, and final
+  invariants. The 25-round/6-worker acceptance run completed 100 operations with
+  no errors or stale results, so no speculative ARCH-015B redesign was added.
 - [ ] **ARCH-011B — Add browser workflow and accessibility smoke coverage.**
   Priority: P2. Effort: M. Risk: Low. Dependencies: ARCH-007B, ARCH-008A.
   Acceptance: save/refresh/restart, overlapping search, drive reconnect, import
