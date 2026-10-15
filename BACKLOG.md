@@ -253,11 +253,28 @@ boundaries from Phases 2–3. Benefit: contributors receive fast, actionable gat
   obsolete SQL exceptions fail closed, and browser profile derivation is guarded
   to the documented `dj-library.js` compatibility owner so feature modules must
   consume its helpers instead of recreating musical rules.
-- [ ] **ARCH-014A — Investigate manual-correction propagation and cache
+- [x] **ARCH-014A — Investigate manual-correction propagation and cache
   invalidation.** Priority: P1. Effort: M. Risk: Medium. Dependencies: ARCH-003B.
   Acceptance: a matrix/test covers manual BPM, key, genre, and identity changes
   across catalog, search index, DJ Library, Set Builder, refresh, and restart;
   any confirmed gap receives a separate refactor item. Evidence: [ARCH-014](docs/architecture-audit.md#arch-014--manual-musical-corrections-may-not-flow-through-every-derived-cache).
+  Completed 2026-10-14: the executable
+  [`manual-correction-propagation.json`](docs/manual-correction-propagation.json)
+  matrix and disposable-catalog tests cover BPM, key, genre, and identity across
+  durable storage, search, DJ Library, Set Builder, refresh, and restart. Key and
+  identity propagation are covered. The investigation confirmed two follow-ups:
+  ARCH-014B and ARCH-014C.
+- [ ] **ARCH-014B — Add durable verified BPM corrections.** Priority: P1.
+  Effort: M. Risk: Medium. Dependencies: ARCH-014A. Acceptance: users can save or
+  clear a verified BPM; catalog delivery, DJ Library, Set Builder, refresh,
+  restart, and reanalysis consistently prefer the durable verified value while
+  preserving the detected BPM as evidence.
+- [ ] **ARCH-014C — Publish metadata corrections through one synchronous catalog
+  invalidation boundary.** Priority: P1. Effort: M. Risk: Medium. Dependencies:
+  ARCH-014A. Acceptance: genre and general metadata writes atomically invalidate
+  in-memory facets, persisted signatures, and the Set Builder catalog; the first
+  read after a successful write observes the correction, including same-second
+  writes, with behavioral coverage for DJ Library and Set Builder.
 - [ ] **ARCH-015A — Measure concurrent job and SQLite behavior.** Priority: P2.
   Effort: M. Risk: Low. Dependencies: ARCH-004B. Acceptance: an opt-in disposable
   catalog harness runs simultaneous representative operations with bounded

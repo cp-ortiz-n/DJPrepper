@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "corrections": [
+    {
+      "field": "bpm",
+      "authoritative_write": "unsupported",
+      "catalog": "gap",
+      "search_index": "gap",
+      "dj_library": "gap",
+      "set_builder": "gap",
+      "refresh": "gap",
+      "restart": "gap",
+      "status": "confirmed-gap",
+      "follow_up": "ARCH-014B"
+    },
+    {
+      "field": "key",
+      "authoritative_write": "key_verifications",
+      "catalog": "durable",
+      "search_index": "synchronous-rebuild",
+      "dj_library": "updated",
+      "set_builder": "updated",
+      "refresh": "updated",
+      "restart": "durable",
+      "status": "covered",
+      "follow_up": ""
+    },
+    {
+      "field": "genre",
+      "authoritative_write": "downloaded_tracks-and-file-metadata",
+      "catalog": "durable",
+      "search_index": "signature-triggered-background-rebuild",
+      "dj_library": "may-serve-one-stale-read",
+      "set_builder": "may-read-version-valid-stale-file",
+      "refresh": "eventually-updated",
+      "restart": "durable",
+      "status": "confirmed-gap",
+      "follow_up": "ARCH-014C"
+    },
+    {
+      "field": "identity",
+      "authoritative_write": "downloaded_track_descriptors",
+      "catalog": "durable",
+      "search_index": "live-descriptor-join",
+      "dj_library": "updated",
+      "set_builder": "cache-explicitly-invalidated",
+      "refresh": "updated",
+      "restart": "durable",
+      "status": "covered",
+      "follow_up": ""
+    }
+  ]
+}
