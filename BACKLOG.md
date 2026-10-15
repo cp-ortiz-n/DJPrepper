@@ -241,15 +241,18 @@ composition root, and no storage or UI workflow compatibility is lost.
 Objective: prevent the confirmed problems from returning. Dependencies: stable
 boundaries from Phases 2–3. Benefit: contributors receive fast, actionable gates.
 
-- [ ] **ARCH-012B — Add automated architecture boundary checks.** Priority: P1.
+- [x] **ARCH-012B — Add automated architecture boundary checks.** Priority: P1.
   Effort: M. Risk: Low. Dependencies: ARCH-001B, ARCH-003B. Acceptance: tests
   detect Python cycles, domain imports from `web`, SQL outside repositories,
   growth of designated composition/orchestration hotspots, and reintroduction of
   browser musical derivation; limits are ratchets tied to current responsibilities.
   Evidence: [ARCH-012](docs/architecture-audit.md#arch-012--quality-enforcement-has-gaps-and-the-checked-out-baseline-is-not-lint-clean).
-  Phase 0 foundation complete: cycle, dependency-direction, SQL-boundary, and
-  hotspot-growth ratchets now run in the standard gate. This remains open until
-  `ARCH-003B` supplies the browser musical-policy boundary required by acceptance.
+  Completed 2026-10-14: cycle, dependency-direction, SQL-boundary, current
+  hotspot-growth, and `TrackProcessor.process` complexity ratchets run in the
+  standard gate. Import resolution now covers package-level `from` imports,
+  obsolete SQL exceptions fail closed, and browser profile derivation is guarded
+  to the documented `dj-library.js` compatibility owner so feature modules must
+  consume its helpers instead of recreating musical rules.
 - [ ] **ARCH-014A — Investigate manual-correction propagation and cache
   invalidation.** Priority: P1. Effort: M. Risk: Medium. Dependencies: ARCH-003B.
   Acceptance: a matrix/test covers manual BPM, key, genre, and identity changes
