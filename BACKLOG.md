@@ -222,11 +222,19 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   and reprocessing. The processing API owns every associated route. Behavioral
   and structural tests protect the boundary, and the `app.js` ceiling is
   ratcheted from 1,878 to 918 lines.
-- [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
+- [x] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
   Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
   Acceptance: editable set ownership and backup scope are explicit; version-1
   localStorage records migrate without loss; restart/browser-clear behavior,
   planning receipts, and M3U8 export are tested. Evidence: [ARCH-009](docs/architecture-audit.md#arch-009--saved-set-ownership-is-split-between-browser-and-durable-backend-artifacts).
+  Completed 2026-10-15: editable set aggregates are versioned backend records
+  stored in SQLite system state and therefore participate in restart and existing
+  database backup/restore behavior. The aggregate includes the brief, ordered
+  track IDs and recovery details, transitions, locks/rules, planning mode, and
+  planning receipt. Browser version-1 records migrate idempotently without
+  replacing newer server records; localStorage remains a recovery cache only.
+  M3U8 remains an optional export artifact, and its failure no longer makes the
+  durable editable-save result ambiguous.
 - [ ] **ARCH-013A — Investigate CSS ownership and responsive/accessibility
   regressions.** Priority: P3. Effort: S. Risk: Low. Dependencies: ARCH-011A.
   Acceptance: selector ownership, unused/overlapping rules, supported viewports,

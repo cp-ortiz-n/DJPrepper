@@ -256,11 +256,16 @@ policy; and
 `set-planning-client.js` owns browser polling and abort semantics. The model cannot bypass availability, explicit brief constraints,
 exclusions, duration, or journey-coverage checks.
 
-Completed set records store a planning receipt separately from the editable
-brief. That receipt includes mode, provider/model, evaluation, warnings,
-candidate scarcity, fallback reason, duration, and per-track selection evidence.
-Loading a saved set restores this provenance; manual edits remain possible but
-do not rewrite the historical generation receipt.
+`SavedSetService` owns version-2 editable set aggregates in SQLite-backed system
+state. Each record includes the brief, ordered track IDs and recovery evidence,
+transition edits, locked/required/excluded rules, planning mode, and the original
+planning receipt. These records survive application restart, browser data loss,
+and the existing database backup/restore workflow. Version-1 localStorage records
+are migrated idempotently on first load without replacing a newer server record;
+localStorage is retained only as an offline recovery cache. M3U8 is a separate,
+optional interoperability artifact, so an export failure does not invalidate or
+obscure a successful editable-set save. Manual edits remain possible but do not
+rewrite the historical generation receipt.
 
 `scripts/evaluate_set_builder.py` is the catalog-scale regression boundary. It
 runs the checked-in scenarios in `tests/fixtures/set_builder_eval_scenarios.json`

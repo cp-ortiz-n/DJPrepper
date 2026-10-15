@@ -80,11 +80,23 @@ test('Set Builder API owns route serialization and exposes planning lifecycle', 
     durationMinutes: 60,
   });
   await client.exportPreflight(['/music/a.wav']);
+  await client.savedSets();
+  await client.saveSet({ id: 'set/one', name: 'Set One', tracks: ['track-1'] });
+  await client.deleteSet('set/one');
+  await client.migrateSavedSets([{ id: 'legacy', name: 'Legacy', tracks: [] }]);
 
   assert.equal(client.planning, planning);
   assert.deepEqual(
     calls.map((call) => call.url),
-    ['/api/set-builder/interpret-intention', '/api/set-builder/plan-journey', '/api/set-builder/export-preflight'],
+    [
+      '/api/set-builder/interpret-intention',
+      '/api/set-builder/plan-journey',
+      '/api/set-builder/export-preflight',
+      '/api/set-builder/sets',
+      '/api/set-builder/sets/set%2Fone',
+      '/api/set-builder/sets/set%2Fone',
+      '/api/set-builder/sets/migrate-v1',
+    ],
   );
   assert.deepEqual(JSON.parse(calls[1].options.body), {
     brief: 'Latin warm-up',

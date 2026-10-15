@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JOURNEY_SCHEMA, JourneyPlanner, offline_journey, sanitize_journey
+from audioextender.set_builder.saved_sets import SavedSetService
 from audioextender.web.set_builder_routes import SetBuilderRouteDependencies, create_set_builder_router
 
 
@@ -97,6 +98,8 @@ class JourneyPlannerTests(unittest.TestCase):
                 "evidence": "deterministic-fallback",
             }
             intention = Mock()
+            state = Mock()
+            state.get_system_state.return_value = None
             app = FastAPI()
             app.include_router(create_set_builder_router(SetBuilderRouteDependencies(
                 catalog_cache_path=Path(temporary) / "catalog.json",
@@ -106,6 +109,7 @@ class JourneyPlannerTests(unittest.TestCase):
                 safe_folder_name=lambda value: value,
                 intention_planner=intention,
                 journey_planner=planner,
+                saved_sets=SavedSetService(state),
             )))
             response = TestClient(app).post("/api/set-builder/plan-journey", json={
                 "brief": "Cumbia then Salsa",

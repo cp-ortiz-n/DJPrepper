@@ -41,10 +41,10 @@ class WebCompositionContractTests(unittest.TestCase):
         inventory = public_route_inventory()
         encoded = json.dumps(inventory, separators=(",", ":")).encode()
 
-        self.assertEqual(len(inventory), 155)
+        self.assertEqual(len(inventory), 159)
         self.assertEqual(
             hashlib.sha256(encoded).hexdigest(),
-            "aa4cc63a654c4f12401aa3bc630ce76c16335dd9bad9ac546ad55c2f73537f8e",
+            "9e8b73fccf3268d8cffdaf9d36e35d9f623cd9831ec19fc974bf88d5f5e1d01c",
             "Public route inventory changed:\n" + json.dumps(inventory, indent=2),
         )
 

@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from audioextender.set_builder.candidate_retriever import SET_BUILDER_CATALOG_VERSION
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
+from audioextender.set_builder.saved_sets import SavedSetService
 
 
 class SetExportPreflightRequest(BaseModel):
@@ -43,6 +44,14 @@ class SetJourneyRequest(SetIntentionRequest):
     duration_minutes: int = Field(default=60, ge=15, le=480)
 
 
+class SavedSetRequest(BaseModel):
+    record: dict[str, Any]
+
+
+class SavedSetMigrationRequest(BaseModel):
+    records: list[dict[str, Any]] = Field(default_factory=list, max_length=1000)
+
+
 @dataclass(frozen=True)
 class SetBuilderRouteDependencies:
     catalog_cache_path: Path
@@ -52,6 +61,7 @@ class SetBuilderRouteDependencies:
     safe_folder_name: Callable[[str], str]
     intention_planner: IntentionPlanner
     journey_planner: JourneyPlanner
+    saved_sets: SavedSetService
 
 
 def preflight_paths(request: SetExportPreflightRequest) -> dict:
@@ -140,6 +150,29 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
     @router.post("/save-playlist")
     def save_playlist(request: SetPlaylistSaveRequest) -> dict:
         return save_playlist_file(request, deps.music_library_root(), deps.safe_folder_name)
+
+    @router.get("/sets")
+    def saved_sets() -> dict[str, Any]:
+        return deps.saved_sets.list_sets()
+
+    @router.put("/sets/{set_id}")
+    def save_set(set_id: str, request: SavedSetRequest) -> dict[str, Any]:
+        record = {**request.record, "id": set_id}
+        try:
+            return deps.saved_sets.upsert(record)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
+    @router.delete("/sets/{set_id}")
+    def delete_set(set_id: str) -> dict[str, Any]:
+        return deps.saved_sets.delete(set_id)
+
+    @router.post("/sets/migrate-v1")
+    def migrate_saved_sets(request: SavedSetMigrationRequest) -> dict[str, Any]:
+        try:
+            return deps.saved_sets.migrate_v1(request.records)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
 
     @router.get("/intention-provider")
     def intention_provider() -> dict:

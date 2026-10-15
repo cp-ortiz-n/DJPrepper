@@ -237,7 +237,7 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 
 ### ARCH-009 — Saved-set ownership is split between browser and durable backend artifacts
 
-**Status:** Confirmed  
+**Status:** Resolved by ARCH-009A (2026-10-15)
 **Category:** Persistence / Frontend  
 **Severity:** Medium  
 **Affected files:** `web/set-builder.js`, `audioextender/set_builder/planning_store.py`, `audioextender/web/set_builder_routes.py`  
@@ -249,6 +249,12 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 **Estimated effort:** L  
 **Regression risk:** High  
 **Validation:** migrate version-1 local records, restart/browser-clear tests, backup/restore, M3U8 compatibility.
+
+**Resolution:** Editable saved sets are now versioned backend aggregates in the
+SQLite database. Existing browser records migrate without overwriting newer
+server data, localStorage is a recovery cache, and M3U8 remains a separately
+reported export artifact. Restart, browser-clear, migration, and database
+backup/restore behavior are covered by deterministic and browser tests.
 
 ### ARCH-010 — Error handling and API failure contracts are inconsistent
 

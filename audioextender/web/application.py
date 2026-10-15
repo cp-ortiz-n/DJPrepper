@@ -87,6 +87,7 @@ from audioextender.set_builder.preference_learning import (
     PersonalizedCandidateRanker,
 )
 from audioextender.set_builder.review_service import SetReviewService
+from audioextender.set_builder.saved_sets import SavedSetService
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
 from audioextender.web.composition import (
     ApplicationPaths,
@@ -3516,6 +3517,7 @@ def create_app(
                 safe_folder_name=_safe_folder_name,
                 intention_planner=intention_planner,
                 journey_planner=journey_planner,
+                saved_sets=SavedSetService(repository),
             )
         )
     )

@@ -44,6 +44,13 @@ export function createSetBuilderApi({ api, planningClient = createSetPlanningCli
     submitReview: (review) => post('/api/set-builder/reviews', review, 'Review could not be saved.'),
     waveform: (jobId) => get(`/api/jobs/${jobId}/waveform/wav`, 'Waveform unavailable.'),
     savePlaylist: (playlist) => post('/api/set-builder/save-playlist', playlist, 'Playlist file could not be saved.'),
+    savedSets: () => get('/api/set-builder/sets', 'Saved sets could not be loaded.'),
+    saveSet: (record) =>
+      api.put(`/api/set-builder/sets/${encodeURIComponent(record.id)}`, { record }, {}, 'Set could not be saved.'),
+    deleteSet: (setId) =>
+      api.delete(`/api/set-builder/sets/${encodeURIComponent(setId)}`, {}, 'Set could not be deleted.'),
+    migrateSavedSets: (records) =>
+      post('/api/set-builder/sets/migrate-v1', { records }, 'Saved sets could not be migrated.'),
     exportPreflight: (paths) =>
       post('/api/set-builder/export-preflight', { paths }, 'Playlist paths could not be validated.'),
     planning: planningClient,

@@ -62,6 +62,32 @@ test('persisted settings render after browser refresh', async ({ page }) => {
   await expect(page.locator('#setting-outro-search')).toHaveValue('31');
 });
 
+test('saved sets survive browser storage clearing and application reload', async ({ page }) => {
+  const saved = await page.evaluate(async () => {
+    const record = {
+      id: 'browser-clear-proof',
+      name: 'Browser Clear Proof',
+      tracks: ['track-1'],
+      planningReceipt: { provider: 'offline', validated: true },
+      transitions: {},
+    };
+    const response = await fetch(`/api/set-builder/sets/${record.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ record }),
+    });
+    return response.json();
+  });
+  expect(saved.survives_restart).toBe(true);
+
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  const records = await page.evaluate(() => fetch('/api/set-builder/sets').then((response) => response.json()));
+  expect(records.sets).toEqual(
+    expect.arrayContaining([expect.objectContaining({ id: 'browser-clear-proof', name: 'Browser Clear Proof' })]),
+  );
+});
+
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
   await page.route('**/api/downloaded-library?*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 180));
