@@ -33,7 +33,7 @@ function refreshSearchableSelects() {
   document.querySelectorAll('select').forEach(select => {
     if (!select.id) select.id = `app-select-${++generatedSelectId}`;
     const id = select.id;
-    let search = document.getElementById(`${id}-search`);
+    let search = document.getElementById(`${id}-combobox-search`);
     if (!search) {
       let container = select.closest('label');
       if (!container) {
@@ -44,7 +44,7 @@ function refreshSearchableSelects() {
       }
       container.classList.add('has-searchable-select');
       search = document.createElement('input');
-      search.id = `${id}-search`;
+      search.id = `${id}-combobox-search`;
       search.type = 'text';
       search.className = 'select-search-input';
       search.autocomplete = 'off';

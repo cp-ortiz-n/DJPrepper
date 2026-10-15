@@ -295,12 +295,20 @@ boundaries from Phases 2–3. Benefit: contributors receive fast, actionable gat
   errors, overlapping slow operations, stale committed reads, and final
   invariants. The 25-round/6-worker acceptance run completed 100 operations with
   no errors or stale results, so no speculative ARCH-015B redesign was added.
-- [ ] **ARCH-011B — Add browser workflow and accessibility smoke coverage.**
+- [x] **ARCH-011B — Add browser workflow and accessibility smoke coverage.**
   Priority: P2. Effort: M. Risk: Low. Dependencies: ARCH-007B, ARCH-008A.
   Acceptance: save/refresh/restart, overlapping search, drive reconnect, import
   path safety, single audio playback, dialog focus, keyboard navigation, and
   supported viewports have automated or explicitly documented release checks.
   Evidence: [ARCH-011](docs/architecture-audit.md#arch-011--frontend-tests-contain-brittle-source-assertions-and-duplicated-cases).
+  Completed 2026-10-15: an isolated Playwright/Chromium release gate now covers
+  persisted settings after refresh, overlapping search requests, drive
+  disconnect/reconnect, single-preview ownership, dialog focus and Escape,
+  desktop/mobile-width layouts, duplicate DOM IDs, and serious/critical WCAG
+  violations. Existing deterministic Python coverage remains authoritative for
+  application restart and import path safety. The browser run also exposed and
+  fixed three stale frontend-service consumers and searchable-select IDs that
+  collided with the intro/outro search-window fields.
 
 Phase acceptance: architectural violations and critical behavior regressions
 fail with clear messages before merge.

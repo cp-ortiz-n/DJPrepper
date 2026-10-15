@@ -1,3 +1,5 @@
+import { useFrontendServices } from './frontend-services.js';
+
 export const SUPPORTED_LOCAL_AUDIO = /\.(mp3|m4a|aac|flac|ogg|opus|wav|aiff?|aif)$/i;
 
 export function sourceUrlType(value) {
@@ -69,7 +71,7 @@ export function createImportWorkspaceApi(api) {
 }
 
 export function createAuthorizedImportFeature({ services, importApi, Queue, clock, loadJobs, stopTask, escapeHtml }) {
-  const { $ } = services;
+  const { $ } = useFrontendServices(services);
   let timer = null;
   let metadata = null;
   const urls = () => authorizedSourceUrls($('#authorized-url').value);

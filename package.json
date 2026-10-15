@@ -9,8 +9,10 @@
   },
   "scripts": {
     "check": "npm run check:syntax && node --test tests/*.test.js",
+    "check:browser": "playwright test",
+    "check:browser:install": "playwright install chromium",
     "check:syntax": "node --check web/app.js && node --check web/api-client.js && node --check web/background-task-controller.js && node --check web/candidate-review.js && node --check web/frontend-services.js && node --check web/import-issues.js && node --check web/import-workspace.js && node --check web/local-audio-import.js && node --check web/playlist-import.js && node --check web/processing-workspace.js && node --check web/processing-workspace-view.js && node --check web/request-state-controller.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/set-builder-api.js && node --check web/set-builder-classic-planner.js && node --check web/set-builder-commands.js && node --check web/set-builder-state.js && node --check web/set-builder-view-model.js && node --check web/set-planning-client.js && node --check web/settings.js && node --check web/reporting.js && node --check web/import-queue.js",
-    "lint": "eslint web tests/*.test.js scripts/*.mjs",
+    "lint": "eslint web tests/*.test.js tests/browser/*.spec.js scripts/*.mjs",
     "format:check": "node scripts/check_frontend_format.mjs",
     "quality": "npm run lint && npm run format:check && npm run check",
     "coverage": "npm run coverage:js && npm run coverage:python",
@@ -32,6 +34,8 @@
     "wavesurfer.js": "^7.12.12"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1",
     "c8": "^12.0.0",
     "eslint": "^8.57.1",
     "prettier": "^3.6.2"

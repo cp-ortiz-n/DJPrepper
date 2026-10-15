@@ -1,4 +1,5 @@
 import { playlistTrackKey } from './import-workspace.js';
+import { useFrontendServices } from './frontend-services.js';
 
 export function creativeCommonsTracks(matches) {
   return matches
@@ -15,7 +16,7 @@ export function creativeCommonsTracks(matches) {
 }
 
 export function createPlaylistImportFeature({ services, importApi, runTask, clock, escapeHtml, loadImportFailures }) {
-  const { $, $$ } = services;
+  const { $, $$ } = useFrontendServices(services);
   const permissions = new Map();
   let matches = [];
   let playlistName = 'Imported Playlist';

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createBackgroundTaskController } from '../web/background-task-controller.js';
+import { createFrontendServices } from '../web/frontend-services.js';
 import { importFailureKind } from '../web/import-issues.js';
 import { createLocalAudioImportFeature } from '../web/local-audio-import.js';
 import { creativeCommonsTracks } from '../web/playlist-import.js';
@@ -24,6 +25,21 @@ import {
   createImportWorkspaceApi,
   sourceUrlType,
 } from '../web/import-workspace.js';
+
+function frontendServicesFor(select) {
+  return createFrontendServices({
+    api: { raw() {}, request() {}, errorMessage() {} },
+    dom: { $: select, $$: () => [] },
+    feedback: { notify() {}, confirmAction() {}, operationReceiptText() {} },
+    descriptors: {
+      chipsMarkup() {},
+      editorMarkup() {},
+      openEditorDialog() {},
+      saveEditor() {},
+      inferEditor() {},
+    },
+  });
+}
 
 test('processing workspace derives generations, ETA, and durable queue groups', () => {
   const jobs = [
@@ -394,7 +410,7 @@ test('authorized import feature owns guidance, submission, and completion feedba
   const stopped = [];
   let jobsLoaded = 0;
   const feature = createAuthorizedImportFeature({
-    services: { $: (selector) => elements.get(selector) },
+    services: frontendServicesFor((selector) => elements.get(selector)),
     importApi: { matchSource: async () => ({}), authorizedStatus: async () => ({ status: 'complete' }) },
     Queue,
     clock: String,
@@ -440,7 +456,7 @@ test('local audio feature owns workspace import lifecycle and refresh', async ()
   let cleared = 0;
   let refreshed = 0;
   const feature = createLocalAudioImportFeature({
-    services: { $: (selector) => elements.get(selector) },
+    services: frontendServicesFor((selector) => elements.get(selector)),
     importApi: {
       startLocal: async (data) => {
         submitted = data;

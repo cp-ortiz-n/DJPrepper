@@ -1,4 +1,5 @@
 import { addLocalAudioFiles } from './import-workspace.js';
+import { useFrontendServices } from './frontend-services.js';
 
 function localImportFormData(files, playlistName) {
   const data = new FormData();
@@ -17,7 +18,7 @@ export function createLocalAudioImportFeature({
   clearWorkspaceFiles,
   loadMusicFiles,
 }) {
-  const { $ } = services;
+  const { $ } = useFrontendServices(services);
   let files = [];
 
   function renderStagedFiles() {

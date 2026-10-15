@@ -103,3 +103,10 @@ temporary catalog, enforces bounded workers and iterations, and reports latency,
 SQLite lock errors, suspected waits, stale committed reads, and final
 invariants. See `docs/concurrency-measurement.md` for interpretation.
 
+`npm run check:browser` is the opt-in release smoke gate. It starts a real app
+against an isolated temporary catalog and music-library folder, then runs
+Chromium workflows and axe accessibility checks. Install its pinned browser once
+with `npm run check:browser:install`. The smoke server never opens the configured
+user database or music library. See `docs/browser-smoke-testing.md` for the
+coverage map and interpretation rules.
+

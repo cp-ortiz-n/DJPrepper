@@ -9,6 +9,8 @@ __pycache__/
 .coverage
 coverage/
 htmlcov/
+playwright-report/
+test-results/
 input/*
 !input/.gitkeep
 output/*
