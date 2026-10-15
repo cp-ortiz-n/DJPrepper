@@ -12,6 +12,7 @@ import {
   createProcessingWorkspaceController,
   sortProcessingJobs,
 } from '../web/processing-workspace.js';
+import { processingJobSignature, processingJobViewModel } from '../web/processing-workspace-view.js';
 import {
   authorizedSourceUrls,
   createAuthorizedImportFeature,
@@ -158,6 +159,52 @@ test('processing workspace controller deduplicates loads and renders selected gr
   assert.equal(listCalls, 1);
   assert.equal(renders[0].filter, 'active');
   assert.deepEqual(renders[0].visible, []);
+});
+
+test('processing workspace view derives stable labels without mutating job data', () => {
+  const job = {
+    id: 8,
+    status: 'complete',
+    review_status: 'rejected',
+    progress: 100,
+    stage: 'Complete',
+    preset: 'club',
+    intro_bars: 16,
+    outro_bars: 8,
+    use_stems: true,
+    _generation: 3,
+    _eta: '~2 min',
+    config_json: JSON.stringify({ intro_bars_auto: true }),
+  };
+  const view = processingJobViewModel(job);
+  assert.equal(view.status, 'review dismissed');
+  assert.equal(view.stage, 'Review dismissed · processed audio remains available in Library');
+  assert.equal(view.reviewLabel, 'Reopen review');
+  assert.equal(view.reprocessLabel, 'Process automatically');
+  assert.match(view.meta, /auto intro · 8 bar outro · stems · generation 3 · ETA ~2 min/);
+  assert.equal(job.config, undefined);
+  assert.equal(
+    processingJobSignature(job),
+    JSON.stringify(['complete', 100, 'Complete', undefined, undefined, undefined, 'rejected', undefined]),
+  );
+});
+
+test('processing workspace view reports long-running analysis without changing its status', () => {
+  const now = Date.parse('2026-10-14T12:10:00Z');
+  const view = processingJobViewModel(
+    {
+      status: 'processing',
+      stage: 'Analyzing structure',
+      created_at: '2026-10-14T12:00:00Z',
+      preset: 'auto',
+      intro_bars: 8,
+      outro_bars: 8,
+      progress: 40,
+    },
+    now,
+  );
+  assert.equal(view.status, 'processing');
+  assert.equal(view.stage, 'Analyzing structure · long analysis, still working');
 });
 
 test('background task controller completes inactive work and releases ownership', async () => {

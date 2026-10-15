@@ -18,6 +18,7 @@ import {createImportIssuesFeature} from './import-issues.js';
 import {createLocalAudioImportFeature} from './local-audio-import.js';
 import {createPlaylistImportFeature} from './playlist-import.js';
 import {annotateProcessingJobs, createProcessingWorkspaceApi, createProcessingWorkspaceController} from './processing-workspace.js';
+import {createProcessingWorkspaceView} from './processing-workspace-view.js';
 
 const api = createApiClient();
 const importWorkspaceApi = createImportWorkspaceApi(api);
@@ -164,6 +165,7 @@ const dropZone = $('#drop-zone');
 const jobsRoot = $('#jobs');
 const template = $('#job-template');
 let processingWorkspaceController = null;
+let processingWorkspaceView = null;
 let appConfig = null;
 let arrangementPreview = null;
 let stagedFiles = [];
@@ -681,13 +683,25 @@ const reportingFeature = createReportingFeature({
   services: frontendServices, loadJobs, renderLibraryIntelligence, startKeyAnalysis,
 });
 const {loadAnalysis, loadReports} = reportingFeature;
+processingWorkspaceView = createProcessingWorkspaceView({
+  services: frontendServices,
+  template,
+  jobsRoot,
+  action: jobAction,
+  remove: removeJob,
+  move: moveJob,
+  hydrate: hydrateCompletedJob,
+  showView,
+  loadLibrary,
+});
 processingWorkspaceController = createProcessingWorkspaceController({
   workspaceApi: processingWorkspaceApi,
-  render: renderProcessingWorkspace,
+  render: processingWorkspaceView.render,
   onAnalysisRefresh: jobs => loadAnalysis(jobs),
   clock: window,
   documentRef: document,
 });
+processingWorkspaceView.bindFilters(processingWorkspaceController);
 const setBuilderFeature = createSetBuilderFeature({
   services: frontendServices, option, escapeHtml, clock, decodedAudio, WaveSurfer,
   compatibility, harmonicCompatibility, camelotKey, formatLibraryKey,
@@ -843,77 +857,7 @@ $('#restore-batch-defaults').addEventListener('click', () => {
 });
 
 function jobElement(job) {
-  const node = template.content.firstElementChild.cloneNode(true);
-  let detailsHydrated = false;
-  node.dataset.status = job.status; node.dataset.jobId = job.id;
-  node.dataset.renderSignature = jobRenderSignature(job);
-  if (job.review_status === 'pending') node.classList.add('review-awaiting');
-  if (job.review_status === 'rejected') node.classList.add('review-dismissed');
-  node.querySelector('.track-title strong').textContent = job.source_name;
-  node.querySelector('.meta').textContent = `${job.preset} · ${job.intro_bars} bar intro · ${job.outro_bars} bar outro${job.use_stems ? ' · stems' : ''} · generation ${job._generation || 1}${job._eta ? ` · ETA ${job._eta}` : ''}`;
-  node.querySelector('.status').textContent = job.review_status === 'pending' ? 'awaiting review' : job.review_status === 'rejected' ? 'review dismissed' : job.status;
-  node.querySelector('.progress-track span').style.width = `${job.progress}%`;
-  node.querySelector('.stage').textContent = job.review_status === 'pending' ? 'Candidate review requested · choose options in Review' : job.review_status === 'rejected' ? 'Review dismissed · processed audio remains available in Library' : job.stage;
-  if (job.status === 'processing' && Date.now() - new Date(job.created_at).getTime() > 300000) {
-    node.querySelector('.stage').textContent = `${job.stage} · long analysis, still working`;
-  }
-  node.querySelector('.percent').textContent = `${Math.round(job.progress)}%`;
-  node.querySelector('.job-error').textContent = job.error || '';
-  node.querySelector('.cancel-job').addEventListener('click', () => jobAction(job.id, 'cancel'));
-  const pauseButton = node.querySelector('.pause-job');
-  pauseButton.textContent = job.pause_requested ? 'Resume' : 'Pause';
-  pauseButton.addEventListener('click', () => jobAction(job.id, job.pause_requested ? 'resume' : 'pause'));
-  const reprocessButton = node.querySelector('.reprocess-job');
-  reprocessButton.textContent = job.review_status === 'rejected' ? 'Process automatically' : 'Reprocess';
-  reprocessButton.addEventListener('click', () => jobAction(job.id, 'reprocess', job.review_status === 'rejected' ? {review_candidates:false} : null));
-  node.querySelector('.remove-job').addEventListener('click', () => removeJob(job.id));
-  node.querySelector('.details-job').addEventListener('click', async event => {
-    const open = node.classList.toggle('details-open');
-    event.currentTarget.textContent = open ? 'Hide details' : 'Show details';
-    if (open && job.status === 'complete' && !detailsHydrated) {
-      detailsHydrated = true;
-      await hydrateCompletedJob(node, job);
-    }
-  });
-  node.querySelector('.library-job').addEventListener('click', async () => {
-    showView('library-view');
-    await loadLibrary();
-  });
-  let jobConfig = {}; try { jobConfig = JSON.parse(job.config_json || '{}'); } catch (_) { jobConfig = {}; }
-  const introLabel = jobConfig.intro_bars_auto ? 'auto intro' : `${job.intro_bars} bar intro`;
-  const outroLabel = jobConfig.outro_bars_auto ? 'auto outro' : `${job.outro_bars} bar outro`;
-  node.querySelector('.meta').textContent = jobConfig.analysis_only
-    ? `analysis only${job.use_stems ? ' · stems' : ''}${job._eta ? ` · ETA ${job._eta}` : ''}`
-    : `${job.preset} · ${introLabel} · ${outroLabel}${job.use_stems ? ' · stems' : ''} · generation ${job._generation || 1}${job._eta ? ` · ETA ${job._eta}` : ''}`;
-  node.querySelector('.review-job').addEventListener('click', () => {
-    if (job.review_status === 'pending') showView('review-view');
-    else jobAction(job.id, 'reprocess', {review_candidates:true});
-  });
-  node.querySelector('.review-job').textContent = job.review_status === 'pending' ? 'Open review' : job.review_status === 'rejected' ? 'Reopen review' : 'Create review';
-  node.querySelector('.move-up').addEventListener('click', () => moveJob(job.id, -1));
-  node.querySelector('.move-down').addEventListener('click', () => moveJob(job.id, 1));
-  if (job.status === 'complete' && job.review_status !== 'pending') {
-    const downloads = node.querySelector('.downloads'); downloads.classList.add('visible');
-    const players = node.querySelector('.players'); players.classList.add('visible');
-    const sources = [
-      ['.source-player', 'wav', job.wav_path],
-      ['.extended-player', 'extended', job.extended_path],
-      ['.intro-player', 'intro-preview', job.intro_preview_path],
-      ['.outro-player', 'outro-preview', job.outro_preview_path],
-    ];
-    sources.forEach(([selector, kind, available]) => {
-      const row = node.querySelector(selector);
-      if (available) row.querySelector('audio').src = `/api/jobs/${job.id}/audio/${kind}`;
-      else row.classList.add('unavailable');
-    });
-    node.querySelector('.wav-link').href = `/api/jobs/${job.id}/download/wav`;
-    node.querySelector('.extended-link').href = `/api/jobs/${job.id}/download/extended`;
-    node.querySelector('.cue-link').href = `/api/jobs/${job.id}/download/cue-sheet`;
-    node.querySelector('.rekordbox-link').href = `/api/jobs/${job.id}/download/rekordbox`;
-    if (!job.cue_sheet_path) node.querySelector('.cue-link').style.display = 'none';
-    if (!job.rekordbox_path) node.querySelector('.rekordbox-link').style.display = 'none';
-  }
-  return node;
+  return processingWorkspaceView.jobElement(job);
 }
 
 async function jobAction(id, action, body = null) {
@@ -1410,39 +1354,12 @@ function renderCues(root, jobId, cues) {
   };
 }
 
-function jobRenderSignature(job) {
-  return JSON.stringify([job.status,job.progress,job.stage,job.error,job.pause_requested,job.queue_index,job.review_status,job.updated_at]);
-}
 document.addEventListener('visibilitychange', () => {
   processingWorkspaceController?.refreshWhenVisible();
 });
 async function loadJobs() {
   return processingWorkspaceController?.load() || [];
 }
-async function renderProcessingWorkspace({jobs, categories, filter, sorted, visible}) {
-  Object.entries(categories).forEach(([name,items]) => {
-    const count = $(`#queue-${name}-count`); if (count) count.textContent = items.length;
-  });
-  const processingCount=jobs.filter(job=>job.status==='processing').length;
-  const queuedCount=jobs.filter(job=>job.status==='queued').length;
-  $('#queue-count').textContent = filter === 'active'
-    ? `${processingCount} analyzing · ${queuedCount} queued`
-    : filter === 'history' && sorted.length > visible.length
-    ? `${visible.length} newest of ${sorted.length}`
-    : `${visible.length} track${visible.length === 1 ? '' : 's'}`;
-  $('#clear-queue').disabled = !jobs.some(job => !job.is_active);
-  const emptyMessages = {active:'No tracks are currently queued or processing.',attention:'Nothing needs your attention.',history:'No completed processing history yet.'};
-  if (visible.length) {
-    const existing=new Map([...jobsRoot.querySelectorAll('.job-card[data-job-id]')].map(node=>[Number(node.dataset.jobId),node]));
-    const nodes=visible.map(job=>{const current=existing.get(Number(job.id));return current?.dataset.renderSignature===jobRenderSignature(job)?current:jobElement(job);});
-    jobsRoot.replaceChildren(...nodes);
-  } else jobsRoot.replaceChildren(Object.assign(document.createElement('div'), { className:'empty', textContent:emptyMessages[filter] }));
-}
-
-$$('[data-queue-filter]').forEach(button => button.addEventListener('click', () => {
-  $$('[data-queue-filter]').forEach(item => item.classList.toggle('active', item === button));
-  processingWorkspaceController.setFilter(button.dataset.queueFilter);
-}));
 
 function libraryReprocessForm(job, config) {
   const selected = (value, current) => String(value) === String(current) ? ' selected' : '';

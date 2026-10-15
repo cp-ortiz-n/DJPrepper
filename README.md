@@ -81,7 +81,8 @@ permissions, and Creative Commons verification are owned by
 `web/playlist-import.js`. Processing queue polling, request serialization,
 generation/ETA derivation, filtering, and candidate-review routes are owned by
 `web/processing-workspace.js`, keeping those lifecycle rules independently
-testable from page composition.
+testable from page composition. Processing-card presentation and DOM action
+binding are owned by `web/processing-workspace-view.js`.
 
 ### Optional local AI for Set Builder
 

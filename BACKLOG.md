@@ -215,9 +215,11 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   `playlist-import.js`. Processing queue polling, refresh deduplication,
   filtering, generation/ETA derivation, route serialization, and candidate-review
   requests now belong to `processing-workspace.js`, with focused behavioral
-  tests. The `app.js` ceiling is ratcheted from 1,878 to 1,501
-  lines. Remaining: move processing/review rendering into its feature owner
-  before marking this task complete.
+  tests. Processing-card presentation, action binding, completed-artifact links,
+  and incremental DOM reuse now belong to `processing-workspace-view.js`, backed
+  by pure view-model tests. The `app.js` ceiling is ratcheted from 1,878 to 1,418
+  lines. Remaining: move the candidate-review studio and waveform rendering into
+  its feature owner before marking this task complete.
 - [ ] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
   Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
   Acceptance: editable set ownership and backup scope are explicit; version-1

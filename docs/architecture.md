@@ -377,6 +377,7 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `local-audio-import.js` | Local-file staging, submission, progress, results, and processing-workspace import lifecycle |
 | `playlist-import.js` | Playlist matching, permissions, source handoff, and Creative Commons verification |
 | `processing-workspace.js` | Processing queue state, polling, categorization, ETA/generation derivation, and candidate-review API boundary |
+| `processing-workspace-view.js` | Processing-card view models, action binding, artifact links, and incremental queue rendering |
 | `background-task-controller.js` | Keyed cancellable polling with stale-task replacement and terminal callbacks |
 | `styles.css` | Shared visual system and responsive behavior |
 

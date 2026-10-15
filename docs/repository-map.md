@@ -214,6 +214,7 @@ map reflects the current layout; it does not propose moving code.
 │   ├── local-audio-import.js
 │   ├── playlist-import.js
 │   ├── processing-workspace.js
+│   ├── processing-workspace-view.js
 │   ├── index.html
 │   ├── music-files.js
 │   ├── playback.js
