@@ -14,20 +14,16 @@ projection behavior against a disposable catalog.
 | --- | --- | --- | --- | --- | --- | --- |
 | BPM | `bpm_verifications` | Verification survives restart and preserves detected BPM | Synchronous index rebuild applies the verified BPM | Catalog cache is rewritten with verified and detected BPM | Immediate after save; protected across reanalysis and restart | Covered |
 | Key | `key_verifications` | Verification survives restart | Synchronous index rebuild applies the verified key | Catalog cache is rewritten with the verified key | Immediate after save; durable after restart | Covered |
-| Genre | `downloaded_tracks`, WAV tags, source sidecar, file location | Durable and searchable | Index source signature schedules a background rebuild | A version-valid catalog file can be read before that rebuild finishes | Eventually correct; durable after restart | Confirmed stale-read gap: ARCH-014C |
+| Genre | `downloaded_tracks`, WAV tags, source sidecar, file location | Durable and searchable | Synchronous publisher rebuilds the search index | Publisher removes the stale cache before rebuilding it | Immediate after save or batch completion; durable after restart | Covered |
 | Musical identity | `downloaded_track_descriptors` | Durable and searched through the descriptor table | Descriptor values are joined live | Descriptor service removes the Set Builder cache before the next read | Immediate after save; durable after restart | Covered |
 
-## Confirmed gaps
+## Publication boundary
 
-### ARCH-014C — synchronous projection invalidation after catalog metadata writes
-
-Genre and general metadata writes update the durable track row, but the Library
-index refresh is normally scheduled in the background. The request that detects
-the changed signature can still return the old index, while Set Builder may read
-an existing cache whose schema version is valid but whose contents are stale.
-The follow-up must provide one application-owned invalidation operation that
-clears in-memory facets and the persisted signature/catalog, then synchronously
-publishes the corrected projection (or blocks reads until publication).
+`CatalogProjectionPublisher` owns invalidation and publication after catalog
+corrections. It removes in-memory Library facets and the persisted Set Builder
+catalog before rebuilding both read models, then records their shared source
+signature. A successful write or metadata batch cannot report completion while
+either projection still contains the previous catalog values.
 
 ## Invariants retained
 

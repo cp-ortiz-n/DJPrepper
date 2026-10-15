@@ -29,13 +29,13 @@
       "field": "genre",
       "authoritative_write": "downloaded_tracks-and-file-metadata",
       "catalog": "durable",
-      "search_index": "signature-triggered-background-rebuild",
-      "dj_library": "may-serve-one-stale-read",
-      "set_builder": "may-read-version-valid-stale-file",
-      "refresh": "eventually-updated",
+      "search_index": "synchronous-publication",
+      "dj_library": "updated",
+      "set_builder": "updated",
+      "refresh": "updated-before-write-completes",
       "restart": "durable",
-      "status": "confirmed-gap",
-      "follow_up": "ARCH-014C"
+      "status": "covered",
+      "follow_up": ""
     },
     {
       "field": "identity",

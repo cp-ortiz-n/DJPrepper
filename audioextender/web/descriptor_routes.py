@@ -75,7 +75,7 @@ class VocabularyRuleRequest(BaseModel):
 @dataclass(frozen=True)
 class DescriptorRouteDependencies:
     repository: Callable[[], Any]
-    invalidate_set_catalog: Callable[[], None]
+    invalidate_set_catalog: Callable[[], Any]
 
 
 def create_descriptor_router(deps: DescriptorRouteDependencies) -> APIRouter:

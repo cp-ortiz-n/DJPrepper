@@ -20,7 +20,7 @@ class InvalidVocabularyRule(ValueError):
 @dataclass(frozen=True)
 class DescriptorService:
     repository: Callable[[], Any]
-    invalidate_set_catalog: Callable[[], None]
+    invalidate_set_catalog: Callable[[], Any]
 
     def _context(self, repository: Any, track_id: int) -> dict[str, Any] | None:
         context = repository.track_identity_inference_context(track_id)

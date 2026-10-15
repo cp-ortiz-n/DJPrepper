@@ -32,6 +32,7 @@ class MetadataBatchDependencies:
     normalize_genre: Callable[[str], str]
     genre_directory: Callable[[str], Path]
     change_genre: Callable[[list[int], str], dict]
+    publish_catalog: Callable[[], Any]
     refresh_wav_tag_audit: Callable[[], dict]
     schedule_wav_tag_audit_refresh: Callable[[], None]
     music_library_root: Callable[[], Path]
@@ -165,6 +166,8 @@ class MetadataBatchService:
                 counters={"updated": updated, "skipped": skipped, "failed": failed, "succeeded": updated},
                 error=({"id": int(track["id"]), "filename": track["filename"], "error": error} if error else None),
             )
+        if updated:
+            self.dependencies.publish_catalog()
         return {"updated": updated, "skipped": skipped, "failed": failed, "stage": "Artwork synchronization complete"}
 
     def start_genre_rescan(self) -> dict:
@@ -218,6 +221,8 @@ class MetadataBatchService:
                 counters={**counters, "succeeded": counters["updated"]},
                 error=conflicts[-1] if outcome == "failed" else None,
             )
+        if counters["updated"]:
+            self.dependencies.publish_catalog()
         return {**counters, "conflicts": conflicts, "stage": "Genre rescan complete"}
 
     def status(self, batch_id: str) -> dict:

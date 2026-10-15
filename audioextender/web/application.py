@@ -58,6 +58,7 @@ from audioextender.imports.service import (
     authorized_source_provider,
     scdl_download_command,
 )
+from audioextender.library.catalog_projection import CatalogProjectionPublisher
 from audioextender.library.catalog_query_service import (
     DownloadedCatalogQuery,
     DownloadedCatalogQueryService,
@@ -2266,6 +2267,7 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
         if moved and destination.is_file() and not source.exists():
             shutil.move(str(destination), str(source))
         raise HTTPException(500, f"Could not update track metadata: {error}") from error
+    catalog_projection_publisher.publish()
     return {
         "updated": True,
         "track_id": track_id,
@@ -3217,13 +3219,7 @@ def _refresh_library_search_index() -> None:
 def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
     """Refresh the compact Library index only when its inputs have changed."""
     _ensure_downloaded_catalog_migrated()
-    report_path = OUTPUT / "reports" / "processing_report.json"
-    report_signature = (report_path.stat().st_mtime_ns, report_path.stat().st_size) if report_path.exists() else (0, 0)
-    source_signature = repository.library_index_source_signature()
-    signature_text = json.dumps(
-        {"version": 5, "report": report_signature, "sources": source_signature}, separators=(",", ":")
-    )
-    signature = (report_signature, (hash(source_signature), len(source_signature)))
+    signature, signature_text = catalog_projection_publisher.signature()
     with library_catalog_cache_lock:
         memory_current = library_catalog_cache.get("signature") == signature
     persisted_current = repository.get_system_state("library_search_index_signature") == signature_text
@@ -3240,13 +3236,7 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
                 ).start()
         return signature
     if needs_refresh:
-        _refresh_library_search_index()
-        source_signature = repository.library_index_source_signature()
-        signature_text = json.dumps(
-            {"version": 5, "report": report_signature, "sources": source_signature}, separators=(",", ":")
-        )
-        signature = (report_signature, (hash(source_signature), len(source_signature)))
-        repository.set_system_state("library_search_index_signature", signature_text)
+        signature = catalog_projection_publisher.publish()
     with library_catalog_cache_lock:
         library_catalog_cache["signature"] = signature
     return signature
@@ -3255,22 +3245,13 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
 def _refresh_library_index_background() -> None:
     global library_index_refresh_active
     try:
-        _refresh_library_search_index()
-        report_path = OUTPUT / "reports" / "processing_report.json"
-        report_signature = (
-            (report_path.stat().st_mtime_ns, report_path.stat().st_size) if report_path.exists() else (0, 0)
-        )
-        source_signature = repository.library_index_source_signature()
-        signature_text = json.dumps(
-            {"version": 5, "report": report_signature, "sources": source_signature},
-            separators=(",", ":"),
-        )
-        repository.set_system_state("library_search_index_signature", signature_text)
-        with library_catalog_cache_lock:
-            library_catalog_cache["signature"] = (report_signature, (hash(source_signature), len(source_signature)))
+        catalog_projection_publisher.publish()
     finally:
         with library_index_refresh_lock:
             library_index_refresh_active = False
+
+
+catalog_projection_publisher: CatalogProjectionPublisher
 
 
 # Compatibility entry points retained for scripts and tests that used these
@@ -3328,7 +3309,16 @@ def create_app(
     global library_maintenance_service, track_metadata_mutations, metadata_batch_service
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
-    global downloaded_catalog_query_service, job_workflow_service
+    global downloaded_catalog_query_service, job_workflow_service, catalog_projection_publisher
+
+    catalog_projection_publisher = CatalogProjectionPublisher(
+        repository=lambda: repository,
+        rebuild=_refresh_library_search_index,
+        report_path=lambda: OUTPUT / "reports" / "processing_report.json",
+        catalog_path=lambda: SET_BUILDER_CATALOG_CACHE,
+        memory_cache=library_catalog_cache,
+        memory_cache_lock=library_catalog_cache_lock,
+    )
 
     import_service = ImportService(
         repository=repository,
@@ -3389,6 +3379,7 @@ def create_app(
             source_metadata_path=_source_metadata_path,
             write_wav_metadata=write_wav_metadata,
             write_source_metadata=_write_source_metadata,
+            publish_catalog=catalog_projection_publisher.publish,
         )
     )
     metadata_batch_service = MetadataBatchService(
@@ -3403,9 +3394,10 @@ def create_app(
             generalized_genre=_generalized_genre,
             normalize_genre=_normalize_genre_category,
             genre_directory=_genre_directory,
-            change_genre=lambda track_ids, category: change_downloaded_genre(
-                DownloadedGenreRequest(track_ids=track_ids, genre_category=category)
+            change_genre=lambda track_ids, category: track_metadata_mutations.change_genre(
+                track_ids, category, publish=False
             ),
+            publish_catalog=catalog_projection_publisher.publish,
             refresh_wav_tag_audit=_refresh_wav_tag_audit,
             schedule_wav_tag_audit_refresh=_schedule_wav_tag_audit_refresh,
             music_library_root=_music_library_root,
@@ -3557,7 +3549,7 @@ def create_app(
         create_descriptor_router(
             DescriptorRouteDependencies(
                 repository=lambda: repository,
-                invalidate_set_catalog=lambda: SET_BUILDER_CATALOG_CACHE.unlink(missing_ok=True),
+                invalidate_set_catalog=catalog_projection_publisher.publish,
             )
         )
     )
@@ -3583,7 +3575,7 @@ def create_app(
                 repository=lambda: repository,
                 output_root=OUTPUT,
                 append_feedback=append_web_feedback,
-                refresh_library_index=_refresh_library_search_index,
+                refresh_library_index=catalog_projection_publisher.publish,
                 valid_keys=frozenset(_CAMELOT_KEYS),
             )
         )

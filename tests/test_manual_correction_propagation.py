@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from audioextender.library.catalog_projection import CatalogProjectionPublisher
 from audioextender.repositories.facade import JobRepository
 from audioextender.web import application
 
@@ -132,7 +134,7 @@ class ManualCorrectionPropagationTests(unittest.TestCase):
         restarted = JobRepository(self.database)
         self.assertEqual(restarted.track_descriptors(self.track_id)[0]["value"], "ecuadorian party")
 
-    def test_genre_is_durable_but_projection_is_stale_until_rebuilt(self) -> None:
+    def test_genre_publication_updates_library_and_set_builder_before_return(self) -> None:
         self.rebuild_projections()
         destination = self.root / "Latin" / self.audio.name
         destination.parent.mkdir(parents=True)
@@ -147,12 +149,21 @@ class ManualCorrectionPropagationTests(unittest.TestCase):
             genre_category="Latin / Latin House",
             playlist_name="Party",
         )
-        stale, stale_total = self.repository.page_library_tracks(
-            page=1, page_size=10, category="Electronic / House / Deep House"
+        cache = self.root / "set_builder_catalog.json"
+
+        def rebuild() -> None:
+            self.rebuild_projections()
+
+        publisher = CatalogProjectionPublisher(
+            repository=lambda: self.repository,
+            rebuild=rebuild,
+            report_path=lambda: self.root / "processing_report.json",
+            catalog_path=lambda: cache,
+            memory_cache={"facets": {"genres": {"Electronic / House / Deep House": 1}}},
+            memory_cache_lock=threading.Lock(),
         )
-        self.assertEqual(stale_total, 1)
-        self.assertEqual(stale[0]["library_category"], "Electronic / House / Deep House")
-        payload = self.rebuild_projections()
+        publisher.publish()
+        payload = json.loads(cache.read_text(encoding="utf-8"))
         refreshed, refreshed_total = self.repository.page_library_tracks(
             page=1, page_size=10, category="Latin / Latin House"
         )

@@ -274,12 +274,16 @@ boundaries from Phases 2–3. Benefit: contributors receive fast, actionable gat
   Library and Set Builder projections; reanalysis remains detected evidence and
   cannot overwrite the verified value. Repository, route, propagation, restart,
   and reanalysis behavior are covered by tests.
-- [ ] **ARCH-014C — Publish metadata corrections through one synchronous catalog
+- [x] **ARCH-014C — Publish metadata corrections through one synchronous catalog
   invalidation boundary.** Priority: P1. Effort: M. Risk: Medium. Dependencies:
   ARCH-014A. Acceptance: genre and general metadata writes atomically invalidate
   in-memory facets, persisted signatures, and the Set Builder catalog; the first
   read after a successful write observes the correction, including same-second
   writes, with behavioral coverage for DJ Library and Set Builder.
+  Completed 2026-10-14: one application-owned publisher clears in-memory facets
+  and the persisted Set Builder catalog before synchronously rebuilding both
+  projections and recording their shared source signature. Track metadata,
+  genre, descriptor, verification, and metadata-batch writes use this boundary.
 - [ ] **ARCH-015A — Measure concurrent job and SQLite behavior.** Priority: P2.
   Effort: M. Risk: Low. Dependencies: ARCH-004B. Acceptance: an opt-in disposable
   catalog harness runs simultaneous representative operations with bounded
