@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, sentinel
 
 import numpy as np
 
@@ -174,21 +174,22 @@ class TrackProcessorCharacterizationTests(unittest.TestCase):
         clock = iter(float(value) for value in range(30))
         with (
             patch(
-                "audioextender.processing.track_processor.load_audio",
+                "audioextender.processing.analysis_preparation.load_audio",
                 side_effect=load,
             ),
-            patch("audioextender.processing.track_processor.AnalysisCache", MemoryAnalysisCache),
-            patch("audioextender.processing.track_processor.analyze_track", side_effect=analyze),
-            patch("audioextender.processing.track_processor.detect_dj_readiness", return_value=self.readiness),
+            patch("audioextender.processing.analysis_preparation.AnalysisCache", MemoryAnalysisCache),
+            patch("audioextender.processing.analysis_preparation.analyze_track", side_effect=analyze),
+            patch("audioextender.processing.analysis_preparation.detect_dj_readiness", return_value=self.readiness),
             patch(
-                "audioextender.processing.track_processor.optimize_candidate_boundaries",
+                "audioextender.processing.candidate_selection_orchestration.optimize_candidate_boundaries",
                 side_effect=lambda _audio, item: item,
             ),
             patch(
-                "audioextender.processing.track_processor.create_extended_edit",
+                "audioextender.processing.render_export_transaction.create_extended_edit",
                 side_effect=render,
             ),
             patch("audioextender.processing.track_processor.time.monotonic", side_effect=lambda: next(clock)),
+            patch("audioextender.processing.analysis_preparation.time.monotonic", side_effect=lambda: next(clock)),
         ):
             result = processor.process(self.source, self.output, self._config(), progress)
 
@@ -252,10 +253,10 @@ class TrackProcessorCharacterizationTests(unittest.TestCase):
         def run(*, refresh: bool = False):
             progress = RecordingProgress()
             with (
-                patch("audioextender.processing.track_processor.load_audio", return_value=self.audio),
-                patch("audioextender.processing.track_processor.AnalysisCache", MemoryAnalysisCache),
-                patch("audioextender.processing.track_processor.analyze_track", analyze),
-                patch("audioextender.processing.track_processor.detect_dj_readiness", return_value=self.readiness),
+                patch("audioextender.processing.analysis_preparation.load_audio", return_value=self.audio),
+                patch("audioextender.processing.analysis_preparation.AnalysisCache", MemoryAnalysisCache),
+                patch("audioextender.processing.analysis_preparation.analyze_track", analyze),
+                patch("audioextender.processing.analysis_preparation.detect_dj_readiness", return_value=self.readiness),
             ):
                 result = processor.process(
                     self.source,
@@ -296,15 +297,15 @@ class TrackProcessorCharacterizationTests(unittest.TestCase):
         )
         progress = RecordingProgress()
         with (
-            patch("audioextender.processing.track_processor.load_audio", return_value=self.audio),
-            patch("audioextender.processing.track_processor.AnalysisCache", MemoryAnalysisCache),
-            patch("audioextender.processing.track_processor.analyze_track", return_value=self.analysis),
-            patch("audioextender.processing.track_processor.detect_dj_readiness", return_value=self.readiness),
+            patch("audioextender.processing.analysis_preparation.load_audio", return_value=self.audio),
+            patch("audioextender.processing.analysis_preparation.AnalysisCache", MemoryAnalysisCache),
+            patch("audioextender.processing.analysis_preparation.analyze_track", return_value=self.analysis),
+            patch("audioextender.processing.analysis_preparation.detect_dj_readiness", return_value=self.readiness),
             patch(
-                "audioextender.processing.track_processor.optimize_candidate_boundaries",
+                "audioextender.processing.candidate_selection_orchestration.optimize_candidate_boundaries",
                 side_effect=lambda _audio, item: item,
             ),
-            patch("audioextender.processing.track_processor.create_extended_edit", return_value=self.audio),
+            patch("audioextender.processing.render_export_transaction.create_extended_edit", return_value=self.audio),
         ):
             result = processor.process(self.source, self.output, self._config(use_stems=True), progress)
 
@@ -347,15 +348,21 @@ class TrackProcessorCharacterizationTests(unittest.TestCase):
                     return self.audio
 
                 with (
-                    patch("audioextender.processing.track_processor.load_audio", side_effect=load),
-                    patch("audioextender.processing.track_processor.AnalysisCache", MemoryAnalysisCache),
-                    patch("audioextender.processing.track_processor.analyze_track", side_effect=analyze),
-                    patch("audioextender.processing.track_processor.detect_dj_readiness", return_value=self.readiness),
+                    patch("audioextender.processing.analysis_preparation.load_audio", side_effect=load),
+                    patch("audioextender.processing.analysis_preparation.AnalysisCache", MemoryAnalysisCache),
+                    patch("audioextender.processing.analysis_preparation.analyze_track", side_effect=analyze),
                     patch(
-                        "audioextender.processing.track_processor.optimize_candidate_boundaries",
+                        "audioextender.processing.analysis_preparation.detect_dj_readiness",
+                        return_value=self.readiness,
+                    ),
+                    patch(
+                        "audioextender.processing.candidate_selection_orchestration.optimize_candidate_boundaries",
                         side_effect=lambda _audio, item: item,
                     ),
-                    patch("audioextender.processing.track_processor.create_extended_edit", side_effect=render),
+                    patch(
+                        "audioextender.processing.render_export_transaction.create_extended_edit",
+                        side_effect=render,
+                    ),
                 ):
                     with self.assertRaisesRegex(RuntimeError, f"{failing_stage} failed"):
                         processor.process(self.source, self.output, self._config(), progress)
@@ -364,6 +371,80 @@ class TrackProcessorCharacterizationTests(unittest.TestCase):
                 self.assertFalse(self.output.exists())
                 if failing_stage in {"loading", "analysis", "stems", "selection", "render"}:
                     cast(Mock, processor.export_service.export).assert_not_called()
+
+    def test_facade_delegates_to_explicit_stage_owners(self) -> None:
+        progress = RecordingProgress()
+        analysis = SimpleNamespace(config=SimpleNamespace(analysis_only=False))
+        analysis_preparation = Mock()
+        analysis_preparation.prepare.return_value = analysis
+        candidate_selection = Mock()
+        candidate_selection.select.return_value = sentinel.selection
+        render_export = Mock()
+        render_export.execute.return_value = (sentinel.render, sentinel.exported)
+        result_builder = Mock()
+        result_builder.completed.return_value = sentinel.result
+        failure_cleanup = Mock()
+        processor = TrackProcessor(
+            analysis_preparation=analysis_preparation,
+            candidate_selection=candidate_selection,
+            render_export=render_export,
+            result_builder=result_builder,
+            failure_cleanup=failure_cleanup,
+        )
+
+        result = processor.process(self.source, self.output, self._config(), progress, 10.0, 120.0, 160.0)
+
+        self.assertIs(result, sentinel.result)
+        analysis_preparation.prepare.assert_called_once_with(self.source, self._config(), progress, 10.0, 120.0)
+        candidate_selection.select.assert_called_once_with(self.source, self.output, analysis, progress, 160.0)
+        render_export.execute.assert_called_once_with(
+            self.source,
+            self.output,
+            analysis,
+            sentinel.selection,
+            progress,
+        )
+        result_builder.completed.assert_called_once()
+        failure_cleanup.run.assert_not_called()
+
+    def test_analysis_only_result_skips_selection_render_and_export(self) -> None:
+        progress = RecordingProgress()
+        analysis = SimpleNamespace(config=SimpleNamespace(analysis_only=True))
+        analysis_preparation = Mock()
+        analysis_preparation.prepare.return_value = analysis
+        candidate_selection = Mock()
+        render_export = Mock()
+        result_builder = Mock()
+        result_builder.analysis_only.return_value = sentinel.analysis_result
+        processor = TrackProcessor(
+            analysis_preparation=analysis_preparation,
+            candidate_selection=candidate_selection,
+            render_export=render_export,
+            result_builder=result_builder,
+        )
+
+        result = processor.process(self.source, self.output, self._config(), progress)
+
+        self.assertIs(result, sentinel.analysis_result)
+        self.assertIn((100, "Analysis complete"), progress.updates)
+        candidate_selection.select.assert_not_called()
+        render_export.execute.assert_not_called()
+        result_builder.completed.assert_not_called()
+
+    def test_failure_cleanup_owns_reporter_shutdown(self) -> None:
+        progress = RecordingProgress()
+        analysis_preparation = Mock()
+        analysis_preparation.prepare.side_effect = RuntimeError("analysis failed")
+        failure_cleanup = Mock()
+        processor = TrackProcessor(
+            analysis_preparation=analysis_preparation,
+            failure_cleanup=failure_cleanup,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "analysis failed"):
+            processor.process(self.source, self.output, self._config(), progress)
+
+        failure_cleanup.run.assert_called_once_with(progress)
 
 
 if __name__ == "__main__":

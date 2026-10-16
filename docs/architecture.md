@@ -50,8 +50,10 @@ failure contracts are frozen in
 [`processing-pipeline-contracts.md`](processing-pipeline-contracts.md). ARCH-002B
 expresses analysis, selection, render, export, and result assembly through
 immutable stage results in `processing/track_processing_stages.py`.
-`TrackProcessor.process()` remains responsible for ordering, input validation,
-and stopping progress after any stage failure.
+`TrackProcessor.process()` remains the stable facade responsible only for input
+validation and stage ordering. Analysis preparation, candidate orchestration,
+render/export, result construction, and failure cleanup have independent owners
+under `processing/`.
 
 ARCH-006A moves the remaining substantial route workflows behind application
 services. `DescriptorService` owns durable descriptor inference and vocabulary
@@ -337,13 +339,18 @@ belongs in SQLite, not module globals or browser-only storage.
 
 ```text
 track_processor.py
-    → selection_coordinator.py
+    → analysis_preparation.py
+    → candidate_selection_orchestration.py
+        → selection_coordinator.py
         → candidate_selection.py
         → candidate_reranker.py
         → candidate_validator.py
         → splice_policy.py
-    → extended_edit.py
-    → export_service.py / cue_export.py
+    → render_export_transaction.py
+        → extended_edit.py
+        → export_service.py / cue_export.py
+    → track_result_builder.py
+    → processing_failure_cleanup.py
 ```
 
 Selection discovers candidates, reranking adds contextual ordering, validation

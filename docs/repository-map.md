@@ -86,11 +86,16 @@ map reflects the current layout; it does not propose moving code.
 │   │   └── track_overrides.py
 │   ├── processing/
 │   │   ├── __init__.py
+│   │   ├── analysis_preparation.py
 │   │   ├── batch_runner.py
+│   │   ├── candidate_selection_orchestration.py
 │   │   ├── extended_edit.py
 │   │   ├── job_workflows.py
+│   │   ├── processing_failure_cleanup.py
+│   │   ├── render_export_transaction.py
 │   │   ├── track_processing_stages.py
 │   │   ├── track_processor.py
+│   │   ├── track_result_builder.py
 │   │   └── web_jobs.py
 │   ├── reporting/
 │   │   ├── __init__.py

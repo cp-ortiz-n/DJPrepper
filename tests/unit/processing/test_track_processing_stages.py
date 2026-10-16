@@ -18,9 +18,8 @@ from audioextender.processing.track_processing_stages import (
     RenderStageResult,
     SelectionStageResult,
     arrangement_sections,
-    assemble_analysis_result,
-    assemble_file_result,
 )
+from audioextender.processing.track_result_builder import TrackResultBuilder
 from tests.support.factories import candidate, track_analysis
 
 
@@ -60,7 +59,7 @@ class TrackProcessingStageTests(unittest.TestCase):
             self.analysis_stage.analysis_cache_hit = True  # type: ignore[misc]
 
     def test_analysis_result_preserves_public_metrics_and_timing(self) -> None:
-        result = assemble_analysis_result(Path("track.wav"), 10.0, self.analysis_stage, lambda: 12.5)
+        result = TrackResultBuilder.analysis_only(Path("track.wav"), 10.0, self.analysis_stage, lambda: 12.5)
 
         self.assertEqual(result.output, Path("track.wav"))
         self.assertEqual(result.bpm, self.analysis.bpm)
@@ -101,7 +100,7 @@ class TrackProcessingStageTests(unittest.TestCase):
         exported = ExportStageResult(Path("wav/track.wav"), artifacts)
         clock = iter((13.0, 14.0))
 
-        result = assemble_file_result(
+        result = TrackResultBuilder.completed(
             Path("track.wav"),
             Path("extended.wav"),
             10.0,
