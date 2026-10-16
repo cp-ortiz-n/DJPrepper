@@ -7,7 +7,7 @@ import argparse
 import json
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -29,7 +29,7 @@ def main() -> int:
     config = ConcurrencyProbeConfig(options.iterations, options.workers, options.suspected_wait_ms)
     with tempfile.TemporaryDirectory(prefix="audioextender-concurrency-") as temporary:
         report = RepositoryConcurrencyProbe(Path(temporary), config).run()
-    report["generated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    report["generated_at"] = datetime.now(UTC).isoformat(timespec="seconds")
     options.output.parent.mkdir(parents=True, exist_ok=True)
     pending = options.output.with_suffix(".pending.json")
     pending.write_text(json.dumps(report, indent=2), encoding="utf-8")

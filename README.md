@@ -730,6 +730,14 @@ values. It appears automatically in `python3 main.py --help`. Invalid bar counts
 missing fields, quality values outside 0–100, and repetition limits below one are
 reported immediately at startup.
 
+## Developer note: generated artifacts
+
+Graphify-generated architecture and analysis artifacts live under
+`graphify-out/`. They are not required for normal development and new artifacts
+are ignored by Git. Move durable architecture notes into `docs/`; if Graphify
+outputs are intentionally retained in the repository, treat them as generated
+documentation rather than source.
+
 ## Usage
 
 The easiest workflow is to place one or many songs in `input/`, then run:

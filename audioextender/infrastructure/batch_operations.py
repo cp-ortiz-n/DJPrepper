@@ -6,7 +6,7 @@ import threading
 import uuid
 from collections.abc import Callable, Iterable
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from audioextender.core.operation_feedback import operation_receipt
@@ -16,7 +16,7 @@ TERMINAL_BATCH_STATUSES = frozenset({"complete", "failed", "canceled"})
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class BatchCanceled(RuntimeError):

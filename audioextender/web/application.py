@@ -23,7 +23,7 @@ import uuid
 import zipfile
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Any, Literal, cast
@@ -218,7 +218,7 @@ async def record_api_performance(request: Request, call_next):
         with performance_diagnostics_lock:
             performance_diagnostics.append(
                 {
-                    "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
                     "method": request.method,
                     "path": route_path,
                     "status": status,
@@ -271,7 +271,7 @@ def performance_diagnostics_report() -> dict:
     slow = [sample for sample in reversed(samples) if float(cast(Any, sample["duration_ms"])) >= 250][:20]
     durations = [float(cast(Any, sample["duration_ms"])) for sample in samples]
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "window_size": len(samples),
         "window_limit": performance_diagnostics.maxlen,
         "overall_average_ms": round(sum(durations) / len(durations), 1) if durations else 0,
@@ -2420,7 +2420,7 @@ def _refresh_wav_tag_audit() -> dict:
     }
     repository.set_system_state(
         "wav_tag_latest_audit",
-        json.dumps({**payload, "generated_at": datetime.now(timezone.utc).isoformat()}),
+        json.dumps({**payload, "generated_at": datetime.now(UTC).isoformat()}),
     )
     return payload
 

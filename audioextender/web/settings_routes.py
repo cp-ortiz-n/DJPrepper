@@ -9,7 +9,7 @@ import sqlite3
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Any, Literal
@@ -281,7 +281,7 @@ class SettingsRouteService:
             deps.storage_inventory_cache.update(payload=None, expires_at=0.0)
         deps.catalog_cache.clear()
         health = self.library_health(refresh=True)
-        return {**health, "verified_at": datetime.now(timezone.utc).isoformat()}
+        return {**health, "verified_at": datetime.now(UTC).isoformat()}
 
     def _inventory_signature(self) -> list[list[object]]:
         deps = self.dependencies

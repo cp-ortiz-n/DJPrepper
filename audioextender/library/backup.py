@@ -10,14 +10,14 @@ import sqlite3
 import tempfile
 import zipfile
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 BACKUP_FORMAT_VERSION = 1
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _sha256(path: Path) -> str:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -73,7 +73,7 @@ def main() -> int:
     report = harness.run(catalog, scenarios)
     baseline = baseline_harness.run(catalog, scenarios)
     report["personalizationComparison"] = compare_planning_variants(report, baseline)
-    report["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    report["generatedAt"] = datetime.now(UTC).isoformat(timespec="seconds")
     report["comparison"] = compare_evaluation_reports(report, previous)
     report["releaseGate"] = assess_ai_release(
         report,

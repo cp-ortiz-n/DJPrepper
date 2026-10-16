@@ -21,4 +21,6 @@ cache/*
 *.dylib
 .venv-inte-l-backup/
 .venv-intel-backup/
-*graphify-out/
+# Ignore Graphify-generated architecture/analysis artifacts
+graphify-out/
+graphify-out/**

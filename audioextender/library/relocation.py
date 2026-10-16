@@ -11,7 +11,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
@@ -19,7 +19,7 @@ from audioextender.infrastructure.operation_lifecycle import LIBRARY_RELOCATION,
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class RelocationRepository(Protocol):

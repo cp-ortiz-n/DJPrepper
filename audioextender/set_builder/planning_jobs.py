@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, Protocol
 
@@ -20,7 +20,7 @@ from audioextender.set_builder.track_planner import AITrackPlanner
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class PlanningCanceled(RuntimeError):
