@@ -109,10 +109,11 @@ focused `*_routes.py` module with a dependency dataclass, rather than adding
 another feature directly to `application.py`.
 
 `JobRepository` remains the stable persistence facade, but SQL is divided among
-focused mixins under `audioextender/repositories/`: jobs, track catalog,
-analysis/search indexing, feedback/key verification, and settings/system state.
-Add a database method to the mixin that owns the data instead of expanding
-`repositories/facade.py`.
+focused mixins under `audioextender/repositories/`. The downloaded-track catalog
+is itself composed by `track_catalog.py` from core CRUD, descriptor, recording
+family, projection, metadata-state, and analysis-state mixins. Add a database
+method to the narrow mixin that owns the data instead of expanding either
+`track_catalog.py` or `repositories/facade.py`.
 
 The music-library path saved in Settings is durable SQLite state. Import code
 must obtain it through the injected library-root callback, reject an offline

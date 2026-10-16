@@ -325,7 +325,13 @@ persist; terminal receipts replace that provisional statement with the outcome.
 | Module                | Responsibility                                                         |
 | --------------------- | ---------------------------------------------------------------------- |
 | `jobs.py`             | Processing jobs, queue state, generations, recovery                    |
-| `track_catalog.py`    | Downloaded tracks, identities/families, playlists, duplicates, paths   |
+| `track_catalog.py`    | Compatibility composition for the focused catalog repository mixins    |
+| `track_core.py`       | Core downloaded-track CRUD, playlists, duplicates, and fingerprints    |
+| `track_descriptors.py` | Musical-identity descriptors, inference state, and vocabulary review  |
+| `recording_families.py` | Recording identities, version relationships, suggestions, and merge |
+| `track_projections.py` | Catalog paging, filtering, search projections, and facets             |
+| `track_metadata_state.py` | Artwork, metadata, paths, import failures, and deletion state       |
+| `track_analysis_state.py` | Audio-quality and key-analysis result persistence                    |
 | `library_analysis.py` | Analysis records, search index, catalog signatures, key-analysis state |
 | `feedback.py`         | Candidate/track feedback and key verification                          |
 | `system_state.py`     | Web settings, durable system state, import failures/background state   |

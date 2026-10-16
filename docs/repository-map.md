@@ -113,7 +113,14 @@ map reflects the current layout; it does not propose moving code.
 │   │   ├── musical_verification_schema.py
 │   │   ├── schema.py
 │   │   ├── system_state.py
-│   │   └── track_catalog.py
+│   │   ├── track_analysis_state.py
+│   │   ├── track_catalog.py
+│   │   ├── track_catalog_shared.py
+│   │   ├── track_core.py
+│   │   ├── track_descriptors.py
+│   │   ├── track_metadata_state.py
+│   │   ├── track_projections.py
+│   │   └── recording_families.py
 │   ├── set_builder/
 │   │   ├── __init__.py
 │   │   ├── candidate_retriever.py
