@@ -385,6 +385,14 @@ all approved implementation phases. Benefit: evidence-based release confidence.
   Set Builder evaluation, optional live Ollama acceptance, and manual core DJ
   workflows pass; rollback is rehearsed; intentional differences are documented.
   Evidence: audit sections 16–18.
+  Verification run 2026-10-15: quality, coverage, stability, backup/restore,
+  rollback, legacy database and saved-set compatibility, CLI, endpoint, export,
+  and eight browser workflow/accessibility checks passed. Final release remains
+  open because the configured `/Volumes/YOTUO` library was not mounted for the
+  fresh 3,260-track Set Builder evaluation and DJ listening approval is pending.
+  The optional Ollama suite was skipped because the local service was offline.
+  Full evidence and exact rerun commands are recorded in
+  [the release-gate report](docs/architecture-release-gate.md).
 
 Phase acceptance: all protected interfaces, data, musical behavior, and workflows
 match the Phase 0 baseline or have an explicitly approved compatibility note.
