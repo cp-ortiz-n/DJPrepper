@@ -36,6 +36,11 @@ jobs:
           node-version: "22"
           cache: npm
 
+      - name: Install system audio dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg libsndfile1
+
       - name: Install Python dependencies
         run: |
           python -m venv .venv

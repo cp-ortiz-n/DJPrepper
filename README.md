@@ -1482,7 +1482,9 @@ requirements:
 
 GitHub Actions runs the standard quality and stability gates on Python 3.12 and
 Node 22, plus the isolated Playwright browser and accessibility workflows. The
-workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+quality runner installs FFmpeg and libsndfile before exercising audio metadata
+and WAV workflows. The workflow is defined in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 Static audit findings and interpretation are recorded in
 [`docs/dead-code-dependency-audit.md`](docs/dead-code-dependency-audit.md).
 
