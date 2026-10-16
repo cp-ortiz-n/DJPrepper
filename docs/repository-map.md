@@ -15,7 +15,9 @@ map reflects the current layout; it does not propose moving code.
 │   ├── extensions.json
 │   └── settings.json
 ├── BACKLOG.md
+├── CONTRIBUTING.md
 ├── LICENSE
+├── Makefile
 ├── README.md
 ├── Start AudioExtender.command
 ├── audioextender/
@@ -301,6 +303,12 @@ uses `*.test.js`. Real-browser smoke scenarios are the deliberate exception and
 live under `tests/browser/` for Playwright discovery. `factories.py` contains
 shared test data builders, and `fixtures/` contains checked-in scenario data.
 
+The repository does not currently use a `src/` installation layout or pytest.
+Changing either convention is a migration project because launchers, import
+paths, unittest discovery, coverage, CI, and developer workflows all rely on
+the present package root. Tests should remain grouped by descriptive owning
+behavior until that migration is approved and completed atomically.
+
 | Test group | Files |
 | --- | --- |
 | Application wiring, architecture, package boundaries, and API | `test_application_services.py`, `test_architecture_services.py`, `test_package_structure.py`, `test_web_app.py` |
@@ -360,6 +368,8 @@ reports under `coverage/` for the Python application/scripts and browser code.
 | File | Purpose |
 | --- | --- |
 | `README.md` | Setup, user workflows, tests, and maintainer quick guide |
+| `CONTRIBUTING.md` | Contributor setup, placement rules, and definition-of-done commands |
+| `Makefile` | Stable aliases for the repository-owned quality and verification scripts |
 | `BACKLOG.md` | Planned and audited product work |
 | `docs/decisions/` | Indexed architecture decisions and compatibility guarantees |
 | `pyproject.toml`, `.flake8` | Python coverage, lint, and type-check configuration |

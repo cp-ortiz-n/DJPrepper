@@ -484,6 +484,8 @@ current file inventory and test locations are in
 [`docs/repository-map.md`](docs/repository-map.md). Compatibility-sensitive
 rationale and revisit conditions are indexed in
 [`docs/decisions/`](docs/decisions/README.md).
+Contributor setup, placement rules, and the supported verification commands are
+summarized in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Maintainer quick guide
 
@@ -547,16 +549,16 @@ Before committing any maintained-source change, run the authoritative standard
 gate:
 
 ```bash
-./scripts/check_quality.sh
+make quality
 git diff --check
 ```
 
 Add the relevant extended gate for the risk being changed:
 
 ```bash
-./scripts/check_coverage.sh       # coverage-sensitive behavior
-./scripts/run_stability_gate.sh  # persistence/import/relocation/export/Set Builder durability
-npm run check:browser            # browser workflow, focus, viewport, or accessibility
+make coverage   # coverage-sensitive behavior
+make stability  # persistence/import/relocation/export/Set Builder durability
+make browser    # browser workflow, focus, viewport, or accessibility
 ```
 
 Install the pinned Chromium binary once with
