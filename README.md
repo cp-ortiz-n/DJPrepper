@@ -201,7 +201,7 @@ For an opt-in acceptance run against the installed Ollama model—including real
 structured track selection from controlled candidates—run:
 
 ```bash
-AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.test_local_intention_acceptance
+AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.integration.set_builder.test_local_intention_acceptance
 ```
 
 For a repeatable evaluation against the current exported catalog and the
@@ -527,7 +527,7 @@ Use this table before searching through the larger composition files:
 | Preview playback behavior | `web/playback.js` |
 | Shared frontend API, DOM, feedback, or descriptor capabilities | `web/frontend-services.js`, `web/api-client.js` |
 | Browser workflow, focus, responsive, or accessibility regression | `tests/browser/workflows.spec.js`, `docs/browser-smoke-testing.md` |
-| Architecture dependency or placement rule | `docs/architecture.md`, `docs/decisions/`, `tests/test_architecture_boundaries.py` |
+| Architecture dependency or placement rule | `docs/architecture.md`, `docs/decisions/`, `tests/unit/architecture/test_boundaries.py` |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
 `audioextender/web/application.py`, which constructs services and injects them
@@ -569,7 +569,7 @@ Provider fallback, schema, and sanitization tests do not require a running
 model. The live local-model acceptance suite is opt-in:
 
 ```bash
-AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.test_local_intention_acceptance
+AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.integration.set_builder.test_local_intention_acceptance
 ```
 
 When moving modules or changing architectural relationships, also run:
@@ -1435,7 +1435,7 @@ DJ Library Studio includes fast unit tests built on Python's standard `unittest`
 library, so running the normal suite does not require another test framework:
 
 ```bash
-python3 -m unittest discover -s tests -v
+python3 -m unittest discover -s tests -t . -v
 ```
 
 The suite uses synthetic audio and mocks for hardware/resource decisions. It

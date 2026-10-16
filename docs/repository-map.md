@@ -178,61 +178,26 @@ map reflects the current layout; it does not propose moving code.
 ├── settings.py
 ├── tests/
 │   ├── __init__.py
-│   ├── factories.py
-│   ├── fixtures/
-│   │   ├── musical_policy_golden.json
-│   │   └── set_builder_eval_scenarios.json
 │   ├── browser/
 │   │   └── workflows.spec.js
-│   ├── api_client.test.js
-│   ├── frontend_modules.test.js
-│   ├── frontend_workflow_owners.test.js
-│   ├── import_queue.test.js
-│   ├── playback_behavior.test.js
-│   ├── request_state_controller.test.js
-│   ├── set_planning_client.test.js
-│   ├── test_application_services.py
-│   ├── test_architecture_services.py
-│   ├── test_audio_quality.py
-│   ├── test_background_tasks.py
-│   ├── test_batch_operations.py
-│   ├── test_behavior_workflows.py
-│   ├── test_cli_helpers.py
-│   ├── test_config_and_overrides.py
-│   ├── test_dj_readiness.py
-│   ├── test_export_service.py
-│   ├── test_feedback_and_reranking.py
-│   ├── test_frontend_contracts.py
-│   ├── test_import_service.py
-│   ├── test_integration_synthetic.py
-│   ├── test_intention_planner.py
-│   ├── test_journey_planner.py
-│   ├── test_key_analysis.py
-│   ├── test_library_backup.py
-│   ├── test_library_relocation.py
-│   ├── test_local_intention_acceptance.py
-│   ├── test_package_structure.py
-│   ├── test_plan_comparator.py
-│   ├── test_playlist_match_service.py
-│   ├── test_progress_and_resources.py
-│   ├── test_proposal_repairer.py
-│   ├── test_recording_identity.py
-│   ├── test_reports_and_cache.py
-│   ├── test_scoring_and_splices.py
-│   ├── test_set_candidate_planning.py
-│   ├── test_set_plan_evaluator.py
-│   ├── test_set_release_gate.py
-│   ├── test_set_preference_learning.py
-│   ├── test_set_review_service.py
-│   ├── test_stability_workflow.py
-│   ├── test_stem_provider.py
-│   ├── test_style_detector.py
-│   ├── test_track_descriptors.py
-│   ├── test_track_planner.py
-│   ├── test_transition_optimizer.py
-│   ├── test_transition_scorer.py
-│   ├── test_wav_metadata.py
-│   └── test_web_app.py
+│   ├── fixtures/              # Shared checked-in scenario data
+│   ├── integration/           # Cross-package, persistence, filesystem, and provider tests
+│   │   └── set_builder/       # Set Builder provider integration
+│   ├── javascript/            # Node unit and frontend contract tests
+│   ├── support/               # Shared test-only factories and paths
+│   └── unit/                  # Mirrors Python application ownership
+│       ├── analysis/
+│       ├── architecture/
+│       ├── audio/
+│       ├── core/
+│       ├── imports/
+│       ├── infrastructure/
+│       ├── library/
+│       ├── processing/
+│       ├── reporting/
+│       ├── repositories/
+│       ├── set_builder/
+│       └── web/
 ├── web/
 │   ├── app.js
 │   ├── api-client.js
@@ -297,26 +262,26 @@ globals. Keep musical decision logic out of route handlers and browser modules.
 
 ## Test Organization
 
-Deterministic Python and Node tests live in the root `tests/` directory and are
-grouped by descriptive filename. Python uses `unittest` and `test_*.py`; Node
-uses `*.test.js`. Real-browser smoke scenarios are the deliberate exception and
-live under `tests/browser/` for Playwright discovery. `factories.py` contains
-shared test data builders, and `fixtures/` contains checked-in scenario data.
+Python unit tests mirror the owning application package under `tests/unit/`.
+Cross-package, persistence, filesystem, and provider tests live under
+`tests/integration/`. Node unit tests live in `tests/javascript/`, while real-
+browser smoke scenarios live under `tests/browser/` for Playwright discovery.
+Shared Python builders and path helpers live in `tests/support/`; checked-in
+scenario data remains in `tests/fixtures/`.
 
-The repository does not currently use a `src/` installation layout or pytest.
-Changing either convention is a migration project because launchers, import
-paths, unittest discovery, coverage, CI, and developer workflows all rely on
-the present package root. Tests should remain grouped by descriptive owning
-behavior until that migration is approved and completed atomically.
+Python uses `unittest` and `test_*.py`; Node uses `*.test.js`. Every nested
+Python test directory is an importable package so focused module execution and
+recursive discovery use the same names. The application itself does not use a
+`src/` installation layout; changing that convention remains a separate
+migration of launchers, imports, coverage, CI, and packaging.
 
 | Test group | Files |
 | --- | --- |
-| Application wiring, architecture, package boundaries, and API | `test_application_services.py`, `test_architecture_services.py`, `test_package_structure.py`, `test_web_app.py` |
-| Audio, musical analysis, and edit quality | `test_audio_quality.py`, `test_dj_readiness.py`, `test_key_analysis.py`, `test_scoring_and_splices.py`, `test_stem_provider.py`, `test_style_detector.py`, `test_track_descriptors.py`, `test_transition_scorer.py`, `test_wav_metadata.py` |
-| Processing, resources, and persistence/reporting | `test_background_tasks.py`, `test_batch_operations.py`, `test_behavior_workflows.py`, `test_cli_helpers.py`, `test_config_and_overrides.py`, `test_export_service.py`, `test_integration_synthetic.py`, `test_progress_and_resources.py`, `test_reports_and_cache.py` |
-| Imports and library identity/lifecycle | `test_import_service.py`, `test_library_backup.py`, `test_library_relocation.py`, `test_playlist_match_service.py`, `test_recording_identity.py`, `test_stability_workflow.py` |
-| Set Builder planning, evaluation, release, and personalization | `test_feedback_and_reranking.py`, `test_intention_planner.py`, `test_journey_planner.py`, `test_local_intention_acceptance.py`, `test_plan_comparator.py`, `test_proposal_repairer.py`, `test_set_candidate_planning.py`, `test_set_plan_evaluator.py`, `test_set_preference_learning.py`, `test_set_release_gate.py`, `test_set_review_service.py`, `test_track_planner.py`, `test_transition_optimizer.py` |
-| Browser contracts and feature modules | `test_frontend_contracts.py`, `api_client.test.js`, `frontend_modules.test.js`, `frontend_workflow_owners.test.js`, `import_queue.test.js`, `playback_behavior.test.js`, `request_state_controller.test.js`, `set_builder_architecture.test.js`, `set_planning_client.test.js` |
+| Architecture and compatibility | `unit/architecture/` |
+| Python package behavior | `unit/<owning-package>/` |
+| Cross-boundary workflows | `integration/` |
+| Set Builder live-provider acceptance | `integration/set_builder/` |
+| Browser modules and contracts | `javascript/` |
 | Browser workflow and accessibility smoke | `browser/workflows.spec.js` |
 
 The Set Builder scenario file is `fixtures/set_builder_eval_scenarios.json`; it
@@ -351,13 +316,11 @@ reports under `coverage/` for the Python application/scripts and browser code.
 
 ### Test growth guidance
 
-- Keep tests near the current flat `tests/` layout while discovery and ownership
-  remain easy to scan. Use descriptive names and add new behavior to its owning
-  test module where that stays focused.
-- If the suite grows enough to need nested folders, move by language/domain in
-  one deliberate change and preserve the root test commands and discovery
-  patterns; avoid partial nesting that silently stops `unittest` discovery.
-- Keep test data builders in `factories.py` only when they are genuinely shared;
+- Put unit tests in the directory matching the owning application package; put
+  cross-boundary workflows in `integration/` and Node tests in `javascript/`.
+- Keep every Python test directory importable with `__init__.py`, and preserve
+  recursive discovery through the repository-owned quality scripts.
+- Keep test data builders in `support/` only when they are genuinely shared;
   keep domain-specific fixtures under `fixtures/` and avoid checking in real
   audio files or personal library data.
 - Keep slow, external-provider, or catalog-scale checks explicitly opt-in or in

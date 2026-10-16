@@ -4,7 +4,7 @@
 track. ARCH-002A froze its observable behavior; ARCH-002B now implements that
 contract through typed analysis, selection, render, export, and result assembly
 stages. The characterization suite lives in
-`tests/test_track_processor_characterization.py`.
+`tests/unit/processing/test_track_processor_characterization.py`.
 
 ## Stage order and progress
 

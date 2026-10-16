@@ -34,7 +34,7 @@ browser-install:
 	npm run check:browser:install
 
 test-python:
-	.venv/bin/python -m unittest discover -s tests
+	.venv/bin/python -m unittest discover -s tests -t .
 
 test-js:
 	npm run check

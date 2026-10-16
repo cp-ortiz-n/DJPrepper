@@ -396,7 +396,7 @@ Do not create a second audio player, dropdown implementation, notification
 system, or pagination helper inside a feature. Extend the shared module first.
 `app.js` composes these features and owns global navigation; page-specific
 rendering, filters, inspectors, and maintenance actions belong in their feature
-module. `tests/frontend_modules.test.js` enforces this boundary and a size ceiling.
+module. `tests/javascript/frontend_modules.test.js` enforces this boundary and a size ceiling.
 
 The five primary feature factories receive `frontendServices` rather than loose
 transport, error, notification, confirmation, DOM, and identity-editor
@@ -467,7 +467,7 @@ contract unless the change explicitly approves a migration.
 3. Use `request-state-controller.js` for catalog request cancellation and stale
    response rejection, `background-task-controller.js` for keyed polling, and
    `playback.js` for previews.
-4. Add pure or injected behavioral coverage in `tests/*.test.js`. Add a
+4. Add pure or injected behavioral coverage in `tests/javascript/*.test.js`. Add a
    Playwright scenario only when browser integration, focus, layout, or actual
    DOM lifecycle is the behavior under test.
 5. Keep CSS in the shared visual system until ARCH-013A demonstrates a safer
@@ -540,14 +540,14 @@ and stability details live in `development-quality.md`.
    graphify . --update --code-only --no-viz
    ```
 
-`tests/test_package_structure.py` guards package/composition boundaries and
-module size. `tests/frontend_modules.test.js` exercises shared frontend behavior;
+`tests/unit/architecture/test_package_structure.py` guards package/composition boundaries and
+module size. `tests/javascript/frontend_modules.test.js` exercises shared frontend behavior;
 its only source-text assertion is the intentional `app.js` composition-root
 ownership and size ratchet. Request concurrency, playback ownership, planning
 lifecycle, imports, and musical-policy behavior live in focused Node suites.
-`tests/test_intention_planner.py` covers provider ordering, schema enforcement,
+`tests/unit/set_builder/test_intention_planner.py` covers provider ordering, schema enforcement,
 fallback, hallucination cleanup, and catalog normalization without a live
-model. `tests/test_local_intention_acceptance.py` is an opt-in Ollama suite for
+model. `tests/integration/set_builder/test_local_intention_acceptance.py` is an opt-in Ollama suite for
 chill Latin kickbacks, Latin Techno/House with optional Schranz, Afro House
 lounge warmups, and peak-time Techno journeys.
 

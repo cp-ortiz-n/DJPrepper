@@ -3,7 +3,7 @@
 This document records the externally visible and startup contracts that must be
 preserved while `audioextender/web/application.py` is incrementally reduced to a
 composition root. The executable authority is
-`tests/test_web_composition_contracts.py`.
+`tests/unit/web/test_web_composition_contracts.py`.
 
 ## HTTP surface
 

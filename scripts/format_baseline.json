@@ -6,12 +6,12 @@
     "audioextender/set_builder/plan_validator.py",
     "audioextender/set_builder/preference_learning.py",
     "audioextender/set_builder/transition_optimizer.py",
-    "tests/test_intention_planner.py",
-    "tests/test_journey_planner.py",
-    "tests/test_local_intention_acceptance.py",
-    "tests/test_plan_comparator.py",
-    "tests/test_proposal_repairer.py",
-    "tests/test_transition_optimizer.py"
+    "tests/unit/set_builder/test_intention_planner.py",
+    "tests/unit/set_builder/test_journey_planner.py",
+    "tests/integration/set_builder/test_local_intention_acceptance.py",
+    "tests/unit/set_builder/test_plan_comparator.py",
+    "tests/unit/set_builder/test_proposal_repairer.py",
+    "tests/unit/set_builder/test_transition_optimizer.py"
   ],
   "frontend": [
     "web/app.js",
@@ -26,8 +26,8 @@
     "web/set-planning-client.js",
     "web/settings.js",
     "web/shared-components.js",
-    "tests/import_queue.test.js",
-    "tests/playback_behavior.test.js",
-    "tests/request_state_controller.test.js"
+    "tests/javascript/import_queue.test.js",
+    "tests/javascript/playback_behavior.test.js",
+    "tests/javascript/request_state_controller.test.js"
   ]
 }

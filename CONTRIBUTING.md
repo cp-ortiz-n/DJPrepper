@@ -36,12 +36,14 @@ npm run check:browser:install
 - Add characterization tests before risky refactors and behavior tests for new
   behavior or bug fixes.
 
-Python tests use `unittest` and live in `tests/test_*.py`. JavaScript unit tests
-use Node's test runner and live in `tests/*.test.js`. Playwright workflows live
-in `tests/browser/`. This established layout is intentionally retained: moving
-to a `src/` package or nested test tree would require a dedicated migration of
-launchers, import paths, discovery, coverage, CI, and packaging—not a partial
-file move.
+Python unit tests use `unittest` and mirror the application packages under
+`tests/unit/`. Cross-package, persistence, filesystem, and live-provider tests
+live under `tests/integration/`. JavaScript unit tests use Node's test runner in
+`tests/javascript/`; Playwright workflows live in `tests/browser/`.
+
+The application itself intentionally remains a root package. Moving it to a
+`src/` layout still requires a dedicated migration of launchers, imports,
+coverage, CI, and packaging—not a partial file move.
 
 Shared test builders belong in `tests/factories.py`; checked-in scenario data
 belongs in `tests/fixtures/`. Do not use application source modules as a home
@@ -61,8 +63,8 @@ make coverage      # Python and JavaScript coverage reports
 Run focused tests while developing:
 
 ```sh
-.venv/bin/python -m unittest tests.test_module
-node --test tests/feature.test.js
+.venv/bin/python -m unittest tests.unit.analysis.test_key_analysis
+node --test tests/javascript/api_client.test.js
 ```
 
 Before submitting a normal change, run `make quality` and `git diff --check`.
