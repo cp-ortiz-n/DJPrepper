@@ -19,10 +19,8 @@ import sys
 import tempfile
 import threading
 import unicodedata
-import uuid
 import zipfile
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -92,6 +90,11 @@ from audioextender.set_builder.preference_learning import (
 from audioextender.set_builder.review_service import SetReviewService
 from audioextender.set_builder.saved_sets import SavedSetService
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
+from audioextender.web.audio_quality_routes import (
+    AudioQualityRouteDependencies,
+    AudioQualityScanService,
+    create_audio_quality_router,
+)
 from audioextender.web.composition import (
     ApplicationPaths,
     ApplicationRuntime,
@@ -1424,93 +1427,6 @@ def _downloaded_track_payload(track: dict) -> dict:
     return payload
 
 
-def _run_audio_quality_batch(batch_id: str) -> None:
-    tracks = repository.list_downloaded_tracks()
-
-    def inspect(track: dict) -> tuple[dict, Path, dict | None, str]:
-        path = Path(str(track.get("file_path") or ""))
-        try:
-            if not path.is_file():
-                raise FileNotFoundError("Audio file is unavailable")
-            result = analyze_audio_quality(
-                path,
-                window_seconds=0.5,
-                source_is_transcoded_lossy=bool(track.get("youtube_id") or track.get("youtube_url")),
-            ).to_dict()
-            return track, path, result, ""
-        except (OSError, RuntimeError, ValueError) as exc:
-            return track, path, None, str(exc)
-
-    # Audio decoding and FFT work release the GIL. A small worker pool makes a
-    # full external-drive scan practical without saturating the disk.
-    with ThreadPoolExecutor(max_workers=4, thread_name_prefix="audio-quality") as executor:
-        futures = [executor.submit(inspect, track) for track in tracks]
-        for index, future in enumerate(as_completed(futures), start=1):
-            track, path, result, error = future.result()
-            if result is not None:
-                repository.update_audio_quality(int(track["id"]), result)
-            with audio_quality_batch_lock:
-                batch = audio_quality_batches[batch_id]
-                batch["processed"] = index
-                batch["failed"] += int(bool(error))
-                batch["current"] = str(track.get("filename") or track.get("title") or "")
-                if error and len(batch["errors"]) < 30:
-                    batch["errors"].append({"id": track.get("id"), "filename": path.name, "error": error})
-    summary = repository.audio_quality_summary()
-    with audio_quality_batch_lock:
-        audio_quality_batches[batch_id].update(status="complete", stage="Quality scan complete", summary=summary)
-    with library_status_cache_lock:
-        library_status_cache.update(payload=None, expires_at=0.0)
-
-
-@legacy_router.post("/api/downloaded-library/audio-quality")
-def start_audio_quality_scan() -> dict:
-    with audio_quality_batch_lock:
-        active = next(
-            (
-                {"batch_id": key, **value}
-                for key, value in audio_quality_batches.items()
-                if value["status"] == "processing"
-            ),
-            None,
-        )
-        if active:
-            return active
-        total = len(repository.list_downloaded_tracks())
-        batch_id = uuid.uuid4().hex
-        audio_quality_batches[batch_id] = {
-            "status": "processing",
-            "stage": "Analyzing audio quality",
-            "total": total,
-            "processed": 0,
-            "failed": 0,
-            "current": "",
-            "errors": [],
-        }
-    threading.Thread(
-        target=_run_audio_quality_batch, args=(batch_id,), daemon=True, name=f"audio-quality-{batch_id[:8]}"
-    ).start()
-    return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
-
-
-@legacy_router.get("/api/downloaded-library/audio-quality-latest")
-def latest_audio_quality_scan() -> dict:
-    with audio_quality_batch_lock:
-        if not audio_quality_batches:
-            return {"status": "none", "summary": repository.audio_quality_summary()}
-        batch_id = next(reversed(audio_quality_batches))
-        return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
-
-
-@legacy_router.get("/api/downloaded-library/audio-quality/{batch_id}")
-def audio_quality_scan_status(batch_id: str) -> dict:
-    with audio_quality_batch_lock:
-        batch = audio_quality_batches.get(batch_id)
-        if batch is None:
-            raise HTTPException(404, "Audio-quality scan not found")
-        return {"batch_id": batch_id, **batch}
-
-
 @legacy_router.get("/api/downloaded-library")
 def downloaded_library(
     paged: bool = False,
@@ -2460,7 +2376,8 @@ def create_app(
 
     global import_service, local_import_service, playlist_match_service, creative_commons_service
     global creative_commons_worker
-    global artwork_thumbnail_service, library_maintenance_service, track_metadata_mutations, metadata_batch_service
+    global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service
+    global track_metadata_mutations, metadata_batch_service
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
     global downloaded_analysis_queue, downloaded_catalog_query_service, job_workflow_service
@@ -2479,6 +2396,17 @@ def create_app(
         thumbnail_root=lambda: _music_library_root() / ".artwork" / "thumbnails",
         record_cache_result=_record_cache_result,
         thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    audio_quality_scan_service = AudioQualityScanService(
+        AudioQualityRouteDependencies(
+            repository=lambda: repository,
+            analyze=analyze_audio_quality,
+            batches=audio_quality_batches,
+            batch_lock=audio_quality_batch_lock,
+            library_status_cache=library_status_cache,
+            library_status_lock=library_status_cache_lock,
+            thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+        )
     )
 
     import_service = ImportService(
@@ -2627,6 +2555,7 @@ def create_app(
         playlist_match_service=playlist_match_service,
         creative_commons_service=creative_commons_service,
         creative_commons_worker=creative_commons_worker,
+        audio_quality_scan_service=audio_quality_scan_service,
         artwork_thumbnail_service=artwork_thumbnail_service,
         library_maintenance_service=library_maintenance_service,
         track_metadata_mutations=track_metadata_mutations,
@@ -2656,6 +2585,7 @@ def create_app(
     )
     application.mount("/assets", StaticFiles(directory=WEB, check_dir=False), name="assets")
     application.include_router(legacy_router)
+    application.include_router(create_audio_quality_router(audio_quality_scan_service))
     application.include_router(
         create_settings_router(
             SettingsRouteDependencies(

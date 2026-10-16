@@ -110,8 +110,8 @@ another feature directly to `application.py`.
 
 Long-running work is likewise owned outside the composition root. Creative
 Commons download/retry execution, artwork thumbnail generation, downloaded-track
-analysis queuing, and catalog projection construction live in their import or
-library service modules. `application.py` wires those owners and retains only
+analysis queuing, audio-quality scanning, and catalog projection construction
+live in their import, library, or focused web service modules. `application.py` wires those owners and retains only
 small compatibility wrappers where scripts and integration tests still rely on
 the historical entry point.
 
