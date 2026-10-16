@@ -50,15 +50,19 @@ from audioextender.audio.wav_metadata import (
 from audioextender.core.operation_feedback import operation_receipt
 from audioextender.core.presets import PRESETS, EditPreset
 from audioextender.imports.creative_commons import CreativeCommonsImportService
+from audioextender.imports.creative_commons_worker import CreativeCommonsBatchWorker
 from audioextender.imports.local import LocalAudioImportService
 from audioextender.imports.playlist_match import PlaylistMatchService
-from audioextender.imports.routes import AuthorizedImportRequest, create_import_router
+from audioextender.imports.routes import AuthorizedImportRequest, create_import_router  # noqa: F401
 from audioextender.imports.service import (
     ImportService,
     authorized_source_provider,
     scdl_download_command,
 )
+from audioextender.library.analysis_queue import DownloadedTrackAnalysisQueue
+from audioextender.library.artwork_thumbnails import ArtworkThumbnailService
 from audioextender.library.catalog_projection import CatalogProjectionPublisher
+from audioextender.library.catalog_projection_builder import CatalogProjectionBuilder
 from audioextender.library.catalog_query_service import (
     DownloadedCatalogQuery,
     DownloadedCatalogQueryService,
@@ -67,8 +71,7 @@ from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
     TrackMetadataMutationService,
 )
-from audioextender.library.musical_corrections import MusicalCorrectionIndex
-from audioextender.library.musical_profile import CAMELOT_KEYS, musical_profile
+from audioextender.library.musical_profile import CAMELOT_KEYS
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.job_workflows import (
     JobCreationCommand,
@@ -185,9 +188,7 @@ logger = logging.getLogger("uvicorn.error")
 wav_tag_audit_refresh_active = False
 downloaded_catalog_migrated = False
 DOWNLOADED_CATALOG_MIGRATION_VERSION = "3"
-artwork_thumbnail_worker_started = False
 library_index_refresh_active = False
-jobs_watchdog_last = 0.0
 
 
 def _record_cache_result(cache_name: str, hit: bool) -> None:
@@ -1214,195 +1215,6 @@ def _cache_track_artwork(artwork_url: str, destination: Path) -> str:
         return ""
 
 
-def _creative_commons_worker(batch_id: str, tracks: list[CreativeCommonsMatch], playlist_name: str) -> None:
-    report: dict[str, list[dict]] = {
-        "downloaded": [],
-        "already_downloaded": [],
-        "skipped_not_creative_commons": [],
-        "failed": [],
-    }
-    safe_playlist = _safe_folder_name(playlist_name)
-    try:
-        destination_dir = _require_music_library_online()
-    except Exception as error:
-        with creative_commons_batch_lock:
-            creative_commons_batches[batch_id].update(
-                status="failed", stage="Music library disconnected", error=str(error)
-            )
-        return
-    report_dir = OUTPUT / "reports" / "imports" / safe_playlist
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    report_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        import yt_dlp
-
-        for index, track in enumerate(tracks, start=1):
-            base = track.model_dump()
-            track_playlist = track.playlist_name or playlist_name
-            try:
-                with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True}) as inspector:
-                    info = inspector.extract_info(track.url, download=False) or {}
-                license_name = str(info.get("license") or "").strip()
-                video_id = str(info.get("id") or "").strip()
-                artwork_url = track.artwork_url or (
-                    f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg" if video_id else ""
-                )
-                base.update(license=license_name, youtube_id=video_id, artwork_url=artwork_url)
-                # if "creative commons" not in license_name.casefold():
-                #    report["skipped_not_creative_commons"].append(base)
-                # else:
-                category = (
-                    _generalized_genre(track.genre) if track.genre else _normalize_genre_category(track.genre_category)
-                )
-                base.update(genre=track.genre, genre_category=category)
-                output_name = _safe_audio_name(f"{track.artist} - {track.title}") + ".wav"
-                existing_download = _cataloged_download_by_youtube_id(video_id)
-                if existing_download:
-                    destination = Path(existing_download["file_path"])
-                    category = str(existing_download.get("genre_category") or category)
-                    base.update(
-                        filename=destination.name,
-                        genre_category=category,
-                    )
-                    report["already_downloaded"].append(base)
-                else:
-                    category_dir = destination_dir.joinpath(*_genre_path_parts(category))
-                    category_dir.mkdir(parents=True, exist_ok=True)
-                    destination = category_dir / output_name
-                    source_record = _source_metadata_path(destination)
-                    recorded_video_id = ""
-                    if source_record.exists():
-                        try:
-                            recorded_video_id = str(
-                                json.loads(source_record.read_text(encoding="utf-8")).get("youtube_id", "")
-                            )
-                        except (OSError, json.JSONDecodeError):
-                            recorded_video_id = ""
-                    if destination.exists() and recorded_video_id == video_id:
-                        base["filename"] = output_name
-                        report["already_downloaded"].append(base)
-                        repository.upsert_downloaded_track(
-                            title=track.title,
-                            artist=track.artist,
-                            file_path=destination,
-                            genre=track.genre,
-                            genre_category=category,
-                            spotify_uri=track.spotify_uri,
-                            youtube_id=video_id,
-                            youtube_url=track.url,
-                            duration_seconds=float(info.get("duration") or 0) or None,
-                            artwork_url=artwork_url,
-                            artwork_path=_cache_track_artwork(artwork_url, destination),
-                            playlist_name=track_playlist,
-                        )
-                        repository.resolve_import_failure(
-                            playlist_name=track_playlist, title=track.title, artist=track.artist
-                        )
-                        continue
-                    if destination.exists():
-                        original_stem = destination.stem
-                        copy_number = 2
-                        while destination.exists():
-                            destination = destination.with_name(f"{original_stem} ({copy_number}){destination.suffix}")
-                            copy_number += 1
-                        output_name = destination.name
-                        source_record = _source_metadata_path(destination)
-                    with tempfile.TemporaryDirectory(prefix="audioextender-cc-import-") as temporary:
-                        options = {
-                            "format": "bestaudio/best",
-                            "outtmpl": str(Path(temporary) / "source.%(ext)s"),
-                            "noplaylist": True,
-                            "quiet": True,
-                            "no_warnings": True,
-                            "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
-                        }
-                        with yt_dlp.YoutubeDL(options) as downloader:
-                            downloader.extract_info(track.url, download=True)
-                        wavs = list(Path(temporary).glob("*.wav"))
-                        if not wavs:
-                            raise RuntimeError("YouTube audio could not be converted to WAV")
-                        shutil.move(str(wavs[0]), destination)
-                    write_wav_metadata(
-                        destination,
-                        title=track.title,
-                        artist=track.artist,
-                        genre=category,
-                        album=track_playlist,
-                    )
-                    _write_source_metadata(
-                        destination,
-                        {
-                            "youtube_id": video_id,
-                            "youtube_url": track.url,
-                            "title": track.title,
-                            "artist": track.artist,
-                            "playlist_name": track_playlist,
-                            "genre": track.genre,
-                            "genre_category": category,
-                            "artwork_url": artwork_url,
-                        },
-                    )
-                    base["filename"] = output_name
-                    report["downloaded"].append(base)
-                repository.upsert_downloaded_track(
-                    title=track.title,
-                    artist=track.artist,
-                    file_path=destination,
-                    genre=track.genre,
-                    genre_category=category,
-                    spotify_uri=track.spotify_uri,
-                    youtube_id=video_id,
-                    youtube_url=track.url,
-                    duration_seconds=float(info.get("duration") or 0) or None,
-                    artwork_url=artwork_url,
-                    artwork_path=_cache_track_artwork(artwork_url, destination),
-                    playlist_name=track_playlist,
-                )
-                repository.resolve_import_failure(playlist_name=track_playlist, title=track.title, artist=track.artist)
-            except Exception as error:
-                report["failed"].append({**base, "error": str(error)})
-                repository.record_import_failure(
-                    playlist_name=track_playlist,
-                    title=track.title,
-                    artist=track.artist,
-                    spotify_uri=track.spotify_uri,
-                    youtube_url=track.url,
-                    error=str(error),
-                )
-            with creative_commons_batch_lock:
-                creative_commons_batches[batch_id].update(
-                    stage=f"Verified {index} of {len(tracks)}",
-                    progress=round(index * 100 / len(tracks), 1),
-                    counts={key: len(value) for key, value in report.items()},
-                )
-        included = report["downloaded"] + report["already_downloaded"]
-        report_path = report_dir / f"{safe_playlist} - Import Report.json"
-        genre_summary: dict[str, int] = {}
-        for item in included:
-            category = item.get("genre_category", "Other")
-            genre_summary[category] = genre_summary.get(category, 0) + 1
-        report_document = {
-            "playlist_name": playlist_name,
-            "export_folder": str(destination_dir),
-            "genre_summary": dict(sorted(genre_summary.items())),
-            "results": report,
-        }
-        report_path.write_text(json.dumps(report_document, indent=2), encoding="utf-8")
-        with creative_commons_batch_lock:
-            creative_commons_batches[batch_id].update(
-                status="complete",
-                stage="Download complete",
-                progress=100,
-                counts={key: len(value) for key, value in report.items()},
-                report=report,
-                genre_summary=dict(sorted(genre_summary.items())),
-                report_path=str(report_path),
-            )
-    except Exception as error:
-        with creative_commons_batch_lock:
-            creative_commons_batches[batch_id].update(status="failed", stage="Batch import failed", error=str(error))
-
-
 @legacy_router.post("/api/imports/creative-commons", status_code=202)
 def create_creative_commons_batch(request: CreativeCommonsBatchRequest) -> dict:
     try:
@@ -1531,96 +1343,6 @@ def _original_import_metadata(playlist_name: str, title: str, artist: str) -> di
     return {"genre": "", "genre_category": "Other"}
 
 
-def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
-    """Refresh failed source matches, then reuse the normal batch downloader."""
-    try:
-        import yt_dlp
-
-        tracks: list[CreativeCommonsMatch] = []
-        options = {
-            "quiet": True,
-            "no_warnings": True,
-            "skip_download": True,
-            "extract_flat": True,
-            "playlistend": 8,
-            "socket_timeout": 15,
-            "retries": 1,
-            "extractor_retries": 1,
-        }
-        with yt_dlp.YoutubeDL(options) as searcher:
-            for index, failure in enumerate(failures, start=1):
-                query = " - ".join(
-                    part for part in (str(failure.get("artist") or ""), str(failure.get("title") or "")) if part
-                )
-                old_url = str(failure.get("youtube_url") or "")
-                old_id_match = re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]+)", old_url)
-                old_id = old_id_match.group(1) if old_id_match else ""
-                info = searcher.extract_info(f"ytsearch8:{query}", download=False) or {}
-                entries = [entry for entry in (info.get("entries") or []) if str(entry.get("id") or "") != old_id]
-                match, _, _ = _best_youtube_match(failure, entries)
-                video_id = str(match.get("id") or "")
-                source_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else old_url
-                if not source_url:
-                    repository.record_import_failure(
-                        playlist_name=str(failure.get("playlist_name") or "Imported Playlist"),
-                        title=str(failure.get("title") or "Unknown track"),
-                        artist=str(failure.get("artist") or ""),
-                        spotify_uri=str(failure.get("spotify_uri") or ""),
-                        youtube_url="",
-                        error="No reliable replacement source was found",
-                    )
-                    continue
-                artwork_url = ""
-                spotify_uri = str(failure.get("spotify_uri") or "")
-                if spotify_uri.startswith("spotify:track:"):
-                    try:
-                        artwork_url = str(
-                            _spotify_source_metadata(
-                                "https://open.spotify.com/track/" + spotify_uri.rsplit(":", 1)[-1]
-                            ).get("thumbnail_url")
-                            or ""
-                        )
-                    except HTTPException:
-                        pass
-                original_metadata = _original_import_metadata(
-                    str(failure.get("playlist_name") or "Imported Playlist"),
-                    str(failure.get("title") or "Unknown track"),
-                    str(failure.get("artist") or "Unknown artist"),
-                )
-                tracks.append(
-                    CreativeCommonsMatch(
-                        url=source_url,
-                        title=str(failure.get("title") or "Unknown track"),
-                        artist=str(failure.get("artist") or "Unknown artist"),
-                        spotify_uri=spotify_uri,
-                        genre=original_metadata["genre"],
-                        genre_category=original_metadata["genre_category"],
-                        artwork_url=artwork_url,
-                        playlist_name=str(failure.get("playlist_name") or "Imported Playlist"),
-                    )
-                )
-                with creative_commons_batch_lock:
-                    creative_commons_batches[batch_id].update(
-                        stage=f"Refreshing sources {index} of {len(failures)}",
-                        progress=round(index * 25 / max(1, len(failures)), 1),
-                    )
-        if not tracks:
-            with creative_commons_batch_lock:
-                creative_commons_batches[batch_id].update(
-                    status="complete",
-                    stage="No retryable sources were found",
-                    progress=100,
-                    counts={"downloaded": 0, "already_downloaded": 0, "failed": len(failures)},
-                )
-            return
-        _creative_commons_worker(batch_id, tracks, "Retry imports")
-    except Exception as error:
-        with creative_commons_batch_lock:
-            creative_commons_batches[batch_id].update(
-                status="failed", stage="Retry preparation failed", error=str(error)
-            )
-
-
 @legacy_router.post("/api/imports/failures/retry", status_code=202)
 def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
     wanted = set(request.failure_ids)
@@ -1679,11 +1401,6 @@ def _probe_local_audio(path: Path) -> dict:
 def _scdl_download_command(url: str, destination: Path) -> list[str]:
     """Compatibility wrapper for callers that import this legacy helper."""
     return scdl_download_command(url, destination)
-
-
-def _authorized_import_worker(import_id: str, request: AuthorizedImportRequest) -> None:
-    """Compatibility entry point for deterministic worker tests."""
-    import_service.run(import_id, request)
 
 
 def _downloaded_track_payload(track: dict) -> dict:
@@ -1792,70 +1509,6 @@ def audio_quality_scan_status(batch_id: str) -> dict:
         if batch is None:
             raise HTTPException(404, "Audio-quality scan not found")
         return {"batch_id": batch_id, **batch}
-
-
-def _cached_artwork_thumbnail(source: Path, size: int = 96) -> Path:
-    """Return a thumbnail when ready; otherwise queue it and serve the small source immediately."""
-    global artwork_thumbnail_worker_started
-    stat = source.stat()
-    identity = f"{source.resolve()}:{stat.st_mtime_ns}:{stat.st_size}:{size}"
-    thumbnail_root = _music_library_root() / ".artwork" / "thumbnails"
-    thumbnail = thumbnail_root / f"{hashlib.sha256(identity.encode()).hexdigest()[:24]}.jpg"
-    if thumbnail.is_file():
-        _record_cache_result("artwork_thumbnail", True)
-        return thumbnail
-    with artwork_thumbnail_lock:
-        if thumbnail.is_file():
-            _record_cache_result("artwork_thumbnail", True)
-            return thumbnail
-        _record_cache_result("artwork_thumbnail", False)
-        if thumbnail not in artwork_thumbnail_pending:
-            artwork_thumbnail_pending.add(thumbnail)
-            artwork_thumbnail_queue.put((source, thumbnail, size))
-        if not artwork_thumbnail_worker_started:
-            artwork_thumbnail_worker_started = True
-            threading.Thread(
-                target=_artwork_thumbnail_worker,
-                name="artwork-thumbnail-worker",
-                daemon=True,
-            ).start()
-    return source
-
-
-def _artwork_thumbnail_worker() -> None:
-    """Generate queued thumbnails serially so large pages cannot launch an FFmpeg stampede."""
-    while True:
-        source, thumbnail, size = artwork_thumbnail_queue.get()
-        temporary = thumbnail.with_suffix(".pending.jpg")
-        try:
-            thumbnail.parent.mkdir(parents=True, exist_ok=True)
-            subprocess.run(
-                [
-                    "ffmpeg",
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-y",
-                    "-i",
-                    str(source),
-                    "-vf",
-                    f"scale={size}:{size}:force_original_aspect_ratio=increase,crop={size}:{size}",
-                    "-frames:v",
-                    "1",
-                    "-q:v",
-                    "4",
-                    str(temporary),
-                ],
-                check=True,
-                timeout=15,
-            )
-            temporary.replace(thumbnail)
-        except (OSError, subprocess.SubprocessError):
-            temporary.unlink(missing_ok=True)
-        finally:
-            with artwork_thumbnail_lock:
-                artwork_thumbnail_pending.discard(thumbnail)
-            artwork_thumbnail_queue.task_done()
 
 
 @legacy_router.get("/api/downloaded-library")
@@ -2074,49 +1727,12 @@ def reanalyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
 
 
 def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> dict:
-    existing_paths = {
-        str(Path(job["source_path"]).resolve())
-        for job in repository.list_jobs(limit=10_000)
-        if job["status"]
-        in ({"queued", "processing", "paused"} if force else {"queued", "processing", "paused", "complete"})
-    }
-    effective = _effective_settings()
-    created: list[int] = []
-    skipped: list[int] = []
-    unavailable: list[int] = []
-    for track in tracks:
-        source = Path(track["file_path"])
-        if not source.is_file():
-            unavailable.append(int(track["id"]))
-            continue
-        if str(source.resolve()) in existing_paths:
-            skipped.append(int(track["id"]))
-            continue
-        job_id = repository.create(
-            source.name,
-            source,
-            "auto",
-            0,
-            0,
-            False,
-            {
-                **effective,
-                "use_stems": False,
-                "analysis_only": True,
-                "refresh_cache": force,
-                "reanalyze": force,
-                "intro_bars_auto": False,
-                "outro_bars_auto": False,
-                "review_candidates": False,
-            },
-            parent_job_id=(
-                int(track["completed_library_job_id"]) if force and track.get("completed_library_job_id") else None
-            ),
-        )
-        created.append(job_id)
-        existing_paths.add(str(source.resolve()))
-    service.enqueue_many(created)
-    return {"job_ids": created, "skipped": skipped, "unavailable": unavailable}
+    """Compatibility wrapper around the catalog analysis queue service."""
+    return DownloadedTrackAnalysisQueue(
+        repository=repository,
+        processor=service,
+        effective_settings=_effective_settings,
+    ).queue(tracks, force=force)
 
 
 @legacy_router.post("/api/downloaded-library/analyze-matching", status_code=202)
@@ -2496,136 +2112,6 @@ def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
         raise HTTPException(error.status_code, error.detail) from error
 
 
-def _legacy_reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
-    job = repository.get(job_id)
-    if job is None:
-        raise HTTPException(404, "Job not found")
-    config_overrides = json.loads(job.get("config_json") or "{}")
-    config_overrides.pop("analysis_only", None)
-    preset = job["preset"]
-    intro_bars = int(job["intro_bars"])
-    outro_bars = int(job["outro_bars"])
-    use_stems = bool(job["use_stems"])
-    if request is not None:
-        if request.pcm_bits not in {None, 16, 24}:
-            raise HTTPException(400, "PCM depth must be 16 or 24")
-        if request.preset is not None:
-            if request.preset != "auto" and request.preset not in _available_presets():
-                raise HTTPException(400, "Unknown preset")
-            preset = request.preset
-        for position in ("intro", "outro"):
-            requested_bars = getattr(request, f"{position}_bars")
-            if requested_bars is not None:
-                if requested_bars not in SUPPORTED_BAR_COUNTS:
-                    raise HTTPException(400, "Unsupported bar count")
-                if position == "intro":
-                    intro_bars = requested_bars
-                else:
-                    outro_bars = requested_bars
-            automatic = getattr(request, f"{position}_bars_auto")
-            if automatic is not None:
-                config_overrides[f"{position}_bars_auto"] = automatic
-        if request.use_stems is not None:
-            use_stems = request.use_stems
-        for key in (
-            "auto_bars",
-            "minimum_intro_loop_quality",
-            "minimum_outro_loop_quality",
-            "maximum_repetitions",
-            "crossfade_ms",
-            "candidate_count",
-            "intro_search_seconds",
-            "outro_search_seconds",
-            "maximum_vocal_coverage_percent",
-            "maximum_vocal_boundary_risk_percent",
-            "maximum_buildup_risk_percent",
-            "maximum_bass_reset_risk_percent",
-            "minimum_stem_reliability_percent",
-            "pcm_bits",
-            "preview_seconds",
-            "export_cues",
-        ):
-            value = getattr(request, key)
-            if value is not None:
-                config_overrides[key] = value
-        if request.preset is not None:
-            config_overrides.pop("preset_definition", None)
-            config_overrides.update(_preset_snapshot(preset))
-        if request.clear_insertion:
-            for key in (
-                "insert_source_start",
-                "insert_source_end",
-                "insert_destination",
-                "insert_copies",
-            ):
-                config_overrides.pop(key, None)
-        if request.intro_candidate is not None:
-            config_overrides["intro_candidate"] = request.intro_candidate
-            config_overrides.pop("custom_intro_start", None)
-            config_overrides.pop("custom_intro_end", None)
-            config_overrides.pop("custom_intro_copies", None)
-        if request.outro_candidate is not None:
-            config_overrides["outro_candidate"] = request.outro_candidate
-            config_overrides.pop("custom_outro_start", None)
-            config_overrides.pop("custom_outro_end", None)
-            config_overrides.pop("custom_outro_copies", None)
-        if request.intro_candidate is not None or request.outro_candidate is not None:
-            config_overrides["manual_candidate_selection"] = True
-        if request.review_candidates is not None:
-            config_overrides["review_candidates"] = request.review_candidates
-        for position in ("intro", "outro"):
-            start = getattr(request, f"custom_{position}_start")
-            end = getattr(request, f"custom_{position}_end")
-            copies = getattr(request, f"custom_{position}_copies")
-            if (start is None) != (end is None):
-                raise HTTPException(400, f"Custom {position} requires start and end")
-            if start is not None:
-                if end <= start:
-                    raise HTTPException(400, f"Custom {position} end must follow start")
-                config_overrides[f"custom_{position}_start"] = start
-                config_overrides[f"custom_{position}_end"] = end
-                config_overrides[f"custom_{position}_copies"] = copies or 1
-                config_overrides["manual_candidate_selection"] = True
-        insert_values = (
-            request.insert_source_start,
-            request.insert_source_end,
-            request.insert_destination,
-        )
-        if any(value is not None for value in insert_values):
-            if any(value is None for value in insert_values):
-                raise HTTPException(400, "Insertion requires source start, source end, and destination")
-            assert request.insert_source_start is not None
-            assert request.insert_source_end is not None
-            assert request.insert_destination is not None
-            if request.insert_source_end <= request.insert_source_start:
-                raise HTTPException(400, "Inserted source end must follow start")
-            config_overrides["insert_source_start"] = request.insert_source_start
-            config_overrides["insert_source_end"] = request.insert_source_end
-            config_overrides["insert_destination"] = request.insert_destination
-            config_overrides["insert_copies"] = request.insert_copies or 1
-    new_id = repository.create(
-        job["source_name"],
-        Path(job["source_path"]),
-        preset,
-        intro_bars,
-        outro_bars,
-        use_stems,
-        config_overrides,
-        parent_job_id=job_id,
-    )
-    if request is not None and (
-        request.review_candidates is not None
-        or request.intro_candidate is not None
-        or request.outro_candidate is not None
-        or request.custom_intro_start is not None
-        or request.custom_outro_start is not None
-        or request.insert_source_start is not None
-    ):
-        repository.update(job_id, review_status="resolved")
-    service.enqueue(new_id)
-    return {"job_id": new_id}
-
-
 @legacy_router.post("/api/jobs/{job_id}/review/reject")
 def reject_review(job_id: int) -> dict:
     job = repository.get(job_id)
@@ -2763,138 +2249,6 @@ async def create_jobs(
         raise HTTPException(error.status_code, error.detail) from error
 
 
-async def _legacy_create_jobs(
-    files: Annotated[list[UploadFile], File()],
-    preset: str = "auto",
-    intro_bars: str = "auto",
-    outro_bars: str = "auto",
-    use_stems: bool = False,
-    review_candidates: bool = False,
-    auto_bars: bool | None = None,
-    minimum_intro_loop_quality: float | None = None,
-    minimum_outro_loop_quality: float | None = None,
-    maximum_repetitions: int | None = None,
-    crossfade_ms: float | None = None,
-    pcm_bits: int | None = None,
-    preview_seconds: float | None = None,
-    export_cues: bool | None = None,
-    candidate_count: int | None = None,
-    intro_search_seconds: float | None = None,
-    outro_search_seconds: float | None = None,
-    maximum_vocal_coverage_percent: float | None = None,
-    maximum_vocal_boundary_risk_percent: float | None = None,
-    maximum_buildup_risk_percent: float | None = None,
-    maximum_bass_reset_risk_percent: float | None = None,
-    minimum_stem_reliability_percent: float | None = None,
-    analysis_only: bool = False,
-) -> dict:
-    if preset != "auto" and preset not in _available_presets():
-        raise HTTPException(400, "Unknown preset")
-    effective = _effective_settings()
-    requested_overrides = {
-        key: value
-        for key, value in {
-            "auto_bars": auto_bars,
-            "minimum_intro_loop_quality": minimum_intro_loop_quality,
-            "minimum_outro_loop_quality": minimum_outro_loop_quality,
-            "maximum_repetitions": maximum_repetitions,
-            "crossfade_ms": crossfade_ms,
-            "pcm_bits": pcm_bits,
-            "preview_seconds": preview_seconds,
-            "export_cues": export_cues,
-            "candidate_count": candidate_count,
-            "intro_search_seconds": intro_search_seconds,
-            "outro_search_seconds": outro_search_seconds,
-            "maximum_vocal_coverage_percent": maximum_vocal_coverage_percent,
-            "maximum_vocal_boundary_risk_percent": maximum_vocal_boundary_risk_percent,
-            "maximum_buildup_risk_percent": maximum_buildup_risk_percent,
-            "maximum_bass_reset_risk_percent": maximum_bass_reset_risk_percent,
-            "minimum_stem_reliability_percent": minimum_stem_reliability_percent,
-        }.items()
-        if value is not None
-    }
-    for key in ("minimum_intro_loop_quality", "minimum_outro_loop_quality"):
-        value = requested_overrides.get(key)
-        if value is not None and not 0 <= float(value) <= 100:
-            raise HTTPException(400, "Quality thresholds must be between 0 and 100")
-    repetitions = requested_overrides.get("maximum_repetitions")
-    if repetitions is not None and not 1 <= int(repetitions) <= 8:
-        raise HTTPException(400, "Maximum repetitions must be between 1 and 8")
-    fade = requested_overrides.get("crossfade_ms")
-    if fade is not None and not 1 <= float(fade) <= 100:
-        raise HTTPException(400, "Crossfade must be between 1 and 100 ms")
-    if requested_overrides.get("pcm_bits") not in {None, 16, 24}:
-        raise HTTPException(400, "PCM depth must be 16 or 24")
-    preview = requested_overrides.get("preview_seconds")
-    if preview is not None and not 0 < float(preview) <= 60:
-        raise HTTPException(400, "Preview context must be between 1 and 60 seconds")
-    candidate_depth = requested_overrides.get("candidate_count")
-    if candidate_depth is not None and not 1 <= int(candidate_depth) <= 8:
-        raise HTTPException(400, "Candidate depth must be between 1 and 8")
-    for key in ("intro_search_seconds", "outro_search_seconds"):
-        value = requested_overrides.get(key)
-        if value is not None and not 15 <= float(value) <= 600:
-            raise HTTPException(400, "Search windows must be between 15 and 600 seconds")
-    for key in (
-        "maximum_vocal_coverage_percent",
-        "maximum_vocal_boundary_risk_percent",
-        "maximum_buildup_risk_percent",
-        "maximum_bass_reset_risk_percent",
-        "minimum_stem_reliability_percent",
-    ):
-        value = requested_overrides.get(key)
-        if value is not None and not 0 <= float(value) <= 100:
-            raise HTTPException(400, "Analysis percentages must be between 0 and 100")
-
-    def bars(value: str, default_key: str) -> tuple[int, bool]:
-        if value == "auto":
-            return int(effective[default_key]), True
-        try:
-            parsed = int(value)
-        except ValueError as error:
-            raise HTTPException(400, "Unsupported bar count") from error
-        if parsed not in SUPPORTED_BAR_COUNTS:
-            raise HTTPException(400, "Unsupported bar count")
-        return parsed, False
-
-    if analysis_only:
-        resolved_intro = resolved_outro = 0
-        intro_auto = outro_auto = False
-        review_candidates = False
-    else:
-        resolved_intro, intro_auto = bars(intro_bars, "intro_bars")
-        resolved_outro, outro_auto = bars(outro_bars, "outro_bars")
-    INPUT.mkdir(parents=True, exist_ok=True)
-    created: list[int] = []
-    for upload in files:
-        filename = Path(upload.filename or "").name
-        if not filename or Path(filename).suffix.casefold() not in SUPPORTED_EXTENSIONS:
-            raise HTTPException(400, f"Unsupported audio file: {filename or 'unnamed'}")
-        destination = INPUT / filename
-        with destination.open("wb") as handle:
-            shutil.copyfileobj(upload.file, handle)
-        job_id = repository.create(
-            filename,
-            destination,
-            preset,
-            resolved_intro,
-            resolved_outro,
-            use_stems,
-            {
-                **effective,
-                **requested_overrides,
-                **_preset_snapshot(preset),
-                "review_candidates": review_candidates,
-                "analysis_only": analysis_only,
-                "intro_bars_auto": intro_auto,
-                "outro_bars_auto": outro_auto,
-            },
-        )
-        service.enqueue(job_id)
-        created.append(job_id)
-    return {"job_ids": created}
-
-
 @legacy_router.get("/api/overrides/{source_name}")
 def get_override(source_name: str) -> dict:
     override = load_track_overrides(OVERRIDES).get(source_name.casefold())
@@ -3011,210 +2365,7 @@ def report_audio_index() -> list[dict]:
     return result
 
 
-def _library_roles(song: dict) -> list[str]:
-    return musical_profile(song)["roles"]
-
-
-def _library_energy(song: dict) -> float:
-    return float(musical_profile(song)["energy"])
-
-
-def _set_builder_analysis(song: dict, *, roles: list[str], energy: float, vocals: str, timing: str) -> dict:
-    profile = musical_profile(song | {"_roles": roles, "_energy": energy, "_vocals": vocals, "_timing": timing})
-    base_fields = {
-        "source_name",
-        "bpm",
-        "detected_bpm",
-        "bpm_verified",
-        "key",
-        "key_confidence",
-        "beat_grid_confidence",
-        "duration_seconds",
-        "mix_in",
-        "mix_out",
-    }
-    compact = {key: value for key, value in song.items() if key in base_fields}
-    compact.update(
-        {
-            "_roles": roles,
-            "_energy": energy,
-            "_vocals": vocals,
-            "_timing": timing,
-            "musical_profile": profile,
-            "intro": {
-                key: value for key, value in (song.get("intro") or {}).items() if key in {"instrumentalness", "section"}
-            },
-            "outro": {
-                key: value for key, value in (song.get("outro") or {}).items() if key in {"instrumentalness", "section"}
-            },
-            "dj_readiness": {
-                key: value
-                for key, value in (song.get("dj_readiness") or {}).items()
-                if key in {"intro_mixable_bars", "outro_mixable_bars"}
-            },
-            "arrangement_sections": [
-                {key: value for key, value in section.items() if key in {"label", "name", "start", "end", "confidence"}}
-                for section in (song.get("arrangement_sections") or [])
-            ],
-        }
-    )
-    return compact
-
-
-def _build_set_builder_catalog_payload() -> dict:
-    tracks = []
-    for row in repository.list_set_builder_tracks():
-        try:
-            descriptors = json.loads(str(row.get("descriptors_json") or "[]"))
-        except (TypeError, ValueError, json.JSONDecodeError):
-            descriptors = []
-        analysis = json.loads(row.get("set_analysis_json") or "{}")
-        analysis.update(
-            title=row.get("title") or "",
-            artist=row.get("artist") or "",
-            _camelot=row.get("camelot") or "",
-        )
-        tracks.append(
-            {
-                "analysis": analysis,
-                "genre": row.get("category") or "Other",
-                "detailed_genre": row.get("detail_genre") or "",
-                "downloaded_id": row.get("downloaded_id"),
-                "descriptors": descriptors,
-                "job": {
-                    "id": row["job_id"],
-                    "source_name": row["source_name"],
-                    "source_path": row.get("source_path"),
-                    "wav_path": row.get("wav_path"),
-                    "library_path": row.get("library_path"),
-                    "extended_path": row.get("extended_path"),
-                    "config_json": row.get("config_json") or "{}",
-                },
-            }
-        )
-    return {"version": 5, "tracks": tracks, "total": len(tracks)}
-
-
-def _write_set_builder_catalog_cache() -> None:
-    payload = _build_set_builder_catalog_payload()
-    SET_BUILDER_CATALOG_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    temporary = SET_BUILDER_CATALOG_CACHE.with_suffix(".pending.json")
-    temporary.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    temporary.replace(SET_BUILDER_CATALOG_CACHE)
-
-
 _CAMELOT_KEYS = CAMELOT_KEYS
-
-
-def _refresh_library_search_index() -> None:
-    analysis_by_name = {
-        str(song.get("source_name") or "").casefold(): song
-        for song in _load_processing_report().get("songs", {}).values()
-    }
-    downloaded_tracks = repository.list_downloaded_tracks_with_jobs()
-    downloaded_by_path = {str(track.get("file_path") or ""): track for track in downloaded_tracks}
-    downloaded_by_job = {
-        int(track["completed_library_job_id"]): track
-        for track in downloaded_tracks
-        if track.get("completed_library_job_id")
-    }
-    corrections = MusicalCorrectionIndex.from_records(repository.key_verifications(), repository.bpm_verifications())
-    entries = []
-    for job in repository.list_latest_completed_jobs():
-        song = dict(analysis_by_name.get(str(job.get("source_name") or "").casefold(), {}))
-        song = corrections.apply(song, str(job.get("source_name") or ""), detected_bpm_fallback=job.get("bpm"))
-        downloaded = downloaded_by_job.get(int(job["id"])) or downloaded_by_path.get(str(job.get("source_path") or ""))
-        if downloaded and downloaded.get("key_analyzed_at"):
-            song["key"] = downloaded.get("detected_key") or song.get("key")
-            song["key_confidence"] = float(downloaded.get("key_confidence") or 0) / 100.0
-        source_stem = re.sub(r"\.[^.]+$", "", str(job.get("source_name") or ""))
-        source_parts = source_stem.split(" - ")
-        title = str(downloaded.get("title") or "") if downloaded else ""
-        artist = str(downloaded.get("artist") or "") if downloaded else ""
-        title = title or (" - ".join(source_parts[1:]) if len(source_parts) > 1 else source_stem)
-        artist = artist or (source_parts[0] if len(source_parts) > 1 else "Unknown artist")
-        category = (
-            _normalize_genre_category(str(downloaded.get("genre_category") or "Other"))
-            if downloaded
-            else str(song.get("detected_style") or "Unclassified")
-        )
-        roles = _library_roles(song)
-        energy = _library_energy(song)
-        analyzed_preset = str(song.get("preset") or "")
-        preset = (analyzed_preset.split("→")[-1].strip() if "→" in analyzed_preset else analyzed_preset.strip()) or str(
-            job.get("preset") or "default"
-        )
-        result = (
-            "review"
-            if job.get("review_status") == "pending"
-            else "extended"
-            if job.get("intro_quality") is not None or job.get("outro_quality") is not None
-            else "preserved"
-        )
-        musical_key = (
-            str(song.get("key") or "")
-            .replace("Db ", "C# ")
-            .replace("Eb ", "D# ")
-            .replace("Gb ", "F# ")
-            .replace("Ab ", "G# ")
-            .replace("Bb ", "A# ")
-        )
-        instrumental_values = [
-            float(value)
-            for value in (
-                (song.get("intro") or {}).get("instrumentalness"),
-                (song.get("outro") or {}).get("instrumentalness"),
-            )
-            if value is not None
-        ]
-        instrumental = max(instrumental_values) if instrumental_values else None
-        timing_text = str(song.get("timing") or "").casefold()
-        vocal_profile = (
-            "mixed"
-            if instrumental is None
-            else "vocal-safe"
-            if instrumental >= 0.72
-            else "vocal-forward"
-            if instrumental < 0.45
-            else "mixed"
-        )
-        timing_profile = (
-            "variable"
-            if "live" in timing_text or "variable" in timing_text or float(song.get("tempo_drift") or 0) >= 0.08
-            else "steady"
-        )
-        entries.append(
-            {
-                "job_id": int(job["id"]),
-                "source_name": job["source_name"],
-                "title": title,
-                "artist": artist,
-                "downloaded_id": int(downloaded["id"]) if downloaded else None,
-                "category": category,
-                "detail_genre": str(downloaded.get("genre") or "").strip() if downloaded else "",
-                "roles": f"|{'|'.join(roles)}|",
-                "preset": preset.casefold(),
-                "requested_preset": str(job.get("preset") or "default").casefold(),
-                "result": result,
-                "bpm": float(song.get("bpm") or job.get("bpm") or 0),
-                "musical_key": musical_key,
-                "camelot": _CAMELOT_KEYS.get(musical_key, ""),
-                "energy": energy,
-                "energy_band": "high" if energy >= 0.67 else "low" if energy < 0.4 else "medium",
-                "vocals": vocal_profile,
-                "timing": timing_profile,
-                "updated_at": job["updated_at"],
-                "analysis_json": json.dumps(song, separators=(",", ":")),
-                "set_analysis_json": json.dumps(
-                    _set_builder_analysis(
-                        song, roles=roles, energy=energy, vocals=vocal_profile, timing=timing_profile
-                    ),
-                    separators=(",", ":"),
-                ),
-            }
-        )
-    repository.replace_library_search_index(entries)
-    _write_set_builder_catalog_cache()
 
 
 def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
@@ -3252,6 +2403,7 @@ def _refresh_library_index_background() -> None:
             library_index_refresh_active = False
 
 
+catalog_projection_builder: CatalogProjectionBuilder
 catalog_projection_publisher: CatalogProjectionPublisher
 
 
@@ -3307,18 +2459,26 @@ def create_app(
     _bind_runtime(runtime)
 
     global import_service, local_import_service, playlist_match_service, creative_commons_service
-    global library_maintenance_service, track_metadata_mutations, metadata_batch_service
+    global creative_commons_worker
+    global artwork_thumbnail_service, library_maintenance_service, track_metadata_mutations, metadata_batch_service
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
-    global downloaded_catalog_query_service, job_workflow_service, catalog_projection_publisher
+    global downloaded_analysis_queue, downloaded_catalog_query_service, job_workflow_service
+    global catalog_projection_builder, catalog_projection_publisher
 
+    catalog_projection_builder = _current_catalog_projection_builder()
     catalog_projection_publisher = CatalogProjectionPublisher(
         repository=lambda: repository,
-        rebuild=_refresh_library_search_index,
+        rebuild=catalog_projection_builder.rebuild,
         report_path=lambda: OUTPUT / "reports" / "processing_report.json",
         catalog_path=lambda: SET_BUILDER_CATALOG_CACHE,
         memory_cache=library_catalog_cache,
         memory_cache_lock=library_catalog_cache_lock,
+    )
+    artwork_thumbnail_service = ArtworkThumbnailService(
+        thumbnail_root=lambda: _music_library_root() / ".artwork" / "thumbnails",
+        record_cache_result=_record_cache_result,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
 
     import_service = ImportService(
@@ -3348,11 +2508,31 @@ def create_app(
         _match_tracks_to_youtube,
         thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
+    creative_commons_worker = CreativeCommonsBatchWorker(
+        registry=creative_commons_registry,
+        repository=repository,
+        output=OUTPUT,
+        require_library_online=_require_music_library_online,
+        safe_folder_name=_safe_folder_name,
+        generalized_genre=_generalized_genre,
+        normalize_genre_category=_normalize_genre_category,
+        safe_audio_name=_safe_audio_name,
+        duplicate_lookup=_cataloged_download_by_youtube_id,
+        genre_path_parts=_genre_path_parts,
+        source_metadata_path=_source_metadata_path,
+        cache_track_artwork=_cache_track_artwork,
+        write_wav_metadata=write_wav_metadata,
+        write_source_metadata=_write_source_metadata,
+        best_youtube_match=_best_youtube_match,
+        spotify_source_metadata=_spotify_source_metadata,
+        original_import_metadata=_original_import_metadata,
+        match_factory=CreativeCommonsMatch,
+    )
     creative_commons_service = CreativeCommonsImportService(
         creative_commons_registry,
         require_library_online=_require_music_library_online,
-        worker=_creative_commons_worker,
-        retry_worker=_retry_import_failures_worker,
+        worker=creative_commons_worker.run,
+        retry_worker=creative_commons_worker.retry,
         thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
     library_maintenance_service = LibraryMaintenanceService(
@@ -3411,6 +2591,11 @@ def create_app(
         normalize_genre_category=_normalize_genre_category,
         track_payload=_downloaded_track_payload,
     )
+    downloaded_analysis_queue = DownloadedTrackAnalysisQueue(
+        repository=repository,
+        processor=service,
+        effective_settings=_effective_settings,
+    )
     job_workflow_service = JobWorkflowService(
         repository=repository,
         processor=service,
@@ -3441,10 +2626,14 @@ def create_app(
         local_import_service=local_import_service,
         playlist_match_service=playlist_match_service,
         creative_commons_service=creative_commons_service,
+        creative_commons_worker=creative_commons_worker,
+        artwork_thumbnail_service=artwork_thumbnail_service,
         library_maintenance_service=library_maintenance_service,
         track_metadata_mutations=track_metadata_mutations,
         metadata_batch_service=metadata_batch_service,
         downloaded_catalog_query_service=downloaded_catalog_query_service,
+        downloaded_analysis_queue=downloaded_analysis_queue,
+        catalog_projection_builder=catalog_projection_builder,
         job_workflow_service=job_workflow_service,
         _run_integrity_scan=_run_integrity_scan,
         intention_planner=intention_planner,
@@ -3605,3 +2794,29 @@ app: Any = LazyApplication(create_app)
 
 if __name__ == "__main__":
     uvicorn.run("audioextender.web.application:create_app", host="127.0.0.1", port=8765, reload=False, factory=True)
+
+
+def _write_set_builder_catalog_cache() -> None:
+    """Compatibility wrapper for callers that publish the Set Builder cache."""
+    _current_catalog_projection_builder().write_catalog_cache()
+
+
+def _refresh_library_search_index() -> None:
+    """Compatibility wrapper for scripts and propagation integration tests."""
+    _current_catalog_projection_builder().rebuild()
+
+
+def _current_catalog_projection_builder() -> CatalogProjectionBuilder:
+    """Build against current compatibility bindings for isolated scripts/tests."""
+    return CatalogProjectionBuilder(
+        repository=lambda: repository,
+        load_processing_report=_load_processing_report,
+        normalize_genre_category=_normalize_genre_category,
+        catalog_path=lambda: SET_BUILDER_CATALOG_CACHE,
+        camelot_keys=CAMELOT_KEYS,
+    )
+
+
+def _cached_artwork_thumbnail(source: Path, size: int = 96) -> Path:
+    """Compatibility wrapper around the thumbnail service."""
+    return artwork_thumbnail_service.get_or_queue(source, size)

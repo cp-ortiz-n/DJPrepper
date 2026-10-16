@@ -15,6 +15,10 @@ migration, or the application's deployment/frontend shape.
 | `main.py`                          | CLI parsing and batch execution                                                       |
 | `web_app.py`                       | Small compatibility launcher; never add feature logic here                            |
 | `audioextender/web/application.py` | FastAPI factory, dependency wiring, compatibility facade, and remaining legacy routes |
+| `audioextender/imports/creative_commons_worker.py` | Creative Commons download and failed-source retry execution |
+| `audioextender/library/analysis_queue.py` | Catalog-track analysis and reanalysis job creation |
+| `audioextender/library/artwork_thumbnails.py` | Serialized artwork-thumbnail generation and cache ownership |
+| `audioextender/library/catalog_projection_builder.py` | Library search and Set Builder projection construction |
 | `audioextender/web/composition.py` | Explicit application paths, owned services, registries, locks, queues, and caches     |
 | `web/index.html`                   | Browser shell and workspace markup                                                    |
 | `web/app.js`                       | Browser composition, global navigation, and feature registration only                 |

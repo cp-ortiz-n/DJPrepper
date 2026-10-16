@@ -108,6 +108,13 @@ into router factories. New HTTP functionality should normally live in a
 focused `*_routes.py` module with a dependency dataclass, rather than adding
 another feature directly to `application.py`.
 
+Long-running work is likewise owned outside the composition root. Creative
+Commons download/retry execution, artwork thumbnail generation, downloaded-track
+analysis queuing, and catalog projection construction live in their import or
+library service modules. `application.py` wires those owners and retains only
+small compatibility wrappers where scripts and integration tests still rely on
+the historical entry point.
+
 `JobRepository` remains the stable persistence facade, but SQL is divided among
 focused mixins under `audioextender/repositories/`. The downloaded-track catalog
 is itself composed by `track_catalog.py` from core CRUD, descriptor, recording

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import queue
 import threading
 from collections import deque
 from collections.abc import Callable
@@ -84,9 +83,6 @@ class ApplicationRuntime:
     library_consolidation_batches: dict[str, dict[str, Any]] = field(default_factory=dict)
     library_consolidation_batch_lock: threading.Lock = field(default_factory=threading.Lock)
     downloaded_catalog_migration_lock: threading.Lock = field(default_factory=threading.Lock)
-    artwork_thumbnail_lock: threading.Lock = field(default_factory=threading.Lock)
-    artwork_thumbnail_queue: queue.Queue[tuple[Path, Path, int]] = field(default_factory=queue.Queue)
-    artwork_thumbnail_pending: set[Path] = field(default_factory=set)
     report_cache_lock: threading.Lock = field(default_factory=threading.Lock)
     report_cache: dict[str, object] = field(default_factory=lambda: {"mtime_ns": None, "payload": {"songs": {}}})
     analytics_cache_lock: threading.Lock = field(default_factory=threading.Lock)
@@ -164,9 +160,6 @@ def runtime_bindings(runtime: ApplicationRuntime) -> dict[str, object]:
         "library_consolidation_batches": runtime.library_consolidation_batches,
         "library_consolidation_batch_lock": runtime.library_consolidation_batch_lock,
         "downloaded_catalog_migration_lock": runtime.downloaded_catalog_migration_lock,
-        "artwork_thumbnail_lock": runtime.artwork_thumbnail_lock,
-        "artwork_thumbnail_queue": runtime.artwork_thumbnail_queue,
-        "artwork_thumbnail_pending": runtime.artwork_thumbnail_pending,
         "report_cache_lock": runtime.report_cache_lock,
         "report_cache": runtime.report_cache,
         "analytics_cache_lock": runtime.analytics_cache_lock,

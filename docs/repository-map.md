@@ -58,6 +58,7 @@ map reflects the current layout; it does not propose moving code.
 │   ├── imports/
 │   │   ├── __init__.py
 │   │   ├── creative_commons.py
+│   │   ├── creative_commons_worker.py
 │   │   ├── local.py
 │   │   ├── playlist_match.py
 │   │   ├── routes.py
@@ -71,8 +72,11 @@ map reflects the current layout; it does not propose moving code.
 │   │   └── progress.py
 │   ├── library/
 │   │   ├── __init__.py
+│   │   ├── analysis_queue.py
+│   │   ├── artwork_thumbnails.py
 │   │   ├── backup.py
 │   │   ├── catalog_projection.py
+│   │   ├── catalog_projection_builder.py
 │   │   ├── catalog_query_service.py
 │   │   ├── cue_export.py
 │   │   ├── descriptor_service.py
