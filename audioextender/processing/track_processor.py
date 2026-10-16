@@ -60,21 +60,7 @@ def _format_time(seconds: float) -> str:
     return f"{minutes:02d}:{remainder:02d}"
 
 
-def _format_duration(seconds: float) -> str:
-    minutes, remainder = divmod(max(0, round(seconds)), 60)
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours:d}:{minutes:02d}:{remainder:02d}" if hours else f"{minutes:02d}:{remainder:02d}"
-
-
 _arrangement_sections = arrangement_sections
-
-
-def _print_candidate(label: str, candidate: SectionCandidate) -> None:
-    extra = f", vocal={candidate.vocal_energy:.2f}" if candidate.vocal_energy is not None else ""
-    print(
-        f"{label} candidate: {_format_time(candidate.start)} - {_format_time(candidate.end)} "
-        f"(score={candidate.score:.2f}, instrumental={candidate.instrumentalness:.2f}{extra})"
-    )
 
 
 def _pick_ranked_candidate(

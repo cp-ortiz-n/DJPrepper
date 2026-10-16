@@ -28,8 +28,6 @@ from audioextender.reporting.processing import update_processing_report
 from audioextender.repositories.capabilities import JobQueueRepository
 from settings import (
     CACHE_FOLDER_NAME,
-    DEFAULT_INTRO_BARS,
-    DEFAULT_OUTRO_BARS,
     EXTENDED_OUTPUT_FOLDER_NAME,
     MINIMUM_CROSSFADE_MS,
     OUTPUT_FOLDER_NAME,
@@ -429,7 +427,3 @@ class WebJobService:
         if override is None:
             return None, None, None
         return override.intro_before, override.outro_after, override.outro_before
-
-
-def default_job_values() -> tuple[int, int]:
-    return DEFAULT_INTRO_BARS, DEFAULT_OUTRO_BARS

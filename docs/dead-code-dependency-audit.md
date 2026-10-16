@@ -58,6 +58,28 @@ These remain in place because this audit does not prove that external consumers,
 serialized callbacks, or compatibility imports do not use them. Remove them only
 in a focused change with import, API, and behavior tests.
 
+## Focused reassessment
+
+The follow-up compatibility pass separated the candidates by visibility and
+observable behavior:
+
+- Removed the unreferenced private helpers
+  `processing.extended_edit._choose_splice_mode`,
+  `processing.track_processor._format_duration`,
+  `processing.track_processor._print_candidate`, and
+  `processing.web_jobs.default_job_values`.
+- Preserved `AnalysisError` as part of the expected application exception
+  hierarchy.
+- Preserved `analyze_key` as the public key-only analysis boundary and locked
+  down its `KeyAnalysis` result contract.
+- Preserved `select_section` as the single-result compatibility adapter over
+  ranked section selection.
+- Preserved `update_downloaded_track_key_analysis` as the key-only catalog write
+  boundary; its test proves unrelated catalog fields survive the update.
+
+`tests/test_dead_code_compatibility.py` characterizes all eight decisions and
+prevents the removed private helpers from quietly returning.
+
 ## Dependency results
 
 `pip check` and `pipdeptree --warn fail` found no installed dependency conflicts.
