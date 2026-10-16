@@ -121,6 +121,8 @@ database and backup opening whenever this sequence changes.
 | ----------------------------------- | ----------------------------------------------------------------------------------- |
 | `web/job_routes.py`                 | Job listing, ordering, clearing, cancel, pause, resume, removal                     |
 | `web/job_media_routes.py`           | Audio delivery, ZIP exports, waveforms, transition scoring, cue editing             |
+| `web/preset_routes.py`              | Persistent custom preset state, effective preset projection, and preset routes      |
+| `web/downloaded_library_routes.py`  | Downloaded catalog reads, media delivery, reveal, and transient ZIP exports          |
 | `web/library_routes.py`             | Paginated DJ Library catalog and facets                                             |
 | `web/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs                     |
 | `web/metadata_batch_routes.py`      | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches      |

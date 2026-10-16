@@ -14,12 +14,8 @@ import json
 import logging
 import re
 import shutil
-import subprocess
-import sys
-import tempfile
 import threading
 import unicodedata
-import zipfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,7 +29,6 @@ from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Reques
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from starlette.background import BackgroundTask
 from starlette.middleware.gzip import GZipMiddleware
 
 from audioextender.audio.loading import SUPPORTED_EXTENSIONS
@@ -46,7 +41,7 @@ from audioextender.audio.wav_metadata import (
     write_wav_metadata,
 )
 from audioextender.core.operation_feedback import operation_receipt
-from audioextender.core.presets import PRESETS, EditPreset
+from audioextender.core.presets import PRESETS
 from audioextender.imports.creative_commons import CreativeCommonsImportService
 from audioextender.imports.creative_commons_routes import (
     CreativeCommonsArchiveDependencies,
@@ -71,10 +66,7 @@ from audioextender.library.analysis_queue import DownloadedTrackAnalysisQueue
 from audioextender.library.artwork_thumbnails import ArtworkThumbnailService
 from audioextender.library.catalog_projection import CatalogProjectionPublisher
 from audioextender.library.catalog_projection_builder import CatalogProjectionBuilder
-from audioextender.library.catalog_query_service import (
-    DownloadedCatalogQuery,
-    DownloadedCatalogQueryService,
-)
+from audioextender.library.catalog_query_service import DownloadedCatalogQueryService
 from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
     TrackMetadataMutationService,
@@ -115,6 +107,12 @@ from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
+from audioextender.web.downloaded_library_routes import (
+    DownloadedLibraryDeliveryService,
+    DownloadedLibraryRouteDependencies,
+    DownloadedTracksRequest,  # noqa: F401 - compatibility re-export
+    create_downloaded_library_router,
+)
 from audioextender.web.error_contracts import install_error_handlers
 from audioextender.web.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
@@ -138,6 +136,12 @@ from audioextender.web.metadata_batch_routes import (
     MetadataBatchDependencies,
     MetadataBatchService,
     create_metadata_batch_router,
+)
+from audioextender.web.preset_routes import (
+    PresetRequest,  # noqa: F401 - compatibility re-export
+    PresetRouteDependencies,
+    PresetService,
+    create_preset_router,
 )
 from audioextender.web.reporting_routes import (
     ReportingRouteDependencies,
@@ -323,64 +327,6 @@ WEB_DEFAULTS = {
     "maximum_bass_reset_risk_percent": round(MAXIMUM_BASS_RESET_RISK * 100, 6),
     "minimum_stem_reliability_percent": round(MINIMUM_STEM_CONSTRUCTION_RELIABILITY * 100, 6),
 }
-
-
-class PresetRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=40, pattern=r"^[a-z0-9][a-z0-9-]*$")
-    intro_bars: int
-    outro_bars: int
-    use_stems: bool = False
-    minimum_loop_quality: float = Field(ge=0, le=100)
-    maximum_repetitions: int = Field(ge=1, le=8)
-
-
-def _preset_state() -> dict:
-    try:
-        state = json.loads(WEB_PRESETS.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        state = {}
-    return {
-        "definitions": dict(state.get("definitions") or {}),
-        "hidden": list(state.get("hidden") or []),
-    }
-
-
-def _save_preset_state(state: dict) -> None:
-    WEB_PRESETS.parent.mkdir(parents=True, exist_ok=True)
-    temporary = WEB_PRESETS.with_suffix(".tmp")
-    temporary.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    temporary.replace(WEB_PRESETS)
-
-
-def _available_presets() -> dict[str, EditPreset]:
-    state = _preset_state()
-    available = dict(PRESETS)
-    for name, values in state["definitions"].items():
-        try:
-            available[name] = EditPreset(**values)
-        except (TypeError, ValueError):
-            continue
-    for name in state["hidden"]:
-        available.pop(name, None)
-    return available
-
-
-def _preset_payload() -> list[dict]:
-    state = _preset_state()
-    return [
-        {
-            "name": name,
-            **preset.__dict__,
-            "built_in": name in PRESETS,
-            "modified": name in state["definitions"],
-        }
-        for name, preset in _available_presets().items()
-    ]
-
-
-def _preset_snapshot(name: str) -> dict:
-    preset = _available_presets().get(name)
-    return {"preset_definition": preset.__dict__} if preset is not None else {}
 
 
 class FeedbackRequest(BaseModel):
@@ -588,18 +534,6 @@ def delete_preset(name: str) -> dict:
         raise HTTPException(404, "Preset not found")
     state = _preset_state()
     state["definitions"].pop(name, None)
-    if name in PRESETS and name not in state["hidden"]:
-        state["hidden"].append(name)
-    _save_preset_state(state)
-    return {"presets": _preset_payload()}
-
-
-@legacy_router.post("/api/presets/restore")
-def restore_presets() -> dict:
-    _save_preset_state({"definitions": {}, "hidden": []})
-    return {"presets": _preset_payload()}
-
-
 def _match_tracks_to_youtube(tracks: list[dict], progress: Callable[..., None]) -> list[dict]:
     import yt_dlp
 
@@ -1266,84 +1200,6 @@ def _downloaded_track_payload(track: dict) -> dict:
     return payload
 
 
-@legacy_router.get("/api/downloaded-library")
-def downloaded_library(
-    paged: bool = False,
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=50, ge=1, le=100),
-    search: str = Query(default="", max_length=300),
-    genre: str = Query(default="all", max_length=100),
-    detailed_genre: str = Query(default="all", max_length=120),
-    playlist: str = Query(default="all", max_length=200),
-    analysis: str = Query(default="all", max_length=30),
-    artwork: str = Query(default="all", pattern="^(all|missing|available)$"),
-    quality: str = Query(default="all", pattern="^(all|excellent|good|review|poor|below-target|unanalyzed)$"),
-    sort: str = Query(default="newest", max_length=30),
-) -> dict:
-    return downloaded_catalog_query_service.execute(
-        DownloadedCatalogQuery(
-            paged=paged,
-            page=page,
-            page_size=page_size,
-            search=search,
-            genre=genre,
-            detailed_genre=detailed_genre,
-            playlist=playlist,
-            analysis=analysis,
-            artwork=artwork,
-            quality=quality,
-            sort=sort,
-        )
-    )
-
-
-@legacy_router.get("/api/downloaded-library/tracks/{track_id}/audio")
-def downloaded_track_audio(track_id: int) -> FileResponse:
-    track = repository.get_downloaded_track(track_id)
-    path = Path(track["file_path"]) if track else None
-    if path is None or not path.is_file():
-        raise HTTPException(404, "Downloaded WAV is unavailable")
-    return FileResponse(path, filename=path.name, media_type="audio/wav")
-
-
-@legacy_router.get("/api/downloaded-library/tracks/{track_id}/artwork")
-def downloaded_track_artwork(track_id: int, thumbnail: bool = False) -> FileResponse:
-    track = repository.get_downloaded_track(track_id)
-    path = Path(str(track.get("artwork_path") or "")) if track else None
-    if path is None or not path.is_file():
-        raise HTTPException(404, "Track artwork is unavailable")
-    if thumbnail:
-        path = _cached_artwork_thumbnail(path)
-    media_type = "image/png" if path.suffix.casefold() == ".png" else "image/jpeg"
-    headers = {"Cache-Control": "public, max-age=31536000, immutable"} if thumbnail else None
-    return FileResponse(path, media_type=media_type, headers=headers)
-
-
-@legacy_router.get("/api/downloaded-library/tracks/{track_id}/download")
-def downloaded_track_download(track_id: int) -> FileResponse:
-    return downloaded_track_audio(track_id)
-
-
-@legacy_router.post("/api/downloaded-library/tracks/{track_id}/reveal")
-def reveal_downloaded_track(track_id: int) -> dict:
-    """Reveal a cataloged audio file using the host operating system's file browser."""
-    track = repository.get_downloaded_track(track_id)
-    path = Path(str(track.get("file_path") or "")).expanduser() if track else None
-    if path is None or not path.is_file():
-        raise HTTPException(404, "Downloaded WAV is unavailable")
-    if sys.platform == "darwin":
-        command = ["open", "-R", str(path)]
-    elif sys.platform.startswith("win"):
-        command = ["explorer", f"/select,{path}"]
-    else:
-        command = ["xdg-open", str(path.parent)]
-    try:
-        subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except OSError as error:
-        raise HTTPException(500, "The system file browser could not be opened") from error
-    return {"revealed": True, "absolute_path": str(path.resolve())}
-
-
 @legacy_router.delete("/api/downloaded-library/tracks/{track_id}")
 def remove_downloaded_track(track_id: int) -> dict:
     if not repository.delete_downloaded_track(track_id):
@@ -1424,43 +1280,6 @@ def link_downloaded_track_version(track_id: int, request: TrackFamilyLinkRequest
 def unlink_downloaded_track_version(track_id: int) -> dict:
     """Create a new family for a track; this is the safe inverse of linking."""
     return keep_downloaded_track_separate(track_id)
-
-
-def _downloaded_archive(tracks: list[dict], name: str) -> FileResponse:
-    available = [track for track in tracks if Path(track["file_path"]).is_file()]
-    if not available:
-        raise HTTPException(404, "No downloaded WAV files are available for this selection")
-    handle = tempfile.NamedTemporaryFile(prefix="audioextender-downloads-", suffix=".zip", delete=False)
-    archive = Path(handle.name)
-    handle.close()
-    root_name = _safe_folder_name(name)
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as bundle:
-        used: set[str] = set()
-        for track in available:
-            path = Path(track["file_path"])
-            category = "/".join(_genre_path_parts(track.get("genre_category") or "Other"))
-            relative = f"{root_name}/{category}/{path.name}"
-            counter = 2
-            while relative.casefold() in used:
-                relative = f"{root_name}/{category}/{path.stem} ({counter}){path.suffix}"
-                counter += 1
-            used.add(relative.casefold())
-            bundle.write(path, arcname=relative)
-    return FileResponse(
-        archive,
-        filename=f"{root_name} - WAVs.zip",
-        media_type="application/zip",
-        background=BackgroundTask(archive.unlink, missing_ok=True),
-    )
-
-
-@legacy_router.post("/api/downloaded-library/download")
-def download_selected_tracks(request: DownloadedTracksRequest) -> FileResponse:
-    wanted = set(request.track_ids)
-    tracks = [track for track in repository.list_downloaded_tracks() if track["id"] in wanted]
-    if len(tracks) != len(wanted):
-        raise HTTPException(404, "One or more downloaded tracks were not found")
-    return _downloaded_archive(tracks, "Selected Downloaded Tracks")
 
 
 @legacy_router.post("/api/downloaded-library/analyze", status_code=202)
@@ -1812,26 +1631,6 @@ def _schedule_wav_tag_audit_refresh() -> None:
                 wav_tag_audit_refresh_active = False
 
     threading.Thread(target=refresh, daemon=True, name="wav-tag-audit").start()
-
-
-@legacy_router.get("/api/downloaded-library/genres/{genre}/download")
-def download_genre(genre: str) -> FileResponse:
-    tracks = [
-        track
-        for track in repository.list_downloaded_tracks()
-        if str(track.get("genre_category") or "Other").casefold() == genre.casefold()
-    ]
-    return _downloaded_archive(tracks, genre)
-
-
-@legacy_router.get("/api/downloaded-library/playlists/{playlist}/download")
-def download_playlist(playlist: str) -> FileResponse:
-    tracks = [
-        track
-        for track in repository.list_downloaded_tracks()
-        if any(item.casefold() == playlist.casefold() for item in track.get("playlists", []))
-    ]
-    return _downloaded_archive(tracks, playlist)
 
 
 @legacy_router.delete("/api/library/{source_name}")
@@ -2219,7 +2018,8 @@ def create_app(
     global track_metadata_mutations, metadata_batch_service
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
-    global downloaded_analysis_queue, downloaded_catalog_query_service, job_workflow_service
+    global downloaded_analysis_queue, downloaded_catalog_query_service, downloaded_library_delivery_service
+    global preset_service, job_workflow_service
     global catalog_projection_builder, catalog_projection_publisher
 
     catalog_projection_builder = _current_catalog_projection_builder()
@@ -2235,6 +2035,13 @@ def create_app(
         thumbnail_root=lambda: _music_library_root() / ".artwork" / "thumbnails",
         record_cache_result=_record_cache_result,
         thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    preset_service = PresetService(
+        PresetRouteDependencies(
+            state_path=lambda: WEB_PRESETS,
+            built_in_presets=PRESETS,
+            supported_bar_counts=frozenset(SUPPORTED_BAR_COUNTS),
+        )
     )
     audio_quality_scan_service = AudioQualityScanService(
         AudioQualityRouteDependencies(
@@ -2253,7 +2060,7 @@ def create_app(
         processing_service=service,
         library_root=_music_library_root,
         effective_settings=_effective_settings,
-        preset_snapshot=_preset_snapshot,
+        preset_snapshot=preset_service.snapshot,
         duplicate_lookup=_cataloged_download_by_youtube_id,
         probe_audio=_probe_local_audio,
         cache_artwork=_cache_track_artwork,
@@ -2377,6 +2184,15 @@ def create_app(
         normalize_genre_category=_normalize_genre_category,
         track_payload=_downloaded_track_payload,
     )
+    downloaded_library_delivery_service = DownloadedLibraryDeliveryService(
+        DownloadedLibraryRouteDependencies(
+            repository=lambda: repository,
+            catalog_query=downloaded_catalog_query_service,
+            artwork_thumbnails=artwork_thumbnail_service,
+            safe_folder_name=_safe_folder_name,
+            genre_path_parts=_genre_path_parts,
+        )
+    )
     downloaded_analysis_queue = DownloadedTrackAnalysisQueue(
         repository=repository,
         processor=service,
@@ -2388,9 +2204,9 @@ def create_app(
         input_root=INPUT,
         supported_extensions=frozenset(SUPPORTED_EXTENSIONS),
         supported_bar_counts=SUPPORTED_BAR_COUNTS,
-        available_presets=_available_presets,
+        available_presets=preset_service.available,
         effective_settings=_effective_settings,
-        preset_snapshot=_preset_snapshot,
+        preset_snapshot=preset_service.snapshot,
     )
     _run_integrity_scan = library_maintenance_service.run_integrity_scan
     intention_planner = IntentionPlanner.from_environment()
@@ -2417,10 +2233,12 @@ def create_app(
         import_issue_service=import_issue_service,
         audio_quality_scan_service=audio_quality_scan_service,
         artwork_thumbnail_service=artwork_thumbnail_service,
+        preset_service=preset_service,
         library_maintenance_service=library_maintenance_service,
         track_metadata_mutations=track_metadata_mutations,
         metadata_batch_service=metadata_batch_service,
         downloaded_catalog_query_service=downloaded_catalog_query_service,
+        downloaded_library_delivery_service=downloaded_library_delivery_service,
         downloaded_analysis_queue=downloaded_analysis_queue,
         catalog_projection_builder=catalog_projection_builder,
         job_workflow_service=job_workflow_service,
@@ -2445,6 +2263,8 @@ def create_app(
     )
     application.mount("/assets", StaticFiles(directory=WEB, check_dir=False), name="assets")
     application.include_router(legacy_router)
+    application.include_router(create_preset_router(preset_service))
+    application.include_router(create_downloaded_library_router(downloaded_library_delivery_service))
     application.include_router(create_audio_quality_router(audio_quality_scan_service))
     application.include_router(
         create_creative_commons_router(
@@ -2476,7 +2296,7 @@ def create_app(
                 cache_folder_name=CACHE_FOLDER_NAME,
                 supported_bar_counts=SUPPORTED_BAR_COUNTS,
                 defaults=WEB_DEFAULTS,
-                available_presets=_available_presets,
+                available_presets=preset_service.available,
                 effective_settings=_effective_settings,
                 music_library_root=lambda: _music_library_root(),
                 library_location_summary=_library_location_summary,
@@ -2612,8 +2432,3 @@ def _current_catalog_projection_builder() -> CatalogProjectionBuilder:
         catalog_path=lambda: SET_BUILDER_CATALOG_CACHE,
         camelot_keys=CAMELOT_KEYS,
     )
-
-
-def _cached_artwork_thumbnail(source: Path, size: int = 96) -> Path:
-    """Compatibility wrapper around the thumbnail service."""
-    return artwork_thumbnail_service.get_or_queue(source, size)
