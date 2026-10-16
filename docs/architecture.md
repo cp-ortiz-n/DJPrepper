@@ -16,6 +16,7 @@ migration, or the application's deployment/frontend shape.
 | `web_app.py`                       | Small compatibility launcher; never add feature logic here                            |
 | `audioextender/web/application.py` | FastAPI factory, dependency wiring, compatibility facade, and remaining legacy routes |
 | `audioextender/web/audio_quality_routes.py` | Downloaded-library audio-quality scan lifecycle and HTTP routes |
+| `audioextender/imports/creative_commons_routes.py` | Creative Commons delivery routes, import-issue workflows, and report recovery |
 | `audioextender/imports/creative_commons_worker.py` | Creative Commons download and failed-source retry execution |
 | `audioextender/library/analysis_queue.py` | Catalog-track analysis and reanalysis job creation |
 | `audioextender/library/artwork_thumbnails.py` | Serialized artwork-thumbnail generation and cache ownership |

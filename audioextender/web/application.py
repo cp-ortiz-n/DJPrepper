@@ -48,6 +48,16 @@ from audioextender.audio.wav_metadata import (
 from audioextender.core.operation_feedback import operation_receipt
 from audioextender.core.presets import PRESETS, EditPreset
 from audioextender.imports.creative_commons import CreativeCommonsImportService
+from audioextender.imports.creative_commons_routes import (
+    CreativeCommonsArchiveDependencies,
+    CreativeCommonsArchiveService,
+    CreativeCommonsBatchRequest,  # noqa: F401 - compatibility re-export
+    CreativeCommonsMatch,
+    ImportFailureRetryRequest,  # noqa: F401 - compatibility re-export
+    ImportIssueDependencies,
+    ImportIssueService,
+    create_creative_commons_router,
+)
 from audioextender.imports.creative_commons_worker import CreativeCommonsBatchWorker
 from audioextender.imports.local import LocalAudioImportService
 from audioextender.imports.playlist_match import PlaylistMatchService
@@ -385,22 +395,6 @@ class SourceMatchRequest(BaseModel):
     url: str = Field(min_length=10, max_length=500)
 
 
-class CreativeCommonsMatch(BaseModel):
-    url: str = Field(min_length=10, max_length=500)
-    title: str = Field(min_length=1, max_length=300)
-    artist: str = Field(min_length=1, max_length=300)
-    spotify_uri: str = Field(default="", max_length=200)
-    genre: str = Field(default="", max_length=500)
-    genre_category: str = Field(default="Other", max_length=80)
-    artwork_url: str = Field(default="", max_length=1000)
-    playlist_name: str = Field(default="", max_length=180)
-
-
-class CreativeCommonsBatchRequest(BaseModel):
-    tracks: list[CreativeCommonsMatch] = Field(min_length=1, max_length=500)
-    playlist_name: str = Field(default="Imported Playlist", min_length=1, max_length=180)
-
-
 class DownloadedTracksRequest(BaseModel):
     track_ids: list[int] = Field(min_length=1, max_length=1000)
 
@@ -414,10 +408,6 @@ class TrackFamilyLinkRequest(BaseModel):
     target_track_id: int | None = Field(default=None, gt=0)
     target_identity: str = Field(default="", max_length=40)
     relationship: Literal["ORG", "RMX", "EXT", "RADIO", "LIVE", "INST", "ACAP", "REM"]
-
-
-class ImportFailureRetryRequest(BaseModel):
-    failure_ids: list[int] = Field(min_length=1, max_length=500)
 
 
 class ArtworkSyncRequest(BaseModel):
@@ -1216,157 +1206,6 @@ def _cache_track_artwork(artwork_url: str, destination: Path) -> str:
         return str(artwork_file)
     except Exception:
         return ""
-
-
-@legacy_router.post("/api/imports/creative-commons", status_code=202)
-def create_creative_commons_batch(request: CreativeCommonsBatchRequest) -> dict:
-    try:
-        return creative_commons_service.start(request.tracks, request.playlist_name)
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-
-
-@legacy_router.get("/api/imports/creative-commons/{batch_id}")
-def creative_commons_batch_status(batch_id: str) -> dict:
-    try:
-        return creative_commons_service.status(batch_id)
-    except LookupError as error:
-        raise HTTPException(404, str(error)) from error
-
-
-@legacy_router.get("/api/imports/creative-commons/{batch_id}/download")
-def download_creative_commons_batch(batch_id: str) -> FileResponse:
-    with creative_commons_batch_lock:
-        state = creative_commons_batches.get(batch_id)
-        playlist_name = str(state.get("playlist_name") or "Imported Playlist") if state else "Imported Playlist"
-        report_data = dict(state.get("report") or {}) if state else {}
-    included = list(report_data.get("downloaded") or []) + list(report_data.get("already_downloaded") or [])
-    if not included:
-        raise HTTPException(404, "No verified Creative Commons WAV files are available")
-    safe_playlist = _safe_folder_name(playlist_name)
-    temporary = tempfile.NamedTemporaryFile(prefix=f"{safe_playlist}-", suffix="-WAVs.zip", delete=False)
-    temporary.close()
-    path = Path(temporary.name)
-    added = 0
-    try:
-        with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-            for item in included:
-                category = str(item.get("genre_category") or "Other")
-                catalog_track = _cataloged_download_by_youtube_id(str(item.get("youtube_id") or ""))
-                source = (
-                    Path(str(catalog_track.get("file_path")))
-                    if catalog_track
-                    else _music_library_root().joinpath(*_genre_path_parts(category), str(item.get("filename") or ""))
-                )
-                if catalog_track:
-                    category = str(catalog_track.get("genre_category") or category)
-                if not source.is_file():
-                    continue
-                category_path = "/".join(_genre_path_parts(category))
-                archive.write(source, arcname=f"{safe_playlist}/{category_path}/{source.name}")
-                added += 1
-        if not added:
-            path.unlink(missing_ok=True)
-            raise HTTPException(404, "The imported WAV files are no longer available")
-        return FileResponse(
-            path,
-            filename=f"{safe_playlist} - WAVs.zip",
-            background=BackgroundTask(path.unlink, missing_ok=True),
-        )
-    except Exception:
-        path.unlink(missing_ok=True)
-        raise
-
-
-@legacy_router.get("/api/imports/creative-commons/{batch_id}/report")
-def download_creative_commons_report(batch_id: str) -> FileResponse:
-    with creative_commons_batch_lock:
-        state = creative_commons_batches.get(batch_id)
-        path = Path(state["report_path"]) if state and state.get("report_path") else None
-    if path is None or not path.exists():
-        raise HTTPException(404, "Creative Commons import report is not available")
-    with creative_commons_batch_lock:
-        playlist_name = str(creative_commons_batches.get(batch_id, {}).get("playlist_name") or "Imported Playlist")
-    return FileResponse(path, filename=f"{_safe_folder_name(playlist_name)} - Import Report.json")
-
-
-@legacy_router.get("/api/imports/failures")
-def list_import_failures() -> dict:
-    if not repository.list_import_failures(include_resolved=True):
-        for report_path in (OUTPUT / "reports" / "imports").glob("**/*Import Report.json"):
-            try:
-                document = json.loads(report_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            playlist_name = str(document.get("playlist_name") or report_path.parent.name)
-            for item in (document.get("results") or {}).get("failed", []):
-                repository.record_import_failure(
-                    playlist_name=playlist_name,
-                    title=str(item.get("title") or item.get("filename") or "Unknown track"),
-                    artist=str(item.get("artist") or ""),
-                    spotify_uri=str(item.get("spotify_uri") or ""),
-                    youtube_url=str(item.get("url") or item.get("youtube_url") or ""),
-                    error=str(item.get("error") or "Download failed"),
-                )
-    failures = repository.list_import_failures()
-    return {"failures": failures, "total": len(failures)}
-
-
-def _original_import_metadata(playlist_name: str, title: str, artist: str) -> dict[str, str]:
-    """Recover source metadata from the first playlist report for a failed track."""
-    report_root = OUTPUT / "reports" / "imports"
-    wanted_title = title.strip().casefold()
-    wanted_artist = artist.strip().casefold()
-    preferred = report_root / _safe_folder_name(playlist_name)
-    candidates = [*preferred.glob("*Import Report.json")]
-    candidates.extend(
-        path
-        for path in report_root.glob("**/*Import Report.json")
-        if path.parent != preferred and path.parent.name != "Retry imports"
-    )
-    for report_path in candidates:
-        try:
-            document = json.loads(report_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        for section in ("failed", "downloaded", "already_downloaded"):
-            for item in (document.get("results") or {}).get(section, []):
-                if (
-                    str(item.get("title") or "").strip().casefold() == wanted_title
-                    and str(item.get("artist") or "").strip().casefold() == wanted_artist
-                ):
-                    genre = str(item.get("genre") or "").strip()
-                    category = str(item.get("genre_category") or "").strip()
-                    return {
-                        "genre": genre,
-                        "genre_category": (
-                            _generalized_genre(genre) if genre else _normalize_genre_category(category or "Other")
-                        ),
-                    }
-    return {"genre": "", "genre_category": "Other"}
-
-
-@legacy_router.post("/api/imports/failures/retry", status_code=202)
-def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
-    wanted = set(request.failure_ids)
-    failures = [item for item in repository.list_import_failures() if int(item["id"]) in wanted]
-    if len(failures) != len(wanted):
-        raise HTTPException(404, "One or more import issues are no longer available")
-    return creative_commons_service.start_retry(failures)
-
-
-@legacy_router.delete("/api/imports/failures/{failure_id}")
-def dismiss_import_failure(failure_id: int) -> dict:
-    failures = repository.list_import_failures(include_resolved=True)
-    failure = next((item for item in failures if int(item["id"]) == failure_id), None)
-    if failure is None:
-        raise HTTPException(404, "Import failure not found")
-    repository.resolve_import_failure(
-        playlist_name=str(failure["playlist_name"]),
-        title=str(failure["title"]),
-        artist=str(failure["artist"]),
-    )
-    return {"resolved": True, "id": failure_id}
 
 
 def _probe_local_audio(path: Path) -> dict:
@@ -2375,7 +2214,7 @@ def create_app(
     _bind_runtime(runtime)
 
     global import_service, local_import_service, playlist_match_service, creative_commons_service
-    global creative_commons_worker
+    global creative_commons_archive_service, creative_commons_worker, import_issue_service
     global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service
     global track_metadata_mutations, metadata_batch_service
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
@@ -2436,6 +2275,16 @@ def create_app(
         _match_tracks_to_youtube,
         thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
+    import_issue_service = ImportIssueService(
+        ImportIssueDependencies(
+            repository=lambda: repository,
+            lifecycle=lambda: creative_commons_service,
+            report_root=OUTPUT / "reports" / "imports",
+            safe_folder_name=_safe_folder_name,
+            generalized_genre=_generalized_genre,
+            normalize_genre=_normalize_genre_category,
+        )
+    )
     creative_commons_worker = CreativeCommonsBatchWorker(
         registry=creative_commons_registry,
         repository=repository,
@@ -2453,7 +2302,7 @@ def create_app(
         write_source_metadata=_write_source_metadata,
         best_youtube_match=_best_youtube_match,
         spotify_source_metadata=_spotify_source_metadata,
-        original_import_metadata=_original_import_metadata,
+        original_import_metadata=import_issue_service.original_metadata,
         match_factory=CreativeCommonsMatch,
     )
     creative_commons_service = CreativeCommonsImportService(
@@ -2462,6 +2311,15 @@ def create_app(
         worker=creative_commons_worker.run,
         retry_worker=creative_commons_worker.retry,
         thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    creative_commons_archive_service = CreativeCommonsArchiveService(
+        CreativeCommonsArchiveDependencies(
+            lifecycle=creative_commons_service,
+            music_library_root=lambda: _music_library_root(),
+            safe_folder_name=_safe_folder_name,
+            genre_path_parts=_genre_path_parts,
+            cataloged_download=lambda video_id: _cataloged_download_by_youtube_id(video_id),
+        )
     )
     library_maintenance_service = LibraryMaintenanceService(
         LibraryMaintenanceDependencies(
@@ -2554,7 +2412,9 @@ def create_app(
         local_import_service=local_import_service,
         playlist_match_service=playlist_match_service,
         creative_commons_service=creative_commons_service,
+        creative_commons_archive_service=creative_commons_archive_service,
         creative_commons_worker=creative_commons_worker,
+        import_issue_service=import_issue_service,
         audio_quality_scan_service=audio_quality_scan_service,
         artwork_thumbnail_service=artwork_thumbnail_service,
         library_maintenance_service=library_maintenance_service,
@@ -2586,6 +2446,13 @@ def create_app(
     application.mount("/assets", StaticFiles(directory=WEB, check_dir=False), name="assets")
     application.include_router(legacy_router)
     application.include_router(create_audio_quality_router(audio_quality_scan_service))
+    application.include_router(
+        create_creative_commons_router(
+            creative_commons_service,
+            creative_commons_archive_service,
+            import_issue_service,
+        )
+    )
     application.include_router(
         create_settings_router(
             SettingsRouteDependencies(
