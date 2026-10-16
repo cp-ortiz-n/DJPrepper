@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "keys": [
+    {"input": "A minor", "normalized": "A minor", "camelot": "8A"},
+    {"input": "Db major", "normalized": "C# major", "camelot": "3B"},
+    {"input": "Bb minor", "normalized": "A# minor", "camelot": "3A"},
+    {"input": "Unknown", "normalized": "Unknown", "camelot": "—"}
+  ],
+  "profiles": [
+    {
+      "name": "ambient live closing",
+      "song": {
+        "bpm": 110,
+        "detected_style": "ambient melodic vocal-safe closing",
+        "timing": "live",
+        "key_confidence": 0.8,
+        "tempo_drift": 0.1,
+        "intro": {"instrumentalness": 0.8},
+        "outro": {"instrumentalness": 0.2, "section": "closing"},
+        "dj_readiness": {"outro_mixable_bars": 8},
+        "section_profiles": [
+          {"reason": "energy 0.20"},
+          {"reason": "energy 0.40"}
+        ]
+      },
+      "roles": ["ambient", "closing", "live timing", "melodic", "vocal-safe", "warm-up"],
+      "energy": 0.3,
+      "energy_band": "low",
+      "vocals": "vocal-safe",
+      "timing": "variable"
+    },
+    {
+      "name": "high energy vocal-forward",
+      "song": {
+        "bpm": 128,
+        "detected_style": "high-energy peak",
+        "intro": {"instrumentalness": 0.2},
+        "outro": {"instrumentalness": 0.3}
+      },
+      "roles": ["peak-time"],
+      "energy": 0.8,
+      "energy_band": "high",
+      "vocals": "vocal-forward",
+      "timing": "steady"
+    },
+    {
+      "name": "neutral warm-up fallback",
+      "song": {
+        "bpm": 118,
+        "intro": {"instrumentalness": 0.55},
+        "outro": {"instrumentalness": 0.5}
+      },
+      "roles": ["warm-up"],
+      "energy": 0.5,
+      "energy_band": "medium",
+      "vocals": "mixed",
+      "timing": "steady"
+    }
+  ],
+  "browser_overrides": {
+    "song": {
+      "musical_profile": {
+        "version": 1,
+        "key": "C# major",
+        "camelot": "3B",
+        "roles": ["closing"],
+        "energy": 0.67,
+        "energy_band": "high",
+        "vocals": "vocal-safe",
+        "timing": "variable"
+      },
+      "_roles": ["closing"],
+      "_energy": 0.67,
+      "_vocals": "vocal-safe",
+      "_timing": "variable",
+      "bpm": 130,
+      "key": "A minor",
+      "detected_style": "peak"
+    },
+    "roles": ["closing"],
+    "energy": 0.67,
+    "energy_band": "high",
+    "vocals": "vocal-safe",
+    "timing": "variable"
+  },
+  "library_matches": [
+    {
+      "name": "near tempo relative key shared role",
+      "left": {"bpm": 120, "key": "A minor", "_energy": 0.5, "_roles": ["melodic"]},
+      "right": {"bpm": 121, "key": "C major", "_energy": 0.55, "_roles": ["melodic"]},
+      "expected": {"score": 86, "difference": 0.008333333333333333, "key": "relative key", "components": {"tempo": 40, "key": 32, "energy": 9, "role": 5}, "sharedRoles": ["melodic"]}
+    },
+    {
+      "name": "double time neighboring key",
+      "left": {"bpm": 75, "key": "A minor", "_energy": 0.4, "_roles": ["warm-up"]},
+      "right": {"bpm": 150, "key": "E minor", "_energy": 0.8, "_roles": ["peak-time"]},
+      "expected": {"score": 74, "difference": 0, "key": "neighboring key", "components": {"tempo": 45, "key": 26, "energy": 3, "role": 0}, "sharedRoles": []}
+    },
+    {
+      "name": "distant incompatible tracks",
+      "left": {"bpm": 128, "key": "A minor", "_energy": 0.8, "_roles": ["peak-time"]},
+      "right": {"bpm": 100, "key": "F# major", "_energy": 0.2, "_roles": ["warm-up"]},
+      "expected": {"score": 0, "difference": 0.21875, "key": "distant key", "components": {"tempo": 0, "key": 0, "energy": 0, "role": 0}, "sharedRoles": []}
+    }
+  ],
+  "set_transitions": [
+    {
+      "name": "first track has no transition cost",
+      "left": null,
+      "right": {"bpm": 120, "camelot": "8A", "energy": 0.5, "vocals": "mixed"},
+      "cost": 0
+    },
+    {
+      "name": "half time preserves only energy movement",
+      "left": {"bpm": 75, "camelot": "8A", "energy": 0.4, "vocals": "mixed"},
+      "right": {"bpm": 150, "camelot": "8A", "energy": 0.8, "vocals": "mixed"},
+      "cost": 0.2
+    },
+    {
+      "name": "distant vocal-forward transition",
+      "left": {"bpm": 120, "camelot": "8A", "energy": 0.7, "vocals": "vocal-forward"},
+      "right": {"bpm": 126, "camelot": "2B", "energy": 0.3, "vocals": "vocal-forward"},
+      "cost": 2.7
+    },
+    {
+      "name": "adjacent Camelot transition",
+      "left": {"bpm": 120, "camelot": "8A", "energy": 0.5, "vocals": "mixed"},
+      "right": {"bpm": 121, "camelot": "9A", "energy": 0.55, "vocals": "mixed"},
+      "cost": 0.10833333333333334
+    }
+  ]
+}

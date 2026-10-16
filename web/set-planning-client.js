@@ -1,21 +1,13 @@
+import {apiResponseJson} from './api-client.js';
+
 export class SetPlanningCanceled extends Error {
   constructor(message = 'Set planning was canceled.') {
     super(message);
     this.name = 'SetPlanningCanceled';
   }
 }
-
-async function responseJson(response, fallback) {
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = payload.detail?.message || payload.detail || fallback;
-    throw new Error(typeof detail === 'string' ? detail : fallback);
-  }
-  return payload;
-}
-
 export function createSetPlanningClient({fetchImpl = fetch, pollInterval = 500} = {}) {
-  const request = async (path, options, fallback) => responseJson(await fetchImpl(path, options), fallback);
+  const request = async (path, options, fallback) => apiResponseJson(await fetchImpl(path, options), fallback);
 
   return {
     start(payload) {

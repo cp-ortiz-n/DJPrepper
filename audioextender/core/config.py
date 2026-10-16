@@ -91,6 +91,8 @@ class EditConfig:
     analysis_only: bool = False
 
     def validate(self) -> None:
+        """Validate edit settings and raise for invalid values."""
+
         if self.intro_bars not in SUPPORTED_BAR_COUNTS:
             raise ConfigurationError(f"intro bars must be one of {SUPPORTED_BAR_COUNTS}")
         if self.outro_bars not in SUPPORTED_BAR_COUNTS:
@@ -104,7 +106,14 @@ class EditConfig:
         if not 1 <= self.maximum_repetitions <= 8:
             raise ConfigurationError("maximum repetitions must be between 1 and 8")
         if not 1 <= self.crossfade_ms <= 100:
-            raise ConfigurationError("crossfade must be between 1 and 100 ms")
+            raise ConfigurationError("cross fade must be between 1 and 100 ms")
+
+        self._validate_custom_sections()
+        self._validate_insertion()
+
+    def _validate_custom_sections(self) -> None:
+        """Validate optional custom intro and outro sections."""
+
         for position in ("intro", "outro"):
             start = getattr(self, f"custom_{position}_start")
             end = getattr(self, f"custom_{position}_end")
@@ -115,6 +124,10 @@ class EditConfig:
                 raise ConfigurationError(f"custom {position} must have start < end")
             if not 1 <= copies <= 8:
                 raise ConfigurationError(f"custom {position} copies must be between 1 and 8")
+
+    def _validate_insertion(self) -> None:
+        """Validate optional section insertion settings."""
+
         insert_values = (
             self.insert_source_start,
             self.insert_source_end,

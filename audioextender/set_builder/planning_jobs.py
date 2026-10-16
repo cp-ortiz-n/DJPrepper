@@ -7,10 +7,11 @@ import uuid
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from time import perf_counter
 from typing import Any, Protocol
 
+from audioextender.infrastructure.operation_lifecycle import SET_PLANNING, LifecycleProjection
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.plan_evaluator import SetPlanEvaluator
 from audioextender.set_builder.planning_store import PlanningJobStore
@@ -19,7 +20,7 @@ from audioextender.set_builder.track_planner import AITrackPlanner
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class PlanningCanceled(RuntimeError):
@@ -207,6 +208,10 @@ class SetPlanningJobService:
                 return deepcopy(self._states[job_id])
             except KeyError as error:
                 raise KeyError("Set-planning job was not found") from error
+
+    def lifecycle_status(self, job_id: str) -> LifecycleProjection:
+        """Return the executor-neutral lifecycle view for internal consumers."""
+        return SET_PLANNING.project(self.status(job_id))
 
     def cancel(self, job_id: str) -> dict[str, Any]:
         with self._lock:

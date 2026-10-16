@@ -1,0 +1,31 @@
+/* Keep media controls and the zoomable waveform inside the queue column. */
+.content-grid > *,
+.queue-panel,
+.jobs,
+.job-card,
+.players,
+.player-row,
+.ab-tools,
+.waveform-shell,
+.waveform,
+.waveform-timeline {
+  min-width: 0;
+  max-width: 100%;
+}
+.queue-panel,
+.job-card,
+.players,
+.player-row,
+.ab-tools,
+.waveform-shell {
+  overflow: hidden;
+}
+.player-row {
+  grid-template-columns: 110px minmax(0, 1fr);
+}
+.player-row audio {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}

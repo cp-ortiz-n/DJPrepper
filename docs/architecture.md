@@ -3,17 +3,62 @@
 This is the maintainer map for DJ Library Studio and the AudioExtender CLI. Use
 it to decide where a manual change belongs before editing.
 
+Compatibility-sensitive rationale is recorded in the
+[`decisions/` index](decisions/README.md). Read the relevant decision before
+changing saved-set durability, musical authority, operation lifecycles, schema
+migration, or the application's deployment/frontend shape.
+
 ## Runtime entry points
 
 | Entry point | Purpose |
 | --- | --- |
 | `main.py` | CLI parsing and batch execution |
 | `web_app.py` | Small compatibility launcher; never add feature logic here |
-| `audioextender/web/application.py` | FastAPI composition, shared service construction, dependency injection, and remaining legacy routes |
+| `audioextender/web/application.py` | FastAPI factory, dependency wiring, compatibility facade, and remaining legacy routes |
+| `audioextender/web/composition.py` | Explicit application paths, owned services, registries, locks, queues, and caches |
 | `web/index.html` | Browser shell and workspace markup |
-| `web/app.js` | Browser composition, navigation, processing workspace, and import wiring |
+| `web/app.js` | Browser composition, global navigation, and feature registration only |
 
 Run the app with `python3 web_app.py`.
+
+`create_app()` accepts an explicit `ApplicationRuntime` or `ApplicationPaths`.
+The default `app` is a lazy compatibility proxy; importing the module performs
+no repository recovery or runtime construction. Uvicorn invokes the factory,
+and startup performs interrupted-job recovery against the selected runtime.
+
+The current HTTP surface, delivery shell, startup side effects, runtime roots,
+response shapes, and restart expectations are frozen in
+[`web-composition-contracts.md`](web-composition-contracts.md). Update those
+contracts deliberately whenever an approved public API change is made.
+
+Current musical classifications and scoring boundaries are documented in
+[`musical-policy-ownership.md`](musical-policy-ownership.md). The versioned
+`library/musical_profile.py` profile is the single owner of normalized key and
+Camelot, energy, roles, vocals, timing, confidence, and provenance. Catalog
+routes serialize it; DJ Library and Set Builder consume it. Their older local
+derivations remain compatibility-only fallbacks, while interactive Library
+matching and Set transition scoring intentionally remain separate policies.
+Background job state, persistence, cancellation, retry, errors, timestamps, and
+receipts are inventoried in
+[`background-operation-lifecycles.md`](background-operation-lifecycles.md).
+`infrastructure/operation_lifecycle.py` provides their immutable common status,
+capability, error, and action-receipt vocabulary. Family adapters normalize
+legacy state for internal consumers while each service retains its executor,
+persistence, recovery, rollback, and public response contract.
+The single-track processing stage order, progress, cache, artifact, timing, and
+failure contracts are frozen in
+[`processing-pipeline-contracts.md`](processing-pipeline-contracts.md). ARCH-002B
+expresses analysis, selection, render, export, and result assembly through
+immutable stage results in `processing/track_processing_stages.py`.
+`TrackProcessor.process()` remains responsible for ordering, input validation,
+and stopping progress after any stage failure.
+
+ARCH-006A moves the remaining substantial route workflows behind application
+services. `DescriptorService` owns durable descriptor inference and vocabulary
+decisions, `DownloadedCatalogQueryService` builds the catalog read model, and
+`JobWorkflowService` owns upload/job creation and reprocessing policy. Existing
+settings and library-maintenance services now own cleanup and integrity-scan
+lifecycle operations; FastAPI handlers only translate requests and errors.
 
 ## Package ownership
 
@@ -47,6 +92,20 @@ Set Builder UI → set-builder routes → intention planner → optional model p
 Lower layers must not import `audioextender.web.application`. Routers receive
 collaborators through dependency dataclasses instead of importing application
 globals.
+
+## Repository and schema ownership
+
+`repositories/facade.py::JobRepository` is the compatibility composition root
+for existing callers; application services should depend on the smallest
+protocol in `repositories/capabilities.py` that covers their work. The web audio
+scheduler, for example, receives only job lookup, listing, update, and catalog
+path lookup instead of settings, feedback, and the full catalog API.
+
+`repositories/schema.py` owns the ordered idempotent schema bootstrap. Its seven
+named steps run jobs before feedback foreign keys, catalog core before recording
+identity migration and relations, then search and system state. Keep migrations
+inside the owning step, preserve old columns and rows, and test both legacy
+database and backup opening whenever this sequence changes.
 
 ## FastAPI ownership
 
@@ -202,11 +261,16 @@ policy; and
 `set-planning-client.js` owns browser polling and abort semantics. The model cannot bypass availability, explicit brief constraints,
 exclusions, duration, or journey-coverage checks.
 
-Completed set records store a planning receipt separately from the editable
-brief. That receipt includes mode, provider/model, evaluation, warnings,
-candidate scarcity, fallback reason, duration, and per-track selection evidence.
-Loading a saved set restores this provenance; manual edits remain possible but
-do not rewrite the historical generation receipt.
+`SavedSetService` owns version-2 editable set aggregates in SQLite-backed system
+state. Each record includes the brief, ordered track IDs and recovery evidence,
+transition edits, locked/required/excluded rules, planning mode, and the original
+planning receipt. These records survive application restart, browser data loss,
+and the existing database backup/restore workflow. Version-1 localStorage records
+are migrated idempotently on first load without replacing a newer server record;
+localStorage is retained only as an offline recovery cache. M3U8 is a separate,
+optional interoperability artifact, so an export failure does not invalidate or
+obscure a successful editable-set save. Manual edits remain possible but do not
+rewrite the historical generation receipt.
 
 `scripts/evaluate_set_builder.py` is the catalog-scale regression boundary. It
 runs the checked-in scenarios in `tests/fixtures/set_builder_eval_scenarios.json`
@@ -302,15 +366,30 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 
 | Module | Ownership |
 | --- | --- |
+| `api-client.js` | Browser transport, normalized response parsing, typed request failures, and compatibility raw responses |
+| `frontend-services.js` | Validated immutable feature contract for API, DOM, feedback, and musical-identity editor capabilities |
 | `shared-components.js` | DOM helpers, messages, formatting, pagination |
 | `playback.js` | Single audio-preview owner |
 | `music-files.js` | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector |
 | `dj-library.js` | DJ Library rendering, filtering, selection actions, and compatibility helpers |
-| `set-builder.js` | Set Builder rendering, mutable state, and proposal policy |
+| `set-builder.js` | Set Builder feature composition, event binding, and cross-workflow coordination |
+| `set-builder-state.js` | Mutable Set Builder session state plus plan snapshot and restoration |
+| `set-builder-api.js` | Set Builder HTTP routes and asynchronous planning-client boundary |
+| `set-builder-commands.js` | Plan edit commands, bounded history, undo, redo, and movement |
+| `set-builder-classic-planner.js` | Deterministic proposal generation, acceptance, and safe fallback selection |
+| `set-builder-view-model.js` | Escaped proposal, fallback-policy, and AI-observability presentation models |
 | `settings.js` | Settings forms, library health, relocation, backups, storage, and refresh coordination |
 | `reporting.js` | Analysis & Feedback and key-verification rendering |
 | `request-state-controller.js` | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence |
 | `import-queue.js` | Pause/resume/cancel/retry/reorder import state |
+| `import-issues.js` | Import-failure filtering, selection, retry progress, and dismissal |
+| `import-workspace.js` | Authorized import DOM/queue coordination, shared import normalization, and browser API boundary |
+| `local-audio-import.js` | Local-file staging, submission, progress, results, and processing-workspace import lifecycle |
+| `playlist-import.js` | Playlist matching, permissions, source handoff, and Creative Commons verification |
+| `processing-workspace.js` | Processing queue state, polling, categorization, ETA/generation derivation, and candidate-review API boundary |
+| `processing-workspace-view.js` | Processing-card view models, action binding, artifact links, and incremental queue rendering |
+| `candidate-review.js` | Candidate decisions, custom waveform regions, insertion previews, transition scoring, and review reprocessing |
+| `background-task-controller.js` | Keyed cancellable polling with stale-task replacement and terminal callbacks |
 | `styles.css` | Shared visual system and responsive behavior |
 
 Do not create a second audio player, dropdown implementation, notification
@@ -318,6 +397,16 @@ system, or pagination helper inside a feature. Extend the shared module first.
 `app.js` composes these features and owns global navigation; page-specific
 rendering, filters, inspectors, and maintenance actions belong in their feature
 module. `tests/frontend_modules.test.js` enforces this boundary and a size ceiling.
+
+The five primary feature factories receive `frontendServices` rather than loose
+transport, error, notification, confirmation, DOM, and identity-editor
+callbacks. `app.js` creates that contract once. Feature modules must use its
+injected `api` capability; an ESLint boundary rejects direct global `fetch`
+calls in Music Files, DJ Library, Settings, Reporting, and Set Builder. The
+client deliberately offers both normalized JSON requests and a raw-response
+escape hatch so streaming/download workflows retain native browser semantics.
+Request cancellation and stale-response ownership remain in
+`request-state-controller.js`.
 
 ## Where to make common changes
 
@@ -332,22 +421,116 @@ module. `tests/frontend_modules.test.js` enforces this boundary and a size ceili
 | Relocation/backup | `library/relocation.py`, `library/backup.py`, `web/settings_routes.py` |
 | Queue behavior | `processing/web_jobs.py`, `web/job_routes.py`, `repositories/jobs.py` |
 | DJ Library filtering | `web/library_routes.py`, `repositories/library_analysis.py` |
+| Musical profile ownership or scoring | `docs/musical-policy-ownership.md`, then the named authority |
 | Integrity scan/repair | `web/library_maintenance_routes.py` |
 | Browser cards/filters | Corresponding `web/*.js` module plus `web/styles.css` |
 | Set Builder language interpretation/provider policy | `set_builder/intention_planner.py`, `web/set_builder_routes.py` |
 | Persistent setting | `web/settings_routes.py`, `repositories/system_state.py`; `settings.py` only for shipped defaults |
+
+## Contribution recipes
+
+These are placement rules, not templates to copy mechanically. Start with the
+smallest recipe that owns the requested behavior and preserve the public
+contract unless the change explicitly approves a migration.
+
+### Add a backend API workflow
+
+1. Put request/response translation in the focused `audioextender/web/*_routes.py`
+   module. Create a router module only when no existing route family owns it.
+2. Put orchestration or policy in the owning `library`, `processing`, `imports`,
+   `reporting`, or `set_builder` service. A route must not become the workflow.
+3. Describe collaborators with a dependency dataclass or narrow repository
+   protocol from `repositories/capabilities.py`.
+4. Wire the dependency and router in `web/composition.py` and
+   `web/application.py`; never import application globals from a route.
+5. Normalize failures with `web/error_contracts.py` and return an operation
+   receipt for state-changing work.
+6. Add service tests, route-contract tests, and an endpoint-inventory update when
+   the public surface changes.
+
+### Add or change persistence
+
+1. Place SQL in the repository mixin that owns the data; do not add SQL to a
+   route, service, or `repositories/facade.py`.
+2. Expose only the capability required by new callers.
+3. Add an ordered, idempotent step in `repositories/schema.py` when the schema
+   changes. Preserve legacy rows and opening behavior.
+4. Test a new database, a representative old database, restart behavior, and
+   backup/restore when the data belongs in backups.
+
+### Add a browser workflow
+
+1. Put feature state, rendering, and page events in the owning `web/*.js`
+   feature module. Keep `app.js` limited to composition and navigation.
+2. Consume `frontend-services.js` for API, DOM, feedback, and descriptor-editor
+   capabilities. Extend a shared capability instead of adding loose callbacks.
+3. Use `request-state-controller.js` for catalog request cancellation and stale
+   response rejection, `background-task-controller.js` for keyed polling, and
+   `playback.js` for previews.
+4. Add pure or injected behavioral coverage in `tests/*.test.js`. Add a
+   Playwright scenario only when browser integration, focus, layout, or actual
+   DOM lifecycle is the behavior under test.
+5. Keep CSS in the shared visual system until ARCH-013A demonstrates a safer
+   ownership split.
+
+### Add musical policy
+
+1. Check `docs/musical-policy-ownership.md` before changing an algorithm.
+2. Put processing-time analysis in `analysis`, catalog delivery facts in
+   `library/musical_profile.py`, and set-construction policy in `set_builder`.
+3. Do not derive a second musical profile in the browser. Compatibility helpers
+   remain confined to `dj-library.js`.
+4. Update the shared golden fixture and both Python and JavaScript consumers for
+   intentional cross-runtime policy changes.
+
+### Add a background operation
+
+1. Keep execution and durable recovery in the owning feature service.
+2. Publish the common status, capability, error, and receipt vocabulary from
+   `infrastructure/operation_lifecycle.py`.
+3. Use `infrastructure/batch_operations.py` for metadata-style cancellable and
+   retryable batches; do not force unrelated executors into that registry.
+4. Document intentional lifecycle differences and test start, progress,
+   cancellation, retry, terminal failure, restart, and truthful feedback.
+
+### Add an intention or track-planning provider
+
+1. Implement the existing provider protocol in `set_builder/intention_planner.py`
+   or `set_builder/track_planner.py`; provider code translates structured input
+   and output but does not own validation or catalog access.
+2. Keep candidate retrieval bounded and catalog-backed. Never send audio,
+   unrestricted catalog rows, or filesystem paths to a model.
+3. Preserve deterministic schema validation, repair limits, fallback, plan
+   comparison, and release gates.
+4. Test provider failure, malformed output, invented IDs, timeouts, fallback,
+   privacy boundaries, and a successful structured response without requiring a
+   live provider in the standard suite.
+
+## Verification matrix
+
+| Change risk | Required checks |
+| --- | --- |
+| Any maintained source | `./scripts/check_quality.sh` and `git diff --check` |
+| Coverage-sensitive logic | `./scripts/check_coverage.sh` |
+| Persistence, imports, relocation, export, or Set Builder durability | `./scripts/run_stability_gate.sh` |
+| Browser workflow, focus, responsive layout, or accessibility | `npm run check:browser` |
+| Architecture/module relationships | `graphify . --update --code-only --no-viz` plus the standard gate |
+| Live local-model behavior | Opt-in `AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1` acceptance suite |
+
+Install Chromium for the browser gate once with
+`npm run check:browser:install`. The Playwright server uses an isolated temporary
+catalog and library; see `browser-smoke-testing.md`. Standard quality, coverage,
+and stability details live in `development-quality.md`.
 
 ## Safe manual-change workflow
 
 1. Find the owning module above.
 2. Add/update a focused test under `tests/` before changing cross-layer behavior.
 3. Keep HTTP parsing in routers, domain behavior below them, and SQL in repositories.
-4. Run:
+4. Run the authoritative standard gate:
 
    ```bash
-   .venv/bin/python -m unittest discover -s tests -q
-   npm run check
-   .venv/bin/ruff check <changed-python-files>
+   ./scripts/check_quality.sh
    git diff --check
    ```
 
@@ -358,12 +541,21 @@ module. `tests/frontend_modules.test.js` enforces this boundary and a size ceili
    ```
 
 `tests/test_package_structure.py` guards package/composition boundaries and
-module size. `tests/frontend_modules.test.js` guards shared frontend behavior.
+module size. `tests/frontend_modules.test.js` exercises shared frontend behavior;
+its only source-text assertion is the intentional `app.js` composition-root
+ownership and size ratchet. Request concurrency, playback ownership, planning
+lifecycle, imports, and musical-policy behavior live in focused Node suites.
 `tests/test_intention_planner.py` covers provider ordering, schema enforcement,
 fallback, hallucination cleanup, and catalog normalization without a live
 model. `tests/test_local_intention_acceptance.py` is an opt-in Ollama suite for
 chill Latin kickbacks, Latin Techno/House with optional Schranz, Afro House
 lounge warmups, and peak-time Techno journeys.
+
+HTTP failure normalization is owned by `audioextender/web/error_contracts.py`.
+It preserves legacy FastAPI `detail` values while adding machine-readable error
+metadata. Browser parsing is owned by `web/api-client.js`; feature modules do
+not need to interpret validation lists or object-valued details independently.
+See `docs/error-contracts.md` for mappings and exception-boundary rules.
 
 ## Project hygiene
 

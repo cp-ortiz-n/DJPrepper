@@ -1,0 +1,33 @@
+{
+  "python": [
+    "audioextender/set_builder/intention_planner.py",
+    "audioextender/set_builder/journey_planner.py",
+    "audioextender/set_builder/plan_comparator.py",
+    "audioextender/set_builder/plan_validator.py",
+    "audioextender/set_builder/preference_learning.py",
+    "audioextender/set_builder/transition_optimizer.py",
+    "tests/test_intention_planner.py",
+    "tests/test_journey_planner.py",
+    "tests/test_local_intention_acceptance.py",
+    "tests/test_plan_comparator.py",
+    "tests/test_proposal_repairer.py",
+    "tests/test_transition_optimizer.py"
+  ],
+  "frontend": [
+    "web/app.js",
+    "web/dj-library.js",
+    "web/import-queue.js",
+    "web/index.html",
+    "web/music-files.js",
+    "web/playback.js",
+    "web/reporting.js",
+    "web/request-state-controller.js",
+    "web/set-builder.js",
+    "web/set-planning-client.js",
+    "web/settings.js",
+    "web/shared-components.js",
+    "tests/import_queue.test.js",
+    "tests/playback_behavior.test.js",
+    "tests/request_state_controller.test.js"
+  ]
+}

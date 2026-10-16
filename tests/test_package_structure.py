@@ -50,7 +50,8 @@ class PackageStructureTests(unittest.TestCase):
         application = (PACKAGE_ROOT / "web" / "application.py").read_text(encoding="utf-8")
         self.assertLess(len(source.splitlines()), 40)
         self.assertIn("audioextender.web import application", source)
-        self.assertIn("def create_app() -> FastAPI:", application)
+        self.assertIn("def create_app(", application)
+        self.assertIn("ApplicationRuntime", application)
         for route in (
             '@app.get("/api/jobs")',
             '@app.post("/api/jobs/reorder")',

@@ -50,6 +50,7 @@ class CandidateSelectionService:
         request: SelectionRequest,
         vocal_energy: np.ndarray | None = None,
     ) -> RankedSelection:
+        """Rank the strongest candidate set for the requested intro or outro."""
         if not request.automatic_length:
             candidates = self._rank_at_length(analysis, request, request.maximum_bars, vocal_energy)
             return RankedSelection(tuple(candidates), request.maximum_bars)
@@ -63,7 +64,7 @@ class CandidateSelectionService:
                 continue
         if not ranked:
             raise CandidateSelectionError(
-                f"No loopable {request.position} phrase exists up to {request.maximum_bars} bars"
+                f"No loop-able {request.position} phrase exists up to {request.maximum_bars} bars"
             )
 
         shortest_quality = ranked[min(ranked)][0].loop_quality

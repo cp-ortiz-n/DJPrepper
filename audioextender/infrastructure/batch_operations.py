@@ -6,16 +6,17 @@ import threading
 import uuid
 from collections.abc import Callable, Iterable
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from audioextender.core.operation_feedback import operation_receipt
+from audioextender.infrastructure.operation_lifecycle import METADATA_BATCHES, LifecycleProjection
 
 TERMINAL_BATCH_STATUSES = frozenset({"complete", "failed", "canceled"})
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class BatchCanceled(RuntimeError):
@@ -280,6 +281,10 @@ class BatchOperationRegistry:
     def status(self, batch_id: str) -> dict[str, Any]:
         with self.lock:
             return deepcopy(self._require(batch_id))
+
+    def lifecycle_status(self, batch_id: str) -> LifecycleProjection:
+        """Return the shared lifecycle view without changing the API payload."""
+        return METADATA_BATCHES.project(self.status(batch_id))
 
     def latest(self, kind: str) -> dict[str, Any] | None:
         with self.lock:

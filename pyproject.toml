@@ -1,13 +1,13 @@
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 line-length = 120
 extend-exclude = [".venv", ".venv-intel-backup", "input", "output", "cache"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP"]
+select = ["E", "F", "I", "B", "UP", "C4"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.12"
 files = ["main.py", "web_app.py", "audioextender", "tests"]
 exclude = "(^|/)([.]venv|[.]venv-intel-backup|input|output|cache)/"
 ignore_missing_imports = true
@@ -24,7 +24,11 @@ omit = ["tests/*", ".venv/*", ".venv-intel-backup/*", "node_modules/*"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = true
+precision = 1
 exclude_lines = [
   "pragma: no cover",
   "if __name__ == .__main__.:",
 ]
+
+[tool.coverage.json]
+output = "coverage/python-coverage.json"

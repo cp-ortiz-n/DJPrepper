@@ -1,3 +1,5 @@
+import {useFrontendServices} from './frontend-services.js';
+
 export const LIBRARY_ROLE_INFO = {
   'warm-up':['Warm-up','Lower-pressure selections that build the room without spending peak energy too early.'],
   'peak-time':['Peak-time','High-impact tracks suited to the busiest, most energetic part of a set.'],
@@ -12,6 +14,7 @@ const CAMELOT_KEYS = {
   'A minor':'8A','E minor':'9A','B minor':'10A','F# minor':'11A','C# minor':'12A','G# minor':'1A','D# minor':'2A','A# minor':'3A','F minor':'4A','C minor':'5A','G minor':'6A','D minor':'7A',
   'C major':'8B','G major':'9B','D major':'10B','A major':'11B','E major':'12B','B major':'1B','F# major':'2B','C# major':'3B','G# major':'4B','D# major':'5B','A# major':'6B','F major':'7B',
 };
+export const MUSICAL_PROFILE_VERSION = 1;
 
 export function createLibraryUiState(pageSize = Number(localStorage.getItem('dj-library-page-size') || 50)) {
   return {search:'',role:'all',category:'all',detailedGenre:'all',preset:'all',sort:'newest',result:'all',quality:'all',bpmMin:'',bpmMax:'',key:'all',energy:'all',vocals:'all',timing:'all',page:1,pageSize};
@@ -30,6 +33,7 @@ export function libraryQuery(state) {
 }
 
 export function libraryRoles(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && Array.isArray(song.musical_profile.roles)) return song.musical_profile.roles;
   if (Array.isArray(song._roles) && song._roles.length) return song._roles;
   const style = String(song.detected_style || '').toLowerCase();
   const timing = String(song.timing || '').toLowerCase();
@@ -46,13 +50,23 @@ export function libraryRoles(song) {
   return [...roles];
 }
 
-export function normalizedKey(value) {
-  return String(value || '').replace(/^Db /,'C# ').replace(/^Eb /,'D# ').replace(/^Gb /,'F# ').replace(/^Ab /,'G# ').replace(/^Bb /,'A# ');
+function serializedProfile(value) {
+  return value && typeof value === 'object' && Number(value.musical_profile?.version) === MUSICAL_PROFILE_VERSION
+    ? value.musical_profile
+    : null;
 }
-export function camelotKey(value) { return CAMELOT_KEYS[normalizedKey(value)] || '—'; }
+export function normalizedKey(value) {
+  const profile = serializedProfile(value);
+  const key = profile ? profile.key : (value && typeof value === 'object' ? value.key : value);
+  return String(key || '').replace(/^Db /,'C# ').replace(/^Eb /,'D# ').replace(/^Gb /,'F# ').replace(/^Ab /,'G# ').replace(/^Bb /,'A# ');
+}
+export function camelotKey(value) {
+  const profile = serializedProfile(value);
+  return String(profile?.camelot || CAMELOT_KEYS[normalizedKey(value)] || '—');
+}
 export function libraryKeyMode() { return localStorage.getItem('audioextender-key-view') || 'both'; }
 export function formatLibraryKey(value, mode=libraryKeyMode()) {
-  const standard = value || 'Unknown key';
+  const standard = normalizedKey(value) || 'Unknown key';
   const camelot = camelotKey(value);
   if (mode === 'standard') return standard;
   if (mode === 'camelot') return camelot === '—' ? 'Unknown Camelot' : camelot;
@@ -60,6 +74,7 @@ export function formatLibraryKey(value, mode=libraryKeyMode()) {
 }
 
 export function songEnergy(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && Number.isFinite(Number(song.musical_profile.energy))) return Number(song.musical_profile.energy);
   if (Number.isFinite(Number(song._energy))) return Number(song._energy);
   const values = (song.section_profiles || []).map(section => Number(String(section.reason || '').match(/energy\s+([\d.]+)/i)?.[1])).filter(Number.isFinite);
   if (values.length) return values.reduce((sum,value) => sum + value, 0) / values.length;
@@ -68,11 +83,13 @@ export function songEnergy(song) {
 }
 export function energyBand(value) { return value >= .67 ? 'high' : value < .4 ? 'low' : 'medium'; }
 export function vocalProfile(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && song.musical_profile.vocals) return song.musical_profile.vocals;
   if (song._vocals) return song._vocals;
   const instrumental = Math.max(Number(song.intro?.instrumentalness || 0), Number(song.outro?.instrumentalness || 0));
   return instrumental >= .72 ? 'vocal-safe' : instrumental < .45 ? 'vocal-forward' : 'mixed';
 }
 export function timingProfile(song) {
+  if (Number(song.musical_profile?.version) === MUSICAL_PROFILE_VERSION && song.musical_profile.timing) return song.musical_profile.timing;
   if (song._timing) return song._timing;
   const timing = String(song.timing || '').toLowerCase();
   return timing.includes('live') || timing.includes('variable') || Number(song.tempo_drift || 0) >= .08 ? 'variable' : 'steady';
@@ -113,21 +130,22 @@ export function compatibility(left, right) {
 }
 
 export function createDjLibraryFeature({
-  $, $$, getAppConfig, libraryUiState, libraryRequestState, getLoadedAt, setLoadedAt,
+  services, getAppConfig, libraryUiState, libraryRequestState, getLoadedAt, setLoadedAt,
   invalidateMusicFiles, VIEW_CACHE_MS, escapeHtml, genreFolderTree,
   bindGenreFolderState, option, refreshSearchableSelects, compactAudioMarkup,
   genreEditorMarkup, bindGenreEditor, bindCompactAudio, renderTrackPagination,
-  confirmAction, notify, clock, pct, loadJobs, loadDownloadedLibrary, loadReports,
+  clock, pct, loadJobs, loadDownloadedLibrary, loadReports,
   showView, startKeyAnalysis,
   compactAudioIsWithin, stopCompactAudio, normalizedGenreCategory,
   ELECTRONIC_GENRE_CATEGORIES, LATIN_GENRE_CATEGORIES, libraryReprocessForm, reportDate,
   bindLazyAudio,
-  syncControlUnlessEditing, captureTextFilter, operationReceiptText, loadAnalysis,
+  syncControlUnlessEditing, captureTextFilter, loadAnalysis,
   jobAction, jobElement,
-  descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor,
 }) {
+  const {api, $, $$, notify, confirmAction, operationReceiptText, descriptorChipsMarkup, descriptorEditorMarkup, openDescriptorEditorDialog, saveDescriptorEditor, inferDescriptorEditor} = useFrontendServices(services);
+  let visibleDownloadedTracks = [];
   const bindIdentityInference=(editor,trackIds,onApplied=async()=>{})=>{editor.querySelector('.infer-descriptors').onclick=async event=>{const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{const result=await inferDescriptorEditor(editor,typeof trackIds==='function'?trackIds():trackIds);if(result.applied){notify(`Added inferred identity tags to ${result.applied} tracks. Manual tags were preserved.`,'success');await onApplied(result);}}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};};
-  const bindIdentityProtection=(editor,track)=>{const input=editor.querySelector('.descriptor-inference-protection input');if(!input||!track)return;input.checked=Boolean(track.identity_inference_locked);input.onchange=async()=>{const wanted=input.checked;input.disabled=true;try{const response=await fetch(`/api/downloaded-library/tracks/${Number(track.id)}/inference-protection`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({protected:wanted})}),result=await response.json();if(!response.ok)throw new Error(result.detail||'Inference protection could not be saved.');track.identity_inference_locked=Boolean(result.protected_from_inference);input.checked=track.identity_inference_locked;notify(`${track.title||'Track'}: ${input.checked?'protected from automatic inference':'eligible for re-inference'}. Survives restart: Yes.`,'success');}catch(error){input.checked=!wanted;notify(error.message,'danger');}finally{input.disabled=false;}};};
+  const bindIdentityProtection=(editor,track)=>{const input=editor.querySelector('.descriptor-inference-protection input');if(!input||!track)return;input.checked=Boolean(track.identity_inference_locked);input.onchange=async()=>{const wanted=input.checked;input.disabled=true;try{const response=await api.raw(`/api/downloaded-library/tracks/${Number(track.id)}/inference-protection`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({protected:wanted})}),result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Inference protection could not be saved.'));track.identity_inference_locked=Boolean(result.protected_from_inference);input.checked=track.identity_inference_locked;notify(`${track.title||'Track'}: ${input.checked?'protected from automatic inference':'eligible for re-inference'}. Survives restart: Yes.`,'success');}catch(error){input.checked=!wanted;notify(error.message,'danger');}finally{input.disabled=false;}};};
   async function revealLibraryTrack(jobId, sourceName) {
     let card = document.querySelector(`.library-card[data-job-id="${jobId}"]`);
     if (!card) {
@@ -183,6 +201,7 @@ export function createDjLibraryFeature({
     const allJobs = (catalog.tracks || []).map(track => track.job);
     const report = {songs:Object.fromEntries((catalog.tracks || []).map((track,index) => [index, track.analysis || {}]))};
     const downloadedTracks = (catalog.tracks || []).map(track => track.downloaded).filter(Boolean);
+    visibleDownloadedTracks = downloadedTracks;
     const downloaded = {tracks:downloadedTracks, genres:catalog.facets?.categories || {}};
     const downloadedByJob = new Map((downloaded.tracks || []).filter(track => track.completed_library_job_id).map(track => [Number(track.completed_library_job_id), track]));
     $('#library-genre-options').replaceChildren(...[...new Set([...Object.keys(downloaded.genres || {}),...ELECTRONIC_GENRE_CATEGORIES,...LATIN_GENRE_CATEGORIES])].sort().map(name => option(name, name)));
@@ -238,8 +257,8 @@ export function createDjLibraryFeature({
       card.dataset.preset = resolvedPreset;
       card.dataset.requestedPreset = String(latest.preset || 'default').toLowerCase();
       card.dataset.roles = roles.join('|');
-      card.dataset.key = normalizedKey(analysis.key || '');
-      card.dataset.camelot = camelotKey(analysis.key);
+      card.dataset.key = normalizedKey(analysis);
+      card.dataset.camelot = camelotKey(analysis);
       card.dataset.bpm = Number(analysis.bpm || latest.bpm || 0);
       card.dataset.energy = energyBand(energy);
       card.dataset.energyValue = energy;
@@ -252,8 +271,8 @@ export function createDjLibraryFeature({
       const presetLabel = card.dataset.requestedPreset === 'auto' ? `auto → ${resolvedPreset}` : resolvedPreset;
       description.textContent = `${category}${downloadedTrack ? ' · library genre' : ' · detected category'} · ${presetLabel} · ${description.textContent}`;
       const keyValue = card.querySelector('.library-key-value');
-      keyValue.dataset.standard = analysis.key || '';
-      keyValue.textContent = formatLibraryKey(analysis.key);
+      keyValue.dataset.standard = normalizedKey(analysis);
+      keyValue.textContent = formatLibraryKey(analysis);
       card.querySelector('.library-head-actions').insertAdjacentHTML('beforeend', '<button class="button secondary remove-library-track">Remove from library</button>');
       if (downloadedTrack) {
         card.querySelector('.library-head-actions').insertAdjacentHTML('afterbegin', '<button class="button secondary edit-library-identity">Edit identity</button><button class="button secondary edit-library-genre">Edit genre</button>');
@@ -276,7 +295,7 @@ export function createDjLibraryFeature({
       const qualityTarget=downloadedTrack?.audio_quality?.target_status;
       const qualitySuffix=qualityTarget==='meets_target'?' · Target met':qualityTarget==='below_target'?' · Below target':qualityTarget==='unverified'?' · Unverified':'';
       const qualityText=qualityScore==null?'Quality pending':`Quality ${Math.round(Number(qualityScore))}${qualitySuffix}`;
-      card.insertAdjacentHTML('afterbegin', `<div class="library-compact-row" role="button" tabindex="0" aria-expanded="false" aria-label="Show DJ details for ${escapeHtml(trackTitle)}"><label class="library-track-select"><input type="checkbox" value="${card.dataset.jobId}" aria-label="Select ${escapeHtml(trackTitle)}"><span></span></label><div class="library-row-icon">${trackArtwork}</div><div class="library-row-title"><h3>${escapeHtml(trackTitle)}</h3><span class="library-row-artist">${escapeHtml(trackArtist)}</span><small>${escapeHtml(category)}${identity?` · ${escapeHtml(identity)}`:''}</small></div><div class="library-row-metric"><b>${Number(analysis.bpm || latest.bpm || 0).toFixed(1)}</b><span>BPM</span></div><div class="library-row-metric"><b>${escapeHtml(formatLibraryKey(analysis.key))}</b><span>Key / Camelot</span></div><div class="library-row-metric"><b>${escapeHtml(energyBand(energy))}</b><span>Energy</span></div><div class="library-row-role">${roles.slice(0,2).map(role => `<span>${escapeHtml(LIBRARY_ROLE_INFO[role]?.[0] || role)}</span>`).join('')}</div><span class="library-result" data-result="${card.dataset.result}">${resultLabel}<small>${escapeHtml(qualityText)}</small></span>${compactAudioMarkup(`/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}`,latest.duration_seconds||analysis.duration_seconds||0)}<details class="library-row-actions"><summary aria-label="Library track actions">•••</summary><div><button type="button" class="compact-remove danger-text">Remove from Library</button></div></details></div>`);
+      card.insertAdjacentHTML('afterbegin', `<div class="library-compact-row" role="button" tabindex="0" aria-expanded="false" aria-label="Show DJ details for ${escapeHtml(trackTitle)}"><label class="library-track-select"><input type="checkbox" value="${card.dataset.jobId}" aria-label="Select ${escapeHtml(trackTitle)}"><span></span></label><div class="library-row-icon">${trackArtwork}</div><div class="library-row-title"><h3>${escapeHtml(trackTitle)}</h3><span class="library-row-artist">${escapeHtml(trackArtist)}</span><small>${escapeHtml(category)}${identity?` · ${escapeHtml(identity)}`:''}</small></div><div class="library-row-metric"><b>${Number(analysis.bpm || latest.bpm || 0).toFixed(1)}</b><span>BPM</span></div><div class="library-row-metric"><b>${escapeHtml(formatLibraryKey(analysis))}</b><span>Key / Camelot</span></div><div class="library-row-metric"><b>${escapeHtml(energyBand(energy))}</b><span>Energy</span></div><div class="library-row-role">${roles.slice(0,2).map(role => `<span>${escapeHtml(LIBRARY_ROLE_INFO[role]?.[0] || role)}</span>`).join('')}</div><span class="library-result" data-result="${card.dataset.result}">${resultLabel}<small>${escapeHtml(qualityText)}</small></span>${compactAudioMarkup(`/api/jobs/${latest.id}/audio/${analysisOnly?'wav':'extended'}`,latest.duration_seconds||analysis.duration_seconds||0)}<details class="library-row-actions"><summary aria-label="Library track actions">•••</summary><div><button type="button" class="compact-remove danger-text">Remove from Library</button></div></details></div>`);
       if(downloadedTrack?.descriptors?.length)card.querySelector('.library-row-title').insertAdjacentHTML('beforeend',descriptorChipsMarkup(downloadedTrack.descriptors));
     });
     bindLazyAudio(root);
@@ -288,8 +307,8 @@ export function createDjLibraryFeature({
       list.innerHTML = '<li class="muted-copy">Loading version history…</li>';
       try {
         const card = history.closest('.library-card');
-        const payload = await fetch(`/api/library/jobs/${card.dataset.jobId}/details`).then(async response => {
-          if (!response.ok) throw new Error((await response.json()).detail || 'Could not load version history.');
+        const payload = await api.raw(`/api/library/jobs/${card.dataset.jobId}/details`).then(async response => {
+          if (!response.ok) throw new Error(api.errorMessage(await response.json(), 'Could not load version history.'));
           return response.json();
         });
         const versions = payload.versions || [];
@@ -443,8 +462,8 @@ export function createDjLibraryFeature({
       const latest = jobs.find(job => String(job.id) === card.dataset.jobId);
       if (!await confirmAction(`Remove ${latest.source_name} and all of its generations from the Library? Exported audio files will remain in the output folder.`, {title:'Remove Library track', acceptLabel:'Remove', danger:true})) return;
       button.disabled = true; button.textContent = 'Removing…';
-      const response = await fetch(`/api/library/${encodeURIComponent(latest.source_name)}`, {method:'DELETE'});
-      if (!response.ok) { alert((await response.json()).detail || 'Could not remove the track.'); button.disabled = false; button.textContent = 'Remove from library'; return; }
+      const response = await api.raw(`/api/library/${encodeURIComponent(latest.source_name)}`, {method:'DELETE'});
+      if (!response.ok) { alert(api.errorMessage(await response.json(), 'Could not remove the track.')); button.disabled = false; button.textContent = 'Remove from library'; return; }
       await Promise.all([loadLibrary(), loadAnalysis(), loadReports()]);
     });
   }
@@ -526,9 +545,9 @@ export function createDjLibraryFeature({
       if (!await confirmAction(`Move ${trackIds.length} selected track${trackIds.length === 1 ? '' : 's'} to the ${genre} genre folder?`, {title:'Change track genre', acceptLabel:'Move tracks'})) return;
       genreButton.disabled = true; genreButton.textContent = 'Moving…';
       try {
-        const response = await fetch('/api/downloaded-library/genre', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({track_ids:trackIds, genre_category:genre})});
+        const response = await api.raw('/api/downloaded-library/genre', {method:'PATCH', headers:{'Content-Type':'application/json'}, body:JSON.stringify({track_ids:trackIds, genre_category:genre})});
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || 'Could not change genre.');
+        if (!response.ok) throw new Error(api.errorMessage(payload, 'Could not change genre.'));
         notify(operationReceiptText(payload.receipt), payload.receipt?.failures?.length ? 'danger' : 'success', {timeout:9000});
         genreInput.value = '';
         await Promise.all([loadLibrary(), loadDownloadedLibrary()]);
@@ -539,7 +558,7 @@ export function createDjLibraryFeature({
       const selectedCards=boxes.filter(box=>box.checked).map(box=>box.closest('.library-card'));
       const trackIds=selectedCards.map(card=>Number(card.dataset.downloadedId)).filter(Boolean);
       if(!trackIds.length||trackIds.length!==selectedCards.length)return;
-      const single=trackIds.length===1,currentTrack=single?downloadedTracks.find(track=>Number(track.id)===trackIds[0]):null,saved=currentTrack?.descriptors||[];
+      const single=trackIds.length===1,currentTrack=single?visibleDownloadedTracks.find(track=>Number(track.id)===trackIds[0]):null,saved=currentTrack?.descriptors||[];
       const selectedBoxIndex=single?boxes.findIndex(box=>box.checked):-1,previousBox=selectedBoxIndex>0?boxes[selectedBoxIndex-1]:null,nextBox=selectedBoxIndex>=0?boxes[selectedBoxIndex+1]:null;
       const {editor,close}=openDescriptorEditorDialog({descriptors:saved,bulk:!single,protectedFromInference:single?Boolean(currentTrack?.identity_inference_locked):null,title:single?`Edit identity · ${currentTrack?.title||'Selected track'}`:'Edit identity for selected tracks',subtitle:single?`Track ${selectedBoxIndex+1} of ${boxes.length} in the current filtered list.`:`Apply descriptors to ${trackIds.length} selected tracks.`});
       if(single)bindIdentityProtection(editor,currentTrack);
@@ -557,8 +576,8 @@ export function createDjLibraryFeature({
       const removed=[]; const failures=[];
       for (const card of selectedCards) {
         try {
-          const response = await fetch(`/api/library/${encodeURIComponent(card.dataset.sourceName)}`, {method:'DELETE'});
-          if (!response.ok) throw new Error((await response.json()).detail || 'Could not remove the track.');
+          const response = await api.raw(`/api/library/${encodeURIComponent(card.dataset.sourceName)}`, {method:'DELETE'});
+          if (!response.ok) throw new Error(api.errorMessage(await response.json(), 'Could not remove the track.'));
           removed.push(card.dataset.sourceName);
         } catch (error) { failures.push(`${card.dataset.sourceName}: ${error.message}`); }
       }
@@ -571,7 +590,7 @@ export function createDjLibraryFeature({
       const trackIds = selectedCards.map(card => Number(card.dataset.downloadedId)).filter(Boolean);
       if (!trackIds.length || trackIds.length !== selectedCards.length || !await confirmAction(`Reanalyze ${trackIds.length} selected track${trackIds.length===1?'':'s'}? Audio files, metadata, artwork, and verified keys will be preserved.`, {title:'Reanalyze selected tracks', acceptLabel:'Reanalyze'})) return;
       reanalyzeButton.disabled=true; reanalyzeButton.textContent='Adding to queue…';
-      try { const response=await fetch('/api/downloaded-library/reanalyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});const result=await response.json();if(!response.ok)throw new Error(result.detail||'Could not queue reanalysis.');showView('workspace-view');await loadJobs(); }
+      try { const response=await api.raw('/api/downloaded-library/reanalyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:trackIds})});const result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Could not queue reanalysis.'));showView('workspace-view');await loadJobs(); }
       catch(error){alert(error.message);reanalyzeButton.textContent='Reanalyze';refreshSelection();}
     };
     keyAnalyzeButton.onclick=()=>{const cards=boxes.filter(box=>box.checked).map(box=>box.closest('.library-card'));const ids=cards.map(card=>Number(card.dataset.downloadedId)).filter(Boolean);startKeyAnalysis(ids,keyAnalyzeButton,async()=>{setLoadedAt(0);await Promise.all([loadLibrary(),loadReports()]);});};
@@ -580,8 +599,8 @@ export function createDjLibraryFeature({
       const fileTypes = typeBoxes.filter(box => box.checked).map(box => box.value);
       button.disabled = true; button.textContent = 'Preparing download…';
       try {
-        const response = await fetch('/api/library/download', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job_ids:jobIds, file_types:fileTypes})});
-        if (!response.ok) throw new Error((await response.json()).detail || 'Could not prepare download.');
+        const response = await api.raw('/api/library/download', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({job_ids:jobIds, file_types:fileTypes})});
+        if (!response.ok) throw new Error(api.errorMessage(await response.json(), 'Could not prepare download.'));
         const url = URL.createObjectURL(await response.blob());
         const link = document.createElement('a'); link.href = url; link.download = 'DJ Library Studio Selected Tracks.zip'; link.click();
         setTimeout(() => URL.revokeObjectURL(url), 1000);

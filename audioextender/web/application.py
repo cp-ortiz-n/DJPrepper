@@ -1,5 +1,10 @@
 """Local DJ Library Studio web interface; the AudioExtender CLI remains independent."""
 
+# Runtime compatibility names are installed atomically by ``_bind_runtime``.
+# They intentionally do not exist while this module is only being imported.
+# ruff: noqa: F821
+# mypy: disable-error-code="name-defined"
+
 from __future__ import annotations
 
 import csv
@@ -7,7 +12,6 @@ import hashlib
 import io
 import json
 import logging
-import queue
 import re
 import shutil
 import subprocess
@@ -17,10 +21,9 @@ import threading
 import unicodedata
 import uuid
 import zipfile
-from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Any, Literal, cast
@@ -28,7 +31,7 @@ from urllib.parse import urlencode, urlparse
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -55,18 +58,25 @@ from audioextender.imports.service import (
     authorized_source_provider,
     scdl_download_command,
 )
-from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
-from audioextender.infrastructure.batch_operations import BatchOperationRegistry
+from audioextender.library.catalog_projection import CatalogProjectionPublisher
+from audioextender.library.catalog_query_service import (
+    DownloadedCatalogQuery,
+    DownloadedCatalogQueryService,
+)
 from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
     TrackMetadataMutationService,
 )
-from audioextender.library.relocation import LibraryRelocationCoordinator
+from audioextender.library.musical_corrections import MusicalCorrectionIndex
+from audioextender.library.musical_profile import CAMELOT_KEYS, musical_profile
 from audioextender.library.track_overrides import load_track_overrides
-from audioextender.processing.web_jobs import WebJobService
+from audioextender.processing.job_workflows import (
+    JobCreationCommand,
+    JobWorkflowError,
+    JobWorkflowService,
+    UploadedAudio,
+)
 from audioextender.reporting.feedback import append_web_feedback
-from audioextender.set_builder.intention_planner import IntentionPlanner
-from audioextender.repositories.facade import JobRepository
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
@@ -77,11 +87,19 @@ from audioextender.set_builder.preference_learning import (
     PersonalizedCandidateRanker,
 )
 from audioextender.set_builder.review_service import SetReviewService
+from audioextender.set_builder.saved_sets import SavedSetService
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
+from audioextender.web.composition import (
+    ApplicationPaths,
+    ApplicationRuntime,
+    LazyApplication,
+    runtime_bindings,
+)
 from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
+from audioextender.web.error_contracts import install_error_handlers
 from audioextender.web.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
@@ -138,7 +156,6 @@ from settings import (
     DEFAULT_PRESET,
     DEFAULT_PREVIEW_SECONDS,
     DEFAULT_USE_STEMS,
-    INPUT_FOLDER_NAME,
     INTRO_SEARCH_SECONDS,
     MAXIMUM_BASS_RESET_RISK,
     MAXIMUM_BUILDUP_RISK,
@@ -146,93 +163,31 @@ from settings import (
     MAXIMUM_VOCAL_COVERAGE,
     MINIMUM_CROSSFADE_MS,
     MINIMUM_STEM_CONSTRUCTION_RELIABILITY,
-    OUTPUT_FOLDER_NAME,
     OUTRO_SEARCH_SECONDS,
     SUPPORTED_BAR_COUNTS,
 )
 
-PROJECT = Path(__file__).resolve().parents[2]
-INPUT = PROJECT / INPUT_FOLDER_NAME
-OUTPUT = PROJECT / OUTPUT_FOLDER_NAME
-WEB = PROJECT / "web"
-DATABASE = OUTPUT / "reports" / "audioextender.sqlite3"
-OVERRIDES = PROJECT / "track_overrides.json"
-WEB_PRESETS = OUTPUT / "reports" / "web_presets.json"
-SET_BUILDER_CATALOG_CACHE = OUTPUT / "reports" / "set_builder_catalog.json"
-DEFAULT_MUSIC_LIBRARY = str(Path.home() / "Music" / "AudioExtender Library")
-BACKUP_ROOT = OUTPUT / "backups"
-STORAGE_INVENTORY_SNAPSHOT = OUTPUT / "reports" / "storage_inventory.json"
+DEFAULT_PATHS = ApplicationPaths.from_project(Path(__file__).resolve().parents[2])
+PROJECT = DEFAULT_PATHS.project
+INPUT = DEFAULT_PATHS.input
+OUTPUT = DEFAULT_PATHS.output
+WEB = DEFAULT_PATHS.web
+DATABASE = DEFAULT_PATHS.database
+OVERRIDES = DEFAULT_PATHS.overrides
+WEB_PRESETS = DEFAULT_PATHS.presets
+SET_BUILDER_CATALOG_CACHE = DEFAULT_PATHS.set_builder_catalog_cache
+DEFAULT_MUSIC_LIBRARY = DEFAULT_PATHS.default_music_library
+BACKUP_ROOT = DEFAULT_PATHS.backup_root
+STORAGE_INVENTORY_SNAPSHOT = DEFAULT_PATHS.storage_inventory_snapshot
 
-
-def create_app() -> FastAPI:
-    """Create the FastAPI delivery shell; domain dependencies are composed below."""
-    application = FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None)
-    application.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
-    application.mount(
-        "/vendor/wavesurfer",
-        StaticFiles(
-            directory=PROJECT / "node_modules" / "wavesurfer.js" / "dist",
-            check_dir=False,
-        ),
-        name="wavesurfer",
-    )
-    application.mount("/assets", StaticFiles(directory=WEB), name="assets")
-    return application
-
-
-app = create_app()
+legacy_router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
-repository = JobRepository(DATABASE)
-library_relocation = LibraryRelocationCoordinator(repository, OUTPUT / "reports" / "library_relocation.json")
-pending_backup_restores: dict[str, Path] = {}
-repository.recover_interrupted()
-service = WebJobService(PROJECT, repository)
-creative_commons_registry = BackgroundTaskRegistry(OUTPUT / "reports" / "tasks" / "creative-commons.json")
-creative_commons_batches = creative_commons_registry
-creative_commons_batch_lock = creative_commons_registry.lock
-wav_tag_audit_refresh_lock = threading.Lock()
 wav_tag_audit_refresh_active = False
-metadata_batch_registry = BatchOperationRegistry()
-integrity_scan_batches: dict[str, dict] = {}
-integrity_scan_batch_lock = threading.Lock()
-audio_quality_batches: dict[str, dict] = {}
-audio_quality_batch_lock = threading.Lock()
-key_analysis_batches: dict[str, dict] = {}
-key_analysis_batch_lock = threading.Lock()
-library_consolidation_batches: dict[str, dict] = {}
-library_consolidation_batch_lock = threading.Lock()
-downloaded_catalog_migration_lock = threading.Lock()
 downloaded_catalog_migrated = False
 DOWNLOADED_CATALOG_MIGRATION_VERSION = "3"
-artwork_thumbnail_lock = threading.Lock()
-artwork_thumbnail_queue: queue.Queue[tuple[Path, Path, int]] = queue.Queue()
-artwork_thumbnail_pending: set[Path] = set()
 artwork_thumbnail_worker_started = False
-report_cache_lock = threading.Lock()
-report_cache: dict[str, object] = {"mtime_ns": None, "payload": {"songs": {}}}
-analytics_cache_lock = threading.Lock()
-analytics_cache: dict[str, object] = {"expires_at": 0.0, "payload": None}
-library_catalog_cache_lock = threading.Lock()
-library_catalog_cache: dict[str, object] = {
-    "signature": None,
-    "facets_signature": None,
-    "facets": None,
-}
-library_status_cache_lock = threading.Lock()
-library_status_cache: dict[str, object] = {"expires_at": 0.0, "payload": None}
-storage_inventory_lock = threading.Lock()
-storage_inventory_cache: dict[str, object] = {"expires_at": 0.0, "payload": None}
-library_index_refresh_lock = threading.Lock()
 library_index_refresh_active = False
 jobs_watchdog_last = 0.0
-performance_diagnostics_lock = threading.Lock()
-waveform_generation_locks_guard = threading.Lock()
-waveform_generation_locks: dict[str, threading.Lock] = {}
-performance_diagnostics: deque[dict[str, object]] = deque(maxlen=500)
-performance_cache_stats: dict[str, dict[str, int]] = {
-    "waveform": {"hits": 0, "misses": 0},
-    "artwork_thumbnail": {"hits": 0, "misses": 0},
-}
 
 
 def _record_cache_result(cache_name: str, hit: bool) -> None:
@@ -241,7 +196,6 @@ def _record_cache_result(cache_name: str, hit: bool) -> None:
         counters["hits" if hit else "misses"] += 1
 
 
-@app.middleware("http")
 async def record_api_performance(request: Request, call_next):
     """Keep a small, process-local timing window for actionable UI diagnostics."""
     if not request.url.path.startswith("/api/") or request.url.path == "/api/diagnostics/performance":
@@ -264,7 +218,7 @@ async def record_api_performance(request: Request, call_next):
         with performance_diagnostics_lock:
             performance_diagnostics.append(
                 {
-                    "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    "timestamp": datetime.now(UTC).isoformat(timespec="seconds"),
                     "method": request.method,
                     "path": route_path,
                     "status": status,
@@ -274,7 +228,7 @@ async def record_api_performance(request: Request, call_next):
             )
 
 
-@app.get("/api/diagnostics/performance")
+@legacy_router.get("/api/diagnostics/performance")
 def performance_diagnostics_report() -> dict:
     with performance_diagnostics_lock:
         samples = list(performance_diagnostics)
@@ -317,7 +271,7 @@ def performance_diagnostics_report() -> dict:
     slow = [sample for sample in reversed(samples) if float(cast(Any, sample["duration_ms"])) >= 250][:20]
     durations = [float(cast(Any, sample["duration_ms"])) for sample in samples]
     return {
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "window_size": len(samples),
         "window_limit": performance_diagnostics.maxlen,
         "overall_average_ms": round(sum(durations) / len(durations), 1) if durations else 0,
@@ -327,7 +281,7 @@ def performance_diagnostics_report() -> dict:
     }
 
 
-@app.get("/")
+@legacy_router.get("/")
 def index() -> FileResponse:
     return FileResponse(WEB / "index.html")
 
@@ -612,12 +566,12 @@ def _write_source_metadata(audio_path: Path, metadata: dict) -> Path:
     return destination
 
 
-@app.get("/api/presets")
+@legacy_router.get("/api/presets")
 def list_presets() -> dict:
     return {"presets": _preset_payload()}
 
 
-@app.put("/api/presets/{current_name}")
+@legacy_router.put("/api/presets/{current_name}")
 def save_preset(current_name: str, request: PresetRequest) -> dict:
     if request.intro_bars not in SUPPORTED_BAR_COUNTS or request.outro_bars not in SUPPORTED_BAR_COUNTS:
         raise HTTPException(400, "Unsupported bar count")
@@ -634,7 +588,7 @@ def save_preset(current_name: str, request: PresetRequest) -> dict:
     return {"presets": _preset_payload()}
 
 
-@app.delete("/api/presets/{name}")
+@legacy_router.delete("/api/presets/{name}")
 def delete_preset(name: str) -> dict:
     if name not in _available_presets():
         raise HTTPException(404, "Preset not found")
@@ -646,7 +600,7 @@ def delete_preset(name: str) -> dict:
     return {"presets": _preset_payload()}
 
 
-@app.post("/api/presets/restore")
+@legacy_router.post("/api/presets/restore")
 def restore_presets() -> dict:
     _save_preset_state({"definitions": {}, "hidden": []})
     return {"presets": _preset_payload()}
@@ -830,7 +784,7 @@ def _soundcloud_source_metadata(url: str) -> dict:
     }
 
 
-@app.post("/api/imports/source-match")
+@legacy_router.post("/api/imports/source-match")
 def match_single_source(request: SourceMatchRequest) -> dict:
     host = (urlparse(request.url).hostname or "").casefold()
     if host in {"soundcloud.com", "www.soundcloud.com", "m.soundcloud.com", "on.soundcloud.com"}:
@@ -1449,7 +1403,7 @@ def _creative_commons_worker(batch_id: str, tracks: list[CreativeCommonsMatch], 
             creative_commons_batches[batch_id].update(status="failed", stage="Batch import failed", error=str(error))
 
 
-@app.post("/api/imports/creative-commons", status_code=202)
+@legacy_router.post("/api/imports/creative-commons", status_code=202)
 def create_creative_commons_batch(request: CreativeCommonsBatchRequest) -> dict:
     try:
         return creative_commons_service.start(request.tracks, request.playlist_name)
@@ -1457,7 +1411,7 @@ def create_creative_commons_batch(request: CreativeCommonsBatchRequest) -> dict:
         raise HTTPException(400, str(error)) from error
 
 
-@app.get("/api/imports/creative-commons/{batch_id}")
+@legacy_router.get("/api/imports/creative-commons/{batch_id}")
 def creative_commons_batch_status(batch_id: str) -> dict:
     try:
         return creative_commons_service.status(batch_id)
@@ -1465,7 +1419,7 @@ def creative_commons_batch_status(batch_id: str) -> dict:
         raise HTTPException(404, str(error)) from error
 
 
-@app.get("/api/imports/creative-commons/{batch_id}/download")
+@legacy_router.get("/api/imports/creative-commons/{batch_id}/download")
 def download_creative_commons_batch(batch_id: str) -> FileResponse:
     with creative_commons_batch_lock:
         state = creative_commons_batches.get(batch_id)
@@ -1509,7 +1463,7 @@ def download_creative_commons_batch(batch_id: str) -> FileResponse:
         raise
 
 
-@app.get("/api/imports/creative-commons/{batch_id}/report")
+@legacy_router.get("/api/imports/creative-commons/{batch_id}/report")
 def download_creative_commons_report(batch_id: str) -> FileResponse:
     with creative_commons_batch_lock:
         state = creative_commons_batches.get(batch_id)
@@ -1521,7 +1475,7 @@ def download_creative_commons_report(batch_id: str) -> FileResponse:
     return FileResponse(path, filename=f"{_safe_folder_name(playlist_name)} - Import Report.json")
 
 
-@app.get("/api/imports/failures")
+@legacy_router.get("/api/imports/failures")
 def list_import_failures() -> dict:
     if not repository.list_import_failures(include_resolved=True):
         for report_path in (OUTPUT / "reports" / "imports").glob("**/*Import Report.json"):
@@ -1667,7 +1621,7 @@ def _retry_import_failures_worker(batch_id: str, failures: list[dict]) -> None:
             )
 
 
-@app.post("/api/imports/failures/retry", status_code=202)
+@legacy_router.post("/api/imports/failures/retry", status_code=202)
 def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
     wanted = set(request.failure_ids)
     failures = [item for item in repository.list_import_failures() if int(item["id"]) in wanted]
@@ -1676,7 +1630,7 @@ def retry_import_failures(request: ImportFailureRetryRequest) -> dict:
     return creative_commons_service.start_retry(failures)
 
 
-@app.delete("/api/imports/failures/{failure_id}")
+@legacy_router.delete("/api/imports/failures/{failure_id}")
 def dismiss_import_failure(failure_id: int) -> dict:
     failures = repository.list_import_failures(include_resolved=True)
     failure = next((item for item in failures if int(item["id"]) == failure_id), None)
@@ -1792,7 +1746,7 @@ def _run_audio_quality_batch(batch_id: str) -> None:
         library_status_cache.update(payload=None, expires_at=0.0)
 
 
-@app.post("/api/downloaded-library/audio-quality")
+@legacy_router.post("/api/downloaded-library/audio-quality")
 def start_audio_quality_scan() -> dict:
     with audio_quality_batch_lock:
         active = next(
@@ -1822,7 +1776,7 @@ def start_audio_quality_scan() -> dict:
     return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
 
 
-@app.get("/api/downloaded-library/audio-quality-latest")
+@legacy_router.get("/api/downloaded-library/audio-quality-latest")
 def latest_audio_quality_scan() -> dict:
     with audio_quality_batch_lock:
         if not audio_quality_batches:
@@ -1831,7 +1785,7 @@ def latest_audio_quality_scan() -> dict:
         return {"batch_id": batch_id, **audio_quality_batches[batch_id]}
 
 
-@app.get("/api/downloaded-library/audio-quality/{batch_id}")
+@legacy_router.get("/api/downloaded-library/audio-quality/{batch_id}")
 def audio_quality_scan_status(batch_id: str) -> dict:
     with audio_quality_batch_lock:
         batch = audio_quality_batches.get(batch_id)
@@ -1904,7 +1858,7 @@ def _artwork_thumbnail_worker() -> None:
             artwork_thumbnail_queue.task_done()
 
 
-@app.get("/api/downloaded-library")
+@legacy_router.get("/api/downloaded-library")
 def downloaded_library(
     paged: bool = False,
     page: int = Query(default=1, ge=1),
@@ -1918,10 +1872,9 @@ def downloaded_library(
     quality: str = Query(default="all", pattern="^(all|excellent|good|review|poor|below-target|unanalyzed)$"),
     sort: str = Query(default="newest", max_length=30),
 ) -> dict:
-    _ensure_downloaded_catalog_migrated()
-    if paged:
-        facets = repository.downloaded_catalog_facets()
-        tracks, filtered_total = repository.page_downloaded_tracks(
+    return downloaded_catalog_query_service.execute(
+        DownloadedCatalogQuery(
+            paged=paged,
             page=page,
             page_size=page_size,
             search=search,
@@ -1933,117 +1886,10 @@ def downloaded_library(
             quality=quality,
             sort=sort,
         )
-        if analysis in {
-            "complete",
-            "active",
-            "attention",
-            "missing_title",
-            "missing_artist",
-            "missing_genre",
-            "missing_artwork",
-            "unmapped_genre",
-            "broad_genre",
-        }:
-            analyzable_total = 0
-        else:
-            _, analyzable_total = repository.page_downloaded_tracks(
-                page=1,
-                page_size=1,
-                search=search,
-                genre=genre,
-                detailed_genre=detailed_genre,
-                playlist=playlist,
-                artwork=artwork,
-                quality=quality,
-                analysis=("failed" if analysis == "failed" else "needs"),
-                sort=sort,
-            )
-        total_pages = max(1, (filtered_total + page_size - 1) // page_size)
-        if page > total_pages:
-            page = total_pages
-            tracks, filtered_total = repository.page_downloaded_tracks(
-                page=page,
-                page_size=page_size,
-                search=search,
-                genre=genre,
-                detailed_genre=detailed_genre,
-                playlist=playlist,
-                analysis=analysis,
-                artwork=artwork,
-                quality=quality,
-                sort=sort,
-            )
-        genres: dict[str, int] = {}
-        for raw_genre, count in facets["genres"].items():
-            normalized = _normalize_genre_category(raw_genre)
-            genres[normalized] = genres.get(normalized, 0) + int(count)
-        playlists = facets["playlists"]
-    else:
-        tracks = repository.list_downloaded_tracks_with_jobs()
-        genres = {}
-        playlists = {}
-        for track in tracks:
-            track_genre = _normalize_genre_category(str(track.get("genre_category") or "Other"))
-            genres[track_genre] = genres.get(track_genre, 0) + 1
-            for track_playlist in track.get("playlists", []):
-                playlists[track_playlist] = playlists.get(track_playlist, 0) + 1
-        filtered_total = len(tracks)
-
-        def review_flags(track: dict) -> dict[str, bool]:
-            title = str(track.get("title") or "").strip().casefold()
-            artist = str(track.get("artist") or "").strip().casefold()
-            detailed_genre = str(track.get("genre") or "").strip()
-            category = str(track.get("genre_category") or "Other")
-            return {
-                "missing_title": title in {"", "unknown title", "untitled"},
-                "missing_artist": artist in {"", "unknown artist", "unknown", "unavailable"},
-                "missing_genre": not detailed_genre,
-                "missing_artwork": not str(track.get("artwork_path") or "").strip(),
-                "unmapped_genre": bool(detailed_genre) and category == "Other",
-                "broad_genre": category.endswith(" / General") or category.endswith(" / Other"),
-            }
-
-        track_review_flags = [review_flags(track) for track in tracks]
-        facets = {
-            "total": len(tracks),
-            "review_states": {
-                **{
-                    issue: sum(flags[issue] for flags in track_review_flags)
-                    for issue in (track_review_flags[0] if track_review_flags else review_flags({}))
-                },
-                "needs_attention": sum(any(flags.values()) for flags in track_review_flags),
-            },
-        }
-        total_pages = 1
-        analyzable_total = sum(
-            (track.get("analysis_status") or "not_analyzed") not in {"queued", "processing", "complete"}
-            for track in tracks
-        )
-    return {
-        "tracks": [
-            _downloaded_track_payload(track)
-            | {
-                "analysis_status": track.get("analysis_status") or "not_analyzed",
-            }
-            for track in tracks
-        ],
-        "genres": dict(sorted(genres.items())),
-        "detailed_genres": dict(sorted(facets.get("detailed_genres", {}).items())),
-        "detailed_genres_by_category": facets.get("detailed_genres_by_category", {}),
-        "playlists": dict(sorted(playlists.items())),
-        "review_states": facets.get("review_states", {}),
-        "pagination": {
-            "page": page,
-            "page_size": page_size,
-            "filtered_total": filtered_total,
-            "analyzable_total": analyzable_total,
-            "catalog_total": facets["total"],
-            "total_pages": total_pages,
-        },
-    }
+    )
 
 
-@app.get("/api/downloaded-library/tracks/{track_id}/audio")
+@legacy_router.get("/api/downloaded-library/tracks/{track_id}/audio")
 def downloaded_track_audio(track_id: int) -> FileResponse:
     track = repository.get_downloaded_track(track_id)
     path = Path(track["file_path"]) if track else None
@@ -2052,7 +1898,7 @@ def downloaded_track_audio(track_id: int) -> FileResponse:
     return FileResponse(path, filename=path.name, media_type="audio/wav")
 
 
-@app.get("/api/downloaded-library/tracks/{track_id}/artwork")
+@legacy_router.get("/api/downloaded-library/tracks/{track_id}/artwork")
 def downloaded_track_artwork(track_id: int, thumbnail: bool = False) -> FileResponse:
     track = repository.get_downloaded_track(track_id)
     path = Path(str(track.get("artwork_path") or "")) if track else None
@@ -2065,12 +1911,12 @@ def downloaded_track_artwork(track_id: int, thumbnail: bool = False) -> FileResp
     return FileResponse(path, media_type=media_type, headers=headers)
 
 
-@app.get("/api/downloaded-library/tracks/{track_id}/download")
+@legacy_router.get("/api/downloaded-library/tracks/{track_id}/download")
 def downloaded_track_download(track_id: int) -> FileResponse:
     return downloaded_track_audio(track_id)
 
 
-@app.post("/api/downloaded-library/tracks/{track_id}/reveal")
+@legacy_router.post("/api/downloaded-library/tracks/{track_id}/reveal")
 def reveal_downloaded_track(track_id: int) -> dict:
     """Reveal a cataloged audio file using the host operating system's file browser."""
     track = repository.get_downloaded_track(track_id)
@@ -2090,21 +1936,21 @@ def reveal_downloaded_track(track_id: int) -> dict:
     return {"revealed": True, "absolute_path": str(path.resolve())}
 
 
-@app.delete("/api/downloaded-library/tracks/{track_id}")
+@legacy_router.delete("/api/downloaded-library/tracks/{track_id}")
 def remove_downloaded_track(track_id: int) -> dict:
     if not repository.delete_downloaded_track(track_id):
         raise HTTPException(404, "Downloaded track was not found")
     return {"removed": True, "track_id": track_id}
 
 
-@app.delete("/api/downloaded-library/tracks")
+@legacy_router.delete("/api/downloaded-library/tracks")
 def remove_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     requested = set(request.track_ids)
     removed = sum(1 for track_id in requested if repository.delete_downloaded_track(track_id))
     return {"removed": removed, "requested": len(requested)}
 
 
-@app.get("/api/downloaded-library/duplicate-candidates")
+@legacy_router.get("/api/downloaded-library/duplicate-candidates")
 def downloaded_duplicate_candidates() -> dict:
     candidates = repository.duplicate_candidates()
     return {
@@ -2119,7 +1965,7 @@ def downloaded_duplicate_candidates() -> dict:
     }
 
 
-@app.post("/api/downloaded-library/merge-duplicate")
+@legacy_router.post("/api/downloaded-library/merge-duplicate")
 def merge_downloaded_duplicate(request: DuplicateMergeRequest) -> dict:
     try:
         track = repository.merge_downloaded_tracks(request.survivor_id, request.duplicate_id)
@@ -2130,7 +1976,7 @@ def merge_downloaded_duplicate(request: DuplicateMergeRequest) -> dict:
     return {"merged": True, "track": _downloaded_track_payload(track)}
 
 
-@app.post("/api/downloaded-library/tracks/{track_id}/keep-separate")
+@legacy_router.post("/api/downloaded-library/tracks/{track_id}/keep-separate")
 def keep_downloaded_track_separate(track_id: int) -> dict:
     try:
         track = repository.separate_recording(track_id)
@@ -2139,7 +1985,7 @@ def keep_downloaded_track_separate(track_id: int) -> dict:
     return {"updated": True, "track": _downloaded_track_payload(track)}
 
 
-@app.get("/api/downloaded-library/tracks/{track_id}/family")
+@legacy_router.get("/api/downloaded-library/tracks/{track_id}/family")
 def downloaded_track_family(track_id: int) -> dict:
     try:
         family = repository.recording_family(track_id)
@@ -2152,7 +1998,7 @@ def downloaded_track_family(track_id: int) -> dict:
     }
 
 
-@app.post("/api/downloaded-library/tracks/{track_id}/link-version")
+@legacy_router.post("/api/downloaded-library/tracks/{track_id}/link-version")
 def link_downloaded_track_version(track_id: int, request: TrackFamilyLinkRequest) -> dict:
     target_track_id = request.target_track_id or repository.track_id_for_identity(request.target_identity)
     if target_track_id is None:
@@ -2166,7 +2012,7 @@ def link_downloaded_track_version(track_id: int, request: TrackFamilyLinkRequest
     return {"updated": True, "track": _downloaded_track_payload(track)}
 
 
-@app.post("/api/downloaded-library/tracks/{track_id}/unlink-version")
+@legacy_router.post("/api/downloaded-library/tracks/{track_id}/unlink-version")
 def unlink_downloaded_track_version(track_id: int) -> dict:
     """Create a new family for a track; this is the safe inverse of linking."""
     return keep_downloaded_track_separate(track_id)
@@ -2200,7 +2046,7 @@ def _downloaded_archive(tracks: list[dict], name: str) -> FileResponse:
     )
 
 
-@app.post("/api/downloaded-library/download")
+@legacy_router.post("/api/downloaded-library/download")
 def download_selected_tracks(request: DownloadedTracksRequest) -> FileResponse:
     wanted = set(request.track_ids)
     tracks = [track for track in repository.list_downloaded_tracks() if track["id"] in wanted]
@@ -2209,7 +2055,7 @@ def download_selected_tracks(request: DownloadedTracksRequest) -> FileResponse:
     return _downloaded_archive(tracks, "Selected Downloaded Tracks")
 
 
-@app.post("/api/downloaded-library/analyze", status_code=202)
+@legacy_router.post("/api/downloaded-library/analyze", status_code=202)
 def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     wanted = set(request.track_ids)
     tracks = [track for track in repository.list_downloaded_tracks() if track["id"] in wanted]
@@ -2218,7 +2064,7 @@ def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     return _queue_downloaded_analysis(tracks)
 
 
-@app.post("/api/downloaded-library/reanalyze", status_code=202)
+@legacy_router.post("/api/downloaded-library/reanalyze", status_code=202)
 def reanalyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     wanted = set(request.track_ids)
     tracks = [track for track in repository.list_downloaded_tracks_with_jobs() if track["id"] in wanted]
@@ -2273,7 +2119,7 @@ def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> di
     return {"job_ids": created, "skipped": skipped, "unavailable": unavailable}
 
 
-@app.post("/api/downloaded-library/analyze-matching", status_code=202)
+@legacy_router.post("/api/downloaded-library/analyze-matching", status_code=202)
 def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest) -> dict:
     if request.analysis in {"complete", "active"}:
         return {"job_ids": [], "skipped": [], "unavailable": [], "matched": 0}
@@ -2292,7 +2138,7 @@ def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest)
     return {**result, "matched": len(tracks)}
 
 
-@app.post("/api/downloaded-library/reanalyze-matching", status_code=202)
+@legacy_router.post("/api/downloaded-library/reanalyze-matching", status_code=202)
 def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest) -> dict:
     tracks, _ = repository.page_downloaded_tracks(
         page=1,
@@ -2309,7 +2155,7 @@ def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterReques
     return {**result, "matched": len(tracks)}
 
 
-@app.patch("/api/downloaded-library/genre")
+@legacy_router.patch("/api/downloaded-library/genre")
 def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
     try:
         result = track_metadata_mutations.change_genre(request.track_ids, request.genre_category)
@@ -2336,7 +2182,7 @@ def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
         raise HTTPException(500, f"Could not change genre: {error}") from error
 
 
-@app.patch("/api/downloaded-library/tracks/{track_id}/metadata")
+@legacy_router.patch("/api/downloaded-library/tracks/{track_id}/metadata")
 def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataRequest) -> dict:
     """Synchronize editable identity fields across disk, WAV tags, and Library records."""
     track = repository.get_downloaded_track(track_id)
@@ -2422,6 +2268,7 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
         if moved and destination.is_file() and not source.exists():
             shutil.move(str(destination), str(source))
         raise HTTPException(500, f"Could not update track metadata: {error}") from error
+    catalog_projection_publisher.publish()
     return {
         "updated": True,
         "track_id": track_id,
@@ -2450,7 +2297,7 @@ def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataR
     }
 
 
-@app.post("/api/downloaded-library/repair-playlist-derived-genres")
+@legacy_router.post("/api/downloaded-library/repair-playlist-derived-genres")
 def repair_playlist_derived_genres() -> dict:
     """Replace playlist labels accidentally stored as detailed track genres."""
     repaired: list[int] = []
@@ -2505,7 +2352,7 @@ def repair_playlist_derived_genres() -> dict:
     }
 
 
-@app.post("/api/downloaded-library/retag")
+@legacy_router.post("/api/downloaded-library/retag")
 def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     """Synchronize embedded WAV tags from the authoritative music catalog."""
     _require_music_library_online()
@@ -2573,7 +2420,7 @@ def _refresh_wav_tag_audit() -> dict:
     }
     repository.set_system_state(
         "wav_tag_latest_audit",
-        json.dumps({**payload, "generated_at": datetime.now(timezone.utc).isoformat()}),
+        json.dumps({**payload, "generated_at": datetime.now(UTC).isoformat()}),
     )
     return payload
 
@@ -2596,7 +2443,7 @@ def _schedule_wav_tag_audit_refresh() -> None:
     threading.Thread(target=refresh, daemon=True, name="wav-tag-audit").start()
 
 
-@app.get("/api/downloaded-library/genres/{genre}/download")
+@legacy_router.get("/api/downloaded-library/genres/{genre}/download")
 def download_genre(genre: str) -> FileResponse:
     tracks = [
         track
@@ -2606,7 +2453,7 @@ def download_genre(genre: str) -> FileResponse:
     return _downloaded_archive(tracks, genre)
 
 
-@app.get("/api/downloaded-library/playlists/{playlist}/download")
+@legacy_router.get("/api/downloaded-library/playlists/{playlist}/download")
 def download_playlist(playlist: str) -> FileResponse:
     tracks = [
         track
@@ -2616,7 +2463,7 @@ def download_playlist(playlist: str) -> FileResponse:
     return _downloaded_archive(tracks, playlist)
 
 
-@app.delete("/api/library/{source_name}")
+@legacy_router.delete("/api/library/{source_name}")
 def remove_library_track(source_name: str) -> dict:
     """Remove every inactive generation from the Library without deleting exports."""
     matching = [
@@ -2641,8 +2488,15 @@ def remove_library_track(source_name: str) -> dict:
     return {"removed_generations": removed, "files_preserved": True}
 
 
-@app.post("/api/jobs/{job_id}/reprocess", status_code=202)
+@legacy_router.post("/api/jobs/{job_id}/reprocess", status_code=202)
 def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
+    try:
+        return job_workflow_service.reprocess(job_id, request.model_dump() if request is not None else None)
+    except JobWorkflowError as error:
+        raise HTTPException(error.status_code, error.detail) from error
+
+
+def _legacy_reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
     job = repository.get(job_id)
     if job is None:
         raise HTTPException(404, "Job not found")
@@ -2772,7 +2626,7 @@ def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
     return {"job_id": new_id}
 
 
-@app.post("/api/jobs/{job_id}/review/reject")
+@legacy_router.post("/api/jobs/{job_id}/review/reject")
 def reject_review(job_id: int) -> dict:
     job = repository.get(job_id)
     if job is None:
@@ -2783,7 +2637,7 @@ def reject_review(job_id: int) -> dict:
     return {"ok": True}
 
 
-@app.get("/api/jobs/{job_id}/candidates")
+@legacy_router.get("/api/jobs/{job_id}/candidates")
 def candidates(job_id: int) -> dict:
     job = repository.get(job_id)
     if job is None:
@@ -2791,7 +2645,7 @@ def candidates(job_id: int) -> dict:
     return json.loads(job.get("candidates_json") or "{}")
 
 
-@app.get("/api/jobs/{job_id}/candidate/{position}/{rank}")
+@legacy_router.get("/api/jobs/{job_id}/candidate/{position}/{rank}")
 def candidate_audio(job_id: int, position: str, rank: int) -> FileResponse:
     job = repository.get(job_id)
     if job is None or position not in {"intro", "outro"} or rank not in {1, 2, 3}:
@@ -2816,7 +2670,7 @@ def candidate_audio(job_id: int, position: str, rank: int) -> FileResponse:
     return FileResponse(path, media_type="audio/wav")
 
 
-@app.post("/api/jobs/{job_id}/feedback")
+@legacy_router.post("/api/jobs/{job_id}/feedback")
 def save_feedback(job_id: int, request: FeedbackRequest) -> dict:
     job = repository.get(job_id)
     if job is None:
@@ -2843,12 +2697,12 @@ def save_feedback(job_id: int, request: FeedbackRequest) -> dict:
     return {"id": feedback_id}
 
 
-@app.get("/api/jobs/{job_id}/feedback")
+@legacy_router.get("/api/jobs/{job_id}/feedback")
 def job_feedback(job_id: int) -> list[dict]:
     return repository.feedback(job_id)
 
 
-@app.post("/api/jobs", status_code=202)
+@legacy_router.post("/api/jobs", status_code=202)
 async def create_jobs(
     files: Annotated[list[UploadFile], File()],
     preset: Annotated[str, Form()] = "auto",
@@ -2873,6 +2727,66 @@ async def create_jobs(
     maximum_bass_reset_risk_percent: Annotated[float | None, Form()] = None,
     minimum_stem_reliability_percent: Annotated[float | None, Form()] = None,
     analysis_only: Annotated[bool, Form()] = False,
+) -> dict:
+    overrides = {
+        "auto_bars": auto_bars,
+        "minimum_intro_loop_quality": minimum_intro_loop_quality,
+        "minimum_outro_loop_quality": minimum_outro_loop_quality,
+        "maximum_repetitions": maximum_repetitions,
+        "crossfade_ms": crossfade_ms,
+        "pcm_bits": pcm_bits,
+        "preview_seconds": preview_seconds,
+        "export_cues": export_cues,
+        "candidate_count": candidate_count,
+        "intro_search_seconds": intro_search_seconds,
+        "outro_search_seconds": outro_search_seconds,
+        "maximum_vocal_coverage_percent": maximum_vocal_coverage_percent,
+        "maximum_vocal_boundary_risk_percent": maximum_vocal_boundary_risk_percent,
+        "maximum_buildup_risk_percent": maximum_buildup_risk_percent,
+        "maximum_bass_reset_risk_percent": maximum_bass_reset_risk_percent,
+        "minimum_stem_reliability_percent": minimum_stem_reliability_percent,
+    }
+    try:
+        return job_workflow_service.create(
+            [UploadedAudio(Path(upload.filename or "").name, upload.file) for upload in files],
+            JobCreationCommand(
+                preset=preset,
+                intro_bars=intro_bars,
+                outro_bars=outro_bars,
+                use_stems=use_stems,
+                review_candidates=review_candidates,
+                analysis_only=analysis_only,
+                overrides=overrides,
+            ),
+        )
+    except JobWorkflowError as error:
+        raise HTTPException(error.status_code, error.detail) from error
+
+
+async def _legacy_create_jobs(
+    files: Annotated[list[UploadFile], File()],
+    preset: str = "auto",
+    intro_bars: str = "auto",
+    outro_bars: str = "auto",
+    use_stems: bool = False,
+    review_candidates: bool = False,
+    auto_bars: bool | None = None,
+    minimum_intro_loop_quality: float | None = None,
+    minimum_outro_loop_quality: float | None = None,
+    maximum_repetitions: int | None = None,
+    crossfade_ms: float | None = None,
+    pcm_bits: int | None = None,
+    preview_seconds: float | None = None,
+    export_cues: bool | None = None,
+    candidate_count: int | None = None,
+    intro_search_seconds: float | None = None,
+    outro_search_seconds: float | None = None,
+    maximum_vocal_coverage_percent: float | None = None,
+    maximum_vocal_boundary_risk_percent: float | None = None,
+    maximum_buildup_risk_percent: float | None = None,
+    maximum_bass_reset_risk_percent: float | None = None,
+    minimum_stem_reliability_percent: float | None = None,
+    analysis_only: bool = False,
 ) -> dict:
     if preset != "auto" and preset not in _available_presets():
         raise HTTPException(400, "Unknown preset")
@@ -2981,7 +2895,7 @@ async def create_jobs(
     return {"job_ids": created}
 
 
-@app.get("/api/overrides/{source_name}")
+@legacy_router.get("/api/overrides/{source_name}")
 def get_override(source_name: str) -> dict:
     override = load_track_overrides(OVERRIDES).get(source_name.casefold())
     return {
@@ -2991,7 +2905,7 @@ def get_override(source_name: str) -> dict:
     }
 
 
-@app.put("/api/overrides/{source_name}")
+@legacy_router.put("/api/overrides/{source_name}")
 def save_override(source_name: str, request: OverrideRequest) -> dict:
     if request.outro_after and request.outro_before and request.outro_after >= request.outro_before:
         raise HTTPException(400, "Outro start must be earlier than outro end")
@@ -3010,12 +2924,12 @@ def save_override(source_name: str, request: OverrideRequest) -> dict:
     return values
 
 
-@app.get("/api/analytics")
+@legacy_router.get("/api/analytics")
 def analytics() -> dict:
     now = perf_counter()
     with analytics_cache_lock:
         if analytics_cache["payload"] is not None and now < float(cast(Any, analytics_cache["expires_at"])):
-            return analytics_cache["payload"]  # type: ignore[return-value]
+            return cast(dict, analytics_cache["payload"])
     summary = repository.analytics_summary()
     feedback = summary["feedback"]
     accepted = [item for item in feedback if item["accepted"]]
@@ -3047,12 +2961,12 @@ def _load_processing_report() -> dict:
             if report_cache["mtime_ns"] != mtime_ns:
                 report_cache["payload"] = json.loads(path.read_text(encoding="utf-8"))
                 report_cache["mtime_ns"] = mtime_ns
-            return report_cache["payload"]  # type: ignore[return-value]
+            return cast(dict, report_cache["payload"])
     except (OSError, ValueError) as error:
         raise HTTPException(500, "The report could not be read") from error
 
 
-@app.get("/api/report", response_model=None)
+@legacy_router.get("/api/report", response_model=None)
 def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
     path = OUTPUT / "reports" / "processing_report.json"
     if not path.exists():
@@ -3074,7 +2988,7 @@ def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
         raise HTTPException(500, "The report could not be read") from error
 
 
-@app.get("/api/report-audio-index")
+@legacy_router.get("/api/report-audio-index")
 def report_audio_index() -> list[dict]:
     """Expose preview availability without loading the full job queue/history."""
     result = []
@@ -3098,56 +3012,20 @@ def report_audio_index() -> list[dict]:
 
 
 def _library_roles(song: dict) -> list[str]:
-    style = str(song.get("detected_style") or "").casefold()
-    timing = str(song.get("timing") or "").casefold()
-    bpm = float(song.get("bpm") or 0)
-    intro = song.get("intro") or {}
-    outro = song.get("outro") or {}
-    roles: set[str] = set()
-    if "ambient" in style or "sparse" in style:
-        roles.add("ambient")
-    if "melodic" in style or "harmonic" in style or float(song.get("key_confidence") or 0) >= 0.65:
-        roles.add("melodic")
-    if (
-        "vocal-safe" in style
-        or max(float(intro.get("instrumentalness") or 0), float(outro.get("instrumentalness") or 0)) >= 0.72
-    ):
-        roles.add("vocal-safe")
-    if "live" in timing or "variable" in timing or float(song.get("tempo_drift") or 0) >= 0.08:
-        roles.add("live timing")
-    if "peak" in style or "high-energy" in style or (bpm >= 122 and "ambient" not in roles):
-        roles.add("peak-time")
-    if "slow" in style or "subtle" in style or (bpm and bpm < 120) or "ambient" in roles:
-        roles.add("warm-up")
-    readiness = song.get("dj_readiness") or {}
-    if "closing" in style or float(readiness.get("outro_mixable_bars") or 0) >= 8 or outro.get("section") == "closing":
-        roles.add("closing")
-    if not roles:
-        roles.add("peak-time" if bpm >= 122 else "warm-up")
-    return sorted(roles)
+    return musical_profile(song)["roles"]
 
 
 def _library_energy(song: dict) -> float:
-    values: list[float] = []
-    for section in song.get("section_profiles") or []:
-        match = re.search(r"energy\s+([\d.]+)", str(section.get("reason") or ""), re.I)
-        if match:
-            try:
-                values.append(float(match.group(1)))
-            except ValueError:
-                pass
-    if values:
-        return sum(values) / len(values)
-    style = str(song.get("detected_style") or "").casefold()
-    return (
-        0.8 if "high-energy" in style or "peak" in style else 0.25 if "ambient" in style or "sparse" in style else 0.5
-    )
+    return float(musical_profile(song)["energy"])
 
 
 def _set_builder_analysis(song: dict, *, roles: list[str], energy: float, vocals: str, timing: str) -> dict:
+    profile = musical_profile(song | {"_roles": roles, "_energy": energy, "_vocals": vocals, "_timing": timing})
     base_fields = {
         "source_name",
         "bpm",
+        "detected_bpm",
+        "bpm_verified",
         "key",
         "key_confidence",
         "beat_grid_confidence",
@@ -3162,6 +3040,7 @@ def _set_builder_analysis(song: dict, *, roles: list[str], energy: float, vocals
             "_energy": energy,
             "_vocals": vocals,
             "_timing": timing,
+            "musical_profile": profile,
             "intro": {
                 key: value for key, value in (song.get("intro") or {}).items() if key in {"instrumentalness", "section"}
             },
@@ -3213,7 +3092,7 @@ def _build_set_builder_catalog_payload() -> dict:
                 },
             }
         )
-    return {"version": 4, "tracks": tracks, "total": len(tracks)}
+    return {"version": 5, "tracks": tracks, "total": len(tracks)}
 
 
 def _write_set_builder_catalog_cache() -> None:
@@ -3224,32 +3103,7 @@ def _write_set_builder_catalog_cache() -> None:
     temporary.replace(SET_BUILDER_CATALOG_CACHE)
 
 
-_CAMELOT_KEYS = {
-    "A minor": "8A",
-    "E minor": "9A",
-    "B minor": "10A",
-    "F# minor": "11A",
-    "C# minor": "12A",
-    "G# minor": "1A",
-    "D# minor": "2A",
-    "A# minor": "3A",
-    "F minor": "4A",
-    "C minor": "5A",
-    "G minor": "6A",
-    "D minor": "7A",
-    "C major": "8B",
-    "G major": "9B",
-    "D major": "10B",
-    "A major": "11B",
-    "E major": "12B",
-    "B major": "1B",
-    "F# major": "2B",
-    "C# major": "3B",
-    "G# major": "4B",
-    "D# major": "5B",
-    "A# major": "6B",
-    "F major": "7B",
-}
+_CAMELOT_KEYS = CAMELOT_KEYS
 
 
 def _refresh_library_search_index() -> None:
@@ -3264,16 +3118,11 @@ def _refresh_library_search_index() -> None:
         for track in downloaded_tracks
         if track.get("completed_library_job_id")
     }
-    key_verifications = {str(item["source_name"]).casefold(): item for item in repository.key_verifications()}
+    corrections = MusicalCorrectionIndex.from_records(repository.key_verifications(), repository.bpm_verifications())
     entries = []
     for job in repository.list_latest_completed_jobs():
         song = dict(analysis_by_name.get(str(job.get("source_name") or "").casefold(), {}))
-        verification = key_verifications.get(str(job.get("source_name") or "").casefold())
-        if verification:
-            song["detected_key"] = song.get("key")
-            song["key"] = verification["verified_key"]
-            song["key_confidence"] = 1.0
-            song["key_verified"] = True
+        song = corrections.apply(song, str(job.get("source_name") or ""), detected_bpm_fallback=job.get("bpm"))
         downloaded = downloaded_by_job.get(int(job["id"])) or downloaded_by_path.get(str(job.get("source_path") or ""))
         if downloaded and downloaded.get("key_analyzed_at"):
             song["key"] = downloaded.get("detected_key") or song.get("key")
@@ -3371,13 +3220,7 @@ def _refresh_library_search_index() -> None:
 def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
     """Refresh the compact Library index only when its inputs have changed."""
     _ensure_downloaded_catalog_migrated()
-    report_path = OUTPUT / "reports" / "processing_report.json"
-    report_signature = (report_path.stat().st_mtime_ns, report_path.stat().st_size) if report_path.exists() else (0, 0)
-    source_signature = repository.library_index_source_signature()
-    signature_text = json.dumps(
-        {"version": 4, "report": report_signature, "sources": source_signature}, separators=(",", ":")
-    )
-    signature = (report_signature, (hash(source_signature), len(source_signature)))
+    signature, signature_text = catalog_projection_publisher.signature()
     with library_catalog_cache_lock:
         memory_current = library_catalog_cache.get("signature") == signature
     persisted_current = repository.get_system_state("library_search_index_signature") == signature_text
@@ -3394,13 +3237,7 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
                 ).start()
         return signature
     if needs_refresh:
-        _refresh_library_search_index()
-        source_signature = repository.library_index_source_signature()
-        signature_text = json.dumps(
-            {"version": 4, "report": report_signature, "sources": source_signature}, separators=(",", ":")
-        )
-        signature = (report_signature, (hash(source_signature), len(source_signature)))
-        repository.set_system_state("library_search_index_signature", signature_text)
+        signature = catalog_projection_publisher.publish()
     with library_catalog_cache_lock:
         library_catalog_cache["signature"] = signature
     return signature
@@ -3409,22 +3246,13 @@ def _ensure_library_search_index_current() -> tuple[tuple[int, int], ...]:
 def _refresh_library_index_background() -> None:
     global library_index_refresh_active
     try:
-        _refresh_library_search_index()
-        report_path = OUTPUT / "reports" / "processing_report.json"
-        report_signature = (
-            (report_path.stat().st_mtime_ns, report_path.stat().st_size) if report_path.exists() else (0, 0)
-        )
-        source_signature = repository.library_index_source_signature()
-        signature_text = json.dumps(
-            {"version": 4, "report": report_signature, "sources": source_signature},
-            separators=(",", ":"),
-        )
-        repository.set_system_state("library_search_index_signature", signature_text)
-        with library_catalog_cache_lock:
-            library_catalog_cache["signature"] = (report_signature, (hash(source_signature), len(source_signature)))
+        catalog_projection_publisher.publish()
     finally:
         with library_index_refresh_lock:
             library_index_refresh_active = False
+
+
+catalog_projection_publisher: CatalogProjectionPublisher
 
 
 # Compatibility entry points retained for scripts and tests that used these
@@ -3437,7 +3265,7 @@ def set_builder_save_playlist(request: SetPlaylistSaveRequest) -> dict:
     return save_playlist_file(request, _music_library_root(), _safe_folder_name)
 
 
-@app.get("/api/library/jobs/{job_id}/details")
+@legacy_router.get("/api/library/jobs/{job_id}/details")
 def library_job_details(job_id: int) -> dict:
     job = repository.get(job_id)
     if not job or job.get("status") != "complete":
@@ -3448,147 +3276,10 @@ def library_job_details(job_id: int) -> dict:
     }
 
 
-# The authorized importer is composed after its callback dependencies are
-# defined. Lambdas keep those collaborators replaceable in tests and prevent
-# the service from importing this application module.
-import_service = ImportService(
-    repository=repository,
-    processing_service=service,
-    library_root=_music_library_root,
-    effective_settings=_effective_settings,
-    preset_snapshot=_preset_snapshot,
-    duplicate_lookup=_cataloged_download_by_youtube_id,
-    probe_audio=_probe_local_audio,
-    cache_artwork=_cache_track_artwork,
-    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
-)
-local_import_service = LocalAudioImportService(
-    repository=repository,
-    staging_root=INPUT / "local-imports",
-    require_library_online=_require_music_library_online,
-    probe_audio=_probe_local_audio,
-    generalized_genre=_generalized_genre,
-    genre_directory=_genre_directory,
-    write_metadata=write_wav_metadata,
-    write_source_metadata=_write_source_metadata,
-    safe_name=_safe_audio_name,
-    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
-)
-playlist_match_service = PlaylistMatchService(
-    _match_tracks_to_youtube,
-    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
-)
-creative_commons_service = CreativeCommonsImportService(
-    creative_commons_registry,
-    require_library_online=_require_music_library_online,
-    worker=_creative_commons_worker,
-    retry_worker=_retry_import_failures_worker,
-    thread_factory=lambda **kwargs: threading.Thread(**kwargs),
-)
-library_maintenance_service = LibraryMaintenanceService(
-    LibraryMaintenanceDependencies(
-        repository=lambda: repository,
-        music_library_root=lambda: _music_library_root(),
-        require_library_online=lambda: _require_music_library_online(),
-        migrate_catalog=lambda **kwargs: _migrate_downloaded_catalog(**kwargs),
-        read_wav_metadata=read_wav_metadata,
-        sync_wav_metadata=sync_wav_metadata,
-        probe_local_audio=lambda path: _probe_local_audio(path),
-        catalog_genre_category=lambda path, genre, detailed: _catalog_genre_category(path, genre, detailed),
-        metadata_batches=metadata_batch_registry,
-        catalog_migration_lock=downloaded_catalog_migration_lock,
-        integrity_batches=integrity_scan_batches,
-        integrity_lock=integrity_scan_batch_lock,
-    )
-)
-track_metadata_mutations = TrackMetadataMutationService(
-    TrackMetadataMutationDependencies(
-        repository=repository,
-        normalize_genre=_normalize_genre_category,
-        genre_directory=_genre_directory,
-        music_library_root=_music_library_root,
-        source_metadata_path=_source_metadata_path,
-        write_wav_metadata=write_wav_metadata,
-        write_source_metadata=_write_source_metadata,
-    )
-)
-metadata_batch_service = MetadataBatchService(
-    MetadataBatchDependencies(
-        repository=lambda: repository,
-        require_library_online=_require_music_library_online,
-        sync_wav_metadata=sync_wav_metadata,
-        read_wav_artwork=read_wav_artwork,
-        embed_wav_artwork=embed_wav_artwork,
-        cache_track_artwork=_cache_track_artwork,
-        spotify_source_metadata=_spotify_source_metadata,
-        generalized_genre=_generalized_genre,
-        normalize_genre=_normalize_genre_category,
-        genre_directory=_genre_directory,
-        change_genre=lambda track_ids, category: change_downloaded_genre(
-            DownloadedGenreRequest(track_ids=track_ids, genre_category=category)
-        ),
-        refresh_wav_tag_audit=_refresh_wav_tag_audit,
-        schedule_wav_tag_audit_refresh=_schedule_wav_tag_audit_refresh,
-        music_library_root=_music_library_root,
-        registry=metadata_batch_registry,
-    )
-)
-# Compatibility for scripts/tests that used the former application helper.
-_run_integrity_scan = library_maintenance_service.run_integrity_scan
-app.include_router(
-    create_settings_router(
-        SettingsRouteDependencies(
-            repository=lambda: repository,
-            job_service=service,
-            relocation=library_relocation,
-            import_services=(
-                import_service,
-                local_import_service,
-                playlist_match_service,
-                creative_commons_service,
-            ),
-            project=PROJECT,
-            input_root=INPUT,
-            output_root=OUTPUT,
-            database=DATABASE,
-            overrides_path=OVERRIDES,
-            presets_path=WEB_PRESETS,
-            backup_root=BACKUP_ROOT,
-            storage_snapshot=STORAGE_INVENTORY_SNAPSHOT,
-            cache_folder_name=CACHE_FOLDER_NAME,
-            supported_bar_counts=SUPPORTED_BAR_COUNTS,
-            defaults=WEB_DEFAULTS,
-            available_presets=_available_presets,
-            effective_settings=_effective_settings,
-            music_library_root=lambda: _music_library_root(),
-            library_location_summary=_library_location_summary,
-            source_metadata_path=_source_metadata_path,
-            refresh_wav_tag_audit=_refresh_wav_tag_audit,
-            metadata_batches=metadata_batch_registry,
-            library_status_cache=library_status_cache,
-            library_status_lock=library_status_cache_lock,
-            storage_inventory_cache=storage_inventory_cache,
-            storage_inventory_lock=storage_inventory_lock,
-            report_cache=report_cache,
-            catalog_cache=library_catalog_cache,
-            pending_restores=pending_backup_restores,
-        )
-    )
-)
-intention_planner = IntentionPlanner.from_environment()
-journey_planner = JourneyPlanner(intention_planner)
-set_preference_service = DJPreferenceService(
-    JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
-)
-set_review_service = SetReviewService(
-    JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_reviews.json")),
-    set_preference_service.profile,
-)
-candidate_retriever = SetCandidateRetriever(
-    preference_ranker=PersonalizedCandidateRanker(set_preference_service.profile)
-)
-set_plan_validator = SetPlanValidator()
-track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
+def _bind_runtime(runtime: ApplicationRuntime) -> None:
+    """Expose one runtime through the legacy module-level compatibility facade."""
+    globals().update(runtime_bindings(runtime))
+    WEB_DEFAULTS["music_library_path"] = runtime.paths.default_music_library
 
 
 def _log_intention_provider_status() -> None:
@@ -3604,90 +3295,313 @@ def _log_intention_provider_status() -> None:
         logger.warning("Set Builder AI unavailable: deterministic offline rules will be used")
 
 
-app.router.add_event_handler("startup", _log_intention_provider_status)
+def create_app(
+    runtime: ApplicationRuntime | None = None,
+    *,
+    paths: ApplicationPaths | None = None,
+) -> FastAPI:
+    """Compose an isolated FastAPI application from explicit runtime dependencies."""
+    if runtime is not None and paths is not None:
+        raise ValueError("Pass either runtime or paths, not both")
+    runtime = runtime or ApplicationRuntime.create(paths or DEFAULT_PATHS)
+    _bind_runtime(runtime)
 
-app.include_router(
-    create_set_builder_router(
-        SetBuilderRouteDependencies(
-            catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
-            ensure_catalog_current=_ensure_library_search_index_current,
-            write_catalog_cache=_write_set_builder_catalog_cache,
+    global import_service, local_import_service, playlist_match_service, creative_commons_service
+    global library_maintenance_service, track_metadata_mutations, metadata_batch_service
+    global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
+    global set_review_service, candidate_retriever, set_plan_validator, track_planner
+    global downloaded_catalog_query_service, job_workflow_service, catalog_projection_publisher
+
+    catalog_projection_publisher = CatalogProjectionPublisher(
+        repository=lambda: repository,
+        rebuild=_refresh_library_search_index,
+        report_path=lambda: OUTPUT / "reports" / "processing_report.json",
+        catalog_path=lambda: SET_BUILDER_CATALOG_CACHE,
+        memory_cache=library_catalog_cache,
+        memory_cache_lock=library_catalog_cache_lock,
+    )
+
+    import_service = ImportService(
+        repository=repository,
+        processing_service=service,
+        library_root=_music_library_root,
+        effective_settings=_effective_settings,
+        preset_snapshot=_preset_snapshot,
+        duplicate_lookup=_cataloged_download_by_youtube_id,
+        probe_audio=_probe_local_audio,
+        cache_artwork=_cache_track_artwork,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    local_import_service = LocalAudioImportService(
+        repository=repository,
+        staging_root=INPUT / "local-imports",
+        require_library_online=_require_music_library_online,
+        probe_audio=_probe_local_audio,
+        generalized_genre=_generalized_genre,
+        genre_directory=_genre_directory,
+        write_metadata=write_wav_metadata,
+        write_source_metadata=_write_source_metadata,
+        safe_name=_safe_audio_name,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    playlist_match_service = PlaylistMatchService(
+        _match_tracks_to_youtube,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    creative_commons_service = CreativeCommonsImportService(
+        creative_commons_registry,
+        require_library_online=_require_music_library_online,
+        worker=_creative_commons_worker,
+        retry_worker=_retry_import_failures_worker,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    library_maintenance_service = LibraryMaintenanceService(
+        LibraryMaintenanceDependencies(
+            repository=lambda: repository,
             music_library_root=lambda: _music_library_root(),
-            safe_folder_name=_safe_folder_name,
-            intention_planner=intention_planner,
-            journey_planner=journey_planner,
+            require_library_online=lambda: _require_music_library_online(),
+            migrate_catalog=lambda **kwargs: _migrate_downloaded_catalog(**kwargs),
+            read_wav_metadata=read_wav_metadata,
+            sync_wav_metadata=sync_wav_metadata,
+            probe_local_audio=lambda path: _probe_local_audio(path),
+            catalog_genre_category=lambda path, genre, detailed: _catalog_genre_category(path, genre, detailed),
+            metadata_batches=metadata_batch_registry,
+            catalog_migration_lock=downloaded_catalog_migration_lock,
+            integrity_batches=integrity_scan_batches,
+            integrity_lock=integrity_scan_batch_lock,
         )
     )
-)
-app.include_router(
-    create_set_planning_router(
-        SetPlanningRouteDependencies(
-            catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
-            ensure_catalog_current=_ensure_library_search_index_current,
-            write_catalog_cache=_write_set_builder_catalog_cache,
-            candidate_retriever=candidate_retriever,
-            plan_validator=set_plan_validator,
-            track_planner=track_planner,
-            planning_job_store_path=SET_BUILDER_CATALOG_CACHE.with_name("set_planning_jobs.json"),
+    track_metadata_mutations = TrackMetadataMutationService(
+        TrackMetadataMutationDependencies(
+            repository=repository,
+            normalize_genre=_normalize_genre_category,
+            genre_directory=_genre_directory,
+            music_library_root=_music_library_root,
+            source_metadata_path=_source_metadata_path,
+            write_wav_metadata=write_wav_metadata,
+            write_source_metadata=_write_source_metadata,
+            publish_catalog=catalog_projection_publisher.publish,
         )
     )
-)
-app.include_router(create_set_preference_router(set_preference_service))
-app.include_router(create_set_review_router(set_review_service, set_preference_service))
-app.include_router(
-    create_library_router(
-        LibraryRouteDependencies(
+    metadata_batch_service = MetadataBatchService(
+        MetadataBatchDependencies(
             repository=lambda: repository,
-            ensure_search_index_current=_ensure_library_search_index_current,
+            require_library_online=_require_music_library_online,
+            sync_wav_metadata=sync_wav_metadata,
+            read_wav_artwork=read_wav_artwork,
+            embed_wav_artwork=embed_wav_artwork,
+            cache_track_artwork=_cache_track_artwork,
+            spotify_source_metadata=_spotify_source_metadata,
             generalized_genre=_generalized_genre,
-            catalog_cache=library_catalog_cache,
-            catalog_cache_lock=library_catalog_cache_lock,
+            normalize_genre=_normalize_genre_category,
+            genre_directory=_genre_directory,
+            change_genre=lambda track_ids, category: track_metadata_mutations.change_genre(
+                track_ids, category, publish=False
+            ),
+            publish_catalog=catalog_projection_publisher.publish,
+            refresh_wav_tag_audit=_refresh_wav_tag_audit,
+            schedule_wav_tag_audit_refresh=_schedule_wav_tag_audit_refresh,
+            music_library_root=_music_library_root,
+            registry=metadata_batch_registry,
         )
     )
-)
-app.include_router(
-    create_descriptor_router(
-        DescriptorRouteDependencies(
-            repository=lambda: repository,
-            invalidate_set_catalog=lambda: SET_BUILDER_CATALOG_CACHE.unlink(missing_ok=True),
+    downloaded_catalog_query_service = DownloadedCatalogQueryService(
+        repository=lambda: repository,
+        ensure_catalog_migrated=_ensure_downloaded_catalog_migrated,
+        normalize_genre_category=_normalize_genre_category,
+        track_payload=_downloaded_track_payload,
+    )
+    job_workflow_service = JobWorkflowService(
+        repository=repository,
+        processor=service,
+        input_root=INPUT,
+        supported_extensions=frozenset(SUPPORTED_EXTENSIONS),
+        supported_bar_counts=SUPPORTED_BAR_COUNTS,
+        available_presets=_available_presets,
+        effective_settings=_effective_settings,
+        preset_snapshot=_preset_snapshot,
+    )
+    _run_integrity_scan = library_maintenance_service.run_integrity_scan
+    intention_planner = IntentionPlanner.from_environment()
+    journey_planner = JourneyPlanner(intention_planner)
+    set_preference_service = DJPreferenceService(
+        JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
+    )
+    set_review_service = SetReviewService(
+        JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_reviews.json")),
+        set_preference_service.profile,
+    )
+    candidate_retriever = SetCandidateRetriever(
+        preference_ranker=PersonalizedCandidateRanker(set_preference_service.profile)
+    )
+    set_plan_validator = SetPlanValidator()
+    track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
+    runtime.services.update(
+        import_service=import_service,
+        local_import_service=local_import_service,
+        playlist_match_service=playlist_match_service,
+        creative_commons_service=creative_commons_service,
+        library_maintenance_service=library_maintenance_service,
+        track_metadata_mutations=track_metadata_mutations,
+        metadata_batch_service=metadata_batch_service,
+        downloaded_catalog_query_service=downloaded_catalog_query_service,
+        job_workflow_service=job_workflow_service,
+        _run_integrity_scan=_run_integrity_scan,
+        intention_planner=intention_planner,
+        journey_planner=journey_planner,
+        set_preference_service=set_preference_service,
+        set_review_service=set_review_service,
+        candidate_retriever=candidate_retriever,
+        set_plan_validator=set_plan_validator,
+        track_planner=track_planner,
+    )
+
+    application = install_error_handlers(FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None))
+    application.state.runtime = runtime
+    application.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
+    application.middleware("http")(record_api_performance)
+    application.mount(
+        "/vendor/wavesurfer",
+        StaticFiles(directory=PROJECT / "node_modules" / "wavesurfer.js" / "dist", check_dir=False),
+        name="wavesurfer",
+    )
+    application.mount("/assets", StaticFiles(directory=WEB, check_dir=False), name="assets")
+    application.include_router(legacy_router)
+    application.include_router(
+        create_settings_router(
+            SettingsRouteDependencies(
+                repository=lambda: repository,
+                job_service=service,
+                relocation=library_relocation,
+                import_services=(
+                    import_service,
+                    local_import_service,
+                    playlist_match_service,
+                    creative_commons_service,
+                ),
+                project=PROJECT,
+                input_root=INPUT,
+                output_root=OUTPUT,
+                database=DATABASE,
+                overrides_path=OVERRIDES,
+                presets_path=WEB_PRESETS,
+                backup_root=BACKUP_ROOT,
+                storage_snapshot=STORAGE_INVENTORY_SNAPSHOT,
+                cache_folder_name=CACHE_FOLDER_NAME,
+                supported_bar_counts=SUPPORTED_BAR_COUNTS,
+                defaults=WEB_DEFAULTS,
+                available_presets=_available_presets,
+                effective_settings=_effective_settings,
+                music_library_root=lambda: _music_library_root(),
+                library_location_summary=_library_location_summary,
+                source_metadata_path=_source_metadata_path,
+                refresh_wav_tag_audit=_refresh_wav_tag_audit,
+                metadata_batches=metadata_batch_registry,
+                library_status_cache=library_status_cache,
+                library_status_lock=library_status_cache_lock,
+                storage_inventory_cache=storage_inventory_cache,
+                storage_inventory_lock=storage_inventory_lock,
+                report_cache=report_cache,
+                catalog_cache=library_catalog_cache,
+                pending_restores=pending_backup_restores,
+            )
         )
     )
-)
-app.include_router(create_library_maintenance_router(library_maintenance_service))
-app.include_router(create_metadata_batch_router(metadata_batch_service))
-app.include_router(create_job_router(JobQueueService(repository=lambda: repository, processor=lambda: service)))
-app.include_router(
-    create_job_media_router(
-        JobMediaRouteDependencies(
-            repository=lambda: repository,
-            job_service=service,
-            record_cache_result=_record_cache_result,
-            waveform_locks_guard=waveform_generation_locks_guard,
-            waveform_locks=waveform_generation_locks,
+    application.include_router(
+        create_set_builder_router(
+            SetBuilderRouteDependencies(
+                catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+                ensure_catalog_current=_ensure_library_search_index_current,
+                write_catalog_cache=_write_set_builder_catalog_cache,
+                music_library_root=lambda: _music_library_root(),
+                safe_folder_name=_safe_folder_name,
+                intention_planner=intention_planner,
+                journey_planner=journey_planner,
+                saved_sets=SavedSetService(repository),
+            )
         )
     )
-)
-app.include_router(
-    create_reporting_router(
-        ReportingRouteDependencies(
-            repository=lambda: repository,
-            output_root=OUTPUT,
-            append_feedback=append_web_feedback,
-            refresh_library_index=_refresh_library_search_index,
-            valid_keys=frozenset(_CAMELOT_KEYS),
+    application.include_router(
+        create_set_planning_router(
+            SetPlanningRouteDependencies(
+                catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+                ensure_catalog_current=_ensure_library_search_index_current,
+                write_catalog_cache=_write_set_builder_catalog_cache,
+                candidate_retriever=candidate_retriever,
+                plan_validator=set_plan_validator,
+                track_planner=track_planner,
+                planning_job_store_path=SET_BUILDER_CATALOG_CACHE.with_name("set_planning_jobs.json"),
+            )
         )
     )
-)
-app.include_router(
-    create_import_router(
-        import_service,
-        local_import_service,
-        playlist_match_service,
-        _playlist_csv_tracks,
-        _safe_folder_name,
+    application.include_router(create_set_preference_router(set_preference_service))
+    application.include_router(create_set_review_router(set_review_service, set_preference_service))
+    application.include_router(
+        create_library_router(
+            LibraryRouteDependencies(
+                repository=lambda: repository,
+                ensure_search_index_current=_ensure_library_search_index_current,
+                generalized_genre=_generalized_genre,
+                catalog_cache=library_catalog_cache,
+                catalog_cache_lock=library_catalog_cache_lock,
+            )
+        )
     )
-)
+    application.include_router(
+        create_descriptor_router(
+            DescriptorRouteDependencies(
+                repository=lambda: repository,
+                invalidate_set_catalog=catalog_projection_publisher.publish,
+            )
+        )
+    )
+    application.include_router(create_library_maintenance_router(library_maintenance_service))
+    application.include_router(create_metadata_batch_router(metadata_batch_service))
+    application.include_router(
+        create_job_router(JobQueueService(repository=lambda: repository, processor=lambda: service))
+    )
+    application.include_router(
+        create_job_media_router(
+            JobMediaRouteDependencies(
+                repository=lambda: repository,
+                job_service=service,
+                record_cache_result=_record_cache_result,
+                waveform_locks_guard=waveform_generation_locks_guard,
+                waveform_locks=waveform_generation_locks,
+            )
+        )
+    )
+    application.include_router(
+        create_reporting_router(
+            ReportingRouteDependencies(
+                repository=lambda: repository,
+                output_root=OUTPUT,
+                append_feedback=append_web_feedback,
+                refresh_library_index=catalog_projection_publisher.publish,
+                valid_keys=frozenset(_CAMELOT_KEYS),
+            )
+        )
+    )
+    application.include_router(
+        create_import_router(
+            import_service,
+            local_import_service,
+            playlist_match_service,
+            _playlist_csv_tracks,
+            _safe_folder_name,
+        )
+    )
+
+    def startup() -> None:
+        runtime.repository.recover_interrupted()
+        _log_intention_provider_status()
+
+    application.router.add_event_handler("startup", startup)
+    return application
+
+
+app: Any = LazyApplication(create_app)
 
 
 if __name__ == "__main__":
-    uvicorn.run("audioextender.web.application:app", host="127.0.0.1", port=8765, reload=False)
+    uvicorn.run("audioextender.web.application:create_app", host="127.0.0.1", port=8765, reload=False, factory=True)

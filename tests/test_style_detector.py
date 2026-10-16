@@ -4,56 +4,9 @@ import unittest
 
 import numpy as np
 
-from audioextender.analysis.key_detection import TrackAnalysis
 from audioextender.analysis.style_detector import classify_track_sections, detect_editing_style
 from audioextender.processing.track_processor import _arrangement_sections
-
-
-def analysis(
-    *,
-    bpm: float = 120.0,
-    percussion: float = 0.35,
-    harmonic: float = 0.35,
-    onset: float = 0.30,
-    grid: float = 70.0,
-    drift: float = 2.0,
-    groove: str = "straight",
-    timing: str = "steady",
-    dynamic_low: float = 0.3,
-    dynamic_high: float = 0.6,
-) -> TrackAnalysis:
-    frames = np.linspace(0.0, 10.0, 32)
-    rms = np.linspace(dynamic_low, dynamic_high, 32)
-    values = np.full(32, onset)
-    return TrackAnalysis(
-        bpm=bpm,
-        tempo_drift_percent=drift,
-        beat_grid_confidence=grid,
-        key_label="C major",
-        key_confidence=70.0,
-        key_root=0,
-        key_mode="major",
-        groove_label=groove,
-        swing_ratio=1.0,
-        timing_label=timing,
-        downbeat_continuity=0.8,
-        bar_grid_confidence=np.ones(8),
-        bar_section_labels=np.asarray(["groove"] * 8),
-        bar_section_confidence=np.ones(8),
-        beat_times=np.arange(32, dtype=float),
-        downbeat_indices=np.arange(0, 32, 4),
-        bar_boundaries=np.arange(9, dtype=float),
-        frame_times=frames,
-        rms=rms,
-        onset=values,
-        percussion_rms=np.full(32, percussion),
-        harmonic_rms=np.full(32, harmonic),
-        bass_rms=np.full(32, 0.3),
-        spectral_centroid=np.full(32, 0.4),
-        spectral_flux=np.full(32, 0.2),
-        chroma=np.ones((12, 32)),
-        spectral_profile=np.ones((8, 32)),
-    )
+from tests.factories import track_analysis as analysis
 
 
 class StyleDetectorTests(unittest.TestCase):

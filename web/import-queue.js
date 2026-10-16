@@ -1,3 +1,5 @@
+import {apiErrorMessage} from './api-client.js';
+
 const STORAGE_KEY = 'audioextender.authorized-import-queue.v1';
 const TERMINAL = new Set(['complete', 'failed', 'canceled']);
 
@@ -76,7 +78,7 @@ export class AuthorizedImportQueue {
           body:JSON.stringify({...queue.basePayload, url:item.url, ...queue.metadata}),
         });
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.detail || 'Could not start import.');
+        if (!response.ok) throw new Error(apiErrorMessage(payload, 'Could not start import.'));
         item.importId = payload.import_id;
         this.persist();
       }

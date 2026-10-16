@@ -1,3 +1,5 @@
+import {useFrontendServices} from './frontend-services.js';
+
 export function createSettingsController({loadConfig, loadPresets, loadLibraryStatus, loadRelocationState}) {
   return {
     initialize(afterConfig) {
@@ -12,7 +14,6 @@ export function createSettingsController({loadConfig, loadPresets, loadLibrarySt
     },
   };
 }
-
 export function libraryAvailabilityView(status = {}) {
   const online = Boolean(status.online);
   const offlineTracks = Number(status.offline_tracks || 0);
@@ -23,14 +24,14 @@ export function libraryAvailabilityView(status = {}) {
     label: online ? 'Library online' : 'Library offline',
   };
 }
-
 export function createSettingsFeature({
-  $, apiErrorMessage, operationReceiptText, downloadedUiState, setAppConfig,
+  services, downloadedUiState, setAppConfig,
   applyEffectiveSettings, loadConfig, loadPresets, editPreset, getPresetLibrary,
   loadJobs, loadAnalysis, loadDownloadedLibrary, loadLibrary, invalidateCatalogs,
-  loadPerformanceDiagnostics, escapeHtml, confirmAction, reportDate,
+  loadPerformanceDiagnostics, escapeHtml, reportDate,
   libraryAvailabilityView,
 }) {
+  const {api, $, operationReceiptText, confirmAction} = useFrontendServices(services);
   $('#settings-form').addEventListener('submit', async event => {
     event.preventDefault();
     const values = {
@@ -53,9 +54,9 @@ export function createSettingsFeature({
       maximum_bass_reset_risk_percent: Number($('#setting-bass-risk').value),
       minimum_stem_reliability_percent: Number($('#setting-stem-reliability').value),
     };
-    const response = await fetch('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(values) });
+    const response = await api.raw('/api/settings', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(values) });
     const payload = await response.json();
-    if (!response.ok) { $('#settings-message').textContent = apiErrorMessage(payload, 'Could not save settings.'); return; }
+    if (!response.ok) { $('#settings-message').textContent = api.errorMessage(payload, 'Could not save settings.'); return; }
     const pageSize = $('#setting-page-size').value;
     localStorage.setItem('music-files-page-size', pageSize);
     localStorage.setItem('dj-library-page-size', pageSize);
@@ -89,10 +90,10 @@ export function createSettingsFeature({
   });
 
   $('#reset-settings').addEventListener('click', async () => {
-    const payload = await fetch('/api/settings', { method:'DELETE' }).then(r => r.json());
+    const payload = await api.raw('/api/settings', { method:'DELETE' }).then(r => r.json());
     localStorage.setItem('music-files-page-size', '50'); localStorage.setItem('dj-library-page-size', '50');
     localStorage.setItem('audioextender-key-view', 'both'); downloadedUiState.pageSize = 50;
-    appConfig.effective = payload.effective; appConfig.overrides = {};
+    setAppConfig({effective:payload.effective,overrides:{}});
     applyEffectiveSettings(payload.effective); $('#settings-form').classList.remove('is-dirty'); $('#settings-message').textContent = operationReceiptText(payload.receipt);
   });
 
@@ -135,8 +136,8 @@ export function createSettingsFeature({
   let libraryHealthRequest=null;
   async function loadLibraryHealth(){
     if(libraryHealthRequest)return libraryHealthRequest;
-    libraryHealthRequest=fetch('/api/settings/library-health',{cache:'no-store'}).then(async response=>{const payload=await response.json();if(!response.ok)throw new Error(response.status===404?'Restart the app once to enable the new library health service.':payload.detail||'Library health could not be loaded.');renderLibraryHealth(payload);return payload;}).catch(async error=>{
-      if(error.message.startsWith('Restart the app'))try{const status=await fetch('/api/settings/library-status',{cache:'no-store'}).then(response=>response.json());renderLibraryHealth({configured_folder:status.path,online:status.online,outside_folder:status.location_integrity?.outside_count||0,missing_files:status.offline_tracks||0,pending_metadata_writes:0,failed_metadata_operations:0,storage:status,audio_quality:status.audio_quality,verified:status.online&&!status.offline_tracks});const button=$('#verify-library');button.disabled=true;button.textContent='Restart required';}catch(_){/* Keep the actionable restart message. */}
+    libraryHealthRequest=api.raw('/api/settings/library-health',{cache:'no-store'}).then(async response=>{const payload=await response.json();if(!response.ok)throw new Error(response.status===404?'Restart the app once to enable the new library health service.':api.errorMessage(payload,'Library health could not be loaded.'));renderLibraryHealth(payload);return payload;}).catch(async error=>{
+      if(error.message.startsWith('Restart the app'))try{const status=await api.raw('/api/settings/library-status',{cache:'no-store'}).then(response=>response.json());renderLibraryHealth({configured_folder:status.path,online:status.online,outside_folder:status.location_integrity?.outside_count||0,missing_files:status.offline_tracks||0,pending_metadata_writes:0,failed_metadata_operations:0,storage:status,audio_quality:status.audio_quality,verified:status.online&&!status.offline_tracks});const button=$('#verify-library');button.disabled=true;button.textContent='Restart required';}catch(_){/* Keep the actionable restart message. */}
       $('#library-health-message').textContent=error.message;return null;
     }).finally(()=>{libraryHealthRequest=null;});
     return libraryHealthRequest;
@@ -145,7 +146,7 @@ export function createSettingsFeature({
     if(libraryStatusRequest)return libraryStatusRequest;
     libraryStatusRequest=(async()=>{
     try {
-      const status=await fetch('/api/settings/library-status',{cache:'no-store'}).then(response=>response.json());
+      const status=await api.raw('/api/settings/library-status',{cache:'no-store'}).then(response=>response.json());
       $('#relocation-current-path').textContent=status.path||'—';
       $('#relocation-current-detail').textContent=`${status.available_tracks} of ${status.cataloged_tracks} tracks available${status.offline_tracks?` · ${status.offline_tracks} offline`:''}`;
       $('#library-song-storage').textContent=formatBytes(status.song_bytes);
@@ -173,27 +174,27 @@ export function createSettingsFeature({
   $('#verify-library').addEventListener('click',async()=>{
     const button=$('#verify-library');button.disabled=true;button.textContent='Verifying…';$('#library-health-message').textContent='Checking the configured folder, catalog paths, metadata operations, storage, and audio quality…';
     try{
-      const response=await fetch('/api/settings/library-health/verify',{method:'POST'}),health=await response.json();
-      if(!response.ok)throw new Error(health.detail||'The library could not be verified.');
+      const response=await api.raw('/api/settings/library-health/verify',{method:'POST'}),health=await response.json();
+      if(!response.ok)throw new Error(api.errorMessage(health,'The library could not be verified.'));
       renderLibraryHealth(health);libraryStatusRequest=null;await loadLibraryStatus();
       $('#library-health-message').textContent=health.verified?'Verification complete · every cataloged track is available.':`Verification complete · ${health.missing_files} missing and ${health.outside_folder} outside the configured folder.`;
       invalidateCatalogs();
     }catch(error){$('#library-health-message').textContent=error.message;button.disabled=false;button.textContent='Verify library';}
   });
-  async function pollLibraryConsolidation(batchId){const button=$('#library-consolidate');const response=await fetch(`/api/settings/library-locations/consolidate/${batchId}`,{cache:'no-store'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=batch.detail||'Consolidation failed';return;}button.textContent=`Verified ${batch.processed}/${batch.total}`;if(batch.status==='processing'){setTimeout(()=>pollLibraryConsolidation(batchId),800);return;}button.disabled=false;button.textContent=batch.failed?`${batch.moved} moved · ${batch.failed} failed`:'Consolidation complete';invalidateCatalogs();await Promise.all([loadLibraryStatus(),loadDownloadedLibrary(),loadLibrary()]);}
-  $('#library-consolidate').addEventListener('click',async()=>{const button=$('#library-consolidate');if(!confirm('Copy every out-of-library track to the configured library, verify its SHA-256 checksum, relink catalog and analysis records, then remove the original file?'))return;button.disabled=true;button.textContent='Preparing…';const response=await fetch('/api/settings/library-locations/consolidate',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=batch.detail||'Could not consolidate';return;}if(batch.batch_id)pollLibraryConsolidation(batch.batch_id);else{button.disabled=false;button.textContent='Nothing to consolidate';await loadLibraryStatus();}});
+  async function pollLibraryConsolidation(batchId){const button=$('#library-consolidate');const response=await api.raw(`/api/settings/library-locations/consolidate/${batchId}`,{cache:'no-store'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=api.errorMessage(batch,'Consolidation failed');return;}button.textContent=`Verified ${batch.processed}/${batch.total}`;if(batch.status==='processing'){setTimeout(()=>pollLibraryConsolidation(batchId),800);return;}button.disabled=false;button.textContent=batch.failed?`${batch.moved} moved · ${batch.failed} failed`:'Consolidation complete';invalidateCatalogs();await Promise.all([loadLibraryStatus(),loadDownloadedLibrary(),loadLibrary()]);}
+  $('#library-consolidate').addEventListener('click',async()=>{const button=$('#library-consolidate');if(!confirm('Copy every out-of-library track to the configured library, verify its SHA-256 checksum, relink catalog and analysis records, then remove the original file?'))return;button.disabled=true;button.textContent='Preparing…';const response=await api.raw('/api/settings/library-locations/consolidate',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent=api.errorMessage(batch,'Could not consolidate');return;}if(batch.batch_id)pollLibraryConsolidation(batch.batch_id);else{button.disabled=false;button.textContent='Nothing to consolidate';await loadLibraryStatus();}});
   let qualityScanTimer=null;
   async function pollAudioQualityScan(batchId){
-    const batch=await fetch(`/api/downloaded-library/audio-quality/${batchId}`,{cache:'no-store'}).then(response=>response.json());
+    const batch=await api.raw(`/api/downloaded-library/audio-quality/${batchId}`,{cache:'no-store'}).then(response=>response.json());
     const panel=$('#quality-scan-progress'),total=Math.max(1,Number(batch.total||0));panel.hidden=false;
     $('#quality-scan-bar').value=100*Number(batch.processed||0)/total;
     $('#quality-scan-message').textContent=batch.status==='complete'?`Complete · ${batch.processed} analyzed${batch.failed?` · ${batch.failed} unavailable`:''}`:`${batch.processed} of ${batch.total} · ${batch.current||'Preparing…'}`;
     $('#scan-audio-quality').disabled=batch.status==='processing';$('#scan-audio-quality').textContent=batch.status==='processing'?'Analyzing…':'Analyze audio quality';
     if(batch.summary)renderAudioQualitySummary(batch.summary);
-    if(batch.status==='processing'){clearTimeout(qualityScanTimer);qualityScanTimer=setTimeout(()=>pollAudioQualityScan(batchId),900);}else{downloadedLoadedAt=0;await loadLibraryStatus();}
+    if(batch.status==='processing'){clearTimeout(qualityScanTimer);qualityScanTimer=setTimeout(()=>pollAudioQualityScan(batchId),900);}else{invalidateCatalogs();await loadLibraryStatus();}
   }
-  $('#scan-audio-quality').addEventListener('click',async()=>{const button=$('#scan-audio-quality');button.disabled=true;button.textContent='Starting…';const response=await fetch('/api/downloaded-library/audio-quality',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent='Analyze audio quality';$('#quality-scan-message').textContent=batch.detail||'Could not start quality analysis.';return;}pollAudioQualityScan(batch.batch_id);});
-  fetch('/api/downloaded-library/audio-quality-latest',{cache:'no-store'}).then(response=>response.json()).then(batch=>{if(batch.summary)renderAudioQualitySummary(batch.summary);if(batch.status==='processing')pollAudioQualityScan(batch.batch_id);}).catch(()=>{});
+  $('#scan-audio-quality').addEventListener('click',async()=>{const button=$('#scan-audio-quality');button.disabled=true;button.textContent='Starting…';const response=await api.raw('/api/downloaded-library/audio-quality',{method:'POST'});const batch=await response.json();if(!response.ok){button.disabled=false;button.textContent='Analyze audio quality';$('#quality-scan-message').textContent=api.errorMessage(batch,'Could not start quality analysis.');return;}pollAudioQualityScan(batch.batch_id);});
+  api.raw('/api/downloaded-library/audio-quality-latest',{cache:'no-store'}).then(response=>response.json()).then(batch=>{if(batch.summary)renderAudioQualitySummary(batch.summary);if(batch.status==='processing')pollAudioQualityScan(batch.batch_id);}).catch(()=>{});
   function renderRelocationState(state) {
     if(!state?.status){resetRelocationUi();return;}
     const panel=$('#relocation-progress');panel.hidden=false;panel.classList.toggle('complete',state.status==='complete');panel.classList.toggle('failed',['failed','canceled'].includes(state.status));
@@ -204,21 +205,21 @@ export function createSettingsFeature({
     if(['processing','canceling'].includes(state.status)){clearTimeout(relocationPollTimer);relocationPollTimer=setTimeout(loadRelocationState,750);}else if(state.status==='complete'){loadLibraryStatus();loadConfig();invalidateCatalogs();}
   }
   function resetRelocationUi(){clearTimeout(relocationPollTimer);$('#relocation-progress').hidden=true;$('#relocation-plan-summary').hidden=true;$('#relocation-plan-summary').replaceChildren();$('#relocation-stage').textContent='Preparing…';$('#relocation-percent').textContent='0%';$('#relocation-progress-bar').value=0;$('#relocation-detail').textContent='';$('#relocation-start').hidden=false;$('#relocation-cancel').hidden=false;$('#relocation-rollback').hidden=true;}
-  async function loadRelocationState(){try{const response=await fetch('/api/settings/library-relocation',{cache:'no-store'});if(!response.ok)return;const state=await response.json();if(state.status==='canceled'){await fetch('/api/settings/library-relocation',{method:'DELETE'});resetRelocationUi();return;}renderRelocationState(state);}catch{} }
+  async function loadRelocationState(){try{const response=await api.raw('/api/settings/library-relocation',{cache:'no-store'});if(!response.ok)return;const state=await response.json();if(state.status==='canceled'){await api.raw('/api/settings/library-relocation',{method:'DELETE'});resetRelocationUi();return;}renderRelocationState(state);}catch{} }
   $('#library-relocation-form').addEventListener('submit',async event=>{
     event.preventDefault();const button=$('#relocation-plan');button.disabled=true;button.textContent='Checking…';
-    const response=await fetch('/api/settings/library-relocation/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destination:$('#relocation-destination').value.trim(),mode:$('#relocation-mode').value,verification:$('#relocation-verification').value})});
+    const response=await api.raw('/api/settings/library-relocation/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({destination:$('#relocation-destination').value.trim(),mode:$('#relocation-mode').value,verification:$('#relocation-verification').value})});
     const plan=await response.json();button.disabled=false;button.textContent='Review plan';
-    if(!response.ok){$('#relocation-plan-summary').hidden=false;$('#relocation-plan-summary').innerHTML=`<b>Cannot continue</b><span>${escapeHtml(plan.detail||'The relocation plan could not be created.')}</span>`;return;}
+    if(!response.ok){$('#relocation-plan-summary').hidden=false;$('#relocation-plan-summary').innerHTML=`<b>Cannot continue</b><span>${escapeHtml(api.errorMessage(plan,'The relocation plan could not be created.'))}</span>`;return;}
     const labels={copy:'Copy only · current library remains active',move:'Copy, verify, and activate destination',relink:'Relink existing files without copying'};
     const summary=$('#relocation-plan-summary');summary.hidden=false;summary.innerHTML=`<span><b>${escapeHtml(labels[plan.mode])}</b></span><span>${plan.track_count} cataloged tracks</span><span>${plan.file_count} files</span><span>${formatBytes(plan.total_bytes)}</span><span>${plan.verification==='full'?'Full content verification':'Fast verification'}</span>${plan.missing_source_tracks?`<span>${plan.missing_source_tracks} source tracks already missing</span>`:''}`;
     renderRelocationState(plan);
   });
   $('#relocation-start').addEventListener('click',async()=>{
-    const response=await fetch('/api/settings/library-relocation/start',{method:'POST'});const state=await response.json();if(!response.ok){renderRelocationState({status:'failed',stage:'Could not start',error:state.detail});return;}renderRelocationState(state);
+    const response=await api.raw('/api/settings/library-relocation/start',{method:'POST'});const state=await response.json();if(!response.ok){renderRelocationState({status:'failed',stage:'Could not start',error:state.detail});return;}renderRelocationState(state);
   });
-  $('#relocation-cancel').addEventListener('click',async()=>renderRelocationState(await fetch('/api/settings/library-relocation/cancel',{method:'POST'}).then(response=>response.json())));
-  $('#relocation-rollback').addEventListener('click',async()=>{if(!await confirmAction('Restore the catalog and settings to the original library? The copied destination will be kept.', {title:'Roll back relocation', acceptLabel:'Restore catalog', danger:true}))return;const response=await fetch('/api/settings/library-relocation/rollback',{method:'POST'});const state=await response.json();renderRelocationState(response.ok?state:{status:'failed',stage:'Rollback failed',error:state.detail});await loadLibraryStatus();await loadConfig();});
+  $('#relocation-cancel').addEventListener('click',async()=>renderRelocationState(await api.raw('/api/settings/library-relocation/cancel',{method:'POST'}).then(response=>response.json())));
+  $('#relocation-rollback').addEventListener('click',async()=>{if(!await confirmAction('Restore the catalog and settings to the original library? The copied destination will be kept.', {title:'Roll back relocation', acceptLabel:'Restore catalog', danger:true}))return;const response=await api.raw('/api/settings/library-relocation/rollback',{method:'POST'});const state=await response.json();renderRelocationState(response.ok?state:{status:'failed',stage:'Rollback failed',error:state.detail});await loadLibraryStatus();await loadConfig();});
 
   let pendingBackupToken='';
   function backupHistoryMarkup(backups){
@@ -227,22 +228,22 @@ export function createSettingsFeature({
   }
   async function loadBackups(){
     const root=$('#backup-history');if(!root)return;
-    try{const response=await fetch('/api/settings/backups',{cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(payload.detail||'Backups could not be loaded.');$('#backup-directory').textContent=payload.directory||'';root.innerHTML=backupHistoryMarkup(payload.backups||[]);}catch(error){root.innerHTML=`<p class="empty">${escapeHtml(error.message)}</p>`;}
+    try{const response=await api.raw('/api/settings/backups',{cache:'no-store'});const payload=await response.json();if(!response.ok)throw new Error(api.errorMessage(payload,'Backups could not be loaded.'));$('#backup-directory').textContent=payload.directory||'';root.innerHTML=backupHistoryMarkup(payload.backups||[]);}catch(error){root.innerHTML=`<p class="empty">${escapeHtml(error.message)}</p>`;}
   }
   $('#refresh-backups').addEventListener('click',loadBackups);
   $('#create-backup').addEventListener('click',async()=>{
     const button=$('#create-backup');button.disabled=true;button.textContent='Creating & validating…';$('#backup-message').textContent='Taking a consistent database snapshot and checking every protected file.';
-    try{const response=await fetch('/api/settings/backups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({include_analysis_cache:$('#backup-include-cache').checked,retention:Number($('#backup-retention').value)})});const result=await response.json();if(!response.ok)throw new Error(result.detail||'Backup could not be created.');$('#backup-message').innerHTML=`Backup verified · ${result.track_count} tracks · ${formatBytes(result.size)} · <a href="${escapeHtml(result.download_url)}">Download a copy</a>`;await loadBackups();}catch(error){$('#backup-message').textContent=error.message;}finally{button.disabled=false;button.textContent='Create backup';}
+    try{const response=await api.raw('/api/settings/backups',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({include_analysis_cache:$('#backup-include-cache').checked,retention:Number($('#backup-retention').value)})});const result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Backup could not be created.'));$('#backup-message').innerHTML=`Backup verified · ${result.track_count} tracks · ${formatBytes(result.size)} · <a href="${escapeHtml(result.download_url)}">Download a copy</a>`;await loadBackups();}catch(error){$('#backup-message').textContent=error.message;}finally{button.disabled=false;button.textContent='Create backup';}
   });
   $('#backup-restore-file').addEventListener('change',async event=>{
     const file=event.target.files?.[0],preview=$('#backup-restore-preview');pendingBackupToken='';if(!file){preview.hidden=true;return;}preview.hidden=false;preview.innerHTML='<p>Uploading and validating every protected file…</p>';
     const body=new FormData();body.append('file',file);
-    try{const response=await fetch('/api/settings/backups/preview',{method:'POST',body});const result=await response.json();if(!response.ok)throw new Error(result.detail||'Backup validation failed.');pendingBackupToken=result.token;const difference=Number(result.track_difference||0);preview.innerHTML=`<div class="backup-preview-summary"><strong>Valid recovery backup</strong><span>${reportDate(result.created_at)} · ${result.track_count} tracks · ${result.file_count} files · ${formatBytes(result.size)}</span><small>Original library: ${escapeHtml(result.library_path||'Unknown')}</small><small>${difference===0?'Same catalog size as today':difference>0?`${difference} more tracks than the current catalog`:`${Math.abs(difference)} fewer tracks than the current catalog`}${result.includes_analysis_cache?' · analysis cache included':' · analysis cache will rebuild as needed'}</small></div><label>Type <b>RESTORE BACKUP</b> to confirm<input class="backup-restore-confirmation" autocomplete="off" spellcheck="false" placeholder="RESTORE BACKUP"></label><button type="button" class="restore-backup" disabled>Restore validated backup</button><p class="backup-restore-message"></p>`;const input=preview.querySelector('input'),button=preview.querySelector('.restore-backup');input.oninput=()=>button.disabled=input.value!=='RESTORE BACKUP';button.onclick=()=>restoreSelectedBackup(button,input,preview.querySelector('.backup-restore-message'));}catch(error){preview.innerHTML=`<p class="backup-error">${escapeHtml(error.message)}</p>`;}
+    try{const response=await api.raw('/api/settings/backups/preview',{method:'POST',body});const result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Backup validation failed.'));pendingBackupToken=result.token;const difference=Number(result.track_difference||0);preview.innerHTML=`<div class="backup-preview-summary"><strong>Valid recovery backup</strong><span>${reportDate(result.created_at)} · ${result.track_count} tracks · ${result.file_count} files · ${formatBytes(result.size)}</span><small>Original library: ${escapeHtml(result.library_path||'Unknown')}</small><small>${difference===0?'Same catalog size as today':difference>0?`${difference} more tracks than the current catalog`:`${Math.abs(difference)} fewer tracks than the current catalog`}${result.includes_analysis_cache?' · analysis cache included':' · analysis cache will rebuild as needed'}</small></div><label>Type <b>RESTORE BACKUP</b> to confirm<input class="backup-restore-confirmation" autocomplete="off" spellcheck="false" placeholder="RESTORE BACKUP"></label><button type="button" class="restore-backup" disabled>Restore validated backup</button><p class="backup-restore-message"></p>`;const input=preview.querySelector('input'),button=preview.querySelector('.restore-backup');input.oninput=()=>button.disabled=input.value!=='RESTORE BACKUP';button.onclick=()=>restoreSelectedBackup(button,input,preview.querySelector('.backup-restore-message'));}catch(error){preview.innerHTML=`<p class="backup-error">${escapeHtml(error.message)}</p>`;}
   });
   async function restoreSelectedBackup(button,input,message){
     if(!pendingBackupToken||input.value!=='RESTORE BACKUP')return;
     button.disabled=true;button.textContent='Creating safety snapshot…';message.textContent='The current state is being backed up before restoration.';
-    try{const response=await fetch('/api/settings/backups/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:pendingBackupToken,confirmation:input.value})});const result=await response.json();if(!response.ok)throw new Error(result.detail||'Restore failed.');pendingBackupToken='';message.textContent=`Restore complete. A pre-restore backup was saved as ${result.pre_restore_backup.filename}.`;button.textContent='Restored';await loadConfig();await loadBackups();invalidateCatalogs();}catch(error){message.textContent=error.message;button.disabled=false;button.textContent='Restore validated backup';}
+    try{const response=await api.raw('/api/settings/backups/restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:pendingBackupToken,confirmation:input.value})});const result=await response.json();if(!response.ok)throw new Error(api.errorMessage(result,'Restore failed.'));pendingBackupToken='';message.textContent=`Restore complete. A pre-restore backup was saved as ${result.pre_restore_backup.filename}.`;button.textContent='Restored';await loadConfig();await loadBackups();invalidateCatalogs();}catch(error){message.textContent=error.message;button.disabled=false;button.textContent='Restore validated backup';}
   }
 
   let storageManagerRequest=null;
@@ -254,14 +255,14 @@ export function createSettingsFeature({
   }
   async function loadStorageManager(){
     if(storageManagerRequest)return storageManagerRequest;
-    storageManagerRequest=fetch('/api/settings/storage',{cache:'no-store'}).then(async response=>{if(!response.ok)throw new Error('Storage details could not be loaded.');const storage=await response.json();renderStorageManager(storage);return storage;}).catch(error=>{$('#storage-manager-summary').innerHTML=`<p>${escapeHtml(error.message)}</p>`;}).finally(()=>{storageManagerRequest=null;});
+    storageManagerRequest=api.raw('/api/settings/storage',{cache:'no-store'}).then(async response=>{if(!response.ok)throw new Error('Storage details could not be loaded.');const storage=await response.json();renderStorageManager(storage);return storage;}).catch(error=>{$('#storage-manager-summary').innerHTML=`<p>${escapeHtml(error.message)}</p>`;}).finally(()=>{storageManagerRequest=null;});
     return storageManagerRequest;
   }
   async function cleanManagedStorage(target,label){
     if(!await confirmAction(`Remove ${label}? Your songs, catalog metadata, and current analysis will be preserved.`, {title:'Clean application storage', acceptLabel:'Remove files', danger:true}))return;
     const button=target==='stale-cache'?$('#clear-stale-cache'):$('#clear-orphaned-output');button.disabled=true;button.textContent='Cleaning…';$('#storage-manager-message').textContent='';
-    const response=await fetch('/api/settings/storage/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})});const payload=await response.json();
-    if(!response.ok){$('#storage-manager-message').textContent=payload.detail||'Storage cleanup failed.';await loadStorageManager();return;}
+    const response=await api.raw('/api/settings/storage/cleanup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})});const payload=await response.json();
+    if(!response.ok){$('#storage-manager-message').textContent=api.errorMessage(payload,'Storage cleanup failed.');await loadStorageManager();return;}
     renderStorageManager(payload.storage);$('#storage-manager-message').textContent=`Removed ${payload.removed_files} files and reclaimed ${formatBytes(payload.removed_bytes)}.`;
   }
   $('#clear-stale-cache').addEventListener('click',()=>cleanManagedStorage('stale-cache','stale analysis cache files'));
@@ -277,10 +278,10 @@ export function createSettingsFeature({
     if (cleanupConfirmation.value !== 'DELETE EVERYTHING') return;
     if (!await confirmAction('This permanently removes every song, edit, track report, cache entry, and processing-history item managed by DJ Library Studio. Your presets and settings will be kept. Continue?', {title:'Remove all managed track data', acceptLabel:'Remove everything', danger:true})) return;
     cleanupButton.disabled = true; cleanupButton.textContent = 'Cleaning up…';
-    const response = await fetch('/api/settings/cleanup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirmation:cleanupConfirmation.value})});
+    const response = await api.raw('/api/settings/cleanup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirmation:cleanupConfirmation.value})});
     const payload = await response.json();
     if (!response.ok) {
-      $('#cleanup-message').textContent = payload.detail || 'The application could not be cleaned up.';
+      $('#cleanup-message').textContent = api.errorMessage(payload, 'The application could not be cleaned up.');
       cleanupButton.textContent = 'Remove all tracks'; cleanupButton.disabled = false; return;
     }
     cleanupConfirmation.value = '';
@@ -294,21 +295,21 @@ export function createSettingsFeature({
     event.preventDefault();
     const current = $('#preset-original-name').value || '__new__';
     const body = {name:$('#preset-name').value.trim(), intro_bars:Number($('#preset-intro').value), outro_bars:Number($('#preset-outro').value), use_stems:$('#preset-stems').checked, minimum_loop_quality:Number($('#preset-quality').value), maximum_repetitions:Number($('#preset-copies').value)};
-    const response = await fetch(`/api/presets/${encodeURIComponent(current)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+    const response = await api.raw(`/api/presets/${encodeURIComponent(current)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     const payload = await response.json();
-    if (!response.ok) { $('#preset-message').textContent = payload.detail || 'Could not save preset.'; return; }
+    if (!response.ok) { $('#preset-message').textContent = api.errorMessage(payload, 'Could not save preset.'); return; }
     $('#preset-message').textContent = 'Preset saved.'; await loadConfig(); await loadPresets(); editPreset(getPresetLibrary().find(preset => preset.name === body.name));
   });
   $('#delete-preset').addEventListener('click', async () => {
     const name = $('#preset-original-name').value;
     if (!name || name === '__new__' || !await confirmAction(`Remove the ${name} preset? Existing processed generations will keep their saved configuration.`, {title:'Delete preset', acceptLabel:'Delete preset', danger:true})) return;
-    const response = await fetch(`/api/presets/${encodeURIComponent(name)}`, {method:'DELETE'});
-    if (!response.ok) { $('#preset-message').textContent = (await response.json()).detail || 'Could not remove preset.'; return; }
+    const response = await api.raw(`/api/presets/${encodeURIComponent(name)}`, {method:'DELETE'});
+    if (!response.ok) { $('#preset-message').textContent = api.errorMessage(await response.json(), 'Could not remove preset.'); return; }
     await loadConfig(); await loadPresets(); editPreset(getPresetLibrary()[0] || null);
   });
   $('#restore-presets').addEventListener('click', async () => {
     if (!await confirmAction('Restore every maintained built-in preset and remove all custom preset definitions?', {title:'Restore built-in presets', acceptLabel:'Restore presets', danger:true})) return;
-    await fetch('/api/presets/restore', {method:'POST'}); await loadConfig(); await loadPresets(); editPreset(getPresetLibrary()[0] || null);
+    await api.raw('/api/presets/restore', {method:'POST'}); await loadConfig(); await loadPresets(); editPreset(getPresetLibrary()[0] || null);
   });
 
 

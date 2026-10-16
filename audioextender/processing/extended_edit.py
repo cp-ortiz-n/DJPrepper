@@ -133,11 +133,6 @@ def optimize_candidate_boundaries(
     )
 
 
-def _choose_splice_mode(candidate: SectionCandidate) -> str:
-    """Backward-compatible wrapper for callers of the original private API."""
-    return choose_splice_mode(candidate)
-
-
 def adaptive_crossfade_ms(candidate: SectionCandidate, minimum_ms: float) -> float:
     return crossfade_duration_ms(candidate, minimum_ms)
 

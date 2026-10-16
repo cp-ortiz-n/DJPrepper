@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "corrections": [
+    {
+      "field": "bpm",
+      "authoritative_write": "bpm_verifications",
+      "catalog": "durable",
+      "search_index": "synchronous-rebuild",
+      "dj_library": "updated",
+      "set_builder": "updated",
+      "refresh": "updated",
+      "restart": "durable",
+      "status": "covered",
+      "follow_up": ""
+    },
+    {
+      "field": "key",
+      "authoritative_write": "key_verifications",
+      "catalog": "durable",
+      "search_index": "synchronous-rebuild",
+      "dj_library": "updated",
+      "set_builder": "updated",
+      "refresh": "updated",
+      "restart": "durable",
+      "status": "covered",
+      "follow_up": ""
+    },
+    {
+      "field": "genre",
+      "authoritative_write": "downloaded_tracks-and-file-metadata",
+      "catalog": "durable",
+      "search_index": "synchronous-publication",
+      "dj_library": "updated",
+      "set_builder": "updated",
+      "refresh": "updated-before-write-completes",
+      "restart": "durable",
+      "status": "covered",
+      "follow_up": ""
+    },
+    {
+      "field": "identity",
+      "authoritative_write": "downloaded_track_descriptors",
+      "catalog": "durable",
+      "search_index": "live-descriptor-join",
+      "dj_library": "updated",
+      "set_builder": "cache-explicitly-invalidated",
+      "refresh": "updated",
+      "restart": "durable",
+      "status": "covered",
+      "follow_up": ""
+    }
+  ]
+}

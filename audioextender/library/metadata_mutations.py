@@ -18,6 +18,7 @@ class TrackMetadataMutationDependencies:
     source_metadata_path: Callable[[Path], Path]
     write_wav_metadata: Callable[..., None]
     write_source_metadata: Callable[[Path, dict], Any]
+    publish_catalog: Callable[[], Any]
 
 
 class TrackMetadataMutationService:
@@ -26,7 +27,7 @@ class TrackMetadataMutationService:
     def __init__(self, dependencies: TrackMetadataMutationDependencies) -> None:
         self.dependencies = dependencies
 
-    def change_genre(self, track_ids: list[int], genre_category: str) -> dict:
+    def change_genre(self, track_ids: list[int], genre_category: str, *, publish: bool = True) -> dict:
         tracks = self.dependencies.repository.list_downloaded_tracks()
         requested = self.dependencies.normalize_genre(genre_category.strip())
         category = next(
@@ -89,4 +90,6 @@ class TrackMetadataMutationService:
                 if destination.is_file() and destination.resolve() != source.resolve():
                     shutil.move(str(destination), str(source))
             raise
+        if publish and completed:
+            self.dependencies.publish_catalog()
         return {"updated": len(completed), "genre_category": category}

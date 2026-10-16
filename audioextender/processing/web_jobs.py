@@ -19,16 +19,15 @@ from audioextender.audio.wav_metadata import split_artist_title, write_wav_metad
 from audioextender.core.config import EditConfig
 from audioextender.core.interfaces import ProgressReporter
 from audioextender.core.presets import EditPreset, get_preset
+from audioextender.infrastructure.operation_lifecycle import AUDIO_JOBS, LifecycleProjection
 from audioextender.library.cue_export import write_rekordbox_xml
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.track_processor import process_file
 from audioextender.reporting.feedback import append_candidate_feedback
 from audioextender.reporting.processing import update_processing_report
-from audioextender.repositories.facade import JobRepository
+from audioextender.repositories.capabilities import JobQueueRepository
 from settings import (
     CACHE_FOLDER_NAME,
-    DEFAULT_INTRO_BARS,
-    DEFAULT_OUTRO_BARS,
     EXTENDED_OUTPUT_FOLDER_NAME,
     MINIMUM_CROSSFADE_MS,
     OUTPUT_FOLDER_NAME,
@@ -57,7 +56,7 @@ def _stage_duration(seconds: float) -> str:
 class DatabaseProgress(ProgressReporter):
     def __init__(
         self,
-        repository: JobRepository,
+        repository: JobQueueRepository,
         job_id: int,
         run_gate: threading.Event | None = None,
     ) -> None:
@@ -104,7 +103,7 @@ class DatabaseProgress(ProgressReporter):
 class WebJobService:
     """Run lightweight analysis in parallel while keeping heavy edits exclusive."""
 
-    def __init__(self, project: Path, repository: JobRepository) -> None:
+    def __init__(self, project: Path, repository: JobQueueRepository) -> None:
         self.project = project
         self.repository = repository
         self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="audioextender")
@@ -191,6 +190,13 @@ class WebJobService:
                 "pending": list(self._pending),
                 "pause_requested": bool(any(not gate.is_set() for gate in self._run_gates.values())),
             }
+
+    def lifecycle_status(self, job_id: int) -> LifecycleProjection:
+        """Project a persisted audio job into the shared lifecycle contract."""
+        job = self.repository.get(job_id)
+        if job is None:
+            raise KeyError("Audio job was not found")
+        return AUDIO_JOBS.project(job)
 
     def pause(self, job_id: int) -> bool:
         with self._lock:
@@ -421,7 +427,3 @@ class WebJobService:
         if override is None:
             return None, None, None
         return override.intro_before, override.outro_after, override.outro_before
-
-
-def default_job_values() -> tuple[int, int]:
-    return DEFAULT_INTRO_BARS, DEFAULT_OUTRO_BARS

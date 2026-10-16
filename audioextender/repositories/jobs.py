@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +10,7 @@ from audioextender.repositories.base import RepositoryMixinBase
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class JobQueueRepositoryMixin(RepositoryMixinBase):
@@ -243,7 +243,7 @@ class JobQueueRepositoryMixin(RepositoryMixinBase):
 
     def fail_stalled_jobs(self, minutes: int = 30) -> int:
         """Close processing records that have stopped reporting progress."""
-        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
+        cutoff = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat(timespec="seconds")
         with self._lock, closing(self._connect()) as connection, connection:
             cursor = connection.execute(
                 """UPDATE jobs SET status='failed', stage='Processing stalled',

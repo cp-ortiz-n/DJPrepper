@@ -9,6 +9,8 @@ __pycache__/
 .coverage
 coverage/
 htmlcov/
+playwright-report/
+test-results/
 input/*
 !input/.gitkeep
 output/*
@@ -19,4 +21,6 @@ cache/*
 *.dylib
 .venv-inte-l-backup/
 .venv-intel-backup/
-*graphify-out/
+# Ignore Graphify-generated architecture/analysis artifacts
+graphify-out/
+graphify-out/**

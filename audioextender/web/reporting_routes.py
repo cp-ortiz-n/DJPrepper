@@ -27,6 +27,13 @@ class KeyVerificationRequest(BaseModel):
     notes: str = Field(default="", max_length=1000)
 
 
+class BpmVerificationRequest(BaseModel):
+    source_name: str = Field(min_length=1, max_length=500)
+    verified_bpm: float = Field(ge=20, le=300)
+    detected_bpm: float = Field(default=0, ge=0, le=300)
+    notes: str = Field(default="", max_length=1000)
+
+
 @dataclass(frozen=True)
 class ReportingRouteDependencies:
     repository: Callable[[], Any]
@@ -118,6 +125,32 @@ def create_reporting_router(deps: ReportingRouteDependencies) -> APIRouter:
     @router.delete("/api/key-verifications/{source_name:path}")
     def remove_key_verification(source_name: str) -> dict:
         removed = deps.repository().delete_key_verification(Path(source_name).name)
+        if removed:
+            deps.refresh_library_index()
+        return {"removed": removed}
+
+    @router.get("/api/bpm-verifications")
+    def bpm_verifications() -> dict:
+        items = deps.repository().bpm_verifications()
+        return {"items": items, "total": len(items)}
+
+    @router.put("/api/bpm-verifications/{source_name:path}")
+    def save_bpm_verification(source_name: str, request: BpmVerificationRequest) -> dict:
+        normalized_source = Path(source_name).name
+        if Path(request.source_name).name.casefold() != normalized_source.casefold():
+            raise HTTPException(400, "Track identity does not match")
+        saved = deps.repository().set_bpm_verification(
+            normalized_source,
+            request.verified_bpm,
+            request.detected_bpm,
+            request.notes.strip(),
+        )
+        deps.refresh_library_index()
+        return saved
+
+    @router.delete("/api/bpm-verifications/{source_name:path}")
+    def remove_bpm_verification(source_name: str) -> dict:
+        removed = deps.repository().delete_bpm_verification(Path(source_name).name)
         if removed:
             deps.refresh_library_index()
         return {"removed": removed}

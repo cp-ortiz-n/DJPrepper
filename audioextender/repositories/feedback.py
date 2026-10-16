@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import json
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from audioextender.repositories.base import RepositoryMixinBase
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class FeedbackRepositoryMixin(RepositoryMixinBase):
@@ -147,6 +147,50 @@ class FeedbackRepositoryMixin(RepositoryMixinBase):
         with self._lock, closing(self._connect()) as connection, connection:
             cursor = connection.execute(
                 "DELETE FROM key_verifications WHERE source_name=? COLLATE NOCASE",
+                (source_name,),
+            )
+        return cursor.rowcount > 0
+
+    def set_bpm_verification(
+        self,
+        source_name: str,
+        verified_bpm: float,
+        detected_bpm: float,
+        notes: str = "",
+    ) -> dict[str, Any]:
+        """Persist a user-confirmed tempo independently from generated analysis."""
+        now = _now()
+        with self._lock, closing(self._connect()) as connection, connection:
+            connection.execute(
+                """INSERT INTO bpm_verifications
+                    (source_name, verified_bpm, detected_bpm, notes, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(source_name) DO UPDATE SET
+                    verified_bpm=excluded.verified_bpm,
+                    detected_bpm=excluded.detected_bpm,
+                    notes=excluded.notes,
+                    updated_at=excluded.updated_at""",
+                (source_name, verified_bpm, detected_bpm, notes, now, now),
+            )
+        return self.bpm_verification(source_name) or {}
+
+    def bpm_verification(self, source_name: str) -> dict[str, Any] | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT * FROM bpm_verifications WHERE source_name=? COLLATE NOCASE",
+                (source_name,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def bpm_verifications(self) -> list[dict[str, Any]]:
+        with closing(self._connect()) as connection:
+            rows = connection.execute("SELECT * FROM bpm_verifications ORDER BY updated_at DESC").fetchall()
+        return [dict(row) for row in rows]
+
+    def delete_bpm_verification(self, source_name: str) -> bool:
+        with self._lock, closing(self._connect()) as connection, connection:
+            cursor = connection.execute(
+                "DELETE FROM bpm_verifications WHERE source_name=? COLLATE NOCASE",
                 (source_name,),
             )
         return cursor.rowcount > 0

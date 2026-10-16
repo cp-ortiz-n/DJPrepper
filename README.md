@@ -68,8 +68,23 @@ server does.
 The browser code is split by user-facing feature: Music Files, DJ Library, Set
 Builder, Settings, and Analysis & Feedback each own their rendering and state.
 `web/app.js` is the composition/navigation entry point; shared request state,
-audio playback, and reusable controls live in dedicated modules. See
+audio playback, and reusable controls live in dedicated modules. These features
+receive one validated frontend-services contract for API access, feedback, DOM
+access, and musical-identity editing. Direct global network calls are prohibited
+inside the five feature modules, while overlapping search requests continue to
+use the shared cancellation and stale-response controller. See
 [`docs/architecture.md`](docs/architecture.md) before making frontend changes.
+Authorized source inspection, queue controls, progress polling, and completion
+feedback are owned by `web/import-workspace.js`, not the composition entry point.
+Local-file imports are owned by `web/local-audio-import.js`; playlist matching,
+permissions, and Creative Commons verification are owned by
+`web/playlist-import.js`. Processing queue polling, request serialization,
+generation/ETA derivation, filtering, and candidate-review routes are owned by
+`web/processing-workspace.js`, keeping those lifecycle rules independently
+testable from page composition. Processing-card presentation and DOM action
+binding are owned by `web/processing-workspace-view.js`. Candidate decisions,
+custom waveform regions, insertion previews, transition scoring, and review
+reprocessing are owned by `web/candidate-review.js`.
 
 ### Optional local AI for Set Builder
 
@@ -435,7 +450,8 @@ AudioExtender/
 │   ├── repositories/    # Jobs, catalog, analysis, feedback, and system-state persistence
 │   ├── set_builder/     # Natural-language intention planning and provider fallback
 │   └── web/
-│       ├── application.py               # FastAPI composition and legacy routes
+│       ├── application.py               # FastAPI factory, wiring, and legacy routes
+│       ├── composition.py               # Explicit paths and owned runtime dependencies
 │       ├── job_routes.py                 # Queue lifecycle
 │       ├── job_media_routes.py           # Audio, waveform, cues, and downloads
 │       ├── library_routes.py             # Paginated DJ Library catalog
@@ -445,7 +461,9 @@ AudioExtender/
 │       ├── set_builder_routes.py          # Set catalog and playlist exports
 │       └── settings_routes.py             # Settings, storage, backup, relocation
 ├── web/                  # Browser shell, feature modules, shared UI, and styles
-├── tests/               # Fast unit tests and synthetic test fixtures
+├── tests/               # Unit/contract tests, fixtures, and isolated browser smoke workflows
+├── scripts/             # Quality, coverage, stability, browser-smoke, and evaluation commands
+├── docs/                # Architecture, ownership contracts, audits, and operating guides
 ├── input/               # Drop source songs here
 ├── output/
 │   ├── wav/             # Straight PCM WAV conversions of the source files
@@ -460,7 +478,12 @@ AudioExtender/
 The contents of `input/` and `output/` are ignored by Git, while the directories
 themselves remain part of the project.
 
-See [`docs/architecture.md`](docs/architecture.md) for package ownership and dependency rules.
+See [`docs/architecture.md`](docs/architecture.md) for package ownership,
+dependency rules, contribution recipes, and the verification matrix. The
+current file inventory and test locations are in
+[`docs/repository-map.md`](docs/repository-map.md). Compatibility-sensitive
+rationale and revisit conditions are indexed in
+[`docs/decisions/`](docs/decisions/README.md).
 
 ## Maintainer quick guide
 
@@ -482,15 +505,27 @@ Use this table before searching through the larger composition files:
 | Settings, storage, backup, or relocation | `web/settings_routes.py` and `audioextender/library/` |
 | Library health and post-reconnect verification | `web/settings_routes.py` (`/api/settings/library-health`) |
 | YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
+| Import failure review and retries | `web/import-issues.js` |
+| Authorized/local import browser state, queue coordination, and API routes | `web/import-workspace.js` |
+| Local-audio staging, progress, and workspace import lifecycle | `web/local-audio-import.js` |
+| Playlist matching, permissions, and Creative Commons verification | `web/playlist-import.js` |
+| Cancellable browser polling | `web/background-task-controller.js` |
 | Music Files UI | `web/music-files.js` and `web/styles.css` |
 | DJ Library UI | `web/dj-library.js` and `web/styles.css` |
-| Set Builder UI | `web/set-builder.js` and `web/styles.css` |
+| Set Builder UI composition | `web/set-builder.js` and `web/styles.css` |
+| Set Builder state and edit history | `web/set-builder-state.js`, `web/set-builder-commands.js` |
+| Set Builder browser API and planning lifecycle | `web/set-builder-api.js`, `web/set-planning-client.js` |
+| Deterministic proposal/fallback policy | `web/set-builder-classic-planner.js` |
+| Set Builder presentation helpers | `web/set-builder-view-model.js` |
 | Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
 | Set Builder candidate shortlists or plan validation | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py` |
 | AI track ordering, comparison, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_comparator.py`, `proposal_repairer.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |
 | Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
 | Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
 | Preview playback behavior | `web/playback.js` |
+| Shared frontend API, DOM, feedback, or descriptor capabilities | `web/frontend-services.js`, `web/api-client.js` |
+| Browser workflow, focus, responsive, or accessibility regression | `tests/browser/workflows.spec.js`, `docs/browser-smoke-testing.md` |
+| Architecture dependency or placement rule | `docs/architecture.md`, `docs/decisions/`, `tests/test_architecture_boundaries.py` |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
 `audioextender/web/application.py`, which constructs services and injects them
@@ -508,14 +543,25 @@ The music-library path saved in Settings is durable SQLite state. Import code
 must obtain it through the injected library-root callback, reject an offline
 external drive, and never silently write to `~/Music` or a temporary folder.
 
-Before committing a manual change, run:
+Before committing any maintained-source change, run the authoritative standard
+gate:
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -q
-npm run check
-.venv/bin/ruff check path/to/changed_python_file.py
+./scripts/check_quality.sh
 git diff --check
 ```
+
+Add the relevant extended gate for the risk being changed:
+
+```bash
+./scripts/check_coverage.sh       # coverage-sensitive behavior
+./scripts/run_stability_gate.sh  # persistence/import/relocation/export/Set Builder durability
+npm run check:browser            # browser workflow, focus, viewport, or accessibility
+```
+
+Install the pinned Chromium binary once with
+`npm run check:browser:install`. Browser smoke tests use a temporary database and
+library and never open the user's configured catalog or music folder.
 
 Provider fallback, schema, and sanitization tests do not require a running
 model. The live local-model acceptance suite is opt-in:
@@ -536,17 +582,33 @@ so progress, cancellation, retry, results, and structured errors remain
 consistent with genre, WAV-tag, artwork, catalog-propagation, and relocation
 operations.
 
+All user-visible background work also has an executor-neutral internal view in
+`infrastructure/operation_lifecycle.py`. Use its immutable projection,
+capability, error, and action-receipt types when code must inspect multiple
+operation families. Keep feature-specific execution and persistence in the
+owning service, and preserve existing endpoint serializers for compatibility.
+
 Mutation APIs return an operation `receipt` with five user-facing facts: what
 was requested, what changed, where data was written, what failed, and whether
 the result survives restart. Use `core/operation_feedback.py` for new saves and
 the batch registry for new background work; do not invent route-specific
 success strings that can drift from the actual result.
 
+`repositories/facade.py::JobRepository` remains the backwards-compatible
+repository entry point. New services should accept a narrow protocol from
+`repositories/capabilities.py`. Database creation and compatibility migrations
+belong to the named, ordered steps in `repositories/schema.py`; do not add new
+table setup to the facade constructor.
+
 ### Architecture boundaries
 
 The application keeps musical policy separate from delivery and signal
 processing:
 
+- `library/musical_profile.py` owns the versioned musical facts delivered to
+  DJ Library and Set Builder: normalized key/Camelot, energy, DJ roles, vocals,
+  timing, confidence, and provenance. Change its shared Python/browser golden
+  fixture whenever the policy intentionally changes.
 - `candidate_selection.py` accepts one typed `SelectionRequest` for either an
   intro or outro. Automatic-length policy can be tested without the CLI.
 - `selection_coordinator.py` applies the same protected-boundary retries,
@@ -556,9 +618,11 @@ processing:
   temporary-file cleanup, reliability data, and vocal-boundary detection.
 - `export_service.py` writes final WAVs, splice previews, candidate auditions,
   cue points, and per-track cue sheets through one testable artifact boundary.
-- `track_processor.py` is the single-track application service connecting
-  analysis, cache, stems, selection, rendering, and export. `main.py` retains
-  only CLI parsing, batch scheduling, summaries, and a compatibility facade.
+- `track_processor.py` is the single-track transaction boundary connecting
+  typed analysis, selection, rendering, export, and result-assembly stages.
+  `track_processing_stages.py` owns immutable handoff models and public-result
+  assembly. `main.py` retains only CLI parsing, batch scheduling, summaries,
+  and a compatibility facade.
 - `candidate_validator.py` applies one final safety and repetition policy to
   both intro and outro candidates.
 - `config_factory.py` owns CLI → preset → `settings.py` precedence and boundary
@@ -665,6 +729,14 @@ To add a preset, copy an entire entry, give it a unique name, and adjust its fiv
 values. It appears automatically in `python3 main.py --help`. Invalid bar counts,
 missing fields, quality values outside 0–100, and repetition limits below one are
 reported immediately at startup.
+
+## Developer note: generated artifacts
+
+Graphify-generated architecture and analysis artifacts live under
+`graphify-out/`. They are not required for normal development and new artifacts
+are ignored by Git. Move durable architecture notes into `docs/`; if Graphify
+outputs are intentionally retained in the repository, treat them as generated
+documentation rather than source.
 
 ## Usage
 
@@ -1399,14 +1471,30 @@ and every JavaScript file under `web/`. The recommended **Code Coverage**
 extension by Markis Taylor is configured to load both reports automatically.
 Tests, dependencies, caches, and generated output are not coverage targets.
 
+Use Node 20 or newer for JavaScript coverage (`nvm use 22` is recommended).
 Run the complete local quality gate after installing the development
 requirements:
 
 ```bash
-python3 -m ruff check .
-python3 -m mypy
-npm run coverage
+./scripts/check_quality.sh
+./scripts/check_coverage.sh
 ```
+
+GitHub Actions runs the standard quality and stability gates on Python 3.12 and
+Node 22, plus the isolated Playwright browser and accessibility workflows. The
+quality runner installs FFmpeg and libsndfile before exercising audio metadata
+and WAV workflows. The workflow is defined in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Static audit findings and interpretation are recorded in
+[`docs/dead-code-dependency-audit.md`](docs/dead-code-dependency-audit.md).
+
+The quality command is the authoritative standard check and does not modify
+source files. Coverage is a separate diagnostic tier, while
+`./scripts/run_stability_gate.sh` remains the extended check for high-risk
+persistence, import, relocation, export, and Set Builder changes. See
+[`docs/development-quality.md`](docs/development-quality.md) for the verified
+tool versions, current coverage, formatting debt ratchets, exclusions, and
+regression policy. Permanent contribution rules are in [`AGENTS.md`](AGENTS.md).
 
 The tests follow the same separation as the application modules: domain logic
 is tested independently from file I/O, terminal presentation, and expensive

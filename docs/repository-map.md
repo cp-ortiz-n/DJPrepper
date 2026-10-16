@@ -65,14 +65,20 @@ map reflects the current layout; it does not propose moving code.
 │   │   ├── background_tasks.py
 │   │   ├── batch_operations.py
 │   │   ├── cache.py
+│   │   ├── operation_lifecycle.py
 │   │   └── progress.py
 │   ├── library/
 │   │   ├── __init__.py
 │   │   ├── backup.py
+│   │   ├── catalog_projection.py
+│   │   ├── catalog_query_service.py
 │   │   ├── cue_export.py
+│   │   ├── descriptor_service.py
 │   │   ├── export_service.py
 │   │   ├── identity_inference.py
 │   │   ├── metadata_mutations.py
+│   │   ├── musical_corrections.py
+│   │   ├── musical_profile.py
 │   │   ├── recording_identity.py
 │   │   ├── relocation.py
 │   │   └── track_overrides.py
@@ -80,6 +86,8 @@ map reflects the current layout; it does not propose moving code.
 │   │   ├── __init__.py
 │   │   ├── batch_runner.py
 │   │   ├── extended_edit.py
+│   │   ├── job_workflows.py
+│   │   ├── track_processing_stages.py
 │   │   ├── track_processor.py
 │   │   └── web_jobs.py
 │   ├── reporting/
@@ -89,10 +97,14 @@ map reflects the current layout; it does not propose moving code.
 │   ├── repositories/
 │   │   ├── __init__.py
 │   │   ├── base.py
+│   │   ├── capabilities.py
+│   │   ├── concurrency_probe.py
 │   │   ├── facade.py
 │   │   ├── feedback.py
 │   │   ├── jobs.py
 │   │   ├── library_analysis.py
+│   │   ├── musical_verification_schema.py
+│   │   ├── schema.py
 │   │   ├── system_state.py
 │   │   └── track_catalog.py
 │   ├── set_builder/
@@ -115,7 +127,9 @@ map reflects the current layout; it does not propose moving code.
 │   └── web/
 │       ├── __init__.py
 │       ├── application.py
+│       ├── composition.py
 │       ├── descriptor_routes.py
+│       ├── error_contracts.py
 │       ├── job_media_routes.py
 │       ├── job_routes.py
 │       ├── library_maintenance_routes.py
@@ -129,6 +143,10 @@ map reflects the current layout; it does not propose moving code.
 │       └── settings_routes.py
 ├── docs/
 │   ├── architecture.md
+│   ├── architecture-audit.md
+│   ├── browser-smoke-testing.md
+│   ├── development-quality.md
+│   ├── musical-policy-ownership.md
 │   └── repository-map.md
 ├── graphify-out/
 │   └── memory/
@@ -150,14 +168,23 @@ map reflects the current layout; it does not propose moving code.
 │   ├── benchmark_key_confidence.py
 │   ├── evaluate_key_ensemble.py
 │   ├── evaluate_set_builder.py
+│   ├── check_coverage.sh
+│   ├── check_quality.sh
+│   ├── measure_repository_concurrency.py
+│   ├── serve_browser_smoke.py
 │   └── run_stability_gate.sh
 ├── settings.py
 ├── tests/
 │   ├── __init__.py
 │   ├── factories.py
 │   ├── fixtures/
+│   │   ├── musical_policy_golden.json
 │   │   └── set_builder_eval_scenarios.json
+│   ├── browser/
+│   │   └── workflows.spec.js
+│   ├── api_client.test.js
 │   ├── frontend_modules.test.js
+│   ├── frontend_workflow_owners.test.js
 │   ├── import_queue.test.js
 │   ├── playback_behavior.test.js
 │   ├── request_state_controller.test.js
@@ -206,20 +233,38 @@ map reflects the current layout; it does not propose moving code.
 │   └── test_web_app.py
 ├── web/
 │   ├── app.js
+│   ├── api-client.js
+│   ├── background-task-controller.js
+│   ├── candidate-review.js
 │   ├── dj-library.js
 │   ├── import-queue.js
+│   ├── import-issues.js
+│   ├── import-workspace.js
+│   ├── local-audio-import.js
+│   ├── playlist-import.js
+│   ├── processing-workspace.js
+│   ├── processing-workspace-view.js
 │   ├── index.html
 │   ├── music-files.js
 │   ├── playback.js
 │   ├── reporting.js
 │   ├── request-state-controller.js
+│   ├── set-builder-api.js
+│   ├── set-builder-classic-planner.js
+│   ├── set-builder-commands.js
+│   ├── set-builder-state.js
+│   ├── set-builder-view-model.js
 │   ├── set-builder.js
 │   ├── set-planning-client.js
 │   ├── settings.js
+│   ├── frontend-services.js
 │   ├── shared-components.js
 │   └── styles.css
 └── web_app.py
 ```
+
+The hierarchy highlights ownership-significant files rather than promising an
+exhaustive manifest. Use `rg --files` for the current tracked inventory.
 
 ## Where Things Belong
 
@@ -238,7 +283,7 @@ map reflects the current layout; it does not propose moving code.
 | `audioextender/set_builder/` | Intention/journey planning, candidate selection, validation, evaluation, preferences, plan jobs, and production release assessment |
 | `audioextender/web/` | FastAPI composition and focused API route modules |
 | `web/` | Browser shell, feature modules, shared controls, and styles |
-| `scripts/` | Manual evaluation/benchmark tools and a focused stability-test launcher |
+| `scripts/` | Quality, coverage, browser-smoke, stability, evaluation, and benchmark tools |
 | `docs/` | Maintainer architecture and repository navigation documentation |
 | `graphify-out/memory/` | Checked-in Graphify-generated investigation notes; not runtime code or canonical architecture docs |
 
@@ -250,9 +295,10 @@ globals. Keep musical decision logic out of route handlers and browser modules.
 
 ## Test Organization
 
-Tests live in one directory and are grouped by descriptive filename, not by
-subdirectory. Python tests use `unittest` and the `test_*.py` naming pattern;
-JavaScript tests use Node's test runner and `*.test.js`. `factories.py` contains
+Deterministic Python and Node tests live in the root `tests/` directory and are
+grouped by descriptive filename. Python uses `unittest` and `test_*.py`; Node
+uses `*.test.js`. Real-browser smoke scenarios are the deliberate exception and
+live under `tests/browser/` for Playwright discovery. `factories.py` contains
 shared test data builders, and `fixtures/` contains checked-in scenario data.
 
 | Test group | Files |
@@ -262,7 +308,8 @@ shared test data builders, and `fixtures/` contains checked-in scenario data.
 | Processing, resources, and persistence/reporting | `test_background_tasks.py`, `test_batch_operations.py`, `test_behavior_workflows.py`, `test_cli_helpers.py`, `test_config_and_overrides.py`, `test_export_service.py`, `test_integration_synthetic.py`, `test_progress_and_resources.py`, `test_reports_and_cache.py` |
 | Imports and library identity/lifecycle | `test_import_service.py`, `test_library_backup.py`, `test_library_relocation.py`, `test_playlist_match_service.py`, `test_recording_identity.py`, `test_stability_workflow.py` |
 | Set Builder planning, evaluation, release, and personalization | `test_feedback_and_reranking.py`, `test_intention_planner.py`, `test_journey_planner.py`, `test_local_intention_acceptance.py`, `test_plan_comparator.py`, `test_proposal_repairer.py`, `test_set_candidate_planning.py`, `test_set_plan_evaluator.py`, `test_set_preference_learning.py`, `test_set_release_gate.py`, `test_set_review_service.py`, `test_track_planner.py`, `test_transition_optimizer.py` |
-| Browser contracts and feature modules | `test_frontend_contracts.py`, `frontend_modules.test.js`, `import_queue.test.js`, `playback_behavior.test.js`, `request_state_controller.test.js`, `set_planning_client.test.js` |
+| Browser contracts and feature modules | `test_frontend_contracts.py`, `api_client.test.js`, `frontend_modules.test.js`, `frontend_workflow_owners.test.js`, `import_queue.test.js`, `playback_behavior.test.js`, `request_state_controller.test.js`, `set_builder_architecture.test.js`, `set_planning_client.test.js` |
+| Browser workflow and accessibility smoke | `browser/workflows.spec.js` |
 
 The Set Builder scenario file is `fixtures/set_builder_eval_scenarios.json`; it
 is used by both planning tests and `scripts/evaluate_set_builder.py`. The local
@@ -272,17 +319,23 @@ ordinary suite uses deterministic behavior and mocks.
 the manual-listening requirement, provider failures, genre scarcity, and
 planning-job summaries.
 
-Run the regular suites from the repository root:
+Run the authoritative standard gate from the repository root:
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -q
-npm run check
+./scripts/check_quality.sh
 ```
 
 Run the focused stability workflow with:
 
 ```bash
 ./scripts/run_stability_gate.sh
+```
+
+Run the isolated Chromium workflow/accessibility gate with:
+
+```bash
+npm run check:browser:install  # first use only
+npm run check:browser
 ```
 
 Coverage reporting is configured through `npm run coverage`; it writes LCOV
@@ -308,6 +361,7 @@ reports under `coverage/` for the Python application/scripts and browser code.
 | --- | --- |
 | `README.md` | Setup, user workflows, tests, and maintainer quick guide |
 | `BACKLOG.md` | Planned and audited product work |
+| `docs/decisions/` | Indexed architecture decisions and compatibility guarantees |
 | `pyproject.toml`, `.flake8` | Python coverage, lint, and type-check configuration |
 | `requirements.txt` | Runtime Python dependencies |
 | `requirements-dev.txt` | Development/test tools, including coverage.py |

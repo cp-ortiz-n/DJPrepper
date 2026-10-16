@@ -26,19 +26,25 @@ class NullProgressReporter:
     """No-op reporter for library use and deterministic tests."""
 
     def update(self, percent: float, label: str) -> None:
+        """No-op reporter for library use and deterministic tests."""
         pass
 
     def log(self, message: str) -> None:
+        """No-op reporter for library use and deterministic tests."""
         pass
 
     def complete(self, label: str = "Complete") -> None:
+        """No-op reporter for library use and deterministic tests."""
         pass
 
     def stop(self) -> None:
+        """No-op reporter for library use and deterministic tests."""
         pass
 
     def pause_for_input(self) -> None:
+        """No-op reporter for library use and deterministic tests."""
         pass
 
     def resume_after_input(self) -> None:
+        """No-op reporter for library use and deterministic tests."""
         pass

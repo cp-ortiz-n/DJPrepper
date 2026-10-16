@@ -8,6 +8,7 @@ from pathlib import Path
 
 from audioextender.library.backup import LibraryBackupService
 from audioextender.repositories.facade import JobRepository
+from audioextender.set_builder.saved_sets import SavedSetService
 
 
 class LibraryBackupServiceTests(unittest.TestCase):
@@ -37,6 +38,9 @@ class LibraryBackupServiceTests(unittest.TestCase):
                 genre_category="Electronic / House / House",
             )
             repository.replace_settings({"preset": "club"})
+            SavedSetService(repository).upsert(
+                {"id": "friday", "name": "Friday Set", "tracks": ["track-1"], "planningReceipt": {"mode": "ai"}}
+            )
             overrides = project / "track_overrides.json"
             overrides.write_text(json.dumps({"Track.wav": {"intro_before": 8}}))
             playlist = library / "_Playlist/Test.m3u8"
@@ -51,12 +55,14 @@ class LibraryBackupServiceTests(unittest.TestCase):
                 self.assertNotIn("Electronic/Track.wav", bundle.namelist())
 
             repository.replace_settings({"preset": "subtle"})
+            SavedSetService(repository).delete("friday")
             overrides.write_text("{}")
             playlist.unlink()
             result = service.restore(Path(created["path"]), root / "backups")
 
             self.assertTrue(result["restored"])
             self.assertEqual(repository.get_settings()["preset"], "club")
+            self.assertEqual(SavedSetService(repository).list_sets()["sets"][0]["id"], "friday")
             self.assertIn("Track.wav", overrides.read_text())
             self.assertTrue(playlist.is_file())
             self.assertTrue(Path(result["pre_restore_backup"]["path"]).is_file())

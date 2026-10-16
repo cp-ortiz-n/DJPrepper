@@ -1,8 +1,17 @@
 import {clock, escapeHtml, fraction, option, pct, renderTrackPagination, reportDate} from './shared-components.js';
+import {useFrontendServices} from './frontend-services.js';
+
+export function applyReportVerifications(songs,jobs,keyStats,bpmStats) {
+  const keyMap=new Map((keyStats.items||[]).map(item=>[item.source_name.toLowerCase(),item]));
+  const bpmMap=new Map((bpmStats.items||[]).map(item=>[item.source_name.toLowerCase(),item]));
+  const keyRuns=new Map(jobs.filter(job=>job.key_analyzed_at).map(job=>[job.source_name.toLowerCase(),job]));
+  return songs.map(source=>{const song={...source},name=song.source_name.toLowerCase(),run=keyRuns.get(name);if(run){song.key=run.detected_key;song.key_confidence=Number(run.key_confidence||0)/100;song.key_analyzed_at=run.key_analyzed_at;}const keyVerification=keyMap.get(name);song.detected_key=song.key;song.key_verification=keyVerification||null;song.key_verified=Boolean(keyVerification);if(keyVerification){song.key=keyVerification.verified_key;song.key_confidence=1;}const bpmVerification=bpmMap.get(name);song.detected_bpm=song.bpm;song.bpm_verification=bpmVerification||null;song.bpm_verified=Boolean(bpmVerification);if(bpmVerification)song.bpm=Number(bpmVerification.verified_bpm);return song;});
+}
 
 export function createReportingFeature({
-  $, $$, loadJobs, renderLibraryIntelligence, startKeyAnalysis, notify,
+  services, loadJobs, renderLibraryIntelligence, startKeyAnalysis,
 }) {
+  const {api, $, $$, notify} = useFrontendServices(services);
   let reportSongs = [];
   let reportJobs = [];
   let reportFeedback = [];
@@ -11,7 +20,7 @@ export function createReportingFeature({
   let reportPage = 1;
   let reportPageSize = 50;
   async function loadAnalysis(jobs = null) {
-    const availableJobs = jobs || await fetch('/api/jobs', {cache:'no-store'}).then(r => r.json());
+    const availableJobs = jobs || await api.raw('/api/jobs', {cache:'no-store'}).then(r => r.json());
     const songs = availableJobs.filter(job => job.status === 'complete').slice(0, 4);
     const root = $('#analysis'); root.className = 'analysis-list';
     if (!songs.length) {
@@ -82,6 +91,11 @@ export function createReportingFeature({
     const trackId=reportJob(song)?.downloaded_track_id;
     return `<section class="key-review-panel"><div><h3>Verify musical key</h3><p>${song.key_verified ? `Manually verified · analyzer originally selected ${escapeHtml(song.detected_key || '—')}` : 'Confirm or correct the analysis. Verified keys are protected from future reanalysis.'}</p></div>${trackId?`<button type="button" class="button secondary report-analyze-key" data-track-id="${trackId}">Analyze key only</button>`:''}<form data-source="${escapeHtml(song.source_name)}" data-detected="${escapeHtml(song.detected_key || song.key || '')}"><div class="key-review-candidates">${candidates}</div><select name="verified_key" aria-label="Verified musical key">${keys.map(key => `<option value="${key}" ${key===selected?'selected':''}>${key}</option>`).join('')}</select><input name="notes" value="${escapeHtml(song.key_verification?.notes || '')}" placeholder="Optional verification notes"><button type="submit">${song.key_verified ? 'Update verified key' : 'Verify key'}</button>${song.key_verified ? '<button type="button" class="secondary clear-key-verification">Remove verification</button>' : ''}<span class="key-review-message"></span></form></section>`;
   }
+
+  function reportBpmReviewPanel(song) {
+    const detected=Number(song.detected_bpm ?? song.bpm ?? 0),selected=Number(song.bpm_verification?.verified_bpm ?? song.bpm ?? 0);
+    return `<section class="key-review-panel bpm-review-panel"><div><h3>Verify BPM</h3><p>${song.bpm_verified?`Manually verified · analyzer measured ${detected.toFixed(2)} BPM`:'Confirm or correct the analyzed tempo. Verified BPM is protected from future reanalysis.'}</p></div><form data-source="${escapeHtml(song.source_name)}" data-detected="${detected}"><input type="number" name="verified_bpm" aria-label="Verified BPM" value="${selected?selected.toFixed(2):''}" min="20" max="300" step="0.01" required><input name="notes" value="${escapeHtml(song.bpm_verification?.notes||'')}" placeholder="Optional verification notes"><button type="submit">${song.bpm_verified?'Update verified BPM':'Verify BPM'}</button>${song.bpm_verified?'<button type="button" class="secondary clear-bpm-verification">Remove verification</button>':''}<span class="bpm-review-message"></span></form></section>`;
+  }
   
   function bindReportFeedback() {
     document.querySelectorAll('.report-analyze-key:not([data-bound])').forEach(button=>{button.dataset.bound='true';button.onclick=()=>startKeyAnalysis([Number(button.dataset.trackId)],button,loadReports);});
@@ -91,25 +105,28 @@ export function createReportingFeature({
       event.preventDefault();
       const button = form.querySelector('button'); const message = form.querySelector('.feedback-message');
       button.disabled = true; message.textContent = 'Saving…';
-      const response = await fetch('/api/report-feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, position:form.elements.position.value, accepted:form.elements.accepted.value === 'true', tags:form.elements.tags.value, notes:form.elements.notes.value})});
+      const response = await api.raw('/api/report-feedback', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, position:form.elements.position.value, accepted:form.elements.accepted.value === 'true', tags:form.elements.tags.value, notes:form.elements.notes.value})});
       button.disabled = false;
-      if (!response.ok) { message.textContent = (await response.json()).detail || 'Could not save feedback.'; return; }
+      if (!response.ok) { message.textContent = api.errorMessage(await response.json(), 'Could not save feedback.'); return; }
       message.textContent = 'Feedback saved'; await loadReports();
       });
     });
-    document.querySelectorAll('.key-review-panel form:not([data-bound])').forEach(form => {
+    document.querySelectorAll('.key-review-panel:not(.bpm-review-panel) form:not([data-bound])').forEach(form => {
       form.dataset.bound = 'true';
       form.querySelectorAll('.key-candidate-choice').forEach(button => button.onclick = () => { form.elements.verified_key.value = button.dataset.key; });
       form.addEventListener('submit', async event => {
         event.preventDefault();
         const message = form.querySelector('.key-review-message'); message.textContent = 'Saving…';
         const song = reportSongs.find(item => item.source_name === form.dataset.source);
-        const response = await fetch(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, verified_key:form.elements.verified_key.value, detected_key:form.dataset.detected, candidates:song?.key_candidates || [], notes:form.elements.notes.value})});
-        if (!response.ok) { message.textContent = (await response.json()).detail || 'Could not verify key.'; return; }
+        const response = await api.raw(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({source_name:form.dataset.source, verified_key:form.elements.verified_key.value, detected_key:form.dataset.detected, candidates:song?.key_candidates || [], notes:form.elements.notes.value})});
+        if (!response.ok) { message.textContent = api.errorMessage(await response.json(), 'Could not verify key.'); return; }
         message.textContent = 'Key verified'; await loadReports();
       });
       const clear = form.querySelector('.clear-key-verification');
-      if (clear) clear.onclick = async () => { clear.disabled = true; await fetch(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'DELETE'}); await loadReports(); };
+      if (clear) clear.onclick = async () => { clear.disabled = true; await api.raw(`/api/key-verifications/${encodeURIComponent(form.dataset.source)}`, {method:'DELETE'}); await loadReports(); };
+    });
+    document.querySelectorAll('.bpm-review-panel form:not([data-bound])').forEach(form=>{
+      form.dataset.bound='true';form.addEventListener('submit',async event=>{event.preventDefault();const message=form.querySelector('.bpm-review-message');message.textContent='Saving…';const response=await api.raw(`/api/bpm-verifications/${encodeURIComponent(form.dataset.source)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({source_name:form.dataset.source,verified_bpm:Number(form.elements.verified_bpm.value),detected_bpm:Number(form.dataset.detected||0),notes:form.elements.notes.value})});if(!response.ok){message.textContent=api.errorMessage(await response.json(),'Could not verify BPM.');return;}message.textContent='BPM verified';await loadReports();});const clear=form.querySelector('.clear-bpm-verification');if(clear)clear.onclick=async()=>{clear.disabled=true;await api.raw(`/api/bpm-verifications/${encodeURIComponent(form.dataset.source)}`,{method:'DELETE'});await loadReports();};
     });
   }
   
@@ -146,13 +163,14 @@ export function createReportingFeature({
       const health = reportHealth(song);
       const trackType = reportTrackType(song);
       const healthBadge = health.attention ? `<span class="report-health-badge attention">${health.labels.length} issue${health.labels.length === 1 ? '' : 's'}</span>` : '<span class="report-health-badge ready">Healthy analysis</span>';
-      const warningBadges = `${song.key_verified ? '<span class="report-health-badge ready">Key verified</span>' : ''}${health.labels.slice(0, 2).map(label => `<span class="report-issue-badge">${escapeHtml(label)}</span>`).join('')}`;
+      const warningBadges = `${song.bpm_verified ? '<span class="report-health-badge ready">BPM verified</span>' : ''}${song.key_verified ? '<span class="report-health-badge ready">Key verified</span>' : ''}${health.labels.slice(0, 2).map(label => `<span class="report-issue-badge">${escapeHtml(label)}</span>`).join('')}`;
       const cues = (song.cues || []).map(cue => `<span class="cue-chip">${escapeHtml(cue.name)} · ${clock(cue.start)}</span>`).join('') || '<span class="muted-copy">No exported cues</span>';
       const keyCandidates = (song.key_candidates || []).length > 1 ? `<div class="key-candidate-list"><b>Key candidates</b>${song.key_candidates.map(candidate => `<span class="${candidate.selected ? 'selected' : ''}">${escapeHtml(candidate.key)} · ${Math.round(Number(candidate.confidence || 0))}%${candidate.selected ? ' selected' : ''}</span>`).join('')}</div>` : '';
       const sectionProfiles = (song.section_profiles || []).map(profile => `<article><span>${escapeHtml(profile.name)} · ${clock(profile.start)}–${clock(profile.end)}</span><strong>${escapeHtml(profile.style)}</strong><b>${fraction(profile.confidence)} confidence</b><small>${escapeHtml(profile.reason)}</small></article>`).join('') || '<p class="muted-copy">Reprocess this track to add section-aware classification.</p>';
       const body = `${listening}<section class="analysis-overview"><h3>Track analysis</h3><div class="metric-grid"><p><b>${song.beats ?? '—'} / ${song.bars ?? '—'}</b><span>Beats / bars</span></p><p><b>${fraction(song.beat_grid_confidence)}</b><span>Beat-grid confidence</span></p><p><b>${fraction(song.key_confidence)}</b><span>Key confidence</span></p><p><b>${fraction(song.tempo_drift)}</b><span>Tempo drift</span></p><p><b>${fraction(song.downbeat_continuity)}</b><span>Downbeat continuity</span></p><p><b>${clock(song.duration_seconds)}</b><span>Output duration</span></p><p><b>${clock(song.processing_seconds)}</b><span>Processing time</span></p><p><b>${song.stem_reliability == null ? 'Not used' : fraction(song.stem_reliability)}</b><span>Stem reliability</span></p></div><p><b>Groove:</b> ${escapeHtml(song.groove || '—')} · <b>timing:</b> ${escapeHtml(song.timing || '—')}</p><p><b>Whole-track classification:</b> ${escapeHtml(song.detected_style || '—')} · ${escapeHtml(song.preset_reason || 'No classifier explanation')}</p><div class="section-profile-grid">${sectionProfiles}</div><p><b>Existing DJ room:</b> intro ${song.dj_readiness?.intro_mixable_bars ?? 0} bars · outro ${song.dj_readiness?.outro_mixable_bars ?? 0} bars · <b>cues:</b> mix in ${clock(song.mix_in)} · mix out ${clock(song.mix_out)}</p><p><b>Analysis cache:</b> track ${song.cache?.track_analysis ? 'hit' : 'fresh'} · vocals ${song.cache?.vocal_analysis ? 'hit' : 'fresh'}</p><div class="cue-list">${cues}</div></section><div class="report-detail">${side('Intro', intro, song.intro_disabled_reason, song.intro_fallback)}${side('Outro', outro, song.outro_disabled_reason, song.outro_fallback)}</div>${reportFeedbackPanel(song)}`;
       const keyReview = reportKeyReviewPanel(song);
-      const enrichedBody = body.replace('<p><b>Groove:</b>', `${keyCandidates}<p><b>Groove:</b>`).replace('</section><div class="report-detail">', `</section>${keyReview}<div class="report-detail">`);
+      const bpmReview = reportBpmReviewPanel(song);
+      const enrichedBody = body.replace('<p><b>Groove:</b>', `${keyCandidates}<p><b>Groove:</b>`).replace('</section><div class="report-detail">', `</section>${bpmReview}${keyReview}<div class="report-detail">`);
       reportDetailBodies.set(String(reportIndex), enrichedBody);
       return `<details class="report-card ${health.attention ? 'has-attention' : 'is-ready'}" data-report-index="${reportIndex}"><summary><div class="report-name"><strong>${escapeHtml(song.source_name)}</strong><small>${escapeHtml(song.detected_style || 'Unclassified')} · ${escapeHtml(song.preset || 'default')} · ${reportDate(song.updated_at)}</small><span class="report-row-issues"><span class="report-type-badge ${health.hasEdit ? 'edited' : ''}">${trackType}</span>${healthBadge}${warningBadges}</span></div><div class="report-pair"><div class="report-metric"><strong>${Number(song.bpm || 0).toFixed(1)}</strong><small>BPM</small></div><div class="report-metric"><strong>${escapeHtml(song.key || '—')}</strong><small>Key</small></div></div><div class="report-meter"><span><b>Analysis confidence</b><strong>${fraction(health.analysisConfidence)}</strong></span><i><em style="width:${Math.round(health.analysisConfidence * 100)}%"></em></i></div><div class="report-meter"><span><b>DJ mixability</b><strong>${fraction(health.mixability)}</strong></span><i><em style="width:${Math.round(health.mixability * 100)}%"></em></i></div><div class="report-preview">${preview}</div><span class="report-expand" aria-hidden="true">⌄</span></summary><div class="report-body" hidden></div></details>`;
     });
@@ -174,13 +192,11 @@ export function createReportingFeature({
   }
   
   async function loadReports() {
-    const [report, analytics, jobs, feedback, keyStats] = await Promise.all([fetch('/api/report').then(r => r.json()), fetch('/api/analytics').then(r => r.json()), fetch('/api/report-audio-index').then(r => r.json()), fetch('/api/report-feedback').then(r => r.json()), fetch('/api/key-verifications').then(r => r.json())]);
+    const [report, analytics, jobs, feedback, keyStats, bpmStats] = await Promise.all([api.raw('/api/report').then(r => r.json()), api.raw('/api/analytics').then(r => r.json()), api.raw('/api/report-audio-index').then(r => r.json()), api.raw('/api/report-feedback').then(r => r.json()), api.raw('/api/key-verifications').then(r => r.json()), api.raw('/api/bpm-verifications').then(r => r.json())]);
     reportSongs = Object.values(report.songs || {}).filter(song => song.status !== 'removed').reverse();
     reportKeyVerificationStats = keyStats;
-    const verificationMap = new Map((keyStats.items || []).map(item => [item.source_name.toLowerCase(), item]));
     reportJobs = jobs;
-    const keyRuns=new Map(jobs.filter(job=>job.key_analyzed_at).map(job=>[job.source_name.toLowerCase(),job]));
-    reportSongs.forEach(song => { const run=keyRuns.get(song.source_name.toLowerCase());if(run){song.key=run.detected_key;song.key_confidence=Number(run.key_confidence||0)/100;song.key_analyzed_at=run.key_analyzed_at;}const verification = verificationMap.get(song.source_name.toLowerCase()); song.detected_key = song.key; song.key_verification = verification || null; song.key_verified = Boolean(verification); if (verification) { song.key = verification.verified_key; song.key_confidence = 1; } });
+    reportSongs=applyReportVerifications(reportSongs,jobs,keyStats,bpmStats);
     reportFeedback = feedback;
     const averageFraction = values => values.length ? `${Math.round(100 * values.reduce((a,b) => a + b, 0) / values.length)}%` : '—';
     const gridConfidence = reportSongs.filter(song => song.beat_grid_confidence != null).map(song => Number(song.beat_grid_confidence)).filter(Number.isFinite);
@@ -190,7 +206,7 @@ export function createReportingFeature({
     $('#report-summary').innerHTML = cards.map(([value, label]) => `<div class="stat-card"><strong>${value}</strong><span>${label}</span></div>`).join('');
     const rate = analytics.acceptance_rate == null ? '—' : `${Math.round(analytics.acceptance_rate*100)}%`;
     const detectorAccuracy = Object.entries(keyStats.detector_accuracy || {}).map(([name,value]) => `${name} ${value.correct}/${value.total}`).join(' · ');
-    $('#feedback-analytics').innerHTML = `<div><strong>${rate}</strong><span> feedback acceptance</span></div><div><strong>${analytics.feedback_count}</strong><span> listening decisions</span></div><div><strong>${keyStats.total || 0}</strong><span> manually verified keys</span></div><div class="tag-cloud">${detectorAccuracy ? `<span>${escapeHtml(detectorAccuracy)}</span>` : '<span>Verify keys to measure detector accuracy</span>'}</div>`;
+    $('#feedback-analytics').innerHTML = `<div><strong>${rate}</strong><span> feedback acceptance</span></div><div><strong>${analytics.feedback_count}</strong><span> listening decisions</span></div><div><strong>${bpmStats.total||0}</strong><span> manually verified BPM values</span></div><div><strong>${keyStats.total || 0}</strong><span> manually verified keys</span></div><div class="tag-cloud">${detectorAccuracy ? `<span>${escapeHtml(detectorAccuracy)}</span>` : '<span>Verify keys to measure detector accuracy</span>'}</div>`;
     renderReports();
   }
   const resetAndRenderReports = () => { reportPage = 1; renderReports(); };

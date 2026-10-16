@@ -1,0 +1,26 @@
+/* Secondary actions must not inherit the global lime button background. */
+.button.secondary,
+.wave-controls .button.secondary {
+  background: #202320;
+  color: #b8bbb0;
+  border: 1px solid #41453e;
+}
+.button.secondary:hover,
+.wave-controls .button.secondary:hover {
+  color: var(--lime);
+  border-color: #68705f;
+}
+.button.primary,
+.wave-controls .button.primary {
+  background: var(--lime);
+  color: #11140a;
+}
+
+@media (max-width: 620px) {
+  .player-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .wave-controls label {
+    margin-left: 0;
+  }
+}

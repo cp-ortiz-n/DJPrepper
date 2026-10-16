@@ -11,13 +11,15 @@ import threading
 import uuid
 from collections.abc import Callable
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from audioextender.infrastructure.operation_lifecycle import LIBRARY_RELOCATION, LifecycleProjection
+
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class RelocationRepository(Protocol):
@@ -235,6 +237,9 @@ class LibraryRelocationCoordinator:
     def status(self) -> dict:
         with self._lock:
             return dict(self._state)
+
+    def lifecycle_status(self) -> LifecycleProjection:
+        return LIBRARY_RELOCATION.project(self.status())
 
     def prepare(self, source: Path, destination: Path, mode: str, verification: str) -> dict:
         plan = self.planner.plan(source, destination, mode, verification)

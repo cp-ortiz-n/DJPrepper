@@ -17,12 +17,16 @@ from settings import (
 
 @dataclass(frozen=True)
 class SideReadiness:
+    """Readiness summary for a single side of a track."""
+
     mixable_bars: int
     confidence: float
 
 
 @dataclass(frozen=True)
 class DJReadiness:
+    """Readiness scores for the intro and outro edges of a track."""
+
     intro: SideReadiness
     outro: SideReadiness
 

@@ -8,6 +8,7 @@ application module.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
+
+from audioextender.infrastructure.operation_lifecycle import AUTHORIZED_IMPORTS, LifecycleProjection
 
 
 class AuthorizedImport(Protocol):
@@ -119,6 +122,7 @@ class ImportService:
         return root
 
     def start(self, request: AuthorizedImport) -> str:
+        """Start a new authorized import job for the given request."""
         provider = authorized_source_provider(request.url)
         if provider is None:
             raise ValueError("Only YouTube and SoundCloud URLs are supported in this importer")
@@ -145,6 +149,7 @@ class ImportService:
         return import_id
 
     def cancel(self, import_id: str) -> dict[str, Any]:
+        """Cancel an in-progress authorized import job."""
         with self._lock:
             state = self._states.get(import_id)
             cancel_event = self._cancel_events.get(import_id)
@@ -157,13 +162,19 @@ class ImportService:
         return {"canceled": True, "status": "canceling"}
 
     def status(self, import_id: str) -> dict[str, Any]:
+        """Return the current state of an authorized import job."""
         with self._lock:
             state = self._states.get(import_id)
             if state is None:
                 raise ImportNotFoundError("Import not found")
             return {key: value for key, value in state.items() if key != "file_path"}
 
+    def lifecycle_status(self, import_id: str) -> LifecycleProjection:
+        """Return a projection of the import's lifecycle state suitable for API responses."""
+        return AUTHORIZED_IMPORTS.project(self.status(import_id))
+
     def download_path(self, import_id: str) -> Path:
+        """Return the path to the imported WAV file for a completed import."""
         with self._lock:
             state = self._states.get(import_id)
             path = Path(state["file_path"]) if state and state.get("file_path") else None
@@ -172,10 +183,12 @@ class ImportService:
         return path
 
     def has_active_imports(self) -> bool:
+        """Return True if any authorized import is currently in progress."""
         with self._lock:
             return any(state.get("status") == "processing" for state in self._states.values())
 
     def clear(self) -> None:
+        """Clear all authorized imports from the registry."""
         with self._lock:
             self._states.clear()
             self._cancel_events.clear()
@@ -193,11 +206,6 @@ class ImportService:
                 raise RuntimeError("Unsupported authorized audio source")
             # Fail before network work when the external drive is disconnected.
             library_root = self.require_library_online()
-            if provider == "youtube":
-                try:
-                    import yt_dlp
-                except ImportError as error:
-                    raise RuntimeError("yt-dlp is not installed. Run pip install -r requirements.txt.") from error
             with tempfile.TemporaryDirectory(prefix="audioextender-import-") as temporary:
                 temporary_path = Path(temporary)
                 template = str(temporary_path / "%(title).180B.%(ext)s")
@@ -295,6 +303,10 @@ class ImportService:
                         progress=75,
                     )
                 else:
+                    try:
+                        youtube_downloader = importlib.import_module("yt_dlp")
+                    except ImportError as error:
+                        raise RuntimeError("yt-dlp is not installed. Run pip install -r requirements.txt.") from error
                     options = {
                         "format": "bestaudio/best",
                         "outtmpl": template,
@@ -305,7 +317,7 @@ class ImportService:
                         "quiet": True,
                         "no_warnings": True,
                     }
-                    with yt_dlp.YoutubeDL(options) as downloader:
+                    with youtube_downloader.YoutubeDL(options) as downloader:
                         info = downloader.extract_info(request.url, download=True)
                     wavs = list(temporary_path.glob("*.wav"))
                 if not wavs:

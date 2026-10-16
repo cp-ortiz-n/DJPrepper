@@ -10,6 +10,8 @@ from audioextender.analysis.section_selector import SectionCandidate
 
 @dataclass(frozen=True)
 class CandidateAssessment:
+    """Assessment of a candidate section with per-factor metrics and warnings."""
+
     phrase: float
     loop: float
     transition: float
