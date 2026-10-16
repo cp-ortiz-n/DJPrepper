@@ -212,13 +212,16 @@ map reflects the current layout; it does not propose moving code.
 │   ├── api-client.js
 │   ├── background-task-controller.js
 │   ├── candidate-review.js
+│   ├── candidate-waveform-editor.js
 │   ├── dj-library.js
+│   ├── dj-library-model.js
 │   ├── import-queue.js
 │   ├── import-issues.js
 │   ├── import-workspace.js
 │   ├── local-audio-import.js
 │   ├── playlist-import.js
 │   ├── processing-workspace.js
+│   ├── processing-job-detail.js
 │   ├── processing-workspace-view.js
 │   ├── index.html
 │   ├── music-files.js
@@ -231,6 +234,9 @@ map reflects the current layout; it does not propose moving code.
 │   ├── set-builder-state.js
 │   ├── set-builder-view-model.js
 │   ├── set-builder.js
+│   ├── set-builder-policy.js
+│   ├── searchable-selects.js
+│   ├── track-metadata-ui.js
 │   ├── set-planning-client.js
 │   ├── settings.js
 │   ├── frontend-services.js
@@ -244,24 +250,24 @@ exhaustive manifest. Use `rg --files` for the current tracked inventory.
 
 ## Where Things Belong
 
-| Area | Responsibility |
-| --- | --- |
-| `main.py`, `web_app.py`, `audioextender/web/application.py` | CLI entry, compatibility launcher, and web application composition |
-| `audioextender/core/` | Shared configuration, data models, interfaces, presets, errors, and operation receipts |
-| `audioextender/audio/` | Audio loading, quality, stems, and WAV metadata |
-| `audioextender/analysis/` | Musical analysis, candidate selection/scoring, validation, and splice policy |
-| `audioextender/processing/` | Track and batch workflows, edits, and web-job orchestration |
-| `audioextender/imports/` | Local and external-source imports, playlist matching, and import routes |
-| `audioextender/library/` | Track identity, overrides, backup, relocation, metadata mutation, and exports |
-| `audioextender/repositories/` | SQLite persistence grouped by jobs, catalog, analysis, feedback, and system state |
-| `audioextender/infrastructure/` | Shared cache, progress, background-task, and batch-operation support |
-| `audioextender/reporting/` | Processing summaries and listening feedback |
-| `audioextender/set_builder/` | Intention/journey planning, candidate selection, validation, evaluation, preferences, plan jobs, and production release assessment |
-| `audioextender/web/` | FastAPI composition and focused API route modules |
-| `web/` | Browser shell, feature modules, shared controls, and styles |
-| `scripts/` | Quality, coverage, browser-smoke, stability, evaluation, and benchmark tools |
-| `docs/` | Maintainer architecture and repository navigation documentation |
-| `graphify-out/memory/` | Checked-in Graphify-generated investigation notes; not runtime code or canonical architecture docs |
+| Area                                                        | Responsibility                                                                                                                     |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `main.py`, `web_app.py`, `audioextender/web/application.py` | CLI entry, compatibility launcher, and web application composition                                                                 |
+| `audioextender/core/`                                       | Shared configuration, data models, interfaces, presets, errors, and operation receipts                                             |
+| `audioextender/audio/`                                      | Audio loading, quality, stems, and WAV metadata                                                                                    |
+| `audioextender/analysis/`                                   | Musical analysis, candidate selection/scoring, validation, and splice policy                                                       |
+| `audioextender/processing/`                                 | Track and batch workflows, edits, and web-job orchestration                                                                        |
+| `audioextender/imports/`                                    | Local and external-source imports, playlist matching, and import routes                                                            |
+| `audioextender/library/`                                    | Track identity, overrides, backup, relocation, metadata mutation, and exports                                                      |
+| `audioextender/repositories/`                               | SQLite persistence grouped by jobs, catalog, analysis, feedback, and system state                                                  |
+| `audioextender/infrastructure/`                             | Shared cache, progress, background-task, and batch-operation support                                                               |
+| `audioextender/reporting/`                                  | Processing summaries and listening feedback                                                                                        |
+| `audioextender/set_builder/`                                | Intention/journey planning, candidate selection, validation, evaluation, preferences, plan jobs, and production release assessment |
+| `audioextender/web/`                                        | FastAPI composition and focused API route modules                                                                                  |
+| `web/`                                                      | Browser shell, feature modules, shared controls, and styles                                                                        |
+| `scripts/`                                                  | Quality, coverage, browser-smoke, stability, evaluation, and benchmark tools                                                       |
+| `docs/`                                                     | Maintainer architecture and repository navigation documentation                                                                    |
+| `graphify-out/memory/`                                      | Checked-in Graphify-generated investigation notes; not runtime code or canonical architecture docs                                 |
 
 The intended dependency direction is described in [architecture.md](architecture.md):
 HTTP/CLI delivery calls application services; business workflows use analysis,
@@ -284,13 +290,13 @@ recursive discovery use the same names. The application itself does not use a
 `src/` installation layout; changing that convention remains a separate
 migration of launchers, imports, coverage, CI, and packaging.
 
-| Test group | Files |
-| --- | --- |
-| Architecture and compatibility | `unit/architecture/` |
-| Python package behavior | `unit/<owning-package>/` |
-| Cross-boundary workflows | `integration/` |
-| Set Builder live-provider acceptance | `integration/set_builder/` |
-| Browser modules and contracts | `javascript/` |
+| Test group                               | Files                       |
+| ---------------------------------------- | --------------------------- |
+| Architecture and compatibility           | `unit/architecture/`        |
+| Python package behavior                  | `unit/<owning-package>/`    |
+| Cross-boundary workflows                 | `integration/`              |
+| Set Builder live-provider acceptance     | `integration/set_builder/`  |
+| Browser modules and contracts            | `javascript/`               |
 | Browser workflow and accessibility smoke | `browser/workflows.spec.js` |
 
 The Set Builder scenario file is `fixtures/set_builder_eval_scenarios.json`; it
@@ -337,22 +343,22 @@ reports under `coverage/` for the Python application/scripts and browser code.
 
 ## Project Configuration And Operations
 
-| File | Purpose |
-| --- | --- |
-| `README.md` | Setup, user workflows, tests, and maintainer quick guide |
-| `CONTRIBUTING.md` | Contributor setup, placement rules, and definition-of-done commands |
-| `Makefile` | Stable aliases for the repository-owned quality and verification scripts |
-| `BACKLOG.md` | Planned and audited product work |
-| `docs/decisions/` | Indexed architecture decisions and compatibility guarantees |
-| `pyproject.toml`, `.flake8` | Python coverage, lint, and type-check configuration |
-| `requirements.txt` | Runtime Python dependencies |
-| `requirements-dev.txt` | Development/test tools, including coverage.py |
-| `requirements-demucs.txt` | Optional Demucs dependency set |
-| `package.json`, `package-lock.json` | JavaScript dependencies and test/check/coverage scripts |
-| `.vscode/settings.json`, `.vscode/extensions.json` | Workspace test/editor settings and extension recommendations |
-| `settings.py` | Application configuration/defaults |
-| `Start AudioExtender.command` | macOS launcher |
-| `LICENSE`, `.gitattributes`, `.gitignore` | Licensing and Git behavior |
+| File                                               | Purpose                                                                  |
+| -------------------------------------------------- | ------------------------------------------------------------------------ |
+| `README.md`                                        | Setup, user workflows, tests, and maintainer quick guide                 |
+| `CONTRIBUTING.md`                                  | Contributor setup, placement rules, and definition-of-done commands      |
+| `Makefile`                                         | Stable aliases for the repository-owned quality and verification scripts |
+| `BACKLOG.md`                                       | Planned and audited product work                                         |
+| `docs/decisions/`                                  | Indexed architecture decisions and compatibility guarantees              |
+| `pyproject.toml`, `.flake8`                        | Python coverage, lint, and type-check configuration                      |
+| `requirements.txt`                                 | Runtime Python dependencies                                              |
+| `requirements-dev.txt`                             | Development/test tools, including coverage.py                            |
+| `requirements-demucs.txt`                          | Optional Demucs dependency set                                           |
+| `package.json`, `package-lock.json`                | JavaScript dependencies and test/check/coverage scripts                  |
+| `.vscode/settings.json`, `.vscode/extensions.json` | Workspace test/editor settings and extension recommendations             |
+| `settings.py`                                      | Application configuration/defaults                                       |
+| `Start AudioExtender.command`                      | macOS launcher                                                           |
+| `LICENSE`, `.gitattributes`, `.gitignore`          | Licensing and Git behavior                                               |
 
 ## Local Runtime Folders
 

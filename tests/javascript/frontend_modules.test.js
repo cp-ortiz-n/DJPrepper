@@ -66,7 +66,7 @@ test('feature factories share a validated immutable services contract', () => {
 test('app.js remains a feature composition root', () => {
   const path = fileURLToPath(new URL('../../web/app.js', import.meta.url));
   const source = readFileSync(path, 'utf8');
-  assert.ok(source.split('\n').length <= 919, 'app.js exceeded the composition-root size ceiling');
+  assert.ok(source.split('\n').length <= 900, 'app.js exceeded the composition-root size ceiling');
   for (const factory of [
     'createMusicFilesFeature',
     'createDjLibraryFeature',
@@ -96,6 +96,11 @@ test('app.js remains a feature composition root', () => {
     'function initializeInsertionWaveform(',
     'function initializeCustomWaveform(',
     'function previewArrangementInsertion(',
+    'function refreshSearchableSelects(',
+    'function genreFolderTree(',
+    'function metadataEditorMarkup(',
+    'function hydrateCompletedJob(',
+    'function renderArrangementTimeline(',
     "$('#settings-form').addEventListener",
   ]) {
     assert.equal(source.includes(extracted), false, `${extracted} belongs in its feature module`);

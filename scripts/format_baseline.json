@@ -14,15 +14,12 @@
     "tests/unit/set_builder/test_transition_optimizer.py"
   ],
   "frontend": [
-    "web/app.js",
-    "web/dj-library.js",
     "web/import-queue.js",
     "web/index.html",
     "web/music-files.js",
     "web/playback.js",
     "web/reporting.js",
     "web/request-state-controller.js",
-    "web/set-builder.js",
     "web/set-planning-client.js",
     "web/settings.js",
     "web/shared-components.js",

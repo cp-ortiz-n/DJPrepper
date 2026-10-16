@@ -62,42 +62,45 @@ summarized in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 The project is organized by responsibility so manual changes can stay local.
 Use this table before searching through the larger composition files:
 
-| If you need to change… | Start in… |
-|---|---|
-| BPM, beat grid, key, confidence, energy, or readiness | `audioextender/analysis/` |
-| Candidate selection or safety | `analysis/selection_coordinator.py`, `candidate_selection.py`, `candidate_validator.py` |
-| Crossfades and audible splice behavior | `analysis/splice_policy.py`, `processing/extended_edit.py` |
-| WAV metadata, artwork embedding, or audio quality | `audio/wav_metadata.py`, `audio/quality.py` |
-| Recording IDs, versions, duplicates, or track paths | `library/recording_identity.py`, `repositories/track_catalog.py` |
-| Processing queue behavior | `processing/web_jobs.py`, `web/job_routes.py`, `repositories/jobs.py` |
-| Audio delivery, waveform, cues, or batch downloads | `web/job_media_routes.py` |
-| DJ Library API filters | `web/library_routes.py` |
-| Integrity scan, catalog reconciliation, or repair | `web/library_maintenance_routes.py` |
-| Bulk genre, WAV-tag, artwork, or catalog propagation | `web/metadata_batch_routes.py`, `library/metadata_mutations.py` |
-| Settings, storage, backup, or relocation | `web/settings_routes.py` and `audioextender/library/` |
-| Library health and post-reconnect verification | `web/settings_routes.py` (`/api/settings/library-health`) |
-| YouTube, SoundCloud, local, or playlist imports | `audioextender/imports/` |
-| Import failure review and retries | `web/import-issues.js` |
-| Authorized/local import browser state, queue coordination, and API routes | `web/import-workspace.js` |
-| Local-audio staging, progress, and workspace import lifecycle | `web/local-audio-import.js` |
-| Playlist matching, permissions, and Creative Commons verification | `web/playlist-import.js` |
-| Cancellable browser polling | `web/background-task-controller.js` |
-| Music Files UI | `web/music-files.js` and `web/styles.css` |
-| DJ Library UI | `web/dj-library.js` and `web/styles.css` |
-| Set Builder UI composition | `web/set-builder.js` and `web/styles.css` |
-| Set Builder state and edit history | `web/set-builder-state.js`, `web/set-builder-commands.js` |
-| Set Builder browser API and planning lifecycle | `web/set-builder-api.js`, `web/set-planning-client.js` |
-| Deterministic proposal/fallback policy | `web/set-builder-classic-planner.js` |
-| Set Builder presentation helpers | `web/set-builder-view-model.js` |
-| Set Builder brief interpretation or AI providers | `audioextender/set_builder/intention_planner.py` |
-| Set Builder candidate shortlists or plan validation | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py` |
+| If you need to change…                                                                      | Start in…                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BPM, beat grid, key, confidence, energy, or readiness                                       | `audioextender/analysis/`                                                                                                                                                              |
+| Candidate selection or safety                                                               | `analysis/selection_coordinator.py`, `candidate_selection.py`, `candidate_validator.py`                                                                                                |
+| Crossfades and audible splice behavior                                                      | `analysis/splice_policy.py`, `processing/extended_edit.py`                                                                                                                             |
+| WAV metadata, artwork embedding, or audio quality                                           | `audio/wav_metadata.py`, `audio/quality.py`                                                                                                                                            |
+| Recording IDs, versions, duplicates, or track paths                                         | `library/recording_identity.py`, `repositories/track_catalog.py`                                                                                                                       |
+| Processing queue behavior                                                                   | `processing/web_jobs.py`, `web/job_routes.py`, `repositories/jobs.py`                                                                                                                  |
+| Audio delivery, waveform, cues, or batch downloads                                          | `web/job_media_routes.py`                                                                                                                                                              |
+| DJ Library API filters                                                                      | `web/library_routes.py`                                                                                                                                                                |
+| Integrity scan, catalog reconciliation, or repair                                           | `web/library_maintenance_routes.py`                                                                                                                                                    |
+| Bulk genre, WAV-tag, artwork, or catalog propagation                                        | `web/metadata_batch_routes.py`, `library/metadata_mutations.py`                                                                                                                        |
+| Settings, storage, backup, or relocation                                                    | `web/settings_routes.py` and `audioextender/library/`                                                                                                                                  |
+| Library health and post-reconnect verification                                              | `web/settings_routes.py` (`/api/settings/library-health`)                                                                                                                              |
+| YouTube, SoundCloud, local, or playlist imports                                             | `audioextender/imports/`                                                                                                                                                               |
+| Import failure review and retries                                                           | `web/import-issues.js`                                                                                                                                                                 |
+| Authorized/local import browser state, queue coordination, and API routes                   | `web/import-workspace.js`                                                                                                                                                              |
+| Local-audio staging, progress, and workspace import lifecycle                               | `web/local-audio-import.js`                                                                                                                                                            |
+| Playlist matching, permissions, and Creative Commons verification                           | `web/playlist-import.js`                                                                                                                                                               |
+| Cancellable browser polling                                                                 | `web/background-task-controller.js`                                                                                                                                                    |
+| Music Files UI                                                                              | `web/music-files.js` and `web/styles.css`                                                                                                                                              |
+| DJ Library UI                                                                               | `web/dj-library.js`, `web/dj-library-model.js`, and `web/styles.css`                                                                                                                   |
+| Set Builder UI composition                                                                  | `web/set-builder.js`, `web/set-builder-policy.js`, and `web/styles.css`                                                                                                                |
+| Candidate review waveforms                                                                  | `web/candidate-review.js` and `web/candidate-waveform-editor.js`                                                                                                                       |
+| Processing detail waveforms                                                                 | `web/processing-job-detail.js`                                                                                                                                                         |
+| Shared genre and metadata UI                                                                | `web/track-metadata-ui.js`                                                                                                                                                             |
+| Set Builder state and edit history                                                          | `web/set-builder-state.js`, `web/set-builder-commands.js`                                                                                                                              |
+| Set Builder browser API and planning lifecycle                                              | `web/set-builder-api.js`, `web/set-planning-client.js`                                                                                                                                 |
+| Deterministic proposal/fallback policy                                                      | `web/set-builder-classic-planner.js`                                                                                                                                                   |
+| Set Builder presentation helpers                                                            | `web/set-builder-view-model.js`                                                                                                                                                        |
+| Set Builder brief interpretation or AI providers                                            | `audioextender/set_builder/intention_planner.py`                                                                                                                                       |
+| Set Builder candidate shortlists or plan validation                                         | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py`                                                                                      |
 | AI track ordering, comparison, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_comparator.py`, `proposal_repairer.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |
-| Shared dropdowns, notices, formatting, or pagination | `web/shared-components.js` |
-| Catalog cancellation, debounce, stale-response protection, or filter persistence | `web/request-state-controller.js` |
-| Preview playback behavior | `web/playback.js` |
-| Shared frontend API, DOM, feedback, or descriptor capabilities | `web/frontend-services.js`, `web/api-client.js` |
-| Browser workflow, focus, responsive, or accessibility regression | `tests/browser/workflows.spec.js`, `docs/browser-smoke-testing.md` |
-| Architecture dependency or placement rule | `docs/architecture.md`, `docs/decisions/`, `tests/unit/architecture/test_boundaries.py` |
+| Shared dropdowns, notices, formatting, or pagination                                        | `web/shared-components.js`                                                                                                                                                             |
+| Catalog cancellation, debounce, stale-response protection, or filter persistence            | `web/request-state-controller.js`                                                                                                                                                      |
+| Preview playback behavior                                                                   | `web/playback.js`                                                                                                                                                                      |
+| Shared frontend API, DOM, feedback, or descriptor capabilities                              | `web/frontend-services.js`, `web/api-client.js`                                                                                                                                        |
+| Browser workflow, focus, responsive, or accessibility regression                            | `tests/browser/workflows.spec.js`, `docs/browser-smoke-testing.md`                                                                                                                     |
+| Architecture dependency or placement rule                                                   | `docs/architecture.md`, `docs/decisions/`, `tests/unit/architecture/test_boundaries.py`                                                                                                |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
 `audioextender/web/application.py`, which constructs services and injects them
@@ -226,54 +229,54 @@ typing the same CLI options each time. Command-line arguments still take priorit
 for an individual run, while per-song musical timestamps remain in
 `track_overrides.json`.
 
-| Setting | Shipped value | Usage and effect |
-|---|---:|---|
-| `SUPPORTED_BAR_COUNTS` | `(0, 2, 4, 8, 16, 32)` | Values accepted by `--intro-bars` and `--outro-bars`. Keep `0` if you want the disable option. |
-| `DEFAULT_AUTO_BAR_SELECTION` | `True` | Chooses the most suitable shorter length up to the configured default when no explicit bar count is supplied. |
-| `AUTO_BAR_MAXIMUM_QUALITY_LOSS` | `4.0` | Maximum loop-quality points a longer automatic choice may lose before receiving an extra penalty. |
-| `DEFAULT_INTRO_BARS` | `8` | Intro length used when `--intro-bars` is omitted. Try `4` for less repetition. |
-| `DEFAULT_OUTRO_BARS` | `8` | Outro length used when `--outro-bars` is omitted. Set `0` to preserve original endings by default. |
-| `DEFAULT_MINIMUM_INTRO_LOOP_QUALITY` | `65.0` | Hard intro quality floor. Candidates below this percentage are not exported. |
-| `DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY` | `65.0` | Hard outro quality floor. Candidates below this percentage are not exported. |
-| `PREFERRED_LOOP_QUALITY_TARGET` | `70.0` | Ranking target. A musically competitive 70%+ candidate is preferred over a lower-scoring option. |
-| `SUPPORTED_PCM_BITS` | `(16, 24)` | Values accepted by `--bit-depth`. WAV export currently supports these PCM depths. |
-| `DEFAULT_PCM_BITS` | `24` | Normal output depth. `24` is recommended for editing quality; `16` produces smaller files. |
-| `INPUT_FOLDER_NAME` | `"input"` | Batch folder relative to the project. CLI `--input-dir` overrides it. |
-| `OUTPUT_FOLDER_NAME` | `"output"` | Export folder relative to the project. CLI `--output-dir` overrides it. |
-| `TRACK_OVERRIDES_FILENAME` | `"track_overrides.json"` | Default per-song rules filename. CLI `--overrides` overrides it. |
-| `CACHE_FOLDER_NAME` | `"cache"` | Folder for reusable track and Demucs-derived analysis files. |
-| `DEFAULT_CACHE_ENABLED` | `True` | Enables cache reads and writes during normal runs. |
-| `DEFAULT_PREVIEW_SECONDS` | `8.0` | Audio included on each side of a splice in preview files. Total preview length is up to twice this value. |
-| `DEFAULT_EXPORT_CUES` | `True` | Writes per-track JSON cue sheets and a batch Rekordbox XML playlist. |
-| `REKORDBOX_XML_FILENAME` | `"rekordbox.xml"` | Filename used for the importable playlist at the output-folder root. |
-| `DEFAULT_CANDIDATE_COUNT` | `3` | Number of distinct intro/outro alternatives ranked internally for each enabled side. |
-| `SUPPORTED_WORKER_CHOICES` | `("auto", "1", "2", "3")` | Values accepted by `--workers`. Increase carefully if you also increase the maximum worker count. |
-| `DEFAULT_WORKERS` | `"auto"` | Normal concurrency mode. `auto` is recommended, especially with Demucs. |
-| `BEATS_PER_BAR` | `4` | Assumed meter. Keep `4` for ordinary 4/4 music; changing it alters bar grouping throughout analysis. |
-| `INTRO_SEARCH_SECONDS` | `120.0` | Maximum opening search window when no manual boundary re-anchors selection. |
-| `OUTRO_SEARCH_SECONDS` | `150.0` | Maximum closing search window when no manual boundary re-anchors selection. |
-| `ANALYSIS_HOP_LENGTH` | `512` | Analysis resolution. Smaller values are more precise but slower and more memory-intensive. |
-| `MINIMUM_CROSSFADE_MS` | `10.0` | Shortest splice fade. The adaptive editor may increase it to 30 ms for difficult seams. |
-| `PERCUSSION_PRIORITY_THRESHOLD` | `0.65` | Drum-strength level that permits a short, transient-preserving splice. |
-| `BASS_PRESERVING_RISK_THRESHOLD` | `0.40` | Bass-reset risk that activates a longer low-end-preserving join. |
-| `HARMONIC_TAIL_COMPATIBILITY_THRESHOLD` | `0.55` | Timbre/tail score below which sustained synth, chord, or reverb material receives extra carry-over. |
-| `INTERACTIVE_CANDIDATE_POOL` | `12` | Maximum alternatives available through `R` during interactive review. Only three are shown at once. |
-| `MAXIMUM_VOCAL_COVERAGE` | `0.45` | With Demucs, disables a selected side when sustained vocals occupy more than 45% of its candidate. |
-| `MAXIMUM_VOCAL_BOUNDARY_RISK` | `0.55` | With Demucs, disables a selected side when an active vocal phrase overlaps a splice edge too strongly. |
-| `MINIMUM_STEM_CONSTRUCTION_RELIABILITY` | `0.65` | Minimum aligned Demucs reconstruction score required before stems may be heard in an edit. |
-| `MINIMUM_VOCAL_COVERAGE_FOR_INSTRUMENTAL_EDIT` | `0.08` | Uses instrumental construction only when enough vocal content exists to justify changing the full mix. |
-| `MAXIMUM_BUILDUP_RISK` | `0.60` | Disables a candidate that behaves too strongly like a runway into a drop or new section. |
-| `MINIMUM_ARRANGEMENT_FIT` | `-0.35` | Disables a technically clean candidate when its section role is strongly wrong, such as a chorus used as an outro. |
-| `MINIMUM_FALLBACK_LOOP_QUALITY` | `45.0` | Prevents recovery from replacing a rejected loop with an audibly weak fallback merely because its section label is safer. |
-| `MAXIMUM_BASS_RESET_RISK` | `0.65` | Disables a candidate whose loop would noticeably reset or remove low-frequency energy. |
-| `PREFER_UNIQUE_MATERIAL` | `True` | Prefers compatible longer source phrases over repeating a shorter unit. |
-| `UNIQUE_MATERIAL_SCORE_TOLERANCE` | `0.12` | Maximum internal-score sacrifice allowed to gain more unique musical material. Lower values are stricter. |
-| `UNIQUE_MATERIAL_QUALITY_TOLERANCE` | `12.0` | Maximum loop-quality percentage-point sacrifice allowed for a longer unit. |
-| `MINIMUM_UNIQUE_STRUCTURE_MATCH` | `0.45` | Minimum structural similarity required between the beginning and ending blocks of a longer phrase. |
-| `DEFAULT_USE_STEMS` | `False` | Set `True` to use Demucs by default. This makes normal runs substantially slower. |
-| `DEFAULT_OVERWRITE` | `False` | Set `True` to rebuild existing output files during normal runs. |
-| `DEFAULT_PRESET` | `None` | Sets a named strategy for normal runs. Keep `None` to use the individual defaults above. |
-| `PRESET_DEFINITIONS` | Six named profiles | Edit, add, or remove presets exposed by the `--preset` option. |
+| Setting                                        |             Shipped value | Usage and effect                                                                                                          |
+| ---------------------------------------------- | ------------------------: | ------------------------------------------------------------------------------------------------------------------------- |
+| `SUPPORTED_BAR_COUNTS`                         |    `(0, 2, 4, 8, 16, 32)` | Values accepted by `--intro-bars` and `--outro-bars`. Keep `0` if you want the disable option.                            |
+| `DEFAULT_AUTO_BAR_SELECTION`                   |                    `True` | Chooses the most suitable shorter length up to the configured default when no explicit bar count is supplied.             |
+| `AUTO_BAR_MAXIMUM_QUALITY_LOSS`                |                     `4.0` | Maximum loop-quality points a longer automatic choice may lose before receiving an extra penalty.                         |
+| `DEFAULT_INTRO_BARS`                           |                       `8` | Intro length used when `--intro-bars` is omitted. Try `4` for less repetition.                                            |
+| `DEFAULT_OUTRO_BARS`                           |                       `8` | Outro length used when `--outro-bars` is omitted. Set `0` to preserve original endings by default.                        |
+| `DEFAULT_MINIMUM_INTRO_LOOP_QUALITY`           |                    `65.0` | Hard intro quality floor. Candidates below this percentage are not exported.                                              |
+| `DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY`           |                    `65.0` | Hard outro quality floor. Candidates below this percentage are not exported.                                              |
+| `PREFERRED_LOOP_QUALITY_TARGET`                |                    `70.0` | Ranking target. A musically competitive 70%+ candidate is preferred over a lower-scoring option.                          |
+| `SUPPORTED_PCM_BITS`                           |                `(16, 24)` | Values accepted by `--bit-depth`. WAV export currently supports these PCM depths.                                         |
+| `DEFAULT_PCM_BITS`                             |                      `24` | Normal output depth. `24` is recommended for editing quality; `16` produces smaller files.                                |
+| `INPUT_FOLDER_NAME`                            |                 `"input"` | Batch folder relative to the project. CLI `--input-dir` overrides it.                                                     |
+| `OUTPUT_FOLDER_NAME`                           |                `"output"` | Export folder relative to the project. CLI `--output-dir` overrides it.                                                   |
+| `TRACK_OVERRIDES_FILENAME`                     |  `"track_overrides.json"` | Default per-song rules filename. CLI `--overrides` overrides it.                                                          |
+| `CACHE_FOLDER_NAME`                            |                 `"cache"` | Folder for reusable track and Demucs-derived analysis files.                                                              |
+| `DEFAULT_CACHE_ENABLED`                        |                    `True` | Enables cache reads and writes during normal runs.                                                                        |
+| `DEFAULT_PREVIEW_SECONDS`                      |                     `8.0` | Audio included on each side of a splice in preview files. Total preview length is up to twice this value.                 |
+| `DEFAULT_EXPORT_CUES`                          |                    `True` | Writes per-track JSON cue sheets and a batch Rekordbox XML playlist.                                                      |
+| `REKORDBOX_XML_FILENAME`                       |         `"rekordbox.xml"` | Filename used for the importable playlist at the output-folder root.                                                      |
+| `DEFAULT_CANDIDATE_COUNT`                      |                       `3` | Number of distinct intro/outro alternatives ranked internally for each enabled side.                                      |
+| `SUPPORTED_WORKER_CHOICES`                     | `("auto", "1", "2", "3")` | Values accepted by `--workers`. Increase carefully if you also increase the maximum worker count.                         |
+| `DEFAULT_WORKERS`                              |                  `"auto"` | Normal concurrency mode. `auto` is recommended, especially with Demucs.                                                   |
+| `BEATS_PER_BAR`                                |                       `4` | Assumed meter. Keep `4` for ordinary 4/4 music; changing it alters bar grouping throughout analysis.                      |
+| `INTRO_SEARCH_SECONDS`                         |                   `120.0` | Maximum opening search window when no manual boundary re-anchors selection.                                               |
+| `OUTRO_SEARCH_SECONDS`                         |                   `150.0` | Maximum closing search window when no manual boundary re-anchors selection.                                               |
+| `ANALYSIS_HOP_LENGTH`                          |                     `512` | Analysis resolution. Smaller values are more precise but slower and more memory-intensive.                                |
+| `MINIMUM_CROSSFADE_MS`                         |                    `10.0` | Shortest splice fade. The adaptive editor may increase it to 30 ms for difficult seams.                                   |
+| `PERCUSSION_PRIORITY_THRESHOLD`                |                    `0.65` | Drum-strength level that permits a short, transient-preserving splice.                                                    |
+| `BASS_PRESERVING_RISK_THRESHOLD`               |                    `0.40` | Bass-reset risk that activates a longer low-end-preserving join.                                                          |
+| `HARMONIC_TAIL_COMPATIBILITY_THRESHOLD`        |                    `0.55` | Timbre/tail score below which sustained synth, chord, or reverb material receives extra carry-over.                       |
+| `INTERACTIVE_CANDIDATE_POOL`                   |                      `12` | Maximum alternatives available through `R` during interactive review. Only three are shown at once.                       |
+| `MAXIMUM_VOCAL_COVERAGE`                       |                    `0.45` | With Demucs, disables a selected side when sustained vocals occupy more than 45% of its candidate.                        |
+| `MAXIMUM_VOCAL_BOUNDARY_RISK`                  |                    `0.55` | With Demucs, disables a selected side when an active vocal phrase overlaps a splice edge too strongly.                    |
+| `MINIMUM_STEM_CONSTRUCTION_RELIABILITY`        |                    `0.65` | Minimum aligned Demucs reconstruction score required before stems may be heard in an edit.                                |
+| `MINIMUM_VOCAL_COVERAGE_FOR_INSTRUMENTAL_EDIT` |                    `0.08` | Uses instrumental construction only when enough vocal content exists to justify changing the full mix.                    |
+| `MAXIMUM_BUILDUP_RISK`                         |                    `0.60` | Disables a candidate that behaves too strongly like a runway into a drop or new section.                                  |
+| `MINIMUM_ARRANGEMENT_FIT`                      |                   `-0.35` | Disables a technically clean candidate when its section role is strongly wrong, such as a chorus used as an outro.        |
+| `MINIMUM_FALLBACK_LOOP_QUALITY`                |                    `45.0` | Prevents recovery from replacing a rejected loop with an audibly weak fallback merely because its section label is safer. |
+| `MAXIMUM_BASS_RESET_RISK`                      |                    `0.65` | Disables a candidate whose loop would noticeably reset or remove low-frequency energy.                                    |
+| `PREFER_UNIQUE_MATERIAL`                       |                    `True` | Prefers compatible longer source phrases over repeating a shorter unit.                                                   |
+| `UNIQUE_MATERIAL_SCORE_TOLERANCE`              |                    `0.12` | Maximum internal-score sacrifice allowed to gain more unique musical material. Lower values are stricter.                 |
+| `UNIQUE_MATERIAL_QUALITY_TOLERANCE`            |                    `12.0` | Maximum loop-quality percentage-point sacrifice allowed for a longer unit.                                                |
+| `MINIMUM_UNIQUE_STRUCTURE_MATCH`               |                    `0.45` | Minimum structural similarity required between the beginning and ending blocks of a longer phrase.                        |
+| `DEFAULT_USE_STEMS`                            |                   `False` | Set `True` to use Demucs by default. This makes normal runs substantially slower.                                         |
+| `DEFAULT_OVERWRITE`                            |                   `False` | Set `True` to rebuild existing output files during normal runs.                                                           |
+| `DEFAULT_PRESET`                               |                    `None` | Sets a named strategy for normal runs. Keep `None` to use the individual defaults above.                                  |
+| `PRESET_DEFINITIONS`                           |        Six named profiles | Edit, add, or remove presets exposed by the `--preset` option.                                                            |
 
 The most useful personal setup for shorter edits would be:
 
@@ -311,7 +314,6 @@ Graphify-generated architecture and analysis artifacts live under
 are ignored by Git. Move durable architecture notes into `docs/`; if Graphify
 outputs are intentionally retained in the repository, treat them as generated
 documentation rather than source.
-
 
 ## Automated tests
 

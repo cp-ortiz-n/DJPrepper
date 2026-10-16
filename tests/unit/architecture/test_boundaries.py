@@ -31,7 +31,7 @@ SQL = re.compile(
 LEGACY_SQL = {
     "audioextender/library/backup.py:SELECT COUNT(*) FROM downloaded_tracks",
 }
-BROWSER_MUSICAL_PROFILE_OWNER = "web/dj-library.js"
+BROWSER_MUSICAL_PROFILE_OWNER = "web/dj-library-model.js"
 BROWSER_MUSICAL_PROFILE_FUNCTIONS = {
     "camelotKey",
     "energyBand",
