@@ -1480,6 +1480,12 @@ requirements:
 ./scripts/check_coverage.sh
 ```
 
+GitHub Actions runs the standard quality and stability gates on Python 3.12 and
+Node 22, plus the isolated Playwright browser and accessibility workflows. The
+workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+Static audit findings and interpretation are recorded in
+[`docs/dead-code-dependency-audit.md`](docs/dead-code-dependency-audit.md).
+
 The quality command is the authoritative standard check and does not modify
 source files. Coverage is a separate diagnostic tier, while
 `./scripts/run_stability_gate.sh` remains the extended check for high-risk

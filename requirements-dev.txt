@@ -2,3 +2,6 @@
 coverage>=7.6,<8
 ruff>=0.9,<1
 mypy>=1.14,<2
+vulture>=2.14,<3
+pipreqs==0.4.13
+pipdeptree>=2.26,<3
