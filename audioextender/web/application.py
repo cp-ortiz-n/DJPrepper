@@ -341,10 +341,6 @@ class SourceMatchRequest(BaseModel):
     url: str = Field(min_length=10, max_length=500)
 
 
-class DownloadedTracksRequest(BaseModel):
-    track_ids: list[int] = Field(min_length=1, max_length=1000)
-
-
 class DuplicateMergeRequest(BaseModel):
     survivor_id: int = Field(gt=0)
     duplicate_id: int = Field(gt=0)
@@ -506,34 +502,6 @@ def _write_source_metadata(audio_path: Path, metadata: dict) -> Path:
     return destination
 
 
-@legacy_router.get("/api/presets")
-def list_presets() -> dict:
-    return {"presets": _preset_payload()}
-
-
-@legacy_router.put("/api/presets/{current_name}")
-def save_preset(current_name: str, request: PresetRequest) -> dict:
-    if request.intro_bars not in SUPPORTED_BAR_COUNTS or request.outro_bars not in SUPPORTED_BAR_COUNTS:
-        raise HTTPException(400, "Unsupported bar count")
-    state = _preset_state()
-    if current_name != request.name and request.name in _available_presets():
-        raise HTTPException(409, "A preset with that name already exists")
-    if current_name != request.name:
-        state["definitions"].pop(current_name, None)
-        if current_name in PRESETS and current_name not in state["hidden"]:
-            state["hidden"].append(current_name)
-    state["hidden"] = [name for name in state["hidden"] if name != request.name]
-    state["definitions"][request.name] = {key: value for key, value in request.model_dump().items() if key != "name"}
-    _save_preset_state(state)
-    return {"presets": _preset_payload()}
-
-
-@legacy_router.delete("/api/presets/{name}")
-def delete_preset(name: str) -> dict:
-    if name not in _available_presets():
-        raise HTTPException(404, "Preset not found")
-    state = _preset_state()
-    state["definitions"].pop(name, None)
 def _match_tracks_to_youtube(tracks: list[dict], progress: Callable[..., None]) -> list[dict]:
     import yt_dlp
 
