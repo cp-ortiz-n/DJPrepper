@@ -1,4 +1,4 @@
-.PHONY: help install quality coverage stability browser browser-install test-python test-js lint format-check type-check
+.PHONY: help install quality coverage stability browser browser-install test-python test-js lint format-check type-check clean clean-apply clean-analysis-cache
 
 help:
 	@printf '%s\n' \
@@ -12,7 +12,10 @@ help:
 		'test-js          Run JavaScript syntax and unit tests' \
 		'lint             Run Python and JavaScript linters' \
 		'format-check     Run Python and frontend formatting ratchets' \
-		'type-check       Run Python type checking'
+		'type-check       Run Python type checking' \
+		'clean            Preview removable generated workspace artifacts' \
+		'clean-apply      Remove standard generated workspace artifacts' \
+		'clean-analysis-cache  Also remove the regenerable runtime analysis cache'
 
 install:
 	.venv/bin/python -m pip install -r requirements-dev.txt
@@ -49,4 +52,13 @@ format-check:
 
 type-check:
 	.venv/bin/mypy
+
+clean:
+	.venv/bin/python scripts/clean_workspace.py
+
+clean-apply:
+	.venv/bin/python scripts/clean_workspace.py --apply
+
+clean-analysis-cache:
+	.venv/bin/python scripts/clean_workspace.py --apply --include-analysis-cache
 

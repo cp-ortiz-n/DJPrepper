@@ -79,3 +79,7 @@ Record planned work in `BACKLOG.md`. Generated coverage, runtime cache, audio,
 dependency, and Graphify outputs are not maintained source and must remain
 ignored unless a specific artifact is intentionally accepted as documentation.
 
+Preview safe generated-artifact cleanup with `make clean`. Use
+`make clean-apply` after reviewing the list. The regenerable runtime analysis
+cache is deliberately excluded unless `make clean-analysis-cache` is requested.
+

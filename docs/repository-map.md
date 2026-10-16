@@ -147,9 +147,12 @@ map reflects the current layout; it does not propose moving code.
 │   ├── architecture.md
 │   ├── architecture-audit.md
 │   ├── browser-smoke-testing.md
+│   ├── developer-guide.md
 │   ├── development-quality.md
 │   ├── musical-policy-ownership.md
-│   └── repository-map.md
+│   ├── operator-guide.md
+│   ├── repository-map.md
+│   └── user-guide.md
 ├── graphify-out/
 │   └── memory/
 │       ├── query_20260930_170835_47f25d97_extract_the_authorized_youtube_and_soundcloud_impo.md
@@ -168,6 +171,7 @@ map reflects the current layout; it does not propose moving code.
 ├── requirements.txt
 ├── scripts/
 │   ├── benchmark_key_confidence.py
+│   ├── clean_workspace.py
 │   ├── evaluate_key_ensemble.py
 │   ├── evaluate_set_builder.py
 │   ├── check_coverage.sh
