@@ -378,7 +378,7 @@ owner and required tests without reading the composition roots end to end.
 Objective: prove modernization preserved the local DJ application. Dependencies:
 all approved implementation phases. Benefit: evidence-based release confidence.
 
-- [ ] **ARCH-VERIFY-001 — Run the full compatibility and rollback release gate.**
+- [x] **ARCH-VERIFY-001 — Run the full compatibility and rollback release gate.**
   Priority: P0. Effort: M. Risk: Low. Dependencies: all implemented architecture
   tasks. Acceptance: Ruff, MyPy, Python/JS tests, stability gate, backup/restore,
   old database/saved-set fixtures, CLI, endpoint inventory, exports, catalog-scale
@@ -387,12 +387,21 @@ all approved implementation phases. Benefit: evidence-based release confidence.
   Evidence: audit sections 16–18.
   Verification run 2026-10-15: quality, coverage, stability, backup/restore,
   rollback, legacy database and saved-set compatibility, CLI, endpoint, export,
-  and eight browser workflow/accessibility checks passed. Final release remains
-  open because the configured `/Volumes/YOTUO` library was not mounted for the
-  fresh 3,260-track Set Builder evaluation and DJ listening approval is pending.
-  The optional Ollama suite was skipped because the local service was offline.
+  and eight browser workflow/accessibility checks passed. The release was
+  provisionally approved under an explicit temporary owner waiver for DJ
+  listening. After reconnecting the configured `/Volumes/YOTUO` library, 3,255
+  of 3,260 catalog files were readable
+  and all five Set Builder scenarios completed with valid plans, automated-ready
+  status, and average quality 80.4. The optional Ollama suite was skipped because
+  the local service was offline.
   Full evidence and exact rerun commands are recorded in
   [the release-gate report](docs/architecture-release-gate.md).
+- [ ] **ARCH-VERIFY-002 — Confirm the temporary listening waiver.**
+  Priority: P0. Effort: S. Risk: Medium. Dependencies: ARCH-VERIFY-001.
+  Acceptance: the owner listens to all five generated release playlists,
+  records acceptance or rejection, and reopens the release gate if any scenario
+  requires correction. The temporary waiver is authorization, not evidence that
+  listening already occurred.
 
 Phase acceptance: all protected interfaces, data, musical behavior, and workflows
 match the Phase 0 baseline or have an explicitly approved compatibility note.
