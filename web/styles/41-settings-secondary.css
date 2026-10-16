@@ -1,0 +1,293 @@
+/* Keep secondary Settings tools compact until the user needs them. */
+.settings-drawer {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  margin-top: 10px;
+}
+.settings-drawer > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 70px;
+  padding: 15px 20px;
+  cursor: pointer;
+  list-style: none;
+}
+.settings-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-drawer > summary:hover {
+  background: rgba(255, 255, 255, 0.018);
+}
+.settings-drawer > summary b,
+.settings-drawer > summary small {
+  display: block;
+}
+.settings-drawer > summary b {
+  font-size: 12px;
+}
+.settings-drawer > summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+}
+.settings-drawer > summary i {
+  color: var(--muted);
+  font-size: 18px;
+  font-style: normal;
+  transition: transform 0.18s ease;
+}
+.settings-drawer[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+.settings-drawer[open] > summary i {
+  transform: rotate(90deg);
+}
+.settings-drawer-body {
+  padding: 18px 20px 20px;
+}
+.backup-manager-body {
+  display: grid;
+  gap: 16px;
+}
+.backup-create-panel,
+.backup-restore-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px 210px auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #141614;
+}
+.backup-create-panel > div strong,
+.backup-create-panel > div span,
+.backup-restore-panel > div strong,
+.backup-restore-panel > div span {
+  display: block;
+}
+.backup-create-panel > div span,
+.backup-restore-panel > div span {
+  max-width: 650px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+.backup-create-panel label,
+.backup-restore-panel label {
+  margin: 0;
+}
+.backup-create-panel button,
+.backup-restore-panel > .button {
+  width: auto;
+  min-width: 130px;
+  margin: 0;
+}
+.backup-message {
+  min-height: 16px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+.backup-message a {
+  color: var(--lime);
+}
+.backup-history-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 15px;
+}
+.backup-history-head strong,
+.backup-history-head span {
+  display: block;
+}
+.backup-history-head span {
+  max-width: 720px;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.backup-history-head button {
+  width: auto;
+  margin: 0;
+}
+.backup-history {
+  display: grid;
+  gap: 7px;
+}
+.backup-history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+.backup-history-row strong,
+.backup-history-row span {
+  display: block;
+}
+.backup-history-row span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 8px;
+}
+.backup-history-row > b {
+  font-size: 9px;
+}
+.backup-history-row .button {
+  width: auto;
+  min-height: 30px;
+  margin: 0;
+  padding: 7px 11px;
+  font-size: 8px;
+}
+.backup-history-row.invalid {
+  border-color: #62443e;
+}
+.backup-file-picker {
+  cursor: pointer;
+  text-align: center;
+}
+.backup-restore-preview {
+  padding: 14px;
+  border: 1px solid #52632f;
+  border-radius: 10px;
+  background: var(--lime-soft);
+}
+.backup-restore-preview[hidden] {
+  display: none;
+}
+.backup-restore-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 320px) auto;
+  gap: 13px;
+  align-items: end;
+}
+.backup-preview-summary strong,
+.backup-preview-summary span,
+.backup-preview-summary small {
+  display: block;
+}
+.backup-preview-summary strong {
+  color: var(--lime);
+}
+.backup-preview-summary span,
+.backup-preview-summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 8px;
+}
+.backup-restore-preview label {
+  margin: 0;
+}
+.backup-restore-preview button {
+  width: auto;
+  margin: 0;
+}
+.backup-restore-message,
+.backup-error {
+  grid-column: 1/-1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+.backup-error {
+  color: #e7abab;
+}
+.preset-manager-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+.preset-manager-actions button,
+.settings-drawer-toolbar button {
+  width: auto;
+  margin: 0;
+}
+.settings-drawer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.settings-drawer-toolbar p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+.cleanup-panel {
+  display: block;
+  grid-template-columns: none;
+  border-color: #62443e;
+  background: linear-gradient(135deg, rgba(126, 54, 44, 0.08), var(--panel));
+}
+.cleanup-panel > summary b {
+  color: #d8b0a8;
+}
+.cleanup-drawer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  align-items: end;
+}
+.cleanup-drawer-body > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.6;
+}
+.cleanup-drawer-body .cleanup-actions {
+  grid-column: 1/-1;
+}
+@media (max-width: 900px) {
+  .backup-create-panel,
+  .backup-restore-panel,
+  .backup-restore-preview {
+    grid-template-columns: 1fr 1fr;
+  }
+  .backup-create-panel > div,
+  .backup-restore-panel > div,
+  .backup-preview-summary {
+    grid-column: 1/-1;
+  }
+}
+@media (max-width: 700px) {
+  .backup-create-panel,
+  .backup-restore-panel,
+  .backup-restore-preview,
+  .backup-history-row {
+    grid-template-columns: 1fr;
+  }
+  .backup-restore-message,
+  .backup-error {
+    grid-column: 1;
+  }
+  .cleanup-drawer-body {
+    grid-template-columns: 1fr;
+  }
+  .cleanup-drawer-body .cleanup-actions {
+    grid-column: auto;
+  }
+  .settings-drawer-toolbar,
+  .preset-manager-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .settings-drawer-toolbar button,
+  .preset-manager-actions button {
+    width: 100%;
+  }
+}

@@ -1,0 +1,39 @@
+/* Music Files: keep metadata, status, playback, and actions on a stable row grid. */
+.downloaded-card > .compact-audio {
+  width: 170px;
+  justify-self: stretch;
+}
+@media (max-width: 1100px) {
+  .downloaded-card {
+    grid-template-columns: 20px 32px minmax(150px, 1fr) minmax(190px, 230px) 150px 34px;
+  }
+  .downloaded-analysis-status {
+    display: none;
+  }
+  .downloaded-card > .compact-audio {
+    width: 150px;
+  }
+}
+@media (max-width: 900px) {
+  .downloaded-card {
+    grid-template-columns: 20px 32px minmax(150px, 1fr) 34px;
+  }
+  .downloaded-card > .downloaded-genre-cell {
+    grid-column: 3;
+  }
+  .downloaded-card > .compact-audio {
+    grid-column: 3;
+    width: 100%;
+    max-width: 230px;
+  }
+  .downloaded-card > .downloaded-actions {
+    grid-column: 4;
+    grid-row: 1;
+  }
+}
+@media (max-width: 760px) {
+  .downloaded-card > .downloaded-genre-cell,
+  .downloaded-card > .compact-audio {
+    display: none;
+  }
+}

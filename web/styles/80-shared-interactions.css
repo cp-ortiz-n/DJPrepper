@@ -1,0 +1,65 @@
+/* Shared interaction language: consistent controls, status tones, and keyboard focus. */
+:where(
+    .downloaded-filters,
+    .library-filters,
+    .library-advanced-filters,
+    .report-toolbar,
+    .set-controls,
+    .settings-form,
+    .reprocess-grid,
+    .preset-editor,
+    .transition-editor-controls
+  )
+  :where(input:not([type='checkbox']):not([type='range']), select, .select-search-input) {
+  min-height: var(--control-height);
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  color: var(--ink);
+  background-color: var(--panel-2);
+  text-overflow: ellipsis;
+}
+:where(button, a, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: 2px;
+}
+:where(button, select, input):disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+[data-tone='success'] {
+  color: var(--status-success);
+}
+[data-tone='warning'] {
+  color: var(--status-warning);
+}
+[data-tone='danger'] {
+  color: var(--status-danger);
+}
+[data-tone='info'] {
+  color: var(--status-info);
+}
+
+@media (max-width: 980px) {
+  .set-proposal-picker {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}
+@media (max-width: 720px) {
+  .set-proposals {
+    grid-template-columns: 1fr;
+  }
+  .set-proposal {
+    min-height: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

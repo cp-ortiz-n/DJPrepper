@@ -11,10 +11,14 @@ from audioextender.infrastructure.operation_lifecycle import PLAYLIST_MATCHES, L
 
 
 class PlaylistMatchNotFoundError(LookupError):
+    """Raised when a playlist match job is not found in the registry."""
+
     pass
 
 
 class PlaylistMatchService:
+    """Background orchestration for playlist-to-source matching."""
+
     def __init__(
         self,
         matcher: Callable[[list[dict[str, Any]], Callable[..., None]], list[dict[str, Any]]],
@@ -27,6 +31,7 @@ class PlaylistMatchService:
         self._lock = threading.Lock()
 
     def start(self, tracks: list[dict[str, Any]], playlist_name: str) -> dict[str, Any]:
+        """Start a new playlist match job for the given tracks."""
         match_id = uuid.uuid4().hex
         with self._lock:
             self._states[match_id] = {
@@ -47,6 +52,7 @@ class PlaylistMatchService:
         return {"match_id": match_id, "track_count": len(tracks), "playlist_name": playlist_name}
 
     def run(self, match_id: str, tracks: list[dict[str, Any]]) -> None:
+        """Run the playlist matching process in a background thread."""
         try:
             results = self._matcher(
                 tracks,
@@ -68,6 +74,7 @@ class PlaylistMatchService:
             )
 
     def status(self, match_id: str) -> dict[str, Any]:
+        """Return the current state of a playlist match job."""
         with self._lock:
             state = self._states.get(match_id)
             if state is None:
@@ -75,16 +82,20 @@ class PlaylistMatchService:
             return dict(state)
 
     def lifecycle_status(self, match_id: str) -> LifecycleProjection:
+        """Return a stable projection of the current state of a playlist match job."""
         return PLAYLIST_MATCHES.project(self.status(match_id))
 
     def has_active_imports(self) -> bool:
+        """Return True if any playlist match job is currently in progress."""
         with self._lock:
             return any(state.get("status") == "processing" for state in self._states.values())
 
     def clear(self) -> None:
+        """Clear all playlist match jobs from the registry."""
         with self._lock:
             self._states.clear()
 
     def _update(self, match_id: str, **values: Any) -> None:
+        """Update the state of a playlist match job with new values."""
         with self._lock:
             self._states[match_id].update(values)

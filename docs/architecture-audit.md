@@ -303,14 +303,14 @@ backup/restore behavior are covered by deterministic and browser tests.
 
 ### ARCH-013 — Stylesheet ownership may become a frontend bottleneck
 
-**Status:** Confirmed / Investigation complete
+**Status:** Resolved
 **Category:** Frontend  
 **Severity:** Low  
 **Affected files:** `web/styles.css`  
 **Evidence:** the completed [`css-ownership-audit.md`](css-ownership-audit.md) found 656 class selectors, 68 media-query blocks across 15 conditions, 17 static-reference removal candidates, and substantial feature-owned selector groups interleaved with shared rules. Browser coverage now measures desktop, compact, and narrow layouts, keyboard focus, reduced motion, and WCAG A/AA findings.
 **Problem:** Accessibility primitives are present and working, but feature ownership and responsive overrides are distributed through one cascade, making safe removal and isolated feature changes unnecessarily difficult.
 **Impact:** Confirmed dead-rule risk and avoidable cascade regression risk; no current critical responsive or accessibility failure was found.
-**Recommendation:** ARCH-013B should perform a behavior-preserving split into tokens/base, shared components, shell, and feature-owned files with one ordered entry point.
+**Resolution:** ARCH-013B split the stylesheet behind one ordered entry point into numbered shell, shared-component, processing, Library/reporting, Settings, Music Files, and Set Builder fragments. The original cascade order is preserved, placement rules are documented beside the styles, confirmed dead selectors were removed, and structural plus browser tests protect import order and computed behavior.
 **Dependencies:** viewport screenshots and selector usage report.  
 **Estimated effort:** S investigation; M if confirmed  
 **Regression risk:** Medium  

@@ -21,6 +21,8 @@ class ConfigFactory:
 
     @staticmethod
     def from_arguments(args: argparse.Namespace) -> EditConfig:
+        """Build and validate an edit configuration from CLI arguments."""
+
         preset = get_preset(args.preset)
         config = EditConfig(
             intro_bars=(
@@ -71,6 +73,8 @@ class ConfigFactory:
 
     @staticmethod
     def validate_boundaries(args: argparse.Namespace) -> None:
+        """Ensure explicitly provided boundary values are positive."""
+
         for option in ("intro_before", "outro_after", "outro_before"):
             value = getattr(args, option)
             if value is not None and value <= 0:

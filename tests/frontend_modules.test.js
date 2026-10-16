@@ -102,6 +102,57 @@ test('app.js remains a feature composition root', () => {
   }
 });
 
+test('stylesheet entry point preserves explicit owner order without dead audit selectors', () => {
+  const entryPath = fileURLToPath(new URL('../web/styles.css', import.meta.url));
+  const entry = readFileSync(entryPath, 'utf8');
+  const imports = [...entry.matchAll(/@import url\(['"]\.\/styles\/([^'"]+)['"]\);/g)].map((match) => match[1]);
+  assert.deepEqual(imports, [
+    '00-base-shell.css',
+    '10-shared-collections.css',
+    '20-processing-media.css',
+    '21-shared-secondary-actions.css',
+    '30-library-reporting.css',
+    '22-processing-detail.css',
+    '23-processing-primary-actions.css',
+    '40-settings-foundations.css',
+    '24-processing-status.css',
+    '50-music-files-workflows.css',
+    '60-set-builder-brief.css',
+    '70-reporting-analysis.css',
+    '61-set-builder-workspace.css',
+    '41-settings-secondary.css',
+    '51-music-files-rows.css',
+    '52-music-files-filters.css',
+    '80-shared-interactions.css',
+    '81-shared-components.css',
+    '82-shared-action-hierarchy.css',
+  ]);
+  const source = imports
+    .map((name) => readFileSync(fileURLToPath(new URL(`../web/styles/${name}`, import.meta.url)), 'utf8'))
+    .join('\n');
+  for (const selector of [
+    'downloaded-bulk-identity',
+    'downloaded-duration',
+    'downloaded-group',
+    'import-boundary',
+    'import-guidance',
+    'import-layout',
+    'inspector-identity',
+    'library-bulk-identity',
+    'optional-metric',
+    'performance-diagnostics-head',
+    'preset-manager-head',
+    'set-identity-editor-actions',
+    'status-danger,',
+    'status-info,',
+    'status-success,',
+    'status-warning,',
+    'track-quality',
+  ]) {
+    assert.equal(source.includes(selector), false, `${selector} was confirmed unused by ARCH-013A`);
+  }
+});
+
 test('Music Files owns filter state and API serialization', () => {
   const state = musicFiles.createMusicFilesUiState(25);
   state.genre = 'Electronic / House';

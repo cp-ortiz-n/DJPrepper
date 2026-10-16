@@ -1,0 +1,92 @@
+/* Compact, status-led processing queue. */
+.queue-filters {
+  display: flex;
+  gap: 6px;
+  margin: 14px 0;
+  padding-bottom: 13px;
+  border-bottom: 1px solid var(--line);
+}
+.queue-filters button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: auto;
+  height: 32px;
+  margin: 0;
+  padding: 0 11px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.queue-filters button span {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #242724;
+  color: var(--muted);
+  font-size: 8px;
+}
+.queue-filters button.active {
+  color: var(--lime);
+  border-color: #52632f;
+  background: var(--lime-soft);
+}
+.queue-filters button.active span {
+  color: var(--lime);
+  background: #303921;
+}
+.job-card {
+  padding: 13px 14px;
+}
+.job-card .progress-track {
+  margin-top: 11px;
+}
+.job-card .job-error:empty {
+  display: none;
+}
+.job-card[data-status='processing'] {
+  border-color: #52632f;
+}
+.job-card[data-status='failed'] {
+  border-color: #704a45;
+}
+.job-card[data-status='failed'] .status,
+.job-card[data-status='failed'] .job-error {
+  color: #ef9d94;
+}
+.job-card[data-status='canceled'] {
+  opacity: 0.82;
+}
+.job-card[data-status='complete'] .status {
+  color: var(--lime);
+}
+.job-card[data-status='complete'] .library-job {
+  display: block;
+}
+.job-actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 620px) {
+  .queue-filters {
+    overflow-x: auto;
+  }
+  .queue-filters button {
+    flex: 0 0 auto;
+  }
+  .job-top {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .job-top .track-title {
+    min-width: calc(100% - 50px);
+  }
+  .job-top .status {
+    margin-left: 47px;
+  }
+  .job-actions .button {
+    flex: 1 1 auto;
+  }
+}

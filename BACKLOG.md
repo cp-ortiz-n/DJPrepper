@@ -246,13 +246,19 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   720 px, and 390 px layouts without page overflow, visible keyboard focus,
   computed reduced-motion behavior, and serious/critical WCAG findings. The
   evidence confirms a behavior-preserving ownership split is warranted.
-- [ ] **ARCH-013B — Split CSS by explicit feature ownership.** Priority: P2.
+- [x] **ARCH-013B — Split CSS by explicit feature ownership.** Priority: P2.
   Effort: M. Risk: Medium. Dependencies: ARCH-013A. Acceptance: tokens/base,
   shared components, shell, imports/processing, Music Files, DJ Library, Set
   Builder, and Settings/reporting styles have explicit owners behind one ordered
   entry point; confirmed dead rules are removed, equivalent owner-local media
   conditions are consolidated, and computed behavior remains compatible at all
   supported viewports. Evidence: `docs/css-ownership-audit.md`.
+  Completed 2026-10-15: `web/styles.css` is now a stable ordered entry point for
+  numbered owner fragments covering shell/base, shared components, processing,
+  Library/reporting, Settings, Music Files, and Set Builder. The original
+  cascade order remains explicit, all 17 confirmed unused selector candidates
+  were removed, a structural test protects imports and cleanup, and the real
+  browser gate protects responsive, focus, motion, and accessibility behavior.
 
 Phase acceptance: feature behavior is independently testable, `app.js` is a
 composition root, and no storage or UI workflow compatibility is lost.

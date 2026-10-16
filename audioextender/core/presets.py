@@ -9,6 +9,8 @@ from settings import PRESET_DEFINITIONS, SUPPORTED_BAR_COUNTS
 
 @dataclass(frozen=True)
 class EditPreset:
+    """Named editing strategy for common DJ use cases."""
+
     intro_bars: int
     outro_bars: int
     use_stems: bool
@@ -53,4 +55,5 @@ PRESETS = _load_presets()
 
 
 def get_preset(name: str | None) -> EditPreset | None:
+    """Return the named preset, or None if no name is provided."""
     return PRESETS.get(name) if name is not None else None

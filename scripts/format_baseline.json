@@ -26,7 +26,6 @@
     "web/set-planning-client.js",
     "web/settings.js",
     "web/shared-components.js",
-    "web/styles.css",
     "tests/import_queue.test.js",
     "tests/playback_behavior.test.js",
     "tests/request_state_controller.test.js"

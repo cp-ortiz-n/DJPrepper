@@ -37,6 +37,8 @@ def create_import_router(
     parse_playlist: Callable[[bytes], list[dict]] | None = None,
     safe_playlist_name: Callable[[str], str] | None = None,
 ) -> APIRouter:
+    """Create an APIRouter for authorized source imports."""
+
     router = APIRouter(prefix="/api/imports", tags=["imports"])
 
     @router.post("/authorized", status_code=202)

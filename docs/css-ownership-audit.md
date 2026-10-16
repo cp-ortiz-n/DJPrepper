@@ -82,3 +82,11 @@ single CSS entry point so `index.html` does not learn feature ordering.
 The split is complete only when the existing unit, browser, accessibility,
 responsive, and reduced-motion gates pass without snapshot-driven restyling.
 
+## Implementation
+
+ARCH-013B completed the split behind the unchanged `web/styles.css` public
+entry point. Numbered owner fragments preserve the original cascade order, and
+`web/styles/README.md` defines placement rules. All 17 confirmed static-reference
+candidates were removed; active attribute-based status tones remain supported.
+The entry order and removed-selector set are protected by a fast frontend test.
+
