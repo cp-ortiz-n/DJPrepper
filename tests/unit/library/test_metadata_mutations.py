@@ -9,12 +9,71 @@ from audioextender.infrastructure.batch_operations import BatchOperationRegistry
 from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
     TrackMetadataMutationService,
+    TrackMetadataUpdate,
 )
 from audioextender.repositories.facade import JobRepository
 from audioextender.web.metadata_batch_routes import MetadataBatchDependencies, MetadataBatchService
 
 
 class TrackMetadataMutationTests(unittest.TestCase):
+    def test_metadata_update_owns_move_tags_sidecar_catalog_and_publication(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            library = root / "Library"
+            source = library / "Other" / "Track.wav"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"audio")
+            repository = JobRepository(root / "catalog.sqlite3")
+            track_id = repository.upsert_downloaded_track(
+                title="Track",
+                artist="",
+                file_path=source,
+                genre="",
+                genre_category="Other",
+                playlist_name="Inbox",
+            )
+            tagged: list[tuple[Path, dict]] = []
+            sidecars: list[tuple[Path, dict]] = []
+            publications: list[bool] = []
+            service = TrackMetadataMutationService(
+                TrackMetadataMutationDependencies(
+                    repository=repository,
+                    normalize_genre=lambda value: value,
+                    genre_directory=lambda value: library / value.replace(" / ", "/"),
+                    music_library_root=lambda: library,
+                    source_metadata_path=lambda path: path.with_suffix(".json"),
+                    write_wav_metadata=lambda path, **values: tagged.append((path, values)),
+                    write_source_metadata=lambda path, values: sidecars.append((path, values)),
+                    cache_track_artwork=lambda *_args: "",
+                    safe_audio_name=lambda value: value,
+                    publish_catalog=lambda: publications.append(True),
+                )
+            )
+
+            result = service.update_metadata(
+                track_id,
+                TrackMetadataUpdate(
+                    title="Song",
+                    artist="Artist",
+                    genre="salsa, timba",
+                    genre_category="Latin / Salsa",
+                    playlist_name="Latin Set",
+                    rename_file=True,
+                ),
+            )
+
+            destination = library / "Latin" / "Salsa" / "Artist - Song.wav"
+            track = repository.get_downloaded_track(track_id)
+            assert track is not None
+            self.assertTrue(destination.is_file())
+            self.assertFalse(source.exists())
+            self.assertEqual(track["file_path"], str(destination.resolve()))
+            self.assertEqual(track["genre"], "salsa, timba")
+            self.assertEqual(tagged[0][0], destination)
+            self.assertEqual(sidecars[0][0], destination)
+            self.assertEqual(publications, [True])
+            self.assertEqual(result["file_path"], str(destination.resolve()))
+
     def test_genre_change_publishes_after_catalog_and_files_are_updated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -40,6 +99,8 @@ class TrackMetadataMutationTests(unittest.TestCase):
                     source_metadata_path=lambda path: path.with_suffix(".json"),
                     write_wav_metadata=lambda *_args, **_kwargs: None,
                     write_source_metadata=lambda *_args, **_kwargs: None,
+                    cache_track_artwork=lambda *_args: "",
+                    safe_audio_name=lambda value: value,
                     publish_catalog=publish,
                 )
             )
@@ -71,6 +132,8 @@ class TrackMetadataMutationTests(unittest.TestCase):
                     source_metadata_path=lambda path: path.with_suffix(".json"),
                     write_wav_metadata=lambda *_args, **_kwargs: None,
                     write_source_metadata=lambda *_args, **_kwargs: None,
+                    cache_track_artwork=lambda *_args: "",
+                    safe_audio_name=lambda value: value,
                     publish_catalog=lambda: publications.append(True),
                 )
             )

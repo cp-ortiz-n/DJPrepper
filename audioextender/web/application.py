@@ -13,14 +13,14 @@ import io
 import json
 import logging
 import re
-import shutil
+import subprocess
 import threading
 import unicodedata
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Annotated, Any, Literal, cast
+from typing import Annotated, Any, cast
 from urllib.parse import urlencode, urlparse
 
 import httpx
@@ -40,7 +40,6 @@ from audioextender.audio.wav_metadata import (
     sync_wav_metadata,
     write_wav_metadata,
 )
-from audioextender.core.operation_feedback import operation_receipt
 from audioextender.core.presets import PRESETS
 from audioextender.imports.creative_commons import CreativeCommonsImportService
 from audioextender.imports.creative_commons_routes import (
@@ -107,11 +106,20 @@ from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
+from audioextender.web.downloaded_library_models import (
+    DownloadedGenreRequest,  # noqa: F401 - compatibility re-export
+    DownloadedMetadataRequest,  # noqa: F401 - compatibility re-export
+    DownloadedTracksRequest,  # noqa: F401 - compatibility re-export
+)
 from audioextender.web.downloaded_library_routes import (
     DownloadedLibraryDeliveryService,
     DownloadedLibraryRouteDependencies,
-    DownloadedTracksRequest,  # noqa: F401 - compatibility re-export
     create_downloaded_library_router,
+)
+from audioextender.web.downloaded_track_mutation_routes import (
+    DownloadedTrackMutationDependencies,
+    DownloadedTrackMutationService,
+    create_downloaded_track_mutation_router,
 )
 from audioextender.web.error_contracts import install_error_handlers
 from audioextender.web.job_media_routes import (
@@ -142,6 +150,13 @@ from audioextender.web.preset_routes import (
     PresetRouteDependencies,
     PresetService,
     create_preset_router,
+)
+from audioextender.web.recording_family_routes import (
+    DuplicateMergeRequest,  # noqa: F401 - compatibility re-export
+    RecordingFamilyRouteDependencies,
+    RecordingFamilyService,
+    TrackFamilyLinkRequest,  # noqa: F401 - compatibility re-export
+    create_recording_family_router,
 )
 from audioextender.web.reporting_routes import (
     ReportingRouteDependencies,
@@ -341,17 +356,6 @@ class SourceMatchRequest(BaseModel):
     url: str = Field(min_length=10, max_length=500)
 
 
-class DuplicateMergeRequest(BaseModel):
-    survivor_id: int = Field(gt=0)
-    duplicate_id: int = Field(gt=0)
-
-
-class TrackFamilyLinkRequest(BaseModel):
-    target_track_id: int | None = Field(default=None, gt=0)
-    target_identity: str = Field(default="", max_length=40)
-    relationship: Literal["ORG", "RMX", "EXT", "RADIO", "LIVE", "INST", "ACAP", "REM"]
-
-
 class ArtworkSyncRequest(BaseModel):
     track_ids: list[int] = Field(default_factory=list, max_length=5000)
 
@@ -364,20 +368,6 @@ class DownloadedAnalysisFilterRequest(BaseModel):
     analysis: str = Field(default="all", max_length=30)
     quality: str = Field(default="all", max_length=30)
     sort: str = Field(default="newest", max_length=30)
-
-
-class DownloadedGenreRequest(DownloadedTracksRequest):
-    genre_category: str = Field(min_length=1, max_length=80)
-
-
-class DownloadedMetadataRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=300)
-    artist: str = Field(default="", max_length=300)
-    genre: str = Field(default="", max_length=500)
-    genre_category: str = Field(min_length=1, max_length=80)
-    playlist_name: str = Field(default="Imported Singles", min_length=1, max_length=180)
-    artwork_url: str = Field(default="", max_length=1000)
-    rename_file: bool = False
 
 
 class ReprocessRequest(BaseModel):
@@ -1168,88 +1158,6 @@ def _downloaded_track_payload(track: dict) -> dict:
     return payload
 
 
-@legacy_router.delete("/api/downloaded-library/tracks/{track_id}")
-def remove_downloaded_track(track_id: int) -> dict:
-    if not repository.delete_downloaded_track(track_id):
-        raise HTTPException(404, "Downloaded track was not found")
-    return {"removed": True, "track_id": track_id}
-
-
-@legacy_router.delete("/api/downloaded-library/tracks")
-def remove_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
-    requested = set(request.track_ids)
-    removed = sum(1 for track_id in requested if repository.delete_downloaded_track(track_id))
-    return {"removed": removed, "requested": len(requested)}
-
-
-@legacy_router.get("/api/downloaded-library/duplicate-candidates")
-def downloaded_duplicate_candidates() -> dict:
-    candidates = repository.duplicate_candidates()
-    return {
-        "candidates": [
-            {
-                **candidate,
-                "tracks": [_downloaded_track_payload(track) for track in candidate["tracks"]],
-            }
-            for candidate in candidates
-        ],
-        "total": len(candidates),
-    }
-
-
-@legacy_router.post("/api/downloaded-library/merge-duplicate")
-def merge_downloaded_duplicate(request: DuplicateMergeRequest) -> dict:
-    try:
-        track = repository.merge_downloaded_tracks(request.survivor_id, request.duplicate_id)
-    except KeyError as error:
-        raise HTTPException(404, "One or more tracks were not found") from error
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-    return {"merged": True, "track": _downloaded_track_payload(track)}
-
-
-@legacy_router.post("/api/downloaded-library/tracks/{track_id}/keep-separate")
-def keep_downloaded_track_separate(track_id: int) -> dict:
-    try:
-        track = repository.separate_recording(track_id)
-    except KeyError as error:
-        raise HTTPException(404, "Track was not found") from error
-    return {"updated": True, "track": _downloaded_track_payload(track)}
-
-
-@legacy_router.get("/api/downloaded-library/tracks/{track_id}/family")
-def downloaded_track_family(track_id: int) -> dict:
-    try:
-        family = repository.recording_family(track_id)
-        suggestions = repository.recording_family_suggestions(track_id)
-    except KeyError as error:
-        raise HTTPException(404, "Track was not found") from error
-    return {
-        "family": [_downloaded_track_payload(track) for track in family],
-        "suggestions": [{**item, "track": _downloaded_track_payload(item["track"])} for item in suggestions],
-    }
-
-
-@legacy_router.post("/api/downloaded-library/tracks/{track_id}/link-version")
-def link_downloaded_track_version(track_id: int, request: TrackFamilyLinkRequest) -> dict:
-    target_track_id = request.target_track_id or repository.track_id_for_identity(request.target_identity)
-    if target_track_id is None:
-        raise HTTPException(404, "Target track ID was not found")
-    try:
-        track = repository.link_recording_version(track_id, target_track_id, request.relationship)
-    except KeyError as error:
-        raise HTTPException(404, "One or more tracks were not found") from error
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-    return {"updated": True, "track": _downloaded_track_payload(track)}
-
-
-@legacy_router.post("/api/downloaded-library/tracks/{track_id}/unlink-version")
-def unlink_downloaded_track_version(track_id: int) -> dict:
-    """Create a new family for a track; this is the safe inverse of linking."""
-    return keep_downloaded_track_separate(track_id)
-
-
 @legacy_router.post("/api/downloaded-library/analyze", status_code=202)
 def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
     wanted = set(request.track_ids)
@@ -1311,248 +1219,6 @@ def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterReques
     )
     result = _queue_downloaded_analysis(tracks, force=True)
     return {**result, "matched": len(tracks)}
-
-
-@legacy_router.patch("/api/downloaded-library/genre")
-def change_downloaded_genre(request: DownloadedGenreRequest) -> dict:
-    try:
-        result = track_metadata_mutations.change_genre(request.track_ids, request.genre_category)
-        return {
-            **result,
-            "receipt": operation_receipt(
-                operation="change-track-genre",
-                requested=f"Move {len(set(request.track_ids))} tracks to {request.genre_category}",
-                requested_count=len(set(request.track_ids)),
-                changed=f"Moved and retagged {result['updated']} tracks",
-                changed_count=int(result["updated"]),
-                written_to=[str(_genre_directory(result["genre_category"]))],
-                survives_restart=True,
-                durability="WAV locations, embedded tags, sidecars, and catalog paths were persisted.",
-            ),
-        }
-    except ValueError as error:
-        raise HTTPException(400, str(error)) from error
-    except LookupError as error:
-        raise HTTPException(404, str(error)) from error
-    except (FileNotFoundError, FileExistsError) as error:
-        raise HTTPException(409, str(error)) from error
-    except Exception as error:
-        raise HTTPException(500, f"Could not change genre: {error}") from error
-
-
-@legacy_router.patch("/api/downloaded-library/tracks/{track_id}/metadata")
-def update_downloaded_track_metadata(track_id: int, request: DownloadedMetadataRequest) -> dict:
-    """Synchronize editable identity fields across disk, WAV tags, and Library records."""
-    track = repository.get_downloaded_track(track_id)
-    if not track:
-        raise HTTPException(404, "Downloaded track was not found")
-    source = Path(str(track["file_path"]))
-    if not source.is_file():
-        raise HTTPException(409, "The WAV file is missing and cannot be updated")
-    category = _normalize_genre_category(request.genre_category.strip())
-    if not category or category == ".":
-        raise HTTPException(400, "Choose a valid genre category")
-    title = request.title.strip()
-    artist = request.artist.strip()
-    detailed_genre = request.genre.strip()
-    playlist_name = request.playlist_name.strip() or "Imported Singles"
-    artwork_url = request.artwork_url.strip()
-    filename = source.name
-    if request.rename_file:
-        display_name = " - ".join(value for value in (artist, title) if value) or title
-        filename = f"{_safe_audio_name(display_name)}{source.suffix.lower()}"
-    destination_dir = _genre_directory(category)
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    destination = destination_dir / filename
-    if destination.resolve() != source.resolve() and destination.exists():
-        raise HTTPException(409, f"{destination.name} already exists in {category}")
-    old_metadata = _source_metadata_path(source)
-    moved = destination.resolve() != source.resolve()
-    try:
-        if moved:
-            shutil.move(str(source), str(destination))
-        write_wav_metadata(
-            destination,
-            title=title,
-            artist=artist,
-            genre=category,
-            album=playlist_name,
-        )
-        artwork_path = str(track.get("artwork_path") or "")
-        if artwork_url and (artwork_url != str(track.get("artwork_url") or "") or not Path(artwork_path).is_file()):
-            artwork_path = _cache_track_artwork(artwork_url, destination)
-            if not artwork_path:
-                raise HTTPException(
-                    400,
-                    "Artwork could not be downloaded. Use a direct Spotify or YouTube image URL.",
-                )
-        metadata = {
-            **track,
-            "title": title,
-            "artist": artist,
-            "genre": detailed_genre,
-            "genre_category": category,
-            "playlist_name": playlist_name,
-            "playlists": [playlist_name],
-            "file_path": str(destination.resolve()),
-            "filename": destination.name,
-            "artwork_url": artwork_url or str(track.get("artwork_url") or ""),
-            "artwork_path": artwork_path,
-        }
-        _write_source_metadata(destination, metadata)
-        repository.update_downloaded_track_metadata(
-            track_id=track_id,
-            old_path=source,
-            new_path=destination,
-            title=title,
-            artist=artist,
-            genre=detailed_genre,
-            genre_category=category,
-            playlist_name=playlist_name,
-        )
-        if artwork_url and artwork_path:
-            repository.update_downloaded_track_artwork(track_id, artwork_url=artwork_url, artwork_path=artwork_path)
-        if moved:
-            old_metadata.unlink(missing_ok=True)
-            try:
-                source.parent.rmdir()
-            except OSError:
-                pass
-    except HTTPException:
-        if moved and destination.is_file() and not source.exists():
-            shutil.move(str(destination), str(source))
-        raise
-    except Exception as error:
-        if moved and destination.is_file() and not source.exists():
-            shutil.move(str(destination), str(source))
-        raise HTTPException(500, f"Could not update track metadata: {error}") from error
-    catalog_projection_publisher.publish()
-    return {
-        "updated": True,
-        "track_id": track_id,
-        "title": title,
-        "artist": artist,
-        "genre": detailed_genre,
-        "genre_category": category,
-        "playlist_name": playlist_name,
-        "filename": destination.name,
-        "artwork_url": metadata["artwork_url"],
-        "artwork_available": bool(artwork_path),
-        "receipt": operation_receipt(
-            operation="save-track-metadata",
-            requested=f"Save metadata for track {track_id}",
-            requested_count=1,
-            changed="Updated the WAV tags, source record, and catalog entry",
-            changed_count=1,
-            written_to=[
-                str(destination.resolve()),
-                str(_source_metadata_path(destination)),
-                str(getattr(repository, "path", DATABASE)),
-            ],
-            survives_restart=True,
-            durability="The WAV, source sidecar, and catalog database were updated on disk.",
-        ),
-    }
-
-
-@legacy_router.post("/api/downloaded-library/repair-playlist-derived-genres")
-def repair_playlist_derived_genres() -> dict:
-    """Replace playlist labels accidentally stored as detailed track genres."""
-    repaired: list[int] = []
-    restored: list[int] = []
-    cleared: list[int] = []
-    failed: list[dict[str, object]] = []
-    for track in repository.list_downloaded_tracks():
-        playlists = [str(value).strip() for value in (track.get("playlists") or []) if str(value).strip()]
-        detailed_genre = str(track.get("genre") or "").strip()
-        matching_playlist = next(
-            (
-                playlist
-                for playlist in playlists
-                if playlist.replace("_", " ").strip().casefold() == detailed_genre.casefold()
-            ),
-            "",
-        )
-        if not detailed_genre or not matching_playlist:
-            continue
-        original = _original_import_metadata(
-            matching_playlist,
-            str(track.get("title") or ""),
-            str(track.get("artist") or ""),
-        )
-        try:
-            result = update_downloaded_track_metadata(
-                int(track["id"]),
-                DownloadedMetadataRequest(
-                    title=str(track.get("title") or Path(str(track["file_path"])).stem),
-                    artist=str(track.get("artist") or ""),
-                    genre=original["genre"],
-                    genre_category=original["genre_category"],
-                    playlist_name=matching_playlist,
-                    # Genre repair must not depend on a remote artwork host being
-                    # available. A blank request preserves the cataloged URL/path.
-                    artwork_url="",
-                    rename_file=False,
-                ),
-            )
-            track_id = int(result["track_id"])
-            repaired.append(track_id)
-            (restored if original["genre"] else cleared).append(track_id)
-        except HTTPException as error:
-            failed.append({"id": int(track["id"]), "error": str(error.detail)})
-        except Exception as error:
-            failed.append({"id": int(track["id"]), "error": str(error)})
-    return {
-        "repaired": len(repaired),
-        "restored_from_source": len(restored),
-        "cleared_without_source_genre": len(cleared),
-        "failed": failed,
-    }
-
-
-@legacy_router.post("/api/downloaded-library/retag")
-def retag_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
-    """Synchronize embedded WAV tags from the authoritative music catalog."""
-    _require_music_library_online()
-    wanted = set(request.track_ids)
-    tracks = [track for track in repository.list_downloaded_tracks() if int(track["id"]) in wanted]
-    if len(tracks) != len(wanted):
-        raise HTTPException(404, "One or more downloaded tracks were not found")
-    tagged: list[int] = []
-    skipped: list[int] = []
-    failed: list[dict[str, object]] = []
-    for track in tracks:
-        path = Path(str(track["file_path"]))
-        try:
-            updated = sync_wav_metadata(
-                path,
-                title=str(track.get("title") or path.stem),
-                artist=str(track.get("artist") or ""),
-                genre=str(track.get("genre_category") or "Other"),
-                album=str((track.get("playlists") or ["Imported Singles"])[0]),
-            )
-            if updated:
-                tagged.append(int(track["id"]))
-            else:
-                skipped.append(int(track["id"]))
-        except (FileNotFoundError, OSError, ValueError, subprocess.SubprocessError) as error:
-            failed.append({"id": int(track["id"]), "error": str(error)})
-    return {
-        "tagged": tagged,
-        "skipped": skipped,
-        "failed": failed,
-        "receipt": operation_receipt(
-            operation="retag-selected-tracks",
-            requested=f"Synchronize WAV tags for {len(wanted)} selected tracks",
-            requested_count=len(wanted),
-            changed=f"Updated {len(tagged)} WAV files; {len(skipped)} were already correct",
-            changed_count=len(tagged),
-            written_to=[str(Path(str(track["file_path"])).resolve()) for track in tracks if int(track["id"]) in tagged],
-            failures=failed,
-            survives_restart=True,
-            durability="Embedded WAV tags are stored in the audio files and survive restart.",
-        ),
-    }
 
 
 def _refresh_wav_tag_audit() -> dict:
@@ -1983,7 +1649,8 @@ def create_app(
     global import_service, local_import_service, playlist_match_service, creative_commons_service
     global creative_commons_archive_service, creative_commons_worker, import_issue_service
     global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service
-    global track_metadata_mutations, metadata_batch_service
+    global track_metadata_mutations, metadata_batch_service, downloaded_track_mutation_service
+    global recording_family_service
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
     global downloaded_analysis_queue, downloaded_catalog_query_service, downloaded_library_delivery_service
@@ -2121,6 +1788,8 @@ def create_app(
             source_metadata_path=_source_metadata_path,
             write_wav_metadata=write_wav_metadata,
             write_source_metadata=_write_source_metadata,
+            cache_track_artwork=_cache_track_artwork,
+            safe_audio_name=_safe_audio_name,
             publish_catalog=catalog_projection_publisher.publish,
         )
     )
@@ -2144,6 +1813,22 @@ def create_app(
             schedule_wav_tag_audit_refresh=_schedule_wav_tag_audit_refresh,
             music_library_root=_music_library_root,
             registry=metadata_batch_registry,
+        )
+    )
+    downloaded_track_mutation_service = DownloadedTrackMutationService(
+        DownloadedTrackMutationDependencies(
+            repository=lambda: repository,
+            metadata=track_metadata_mutations,
+            metadata_batches=metadata_batch_service,
+            genre_directory=_genre_directory,
+            original_import_metadata=import_issue_service.original_metadata,
+            database_path=lambda: Path(str(getattr(repository, "path", DATABASE))),
+        )
+    )
+    recording_family_service = RecordingFamilyService(
+        RecordingFamilyRouteDependencies(
+            repository=lambda: repository,
+            track_payload=_downloaded_track_payload,
         )
     )
     downloaded_catalog_query_service = DownloadedCatalogQueryService(
@@ -2205,6 +1890,8 @@ def create_app(
         library_maintenance_service=library_maintenance_service,
         track_metadata_mutations=track_metadata_mutations,
         metadata_batch_service=metadata_batch_service,
+        downloaded_track_mutation_service=downloaded_track_mutation_service,
+        recording_family_service=recording_family_service,
         downloaded_catalog_query_service=downloaded_catalog_query_service,
         downloaded_library_delivery_service=downloaded_library_delivery_service,
         downloaded_analysis_queue=downloaded_analysis_queue,
@@ -2233,6 +1920,8 @@ def create_app(
     application.include_router(legacy_router)
     application.include_router(create_preset_router(preset_service))
     application.include_router(create_downloaded_library_router(downloaded_library_delivery_service))
+    application.include_router(create_recording_family_router(recording_family_service))
+    application.include_router(create_downloaded_track_mutation_router(downloaded_track_mutation_service))
     application.include_router(create_audio_quality_router(audio_quality_scan_service))
     application.include_router(
         create_creative_commons_router(

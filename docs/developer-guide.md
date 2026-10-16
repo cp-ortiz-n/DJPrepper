@@ -115,9 +115,13 @@ live in their import, library, or focused web service modules. Creative Commons
 delivery and import-issue report recovery are owned by
 `imports/creative_commons_routes.py`. Preset persistence and downloaded-library
 read/media delivery are owned by `web/preset_routes.py` and
-`web/downloaded_library_routes.py`. `application.py` wires those owners and
-retains only small compatibility wrappers where scripts and integration tests
-still rely on the historical entry point.
+`web/downloaded_library_routes.py`. Recording-family operations live in
+`web/recording_family_routes.py`; downloaded-track deletion and metadata
+workflows live in `web/downloaded_track_mutation_routes.py` and delegate atomic
+file/tag/sidecar/catalog changes to `library/metadata_mutations.py`.
+`application.py` wires those owners and retains only small compatibility
+wrappers where scripts and integration tests still rely on the historical entry
+point.
 
 `JobRepository` remains the stable persistence facade, but SQL is divided among
 focused mixins under `audioextender/repositories/`. The downloaded-track catalog

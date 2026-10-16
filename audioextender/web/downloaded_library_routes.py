@@ -13,15 +13,11 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from audioextender.library.artwork_thumbnails import ArtworkThumbnailService
 from audioextender.library.catalog_query_service import DownloadedCatalogQuery, DownloadedCatalogQueryService
-
-
-class DownloadedTracksRequest(BaseModel):
-    track_ids: list[int] = Field(min_length=1, max_length=1000)
+from audioextender.web.downloaded_library_models import DownloadedTracksRequest
 
 
 @dataclass(frozen=True)
