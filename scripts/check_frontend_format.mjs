@@ -2,7 +2,14 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 
 const baseline = JSON.parse(readFileSync(new URL('./format_baseline.json', import.meta.url), 'utf8')).frontend;
-const targets = ['web/**/*.js', 'web/**/*.html', 'web/**/*.css', 'tests/*.test.js', 'scripts/*.mjs', '.eslintrc.cjs'];
+const targets = [
+  'web/**/*.js',
+  'web/**/*.html',
+  'web/**/*.css',
+  'tests/javascript/*.test.js',
+  'scripts/*.mjs',
+  '.eslintrc.cjs',
+];
 const command = process.platform === 'win32' ? 'prettier.cmd' : 'prettier';
 const result = spawnSync(command, ['--list-different', ...targets], {
   cwd: new URL('..', import.meta.url),

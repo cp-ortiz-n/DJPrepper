@@ -5,7 +5,7 @@ from their authoritative write through the downloaded catalog, Library search
 projection, DJ Library, Set Builder, refresh, and application restart. The
 machine-readable contract is
 [`manual-correction-propagation.json`](manual-correction-propagation.json), and
-`tests/test_manual_correction_propagation.py` exercises the durable paths and
+`tests/integration/test_manual_correction_propagation.py` exercises the durable paths and
 projection behavior against a disposable catalog.
 
 ## Results

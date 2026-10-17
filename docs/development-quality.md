@@ -6,7 +6,7 @@ This is the reproducible Phase 0 baseline for DJ Library Studio. Generated repor
 
 | Tier | Command | Purpose |
 | --- | --- | --- |
-| Focused | `.venv/bin/python -m unittest tests.test_module` or `node --test tests/file.test.js` | Fast feedback while editing |
+| Focused | `.venv/bin/python -m unittest tests.unit.package.test_module` or `node --test tests/javascript/file.test.js` | Fast feedback while editing |
 | Standard | `./scripts/check_quality.sh` | Ruff lint/format ratchet, MyPy, Python tests and architecture safeguards, ESLint, Prettier ratchet, JS syntax and tests |
 | Coverage | `./scripts/check_coverage.sh` | Regenerate Python JSON/LCOV and JavaScript LCOV summaries |
 | Stability | `./scripts/run_stability_gate.sh` | Persistence, import, relocation, export, and Set Builder compatibility |
@@ -48,7 +48,7 @@ Measured risk is concentrated in browser DOM workflows, web delivery/composition
 
 ## Architecture safeguards
 
-`tests/test_architecture_boundaries.py` rejects internal Python import cycles,
+`tests/unit/architecture/test_boundaries.py` rejects internal Python import cycles,
 domain-to-web imports, new SQL outside repositories, and growth in designated
 composition/orchestration hotspots. Package-level `from` imports participate in
 the cycle graph, and the one fingerprinted legacy backup query must be removed
@@ -78,7 +78,7 @@ versioned `tests/fixtures/musical_policy_golden.json` is exercised by Python and
 Node so cross-runtime drift fails the standard quality gate. `ARCH-003A` changes
 no weights or algorithms; consolidation remains scoped to `ARCH-003B`.
 
-`tests/test_background_operation_contract.py` validates that the Phase 0
+`tests/unit/architecture/test_background_operation_contract.py` validates that the Phase 0
 background-operation inventory retains all ten audited families and a complete
 lifecycle description. It is a documentation contract, not a claim that those
 families already share an executor. Current differences and known gaps are

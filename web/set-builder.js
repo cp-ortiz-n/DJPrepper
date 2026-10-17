@@ -1,131 +1,64 @@
-export const SET_STORAGE_KEY = 'dj-library-studio-sets-v1'; export const SET_STORAGE_MIGRATION_KEY = 'dj-library-studio-sets-migrated-v2';
-export const SET_IDENTITY_STORAGE_KEY = 'dj-library-track-identities-v1';
-export const DEFAULT_SET_FALLBACK_POLICY = [
-  'Direct genre and identity matches',
-  'Requested foundation with matching vocals, rhythm, samples, or cultural identity',
-  'Adjacent genres with compatible energy and structure',
-  'Neutral bridge tracks that preserve the progression',
-  'Pure foundation tracks only when needed for flow and runtime',
-];
-export function setTrackId(track) { return String(track.source_name || '').toLowerCase(); }
-export function setCatalogTrackId(track) {
-  if (track?._downloadedId != null) return `downloaded:${track._downloadedId}`;
-  return track?._job?.id != null ? `job:${track._job.id}` : '';
-}
-export function trackMatchesSetGenre(track, genre) { return track._genre===genre || track._genre.startsWith(`${genre} / `); }
-export function setTrackDetailedGenres(track) { return String(track._detailedGenre||'').split(',').map(value=>value.trim()).filter(Boolean); }
-export function trackMatchesSetDetailedGenre(track, genre) {
-  return setTrackDetailedGenres(track).some(value=>value.toLowerCase()===String(genre||'').toLowerCase());
-}
+import {
+  DEFAULT_SET_FALLBACK_POLICY,
+  SET_IDENTITY_STORAGE_KEY,
+  SET_STORAGE_KEY,
+  SET_STORAGE_MIGRATION_KEY,
+  genreAllocationTargets,
+  inferredTrackIdentity,
+  intendedGenreForPosition,
+  interpretSetIntention,
+  parseIdentityTerms,
+  setCatalogTrackId,
+  setTrackDetailedGenres,
+  setTrackId,
+  targetSetEnergy,
+  trackMatchesIntendedGenre,
+  trackMatchesSetDetailedGenre,
+  trackMatchesSetGenre,
+} from './set-builder-policy.js';
 
-export function targetSetEnergy(index, count, brief) {
-  const progress = count <= 1 ? 0 : index / (count - 1);
-  const journeySections=brief?.identity?.journey?.sections||[];
-  if(journeySections.length){let elapsed=0;const percentage=(Math.max(0,index)+.5)/Math.max(1,count)*100;for(const section of journeySections){const width=Math.max(1,Number(section.durationPercent||0)),end=elapsed+width;if(percentage<=end){const local=Math.max(0,Math.min(1,(percentage-elapsed)/width));const start=Math.max(1,Math.min(10,Number(section.energyStart||5)))/10,endEnergy=Math.max(1,Math.min(10,Number(section.energyEnd||5)))/10;return start+(endEnergy-start)*local;}elapsed=end;}}
-  const base = {balanced:.5,'dance-party':.7,'warm-up':.32,'peak-time':.78,melodic:.52,'vocal-safe':.48,ambient:.24,closing:.55}[brief.vibe] ?? .5;
-  if (brief.curve === 'rise') return Math.min(.92, base - .12 + progress * .45);
-  if (brief.curve === 'peak-release') return progress < .72 ? Math.min(.92, base - .12 + progress * .62) : Math.max(.35, .92 - (progress - .72) * 1.45);
-  if (brief.curve === 'waves') return Math.max(.2, Math.min(.92, base + Math.sin(progress * Math.PI * 4 - Math.PI / 2) * .22 + progress * .12));
-  return base;
-}
-
-export function genreAllocationTargets(genres, weights, count) {
-  const selected=[...(genres||[])]; if(!selected.length)return {};
-  const normalized=selected.map((genre,index)=>({genre,index,weight:Math.max(0,Number(weights?.[genre]||0))}));
-  let total=normalized.reduce((sum,item)=>sum+item.weight,0);
-  if(!total){normalized.forEach(item=>{item.weight=1;});total=normalized.length;}
-  const rows=normalized.map(item=>{const exact=item.weight/total*Math.max(0,count);return {...item,exact,target:Math.floor(exact),fraction:exact-Math.floor(exact)};});
-  let remaining=Math.max(0,count-rows.reduce((sum,item)=>sum+item.target,0));
-  [...rows].sort((a,b)=>b.fraction-a.fraction||a.index-b.index).forEach(item=>{if(remaining>0){item.target+=1;remaining-=1;}});
-  return Object.fromEntries(rows.map(item=>[item.genre,item.target]));
-}
-
-export function parseIdentityTerms(value) {
-  return [...new Set(String(value||'').split(',').map(term=>term.trim().toLowerCase()).filter(Boolean))];
-}
-
-const SET_GENRE_INTENT_PATTERNS = [
-  [/latin techno/, 'latin techno'], [/latin house/, 'latin house'], [/schranz/, 'schranz'],
-  [/reggaeton|perreo/, 'reggaeton'], [/dembow/, 'dembow'], [/bachata/, 'bachata'],
-  [/cumbia/, 'cumbia'], [/merengue/, 'merengue'], [/salsa/, 'salsa'], [/guaracha/, 'guaracha'],
-  [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'], [/hip[- ]?hop/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
-];
-
-function trackGenreSearchText(track) {
-  return normalizedIntentPhrase(`${track?._genre||track?.genre||''} ${track?._detailedGenre||track?.detailed_genre||''}`).trim();
-}
-
-export function trackMatchesIntendedGenre(track, term) {
-  const wanted=normalizedIntentPhrase(term).trim(),metadata=trackGenreSearchText(track);
-  if(!wanted)return false;
-  if(metadata.includes(wanted))return true;
-  return inferredTrackIdentity(track,track?._manualIdentity||[]).some(tag=>normalizedIntentPhrase(tag).trim()===wanted);
-}
-
-function normalizedIntentPhrase(value){return ` ${String(value||'').toLowerCase().replaceAll('&',' and ').replace(/[^a-z0-9]+/g,' ').trim().replace(/\s+/g,' ')} `;}
-
-export function interpretSetIntention(value, catalogVocabulary = []) {
-  const text=String(value||'').trim(),lower=text.toLowerCase(),preferred=[],required=[],avoided=[],requestedGenres=[],genreSequence=[];
-  const rules=[
-    [/ecuador|ecuadorian/, 'ecuadorian party'], [/colombia|colombian/, 'colombian'], [/caribbean/, 'caribbean'], [/andean/, 'andean'],
-    [/spanish[- ]?(?:language )?vocal|vocals? in spanish|español/, 'spanish vocals'], [/dembow/, 'dembow'], [/latin percussion|latin rhythm/, 'latin percussion'],
-    [/guaracha/, 'guaracha'], [/cumbia/, 'cumbia'], [/reggaeton|perreo/, 'reggaeton'], [/tribal/, 'tribal'], [/techno/, 'techno foundation'],
-    [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'], [/(?:hip[- ]?hop)/, 'hip hop'], [/(?:^|\W)rap(?:\W|$)/, 'rap'],
-    [/(?:chill|kickback|laid[- ]?back|low[- ]?key)/, 'chill kickback'], [/(?:party|danc(?:e|ing))/, 'dance-friendly'],
-    [/recognizable|familiar|singalong|classic/, 'recognizable material'], [/peak[- ]?time|high energy|driving/, 'peak-time energy'],
-    [/dark/, 'dark'], [/industrial/, 'industrial'], [/melodic/, 'melodic'], [/hypnotic/, 'hypnotic'], [/euphoric/, 'euphoric'],
-  ];
-  rules.forEach(([pattern,term])=>{if(pattern.test(lower))preferred.push(term);});
-  SET_GENRE_INTENT_PATTERNS.forEach(([pattern,term])=>{const match=lower.match(pattern);if(match){requestedGenres.push(term);genreSequence.push({term,index:match.index??Number.MAX_SAFE_INTEGER});}});
-  const normalizedText=normalizedIntentPhrase(text),genericTerms=new Set(['all','any','general','music','other','unknown','unclassified']);
-  for(const rawTerm of catalogVocabulary){
-    const term=String(rawTerm||'').trim().toLowerCase(),normalized=normalizedIntentPhrase(term).trim();
-    if(normalized.length<3||genericTerms.has(normalized))continue;
-    if(normalizedText.includes(` ${normalized} `)){preferred.push(term);if(/techno|house|schranz|reggaeton|dembow|bachata|cumbia|merengue|salsa|guaracha|hip hop|r&b|\brap\b/.test(normalized)){requestedGenres.push(term);const index=normalizedText.indexOf(` ${normalized} `);genreSequence.push({term,index:index<0?Number.MAX_SAFE_INTEGER:index});}}
-  }
-  if(/(?:must|required|require)[^.]*spanish/.test(lower))required.push('spanish vocals');
-  if(/(?:must|required|require)[^.]*(?:latin percussion|dembow|latin rhythm)/.test(lower))required.push('latin rhythmic identity');
-  if(/avoid[^.]*(?:generic|instrumental)[^.]*techno|limit[^.]*generic[^.]*techno/.test(lower))avoided.push('generic instrumental techno');
-  const drift=/do not drift|no genre drift|strict genre/.test(lower)?'none':/small|slight|close genres only/.test(lower)?'low':/wide|open genre|context over genre/.test(lower)?'wide':'moderate';
-  const chill=/(?:chill|kickback|laid[- ]?back|low[- ]?key)/.test(lower),dance=/(?:party|danc(?:e|ing))/.test(lower);
-  const vibe=chill&&dance?'balanced':/warm[- ]?up/.test(lower)?'warm-up':dance?'dance-party':chill?'warm-up':null;
-  const curve=/varying waves|energy waves|wave(?:s|d)? of energy/.test(lower)?'waves':null;
-  const opening=/(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)?'melodic':null;
-  const orderedGenres=[...new Map(genreSequence.sort((a,b)=>a.index-b.index).map(item=>[item.term,item.term])).values()];
-  return {text,required:parseIdentityTerms(required.join(',')),preferred:parseIdentityTerms(preferred.join(',')),avoided:parseIdentityTerms(avoided.join(',')),requestedGenres:parseIdentityTerms(requestedGenres.join(',')),genreSequence:orderedGenres,drift,vibe,curve,opening,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};
-}
-
-export function intendedGenreForPosition(identity,index,count){
-  const sections=identity?.journey?.sections||[];
-  if(sections.length){
-    const progress=(Math.max(0,index)+.5)/Math.max(1,count)*100;let elapsed=0;
-    for(const section of sections){elapsed+=Math.max(0,Number(section.durationPercent||0));if(progress<=elapsed)return (section.genres||[])[0]||'';}
-    return sections.at(-1)?.genres?.[0]||'';
-  }
-  const sequence=[...new Set(identity?.genreSequence||[])].filter(Boolean);if(!sequence.length)return '';
-  const progress=(Math.max(0,index)+.5)/Math.max(1,count);return sequence[Math.min(sequence.length-1,Math.floor(progress*sequence.length))];
-}
-
-export function inferredTrackIdentity(track, manual=[]) {
-  const source=`${track.source_name||''} ${track.title||''} ${track.artist||''} ${track._genre||track.genre||''} ${track._detailedGenre||track.detailed_genre||''}`.toLowerCase();
-  const tags=[...manual.map(value=>String(value).toLowerCase())];
-  const add=(term,pattern)=>{if(pattern.test(source))tags.push(term);};
-  add('latin identity',/latin|reggaeton|dembow|cumbia|salsa|bachata|guaracha|merengue|perreo/);add('techno foundation',/techno/);add('house foundation',/house/);
-  add('spanish vocals',/spanish|español|vocal latino|reggaeton|salsa|bachata/);add('dembow',/dembow|reggaeton|perreo/);add('latin percussion',/latin|salsa|cumbia|guaracha|tribal/);
-  add('ecuadorian party',/ecuador|ecuadorian/);add('colombian',/colombia|colombian|cumbia/);add('caribbean',/caribbean|reggaeton|salsa|dembow/);add('andean',/andean/);
-  add('recognizable material',/remix|edit|bootleg|mashup|classic|anthem/);add('dark',/dark/);add('industrial',/industrial/);add('melodic',/melodic/);add('hypnotic',/hypnotic/);add('euphoric',/euphoric|anthem/);
-  add('r&b',/(?:r\s*&\s*b|rnb|rhythm and blues)/);add('hip hop',/hip[- ]?hop/);add('rap',/(?:^|\W)rap(?:\W|$)/);add('chill kickback',/chill|downtempo|lounge|warm-up|laid[- ]?back/);
-  return [...new Set(tags)];
-}
-
+export {
+  DEFAULT_SET_FALLBACK_POLICY,
+  SET_IDENTITY_STORAGE_KEY,
+  SET_STORAGE_KEY,
+  SET_STORAGE_MIGRATION_KEY,
+  genreAllocationTargets,
+  inferredTrackIdentity,
+  intendedGenreForPosition,
+  interpretSetIntention,
+  parseIdentityTerms,
+  setCatalogTrackId,
+  setTrackDetailedGenres,
+  setTrackId,
+  targetSetEnergy,
+  trackMatchesIntendedGenre,
+  trackMatchesSetDetailedGenre,
+  trackMatchesSetGenre,
+} from './set-builder-policy.js';
 export function createSetBuilderFeature({
-  services, option, escapeHtml, clock, decodedAudio, WaveSurfer,
-  compatibility, harmonicCompatibility, camelotKey, formatLibraryKey,
-  energyBand, songEnergy, LIBRARY_ROLE_INFO,
-  libraryRoles, timingProfile, vocalProfile, bindCompactAudio, compactAudioMarkup,
-  stopNativeAudio, stopCompactAudio,
+  services,
+  option,
+  escapeHtml,
+  clock,
+  decodedAudio,
+  WaveSurfer,
+  compatibility,
+  harmonicCompatibility,
+  camelotKey,
+  formatLibraryKey,
+  energyBand,
+  songEnergy,
+  LIBRARY_ROLE_INFO,
+  libraryRoles,
+  timingProfile,
+  vocalProfile,
+  bindCompactAudio,
+  compactAudioMarkup,
+  stopNativeAudio,
+  stopCompactAudio,
 }) {
-  const {api, $, $$, notify, confirmAction, descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor} = useFrontendServices(services);
+  const { api, $, $$, notify, confirmAction, descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor } =
+    useFrontendServices(services);
   const state = createSetBuilderStore();
   let transitionPreviewAudio = [];
   let transitionPreviewFrame = 0;
@@ -137,17 +70,18 @@ export function createSetBuilderFeature({
   let planningController = null;
   let currentPlanningReceipt = null;
   let currentPreferenceProfile = null;
-  let currentSetDecision = 'unreviewed'; let savedSetRecords = [];
+  let currentSetDecision = 'unreviewed';
+  let savedSetRecords = [];
   const trackReviewDraft = new Map();
   const transitionReviewDraft = new Map();
-  let currentTransitionProfile = {activeSignals:[]};
+  let currentTransitionProfile = { activeSignals: [] };
   let transitionEditorSurfaces = [];
   const transitionWaveCache = new Map();
-  const setBuilderApi = createSetBuilderApi({api});
+  const setBuilderApi = createSetBuilderApi({ api });
   const planningClient = setBuilderApi.planning;
   const classicPlanner = createClassicSetPlanner({
     strategies: SET_PROPOSAL_STRATEGIES,
-    schedule: () => new Promise(resolve=>requestAnimationFrame(()=>resolve())),
+    schedule: () => new Promise((resolve) => requestAnimationFrame(() => resolve())),
   });
   const editCommands = createSetEditCommands({
     store: state,
@@ -155,509 +89,3373 @@ export function createSetBuilderFeature({
     restore: (snapshot) => restoreSetSnapshot(snapshot, false),
     render: () => renderSetPlan(),
   });
-  function preferenceContext(){return $('#set-vibe')?.value||'balanced';}
-  function preferenceFeatures(track){const energy=songEnergy(track),bpm=Number(track.bpm||0);return {genre:[track._genre,...setTrackDetailedGenres(track)].filter(Boolean),descriptor:(track._descriptors||[]).map(item=>item.value).filter(Boolean),artist:track.artist||'',vocals:setVocalProfile(track),energy:energy<.4?'low':energy>=.7?'high':'medium',bpm:bpm?`${Math.floor(bpm/10)*10}s`:'unknown'};}
-  function preferenceAdjustment(track){if(!currentPreferenceProfile?.enabled)return 0;const features=preferenceFeatures(track);const total=(currentPreferenceProfile.activeSignals||[]).reduce((sum,signal)=>{const values=Array.isArray(features[signal.dimension])?features[signal.dimension]:[features[signal.dimension]];return values.map(value=>String(value).toLowerCase()).includes(String(signal.value).toLowerCase())?sum+Number(signal.adjustment||0):sum;},0);return Math.max(-8,Math.min(8,total*.5));}
-  function preferenceEventId(){return globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`;}
-  async function recordPreference(action,tracks){const items=(Array.isArray(tracks)?tracks:[tracks]).filter(Boolean);if(!items.length)return;try{const result=await setBuilderApi.recordPreference(items.map(track=>({id:preferenceEventId(),action,trackId:setTrackId(track),context:preferenceContext(),features:preferenceFeatures(track)})));currentPreferenceProfile=result.profile;renderPreferenceProfile();}catch(error){console.warn('Set preference feedback failed:',error);}}
-  function renderPreferenceProfile(){const profile=currentPreferenceProfile,status=$('#set-preference-status'),summary=$('#set-preference-summary'),toggle=$('#set-personalization-enabled');if(!profile||!status||!summary||!toggle)return;toggle.checked=Boolean(profile.enabled);const active=profile.activeSignals||[],pending=profile.pendingSignals||[];status.textContent=profile.enabled?`${active.length} active · ${profile.eventCount} local choices`:'Personalization paused';summary.innerHTML=active.length?active.slice(0,8).map(signal=>`<span><b>${escapeHtml(signal.value)}</b> · ${signal.adjustment>0?'+':''}${signal.adjustment} ranking · ${signal.evidenceCount} tracks <button type="button" data-dismiss-signal="${escapeHtml(signal.dimension)}" data-signal-value="${escapeHtml(signal.value)}" aria-label="Dismiss ${escapeHtml(signal.value)}">×</button></span>`).join(''):`<span>${pending.length?'Learning from more distinct tracks before changing rankings.':'No feedback recorded yet.'}</span>`;summary.querySelectorAll('[data-dismiss-signal]').forEach(button=>button.onclick=async()=>{try{currentPreferenceProfile=await setBuilderApi.dismissPreference(button.dataset.dismissSignal,button.dataset.signalValue);renderPreferenceProfile();}catch(error){console.warn('Set preference dismissal failed:',error);}});}
-  async function loadPreferenceProfile(){try{currentPreferenceProfile=await setBuilderApi.preferenceProfile(preferenceContext());renderPreferenceProfile();}catch(error){console.warn('Set preference profile failed:',error);const status=$('#set-preference-status');if(status)status.textContent='Local preferences unavailable';}}
-  function transitionReviewFeatures(left,right,index){const match=compatibility(left,right),settings=transitionSettings(index),difference=Number(right.bpm||0)-Number(left.bpm||0);return {bpmMovement:Math.abs(difference)<2?'steady':difference>0?'rising':'falling',keyCompatibility:match.components.key>=31?'strong':match.components.key>=20?'workable':'weak',vocalOverlap:setVocalProfile(left)==='vocal-forward'&&setVocalProfile(right)==='vocal-forward'?'both-vocal':'spaced',energyMovement:songEnergy(right)-songEnergy(left)>.12?'rising':songEnergy(left)-songEnergy(right)>.12?'falling':'steady',bars:String(settings.bars||16),technique:settings.technique||'crossfade'};}
-  function renderCalibrationReport(report){const root=$('#set-calibration-summary');if(!root||!report)return;const tracks=report.tracks||{},transition=report.transitionProfile||{};currentTransitionProfile=transition;root.innerHTML=`<p><b>${tracks.reviewed||0} tracks reviewed</b> · ${tracks.accepted||0} accepted · ${tracks.rejected||0} rejected · ${tracks.changedByPersonalization||0} changed rank</p><p>Personalized acceptance ${tracks.personalizedAcceptanceRate==null?'not enough evidence':`${Math.round(tracks.personalizedAcceptanceRate*100)}%`} · neutral ${tracks.neutralAcceptanceRate==null?'not enough evidence':`${Math.round(tracks.neutralAcceptanceRate*100)}%`} · ${transition.activeSignals?.length||0} active transition preferences</p>${(report.recommendations||[]).map(item=>`<p class="set-relaxation-warning">${escapeHtml(item.message)}</p>`).join('')}`;}
-  function transitionPreferenceAdjustment(features){return Math.max(-8,Math.min(8,(currentTransitionProfile.activeSignals||[]).reduce((sum,signal)=>String(features[signal.dimension]||'').toLowerCase()===String(signal.value||'').toLowerCase()?sum+Number(signal.adjustment||0):sum,0)));}
-  async function loadSetReviewReport(){try{renderCalibrationReport(await setBuilderApi.reviewReport(preferenceContext()));}catch(error){console.warn('Set review report failed:',error);}}
-  async function submitSetReview(){if(!state.plan.length)return;const button=$('#submit-set-review');button.disabled=true;button.textContent='Saving…';const transitions=state.plan.slice(1).map((track,index)=>{const left=state.plan[index],pairId=`${setCatalogTrackId(left)}→${setCatalogTrackId(track)}`;return {pairId,rating:transitionReviewDraft.get(pairId)||3,features:transitionReviewFeatures(left,track,index+1)};});const tracks=state.plan.map(track=>{const metrics=track._candidateMetrics||{};const review=trackReviewDraft.get(setTrackId(track))||{};return {trackId:setCatalogTrackId(track),title:track.source_name.replace(/\.[^.]+$/,''),decision:review.decision||'unreviewed',reason:review.reason||'',features:preferenceFeatures(track),technicalScore:metrics.technicalScore||0,preferenceAdjustment:metrics.preferenceAdjustment||0,rankDelta:metrics.rankDelta||0,matchTier:metrics.matchTier||'unknown'};});try{const result=await setBuilderApi.submitReview({setId:$('#saved-set-select').value||`draft-${Date.now()}`,setName:setBrief().name,context:preferenceContext(),overallDecision:currentSetDecision,notes:$('#set-review-notes').value,tracks,transitions,evaluation:currentPlanningReceipt?.evaluation||{},comparison:currentPlanningReceipt?.comparison||{}});currentPreferenceProfile=result.preferenceProfile;renderPreferenceProfile();renderCalibrationReport(result.report);$('#set-review-status').textContent='Review saved locally and preference evidence updated.';}catch(error){$('#set-review-status').textContent=error.message||String(error);}finally{button.disabled=false;button.textContent='Save review';}}
-  function resetSetReviewDraft(){currentSetDecision='unreviewed';trackReviewDraft.clear();transitionReviewDraft.clear();$$('[data-set-decision]').forEach(button=>button.classList.remove('active'));const notes=$('#set-review-notes');if(notes)notes.value='';}
-  function identityStore(){try{return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY)||'{}');}catch(_){return {};}}
-  function intentionVocabulary(){return [...new Set(state.library.flatMap(track=>[
-    ...String(track._genre||'').split('/').map(value=>value.trim()),
-    ...setTrackDetailedGenres(track),
-    ...(track._descriptors||[]).map(item=>item.value),
-  ]).filter(Boolean))];}
-  function manualTrackIdentity(track){return identityStore()[setTrackId(track)]||[];}
-  function saveManualTrackIdentity(track,terms){const store=identityStore();store[setTrackId(track)]=parseIdentityTerms(terms);localStorage.setItem(SET_IDENTITY_STORAGE_KEY,JSON.stringify(store));track._manualIdentity=store[setTrackId(track)];}
-  function trackIdentity(track){return inferredTrackIdentity(track,track._manualIdentity||manualTrackIdentity(track));}
-  function identityTermMatches(track,term){const normalized=String(term||'').toLowerCase(),tags=trackIdentity(track);if(normalized==='latin rhythmic identity')return tags.some(tag=>['dembow','latin percussion','latin identity'].includes(tag));if(normalized==='generic instrumental techno')return tags.includes('techno foundation')&&!tags.includes('spanish vocals')&&!tags.includes('latin percussion')&&!tags.includes('recognizable material');if(normalized==='dance-friendly')return songEnergy(track)>=.5;if(normalized==='chill kickback')return songEnergy(track)<=.68||tags.includes('chill kickback');return tags.some(tag=>tag===normalized||tag.includes(normalized)||normalized.includes(tag));}
-  function intentionEvaluation(track,brief){const identity=brief.identity||{required:[],preferred:[],avoided:[]};const required=(identity.required||[]).filter(term=>identityTermMatches(track,term)),preferred=(identity.preferred||[]).filter(term=>identityTermMatches(track,term)),avoided=(identity.avoided||[]).filter(term=>identityTermMatches(track,term));const missingRequired=(identity.required||[]).filter(term=>!required.includes(term));return {required,preferred,avoided,missingRequired,score:preferred.length*14+required.length*22-avoided.length*35-missingRequired.length*45};}
-  function currentJourney(){const root=$('#set-journey-preview');if(!root||root.hidden)return null;const sections=[...root.querySelectorAll('.set-journey-section')].map((row,index)=>({id:row.dataset.id||`section-${index+1}`,name:row.querySelector('.journey-name').value.trim()||`Section ${index+1}`,durationPercent:Number(row.querySelector('.journey-duration').value||0),energyStart:Number(row.querySelector('.journey-energy-start').value||5),energyEnd:Number(row.querySelector('.journey-energy-end').value||5),genres:parseIdentityTerms(row.querySelector('.journey-genres input').value),characteristics:parseIdentityTerms(row.querySelector('.journey-characteristics').value),purpose:row.querySelector('.journey-purpose input').value.trim()}));const duration=journeyDurationStatus(sections,Number($('#set-length').value));if(!duration.valid)throw new Error(`Journey section durations total ${duration.total}%. Adjust them to 100% before generating.`);return {version:1,summary:$('#set-journey-summary').textContent,durationMinutes:Number($('#set-length').value),sections};}
-  function currentIntention(){const text=$('#set-intention').value.trim(),panel=$('#set-intention-interpretation'),parsed=interpretSetIntention(text,intentionVocabulary());let interpreted={};try{if(panel.dataset.source===text)interpreted=JSON.parse(panel.dataset.interpretation||'{}');}catch(_){}const journey=currentJourney();const journeySequence=journey?.sections.flatMap(section=>section.genres)||[];return {text,required:parseIdentityTerms($('#set-intention-required').value),preferred:parseIdentityTerms($('#set-intention-preferred').value),avoided:parseIdentityTerms($('#set-intention-avoided').value),requestedGenres:interpreted.requestedGenres||parsed.requestedGenres||[],optionalGenres:interpreted.optionalGenres||[],genreSequence:journeySequence.length?journeySequence:(interpreted.genreSequence||parsed.genreSequence||[]),journey,opening:interpreted.opening||parsed.opening||null,ending:interpreted.ending||null,provider:interpreted.provider||'offline',drift:$('#set-intention-drift').value,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}
-  function renderFallbackPolicy(policy=DEFAULT_SET_FALLBACK_POLICY){$('#set-fallback-policy').innerHTML=fallbackPolicyMarkup(policy,escapeHtml);}
-  function showIntentionProvider(status){const badge=$('#set-provider-status');if(!badge)return;const view=intentionProviderView(status);badge.className=view.className;badge.textContent=view.text;badge.title=view.title;}
-  async function refreshIntentionProviderStatus(){const badge=$('#set-provider-status');if(badge){badge.className='set-provider-status checking';badge.textContent='Checking local AI…';}try{showIntentionProvider(await setBuilderApi.providerStatus());}catch(_){showIntentionProvider({available:false,provider:'offline'});}}
-  function renderJourney(journey){const root=$('#set-journey-preview'),container=$('#set-journey-sections');root.hidden=false;root.dataset.journey=JSON.stringify(journey);$('#set-journey-summary').textContent=journey.summary||'Review the planned journey before generating.';$('#set-journey-evidence').textContent=journey.evidence==='ai-planned'?`AI planned · ${journey.model||'local model'}`:'Offline plan';container.innerHTML=(journey.sections||[]).map((section,index)=>`<article class="set-journey-section" data-id="${escapeHtml(section.id||`section-${index+1}`)}"><label>Section<input class="journey-name" value="${escapeHtml(section.name||`Section ${index+1}`)}"></label><label>Duration %<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent||0)}"></label><label>Energy <span>${Number(section.energyStart||5)} → ${Number(section.energyEnd||5)}</span><span class="journey-energy-inputs"><input class="journey-energy-start" type="number" min="1" max="10" step=".5" value="${Number(section.energyStart||5)}"><input class="journey-energy-end" type="number" min="1" max="10" step=".5" value="${Number(section.energyEnd||5)}"></span></label><label class="journey-genres">Genres<input value="${escapeHtml((section.genres||[]).join(', '))}" placeholder="Catalog genres"></label><label>Characteristics<input class="journey-characteristics" value="${escapeHtml((section.characteristics||[]).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose||'')}"></label></article>`).join('');const refresh=()=>{const total=[...container.querySelectorAll('.journey-duration')].reduce((sum,input)=>sum+Number(input.value||0),0),status=$('#set-journey-total');status.textContent=`${journey.sections.length} sections · ${total}% of ${Number($('#set-length').value)} minutes · edits drive track placement`;status.classList.toggle('invalid',Math.abs(total-100)>.01);container.querySelectorAll('.set-journey-section').forEach(row=>{const values=[...row.querySelectorAll('.journey-energy-start,.journey-energy-end')].map(input=>Number(input.value||5));row.querySelector('label:nth-child(3)>span').textContent=`${values[0]} → ${values[1]}`;});};container.querySelectorAll('input').forEach(input=>input.addEventListener('input',refresh));refresh();}
-  function applyIntentionInterpretation(interpreted,{announce=true}={}){const panel=$('#set-intention-interpretation');panel.hidden=false;panel.dataset.source=interpreted.text||'';panel.dataset.interpretation=JSON.stringify(interpreted);$('#set-intention-required').value=(interpreted.required||[]).join(', ');$('#set-intention-preferred').value=(interpreted.preferred||[]).join(', ');$('#set-intention-avoided').value=(interpreted.avoided||[]).join(', ');$('#set-intention-drift').value=interpreted.drift||'moderate';if(interpreted.vibe)$('#set-vibe').value=interpreted.vibe;if(interpreted.curve)$('#set-curve').value=interpreted.curve;renderFallbackPolicy(interpreted.fallbackPolicy||DEFAULT_SET_FALLBACK_POLICY);if(interpreted.journey)renderJourney(interpreted.journey);showIntentionProvider({available:interpreted.provider!=='offline',provider:interpreted.provider,model:interpreted.model});if(announce){const source=interpreted.provider==='ollama'?`Local AI · ${interpreted.model}`:interpreted.provider==='openai'?`Cloud AI · ${interpreted.model}`:'offline rules';$('#set-intention-status').textContent=`Interpreted with ${source}. Found ${(interpreted.required||[]).length} requirement${(interpreted.required||[]).length===1?'':'s'}, ${(interpreted.preferred||[]).length} preference${(interpreted.preferred||[]).length===1?'':'s'}, and ${(interpreted.avoided||[]).length} limit${(interpreted.avoided||[]).length===1?'':'s'}. Edit anything before generating.`;}}
-  async function interpretIntention(text){try{const result=await setBuilderApi.interpretIntention(text,intentionVocabulary());return {...result,text,fallbackPolicy:[...DEFAULT_SET_FALLBACK_POLICY]};}catch(_){return {...interpretSetIntention(text,intentionVocabulary()),provider:'offline'};}}
-  async function planJourney(text,interpreted){return setBuilderApi.planJourney({brief:text,interpretedIntention:interpreted,catalogVocabulary:intentionVocabulary(),durationMinutes:Number($('#set-length').value)});}
-  async function interpretAndPlan(text){const interpreted=await interpretIntention(text);try{interpreted.journey=await planJourney(text,interpreted);}catch(error){console.warn('Journey planning failed:',error);}return interpreted;}
-  function selectedSetGenres() { return [...$('#set-genre').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
-  function selectedSetDetailedGenres() { return [...$('#set-detailed-genres').selectedOptions].map(option=>option.value).filter(value=>value&&value!=='all'); }
-  function selectedExcludedSetGenres() { return [...$('#set-excluded-genres').selectedOptions].map(option=>option.value).filter(Boolean); }
-  function renderExcludedSetGenres() { const selected=selectedExcludedSetGenres();const chips=$('#set-excluded-genre-chips');chips.replaceChildren(...selected.map(genre=>{const chip=document.createElement('button');chip.type='button';chip.textContent=`${genre} ×`;chip.onclick=()=>{const option=[...$('#set-excluded-genres').options].find(item=>item.value===genre);if(option)option.selected=false;$('#set-excluded-genres').dispatchEvent(new Event('change',{bubbles:true}));};return chip;})); }
-  function renderSetDetailedGenres(){const selected=selectedSetDetailedGenres(),chips=$('#set-detailed-genre-chips');chips.replaceChildren(...selected.map(genre=>{const chip=document.createElement('button');chip.type='button';chip.textContent=`${genre} ×`;chip.onclick=()=>{const option=[...$('#set-detailed-genres').options].find(item=>item.value===genre);if(option)option.selected=false;$('#set-detailed-genres').dispatchEvent(new Event('change',{bubbles:true}));};return chip;}));}
-  function populateSetDetailedGenres(restore=[]){const parents=selectedSetGenres();const select=$('#set-detailed-genres');const current=restore.length?restore:selectedSetDetailedGenres();const choices=[...new Set(state.library.filter(track=>!parents.length||parents.some(parent=>trackMatchesSetGenre(track,parent))).flatMap(setTrackDetailedGenres))].sort((a,b)=>a.localeCompare(b));select.replaceChildren(option('all','Any detailed genre'),...choices.map(value=>option(value,value)));[...select.options].forEach(item=>{item.selected=current.length?current.includes(item.value):item.value==='all';});if(!select.selectedOptions.length)select.querySelector('option[value="all"]').selected=true;renderSetDetailedGenres();}
+  function preferenceContext() {
+    return $('#set-vibe')?.value || 'balanced';
+  }
+  function preferenceFeatures(track) {
+    const energy = songEnergy(track),
+      bpm = Number(track.bpm || 0);
+    return {
+      genre: [track._genre, ...setTrackDetailedGenres(track)].filter(Boolean),
+      descriptor: (track._descriptors || []).map((item) => item.value).filter(Boolean),
+      artist: track.artist || '',
+      vocals: setVocalProfile(track),
+      energy: energy < 0.4 ? 'low' : energy >= 0.7 ? 'high' : 'medium',
+      bpm: bpm ? `${Math.floor(bpm / 10) * 10}s` : 'unknown',
+    };
+  }
+  function preferenceAdjustment(track) {
+    if (!currentPreferenceProfile?.enabled) return 0;
+    const features = preferenceFeatures(track);
+    const total = (currentPreferenceProfile.activeSignals || []).reduce((sum, signal) => {
+      const values = Array.isArray(features[signal.dimension])
+        ? features[signal.dimension]
+        : [features[signal.dimension]];
+      return values.map((value) => String(value).toLowerCase()).includes(String(signal.value).toLowerCase())
+        ? sum + Number(signal.adjustment || 0)
+        : sum;
+    }, 0);
+    return Math.max(-8, Math.min(8, total * 0.5));
+  }
+  function preferenceEventId() {
+    return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+  async function recordPreference(action, tracks) {
+    const items = (Array.isArray(tracks) ? tracks : [tracks]).filter(Boolean);
+    if (!items.length) return;
+    try {
+      const result = await setBuilderApi.recordPreference(
+        items.map((track) => ({
+          id: preferenceEventId(),
+          action,
+          trackId: setTrackId(track),
+          context: preferenceContext(),
+          features: preferenceFeatures(track),
+        })),
+      );
+      currentPreferenceProfile = result.profile;
+      renderPreferenceProfile();
+    } catch (error) {
+      console.warn('Set preference feedback failed:', error);
+    }
+  }
+  function renderPreferenceProfile() {
+    const profile = currentPreferenceProfile,
+      status = $('#set-preference-status'),
+      summary = $('#set-preference-summary'),
+      toggle = $('#set-personalization-enabled');
+    if (!profile || !status || !summary || !toggle) return;
+    toggle.checked = Boolean(profile.enabled);
+    const active = profile.activeSignals || [],
+      pending = profile.pendingSignals || [];
+    status.textContent = profile.enabled
+      ? `${active.length} active · ${profile.eventCount} local choices`
+      : 'Personalization paused';
+    summary.innerHTML = active.length
+      ? active
+          .slice(0, 8)
+          .map(
+            (signal) =>
+              `<span><b>${escapeHtml(signal.value)}</b> · ${signal.adjustment > 0 ? '+' : ''}${signal.adjustment} ranking · ${signal.evidenceCount} tracks <button type="button" data-dismiss-signal="${escapeHtml(signal.dimension)}" data-signal-value="${escapeHtml(signal.value)}" aria-label="Dismiss ${escapeHtml(signal.value)}">×</button></span>`,
+          )
+          .join('')
+      : `<span>${pending.length ? 'Learning from more distinct tracks before changing rankings.' : 'No feedback recorded yet.'}</span>`;
+    summary.querySelectorAll('[data-dismiss-signal]').forEach(
+      (button) =>
+        (button.onclick = async () => {
+          try {
+            currentPreferenceProfile = await setBuilderApi.dismissPreference(
+              button.dataset.dismissSignal,
+              button.dataset.signalValue,
+            );
+            renderPreferenceProfile();
+          } catch (error) {
+            console.warn('Set preference dismissal failed:', error);
+          }
+        }),
+    );
+  }
+  async function loadPreferenceProfile() {
+    try {
+      currentPreferenceProfile = await setBuilderApi.preferenceProfile(preferenceContext());
+      renderPreferenceProfile();
+    } catch (error) {
+      console.warn('Set preference profile failed:', error);
+      const status = $('#set-preference-status');
+      if (status) status.textContent = 'Local preferences unavailable';
+    }
+  }
+  function transitionReviewFeatures(left, right, index) {
+    const match = compatibility(left, right),
+      settings = transitionSettings(index),
+      difference = Number(right.bpm || 0) - Number(left.bpm || 0);
+    return {
+      bpmMovement: Math.abs(difference) < 2 ? 'steady' : difference > 0 ? 'rising' : 'falling',
+      keyCompatibility: match.components.key >= 31 ? 'strong' : match.components.key >= 20 ? 'workable' : 'weak',
+      vocalOverlap:
+        setVocalProfile(left) === 'vocal-forward' && setVocalProfile(right) === 'vocal-forward'
+          ? 'both-vocal'
+          : 'spaced',
+      energyMovement:
+        songEnergy(right) - songEnergy(left) > 0.12
+          ? 'rising'
+          : songEnergy(left) - songEnergy(right) > 0.12
+            ? 'falling'
+            : 'steady',
+      bars: String(settings.bars || 16),
+      technique: settings.technique || 'crossfade',
+    };
+  }
+  function renderCalibrationReport(report) {
+    const root = $('#set-calibration-summary');
+    if (!root || !report) return;
+    const tracks = report.tracks || {},
+      transition = report.transitionProfile || {};
+    currentTransitionProfile = transition;
+    root.innerHTML = `<p><b>${tracks.reviewed || 0} tracks reviewed</b> · ${tracks.accepted || 0} accepted · ${tracks.rejected || 0} rejected · ${tracks.changedByPersonalization || 0} changed rank</p><p>Personalized acceptance ${tracks.personalizedAcceptanceRate == null ? 'not enough evidence' : `${Math.round(tracks.personalizedAcceptanceRate * 100)}%`} · neutral ${tracks.neutralAcceptanceRate == null ? 'not enough evidence' : `${Math.round(tracks.neutralAcceptanceRate * 100)}%`} · ${transition.activeSignals?.length || 0} active transition preferences</p>${(report.recommendations || []).map((item) => `<p class="set-relaxation-warning">${escapeHtml(item.message)}</p>`).join('')}`;
+  }
+  function transitionPreferenceAdjustment(features) {
+    return Math.max(
+      -8,
+      Math.min(
+        8,
+        (currentTransitionProfile.activeSignals || []).reduce(
+          (sum, signal) =>
+            String(features[signal.dimension] || '').toLowerCase() === String(signal.value || '').toLowerCase()
+              ? sum + Number(signal.adjustment || 0)
+              : sum,
+          0,
+        ),
+      ),
+    );
+  }
+  async function loadSetReviewReport() {
+    try {
+      renderCalibrationReport(await setBuilderApi.reviewReport(preferenceContext()));
+    } catch (error) {
+      console.warn('Set review report failed:', error);
+    }
+  }
+  async function submitSetReview() {
+    if (!state.plan.length) return;
+    const button = $('#submit-set-review');
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    const transitions = state.plan.slice(1).map((track, index) => {
+      const left = state.plan[index],
+        pairId = `${setCatalogTrackId(left)}→${setCatalogTrackId(track)}`;
+      return {
+        pairId,
+        rating: transitionReviewDraft.get(pairId) || 3,
+        features: transitionReviewFeatures(left, track, index + 1),
+      };
+    });
+    const tracks = state.plan.map((track) => {
+      const metrics = track._candidateMetrics || {};
+      const review = trackReviewDraft.get(setTrackId(track)) || {};
+      return {
+        trackId: setCatalogTrackId(track),
+        title: track.source_name.replace(/\.[^.]+$/, ''),
+        decision: review.decision || 'unreviewed',
+        reason: review.reason || '',
+        features: preferenceFeatures(track),
+        technicalScore: metrics.technicalScore || 0,
+        preferenceAdjustment: metrics.preferenceAdjustment || 0,
+        rankDelta: metrics.rankDelta || 0,
+        matchTier: metrics.matchTier || 'unknown',
+      };
+    });
+    try {
+      const result = await setBuilderApi.submitReview({
+        setId: $('#saved-set-select').value || `draft-${Date.now()}`,
+        setName: setBrief().name,
+        context: preferenceContext(),
+        overallDecision: currentSetDecision,
+        notes: $('#set-review-notes').value,
+        tracks,
+        transitions,
+        evaluation: currentPlanningReceipt?.evaluation || {},
+        comparison: currentPlanningReceipt?.comparison || {},
+      });
+      currentPreferenceProfile = result.preferenceProfile;
+      renderPreferenceProfile();
+      renderCalibrationReport(result.report);
+      $('#set-review-status').textContent = 'Review saved locally and preference evidence updated.';
+    } catch (error) {
+      $('#set-review-status').textContent = error.message || String(error);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Save review';
+    }
+  }
+  function resetSetReviewDraft() {
+    currentSetDecision = 'unreviewed';
+    trackReviewDraft.clear();
+    transitionReviewDraft.clear();
+    $$('[data-set-decision]').forEach((button) => button.classList.remove('active'));
+    const notes = $('#set-review-notes');
+    if (notes) notes.value = '';
+  }
+  function identityStore() {
+    try {
+      return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY) || '{}');
+    } catch (_) {
+      return {};
+    }
+  }
+  function intentionVocabulary() {
+    return [
+      ...new Set(
+        state.library
+          .flatMap((track) => [
+            ...String(track._genre || '')
+              .split('/')
+              .map((value) => value.trim()),
+            ...setTrackDetailedGenres(track),
+            ...(track._descriptors || []).map((item) => item.value),
+          ])
+          .filter(Boolean),
+      ),
+    ];
+  }
+  function manualTrackIdentity(track) {
+    return identityStore()[setTrackId(track)] || [];
+  }
+  function saveManualTrackIdentity(track, terms) {
+    const store = identityStore();
+    store[setTrackId(track)] = parseIdentityTerms(terms);
+    localStorage.setItem(SET_IDENTITY_STORAGE_KEY, JSON.stringify(store));
+    track._manualIdentity = store[setTrackId(track)];
+  }
+  function trackIdentity(track) {
+    return inferredTrackIdentity(track, track._manualIdentity || manualTrackIdentity(track));
+  }
+  function identityTermMatches(track, term) {
+    const normalized = String(term || '').toLowerCase(),
+      tags = trackIdentity(track);
+    if (normalized === 'latin rhythmic identity')
+      return tags.some((tag) => ['dembow', 'latin percussion', 'latin identity'].includes(tag));
+    if (normalized === 'generic instrumental techno')
+      return (
+        tags.includes('techno foundation') &&
+        !tags.includes('spanish vocals') &&
+        !tags.includes('latin percussion') &&
+        !tags.includes('recognizable material')
+      );
+    if (normalized === 'dance-friendly') return songEnergy(track) >= 0.5;
+    if (normalized === 'chill kickback') return songEnergy(track) <= 0.68 || tags.includes('chill kickback');
+    return tags.some((tag) => tag === normalized || tag.includes(normalized) || normalized.includes(tag));
+  }
+  function intentionEvaluation(track, brief) {
+    const identity = brief.identity || { required: [], preferred: [], avoided: [] };
+    const required = (identity.required || []).filter((term) => identityTermMatches(track, term)),
+      preferred = (identity.preferred || []).filter((term) => identityTermMatches(track, term)),
+      avoided = (identity.avoided || []).filter((term) => identityTermMatches(track, term));
+    const missingRequired = (identity.required || []).filter((term) => !required.includes(term));
+    return {
+      required,
+      preferred,
+      avoided,
+      missingRequired,
+      score: preferred.length * 14 + required.length * 22 - avoided.length * 35 - missingRequired.length * 45,
+    };
+  }
+  function currentJourney() {
+    const root = $('#set-journey-preview');
+    if (!root || root.hidden) return null;
+    const sections = [...root.querySelectorAll('.set-journey-section')].map((row, index) => ({
+      id: row.dataset.id || `section-${index + 1}`,
+      name: row.querySelector('.journey-name').value.trim() || `Section ${index + 1}`,
+      durationPercent: Number(row.querySelector('.journey-duration').value || 0),
+      energyStart: Number(row.querySelector('.journey-energy-start').value || 5),
+      energyEnd: Number(row.querySelector('.journey-energy-end').value || 5),
+      genres: parseIdentityTerms(row.querySelector('.journey-genres input').value),
+      characteristics: parseIdentityTerms(row.querySelector('.journey-characteristics').value),
+      purpose: row.querySelector('.journey-purpose input').value.trim(),
+    }));
+    const duration = journeyDurationStatus(sections, Number($('#set-length').value));
+    if (!duration.valid)
+      throw new Error(`Journey section durations total ${duration.total}%. Adjust them to 100% before generating.`);
+    return {
+      version: 1,
+      summary: $('#set-journey-summary').textContent,
+      durationMinutes: Number($('#set-length').value),
+      sections,
+    };
+  }
+  function currentIntention() {
+    const text = $('#set-intention').value.trim(),
+      panel = $('#set-intention-interpretation'),
+      parsed = interpretSetIntention(text, intentionVocabulary());
+    let interpreted = {};
+    try {
+      if (panel.dataset.source === text) interpreted = JSON.parse(panel.dataset.interpretation || '{}');
+    } catch (_) {}
+    const journey = currentJourney();
+    const journeySequence = journey?.sections.flatMap((section) => section.genres) || [];
+    return {
+      text,
+      required: parseIdentityTerms($('#set-intention-required').value),
+      preferred: parseIdentityTerms($('#set-intention-preferred').value),
+      avoided: parseIdentityTerms($('#set-intention-avoided').value),
+      requestedGenres: interpreted.requestedGenres || parsed.requestedGenres || [],
+      optionalGenres: interpreted.optionalGenres || [],
+      genreSequence: journeySequence.length ? journeySequence : interpreted.genreSequence || parsed.genreSequence || [],
+      journey,
+      opening: interpreted.opening || parsed.opening || null,
+      ending: interpreted.ending || null,
+      provider: interpreted.provider || 'offline',
+      drift: $('#set-intention-drift').value,
+      fallbackPolicy: [...DEFAULT_SET_FALLBACK_POLICY],
+    };
+  }
+  function renderFallbackPolicy(policy = DEFAULT_SET_FALLBACK_POLICY) {
+    $('#set-fallback-policy').innerHTML = fallbackPolicyMarkup(policy, escapeHtml);
+  }
+  function showIntentionProvider(status) {
+    const badge = $('#set-provider-status');
+    if (!badge) return;
+    const view = intentionProviderView(status);
+    badge.className = view.className;
+    badge.textContent = view.text;
+    badge.title = view.title;
+  }
+  async function refreshIntentionProviderStatus() {
+    const badge = $('#set-provider-status');
+    if (badge) {
+      badge.className = 'set-provider-status checking';
+      badge.textContent = 'Checking local AI…';
+    }
+    try {
+      showIntentionProvider(await setBuilderApi.providerStatus());
+    } catch (_) {
+      showIntentionProvider({ available: false, provider: 'offline' });
+    }
+  }
+  function renderJourney(journey) {
+    const root = $('#set-journey-preview'),
+      container = $('#set-journey-sections');
+    root.hidden = false;
+    root.dataset.journey = JSON.stringify(journey);
+    $('#set-journey-summary').textContent = journey.summary || 'Review the planned journey before generating.';
+    $('#set-journey-evidence').textContent =
+      journey.evidence === 'ai-planned' ? `AI planned · ${journey.model || 'local model'}` : 'Offline plan';
+    container.innerHTML = (journey.sections || [])
+      .map(
+        (section, index) =>
+          `<article class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label>Duration %<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"></label><label>Energy <span>${Number(section.energyStart || 5)} → ${Number(section.energyEnd || 5)}</span><span class="journey-energy-inputs"><input class="journey-energy-start" type="number" min="1" max="10" step=".5" value="${Number(section.energyStart || 5)}"><input class="journey-energy-end" type="number" min="1" max="10" step=".5" value="${Number(section.energyEnd || 5)}"></span></label><label class="journey-genres">Genres<input value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres"></label><label>Characteristics<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></article>`,
+      )
+      .join('');
+    const refresh = () => {
+      const total = [...container.querySelectorAll('.journey-duration')].reduce(
+          (sum, input) => sum + Number(input.value || 0),
+          0,
+        ),
+        status = $('#set-journey-total');
+      status.textContent = `${journey.sections.length} sections · ${total}% of ${Number($('#set-length').value)} minutes · edits drive track placement`;
+      status.classList.toggle('invalid', Math.abs(total - 100) > 0.01);
+      container.querySelectorAll('.set-journey-section').forEach((row) => {
+        const values = [...row.querySelectorAll('.journey-energy-start,.journey-energy-end')].map((input) =>
+          Number(input.value || 5),
+        );
+        row.querySelector('label:nth-child(3)>span').textContent = `${values[0]} → ${values[1]}`;
+      });
+    };
+    container.querySelectorAll('input').forEach((input) => input.addEventListener('input', refresh));
+    refresh();
+  }
+  function applyIntentionInterpretation(interpreted, { announce = true } = {}) {
+    const panel = $('#set-intention-interpretation');
+    panel.hidden = false;
+    panel.dataset.source = interpreted.text || '';
+    panel.dataset.interpretation = JSON.stringify(interpreted);
+    $('#set-intention-required').value = (interpreted.required || []).join(', ');
+    $('#set-intention-preferred').value = (interpreted.preferred || []).join(', ');
+    $('#set-intention-avoided').value = (interpreted.avoided || []).join(', ');
+    $('#set-intention-drift').value = interpreted.drift || 'moderate';
+    if (interpreted.vibe) $('#set-vibe').value = interpreted.vibe;
+    if (interpreted.curve) $('#set-curve').value = interpreted.curve;
+    renderFallbackPolicy(interpreted.fallbackPolicy || DEFAULT_SET_FALLBACK_POLICY);
+    if (interpreted.journey) renderJourney(interpreted.journey);
+    showIntentionProvider({
+      available: interpreted.provider !== 'offline',
+      provider: interpreted.provider,
+      model: interpreted.model,
+    });
+    if (announce) {
+      const source =
+        interpreted.provider === 'ollama'
+          ? `Local AI · ${interpreted.model}`
+          : interpreted.provider === 'openai'
+            ? `Cloud AI · ${interpreted.model}`
+            : 'offline rules';
+      $('#set-intention-status').textContent =
+        `Interpreted with ${source}. Found ${(interpreted.required || []).length} requirement${(interpreted.required || []).length === 1 ? '' : 's'}, ${(interpreted.preferred || []).length} preference${(interpreted.preferred || []).length === 1 ? '' : 's'}, and ${(interpreted.avoided || []).length} limit${(interpreted.avoided || []).length === 1 ? '' : 's'}. Edit anything before generating.`;
+    }
+  }
+  async function interpretIntention(text) {
+    try {
+      const result = await setBuilderApi.interpretIntention(text, intentionVocabulary());
+      return { ...result, text, fallbackPolicy: [...DEFAULT_SET_FALLBACK_POLICY] };
+    } catch (_) {
+      return { ...interpretSetIntention(text, intentionVocabulary()), provider: 'offline' };
+    }
+  }
+  async function planJourney(text, interpreted) {
+    return setBuilderApi.planJourney({
+      brief: text,
+      interpretedIntention: interpreted,
+      catalogVocabulary: intentionVocabulary(),
+      durationMinutes: Number($('#set-length').value),
+    });
+  }
+  async function interpretAndPlan(text) {
+    const interpreted = await interpretIntention(text);
+    try {
+      interpreted.journey = await planJourney(text, interpreted);
+    } catch (error) {
+      console.warn('Journey planning failed:', error);
+    }
+    return interpreted;
+  }
+  function selectedSetGenres() {
+    return [...$('#set-genre').selectedOptions]
+      .map((option) => option.value)
+      .filter((value) => value && value !== 'all');
+  }
+  function selectedSetDetailedGenres() {
+    return [...$('#set-detailed-genres').selectedOptions]
+      .map((option) => option.value)
+      .filter((value) => value && value !== 'all');
+  }
+  function selectedExcludedSetGenres() {
+    return [...$('#set-excluded-genres').selectedOptions].map((option) => option.value).filter(Boolean);
+  }
+  function renderExcludedSetGenres() {
+    const selected = selectedExcludedSetGenres();
+    const chips = $('#set-excluded-genre-chips');
+    chips.replaceChildren(
+      ...selected.map((genre) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.textContent = `${genre} ×`;
+        chip.onclick = () => {
+          const option = [...$('#set-excluded-genres').options].find((item) => item.value === genre);
+          if (option) option.selected = false;
+          $('#set-excluded-genres').dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        return chip;
+      }),
+    );
+  }
+  function renderSetDetailedGenres() {
+    const selected = selectedSetDetailedGenres(),
+      chips = $('#set-detailed-genre-chips');
+    chips.replaceChildren(
+      ...selected.map((genre) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.textContent = `${genre} ×`;
+        chip.onclick = () => {
+          const option = [...$('#set-detailed-genres').options].find((item) => item.value === genre);
+          if (option) option.selected = false;
+          $('#set-detailed-genres').dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        return chip;
+      }),
+    );
+  }
+  function populateSetDetailedGenres(restore = []) {
+    const parents = selectedSetGenres();
+    const select = $('#set-detailed-genres');
+    const current = restore.length ? restore : selectedSetDetailedGenres();
+    const choices = [
+      ...new Set(
+        state.library
+          .filter((track) => !parents.length || parents.some((parent) => trackMatchesSetGenre(track, parent)))
+          .flatMap(setTrackDetailedGenres),
+      ),
+    ].sort((a, b) => a.localeCompare(b));
+    select.replaceChildren(option('all', 'Any detailed genre'), ...choices.map((value) => option(value, value)));
+    [...select.options].forEach((item) => {
+      item.selected = current.length ? current.includes(item.value) : item.value === 'all';
+    });
+    if (!select.selectedOptions.length) select.querySelector('option[value="all"]').selected = true;
+    renderSetDetailedGenres();
+  }
   function renderSetGenreMix() {
-    const genres=selectedSetGenres(); const chips=$('#set-genre-chips'); const weights=$('#set-genre-weights');
-    const existing=new Map([...weights.querySelectorAll('input')].map(input=>[input.dataset.genre,input.value]));
-    const countChanged=Number(weights.dataset.count||0)!==genres.length;weights.dataset.count=String(genres.length);
-    chips.replaceChildren(); weights.replaceChildren(); weights.hidden=!genres.length;
-    genres.forEach(genre=>{
-      const chip=document.createElement('button');chip.type='button';chip.textContent=`${genre} ×`;chip.onclick=()=>{const option=[...$('#set-genre').options].find(item=>item.value===genre);if(option)option.selected=false;state.genreSelectionOrder=state.genreSelectionOrder.filter(value=>value!==genre);if(!selectedSetGenres().length)$('#set-genre').querySelector('option[value="all"]').selected=true;$('#set-genre').dispatchEvent(new Event('change',{bubbles:true}));};chips.append(chip);
-      const row=document.createElement('label');const input=document.createElement('input');input.type='number';input.min='0';input.max='100';input.step='1';input.value=!countChanged&&existing.has(genre)?existing.get(genre):String(Math.round(100/genres.length));input.dataset.genre=genre;row.append(document.createTextNode(genre),input);const suffix=document.createElement('span');suffix.textContent='%';row.append(suffix);weights.append(row);
+    const genres = selectedSetGenres();
+    const chips = $('#set-genre-chips');
+    const weights = $('#set-genre-weights');
+    const existing = new Map([...weights.querySelectorAll('input')].map((input) => [input.dataset.genre, input.value]));
+    const countChanged = Number(weights.dataset.count || 0) !== genres.length;
+    weights.dataset.count = String(genres.length);
+    chips.replaceChildren();
+    weights.replaceChildren();
+    weights.hidden = !genres.length;
+    genres.forEach((genre) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.textContent = `${genre} ×`;
+      chip.onclick = () => {
+        const option = [...$('#set-genre').options].find((item) => item.value === genre);
+        if (option) option.selected = false;
+        state.genreSelectionOrder = state.genreSelectionOrder.filter((value) => value !== genre);
+        if (!selectedSetGenres().length) $('#set-genre').querySelector('option[value="all"]').selected = true;
+        $('#set-genre').dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      chips.append(chip);
+      const row = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = '0';
+      input.max = '100';
+      input.step = '1';
+      input.value =
+        !countChanged && existing.has(genre) ? existing.get(genre) : String(Math.round(100 / genres.length));
+      input.dataset.genre = genre;
+      row.append(document.createTextNode(genre), input);
+      const suffix = document.createElement('span');
+      suffix.textContent = '%';
+      row.append(suffix);
+      weights.append(row);
     });
   }
   function setBrief() {
-    const genres=selectedSetGenres();const genreWeights=Object.fromEntries([...$('#set-genre-weights').querySelectorAll('input')].map(input=>[input.dataset.genre,Math.max(0,Number(input.value||0))]));
-    return {name:$('#set-name').value.trim() || 'New DJ Set',length:Number($('#set-length').value),genres,detailedGenres:selectedSetDetailedGenres(),excludedGenres:selectedExcludedSetGenres(),genreWeights,genreFlow:$('#set-genre-flow').value,vibe:$('#set-vibe').value,curve:$('#set-curve').value,bpmMin:Number($('#set-bpm-min').value || 0),bpmMax:Number($('#set-bpm-max').value || Infinity),keyStrictness:$('#set-key-strictness').value,vocals:$('#set-vocals').value,timing:$('#set-timing').value,edits:$('#set-edits').value,minimumHealth:Number($('#set-minimum-health').value || 65),identity:currentIntention()};
+    const genres = selectedSetGenres();
+    const genreWeights = Object.fromEntries(
+      [...$('#set-genre-weights').querySelectorAll('input')].map((input) => [
+        input.dataset.genre,
+        Math.max(0, Number(input.value || 0)),
+      ]),
+    );
+    return {
+      name: $('#set-name').value.trim() || 'New DJ Set',
+      length: Number($('#set-length').value),
+      genres,
+      detailedGenres: selectedSetDetailedGenres(),
+      excludedGenres: selectedExcludedSetGenres(),
+      genreWeights,
+      genreFlow: $('#set-genre-flow').value,
+      vibe: $('#set-vibe').value,
+      curve: $('#set-curve').value,
+      bpmMin: Number($('#set-bpm-min').value || 0),
+      bpmMax: Number($('#set-bpm-max').value || Infinity),
+      keyStrictness: $('#set-key-strictness').value,
+      vocals: $('#set-vocals').value,
+      timing: $('#set-timing').value,
+      edits: $('#set-edits').value,
+      minimumHealth: Number($('#set-minimum-health').value || 65),
+      identity: currentIntention(),
+    };
   }
-  function setCandidateScore(track, previous, index, count, brief, strategy='balanced', usedByOtherProposals=new Set()) {
-    const energyFit = Math.max(0, 45 * (1 - Math.abs(songEnergy(track) - targetSetEnergy(index, count, brief)) / .7));
+  function setCandidateScore(
+    track,
+    previous,
+    index,
+    count,
+    brief,
+    strategy = 'balanced',
+    usedByOtherProposals = new Set(),
+  ) {
+    const energyFit = Math.max(0, 45 * (1 - Math.abs(songEnergy(track) - targetSetEnergy(index, count, brief)) / 0.7));
     const roles = libraryRoles(track);
-    const vibeFit = brief.vibe === 'balanced' || roles.includes(brief.vibe) || (brief.vibe==='dance-party'&&songEnergy(track)>=.58) ? 15 : 0;
+    const vibeFit =
+      brief.vibe === 'balanced' ||
+      roles.includes(brief.vibe) ||
+      (brief.vibe === 'dance-party' && songEnergy(track) >= 0.58)
+        ? 15
+        : 0;
     const transition = previous ? compatibility(previous, track) : null;
-    let transitionScore = transition ? transition.score * .7 : 25;
+    let transitionScore = transition ? transition.score * 0.7 : 25;
     if (brief.keyStrictness === 'strict' && transition && transition.components.key < 20) transitionScore -= 35;
-    if (brief.keyStrictness === 'adventurous' && transition) transitionScore = transition.components.tempo * .65 + transition.components.energy * 1.2;
+    if (brief.keyStrictness === 'adventurous' && transition)
+      transitionScore = transition.components.tempo * 0.65 + transition.components.energy * 1.2;
     const editFit = brief.edits === 'either' ? 0 : (brief.edits === 'extended') === track._hasExtended ? 6 : -3;
-    const matchingGenres=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));
-    const totalWeight=Math.max(1,Object.values(brief.genreWeights||{}).reduce((sum,value)=>sum+value,0));
-    let genreFit=matchingGenres.length?18*Math.max(...matchingGenres.map(genre=>(brief.genreWeights[genre]||0)/totalWeight)):0;
-    if (brief.genres?.length>1 && brief.genreFlow!=='blend') {
-      const order=state.genreSelectionOrder.filter(genre=>brief.genres.includes(genre)).concat(brief.genres.filter(genre=>!state.genreSelectionOrder.includes(genre)));
-      const progress=(index+.5)/Math.max(1,count);let target=order[Math.min(order.length-1,Math.floor(progress*order.length))];
-      if(brief.genreFlow==='chapters'){let cursor=0;for(const genre of order){cursor+=(brief.genreWeights[genre]||0)/totalWeight;if(progress<=cursor){target=genre;break;}}}
-      if(trackMatchesSetGenre(track,target))genreFit+=22;
+    const matchingGenres = (brief.genres || []).filter((genre) => trackMatchesSetGenre(track, genre));
+    const totalWeight = Math.max(
+      1,
+      Object.values(brief.genreWeights || {}).reduce((sum, value) => sum + value, 0),
+    );
+    let genreFit = matchingGenres.length
+      ? 18 * Math.max(...matchingGenres.map((genre) => (brief.genreWeights[genre] || 0) / totalWeight))
+      : 0;
+    if (brief.genres?.length > 1 && brief.genreFlow !== 'blend') {
+      const order = state.genreSelectionOrder
+        .filter((genre) => brief.genres.includes(genre))
+        .concat(brief.genres.filter((genre) => !state.genreSelectionOrder.includes(genre)));
+      const progress = (index + 0.5) / Math.max(1, count);
+      let target = order[Math.min(order.length - 1, Math.floor(progress * order.length))];
+      if (brief.genreFlow === 'chapters') {
+        let cursor = 0;
+        for (const genre of order) {
+          cursor += (brief.genreWeights[genre] || 0) / totalWeight;
+          if (progress <= cursor) {
+            target = genre;
+            break;
+          }
+        }
+      }
+      if (trackMatchesSetGenre(track, target)) genreFit += 22;
     }
-    let strategyFit=0;
-    if(strategy==='safe') strategyFit=(transition?.score||65)*.48+(setVocalProfile(track)==='vocal-forward'&&previous&&setVocalProfile(previous)==='vocal-forward'?-28:8)-Math.abs(songEnergy(track)-(previous?songEnergy(previous):songEnergy(track)))*18;
-    if(strategy==='energy') strategyFit=energyFit*.8-Math.abs(songEnergy(track)-targetSetEnergy(index,count,brief))*34+(previous?Math.min(12,Math.abs(songEnergy(track)-songEnergy(previous))*14):0)-(usedByOtherProposals.has(setTrackId(track))?8:0);
-    if(strategy==='adventurous') { const genreChange=previous&&track._genre!==previous._genre?18:0;const roleChange=previous?libraryRoles(track).filter(role=>!libraryRoles(previous).includes(role)).length*6:8;const harmonicColor=transition&&transition.components.key<31&&transition.components.key>=20?10:0;strategyFit=genreChange+roleChange+harmonicColor-(usedByOtherProposals.has(setTrackId(track))?18:0); }
-    const intentionFit=intentionEvaluation(track,brief).score;
-    const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const requestedGenreFit=intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?32:0;
-    const positionalGenre=intendedGenreForPosition(brief.identity,index,count);const positionalGenreFit=positionalGenre&&trackMatchesIntendedGenre(track,positionalGenre)?68:positionalGenre?-24:0;
-    const openingSection=index<Math.max(1,Math.ceil(count*.18));const openingFit=openingSection&&String(brief.identity?.opening||'').includes('melodic')?(identityTermMatches(track,'melodic')?42:-18):0;
-    return energyFit + vibeFit + transitionScore + editFit + genreFit + strategyFit + intentionFit + requestedGenreFit + positionalGenreFit + openingFit + preferenceAdjustment(track);
+    let strategyFit = 0;
+    if (strategy === 'safe')
+      strategyFit =
+        (transition?.score || 65) * 0.48 +
+        (setVocalProfile(track) === 'vocal-forward' && previous && setVocalProfile(previous) === 'vocal-forward'
+          ? -28
+          : 8) -
+        Math.abs(songEnergy(track) - (previous ? songEnergy(previous) : songEnergy(track))) * 18;
+    if (strategy === 'energy')
+      strategyFit =
+        energyFit * 0.8 -
+        Math.abs(songEnergy(track) - targetSetEnergy(index, count, brief)) * 34 +
+        (previous ? Math.min(12, Math.abs(songEnergy(track) - songEnergy(previous)) * 14) : 0) -
+        (usedByOtherProposals.has(setTrackId(track)) ? 8 : 0);
+    if (strategy === 'adventurous') {
+      const genreChange = previous && track._genre !== previous._genre ? 18 : 0;
+      const roleChange = previous
+        ? libraryRoles(track).filter((role) => !libraryRoles(previous).includes(role)).length * 6
+        : 8;
+      const harmonicColor = transition && transition.components.key < 31 && transition.components.key >= 20 ? 10 : 0;
+      strategyFit = genreChange + roleChange + harmonicColor - (usedByOtherProposals.has(setTrackId(track)) ? 18 : 0);
+    }
+    const intentionFit = intentionEvaluation(track, brief).score;
+    const intendedGenres = [...(brief.identity?.requestedGenres || []), ...(brief.identity?.optionalGenres || [])];
+    const requestedGenreFit = intendedGenres.some((term) => trackMatchesIntendedGenre(track, term)) ? 32 : 0;
+    const positionalGenre = intendedGenreForPosition(brief.identity, index, count);
+    const positionalGenreFit =
+      positionalGenre && trackMatchesIntendedGenre(track, positionalGenre) ? 68 : positionalGenre ? -24 : 0;
+    const openingSection = index < Math.max(1, Math.ceil(count * 0.18));
+    const openingFit =
+      openingSection && String(brief.identity?.opening || '').includes('melodic')
+        ? identityTermMatches(track, 'melodic')
+          ? 42
+          : -18
+        : 0;
+    return (
+      energyFit +
+      vibeFit +
+      transitionScore +
+      editFit +
+      genreFit +
+      strategyFit +
+      intentionFit +
+      requestedGenreFit +
+      positionalGenreFit +
+      openingFit +
+      preferenceAdjustment(track)
+    );
   }
   function setVocalProfile(track) {
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
   }
   function eligibleSetTracks(brief) {
-    return state.library.filter(track => {
-      const bpm = Number(track.bpm || 0); const id = setTrackId(track);
-      const intention=intentionEvaluation(track,brief);const requestedGenres=brief.identity?.requestedGenres||[],optionalGenres=brief.identity?.optionalGenres||[],allIntendedGenres=[...requestedGenres,...optionalGenres];const requestedGenreMatch=!allIntendedGenres.length||allIntendedGenres.some(term=>trackMatchesIntendedGenre(track,term));const directGenre=!brief.genres.length||brief.genres.some(genre=>trackMatchesSetGenre(track,genre));const drift=brief.identity?.drift||'none';
-      const identityEligible=directGenre&&requestedGenreMatch||Boolean(brief.identity?.text)&&drift==='wide'&&intention.preferred.length>=1;
-      return !state.excludedIds.has(id)
-        && identityEligible
-        && !intention.missingRequired.length
-        && (!(brief.detailedGenres||[]).length || brief.detailedGenres.some(genre=>trackMatchesSetDetailedGenre(track,genre)))
-        && !(brief.excludedGenres||[]).some(genre=>trackMatchesSetGenre(track,genre))
-        && (!brief.bpmMin || bpm >= brief.bpmMin)
-        && (!Number.isFinite(brief.bpmMax) || !brief.bpmMax || bpm <= brief.bpmMax)
-        && (brief.vocals === 'all' || setVocalProfile(track) === brief.vocals)
-        && (brief.timing === 'all' || timingProfile(track) === brief.timing);
+    return state.library.filter((track) => {
+      const bpm = Number(track.bpm || 0);
+      const id = setTrackId(track);
+      const intention = intentionEvaluation(track, brief);
+      const requestedGenres = brief.identity?.requestedGenres || [],
+        optionalGenres = brief.identity?.optionalGenres || [],
+        allIntendedGenres = [...requestedGenres, ...optionalGenres];
+      const requestedGenreMatch =
+        !allIntendedGenres.length || allIntendedGenres.some((term) => trackMatchesIntendedGenre(track, term));
+      const directGenre = !brief.genres.length || brief.genres.some((genre) => trackMatchesSetGenre(track, genre));
+      const drift = brief.identity?.drift || 'none';
+      const identityEligible =
+        (directGenre && requestedGenreMatch) ||
+        (Boolean(brief.identity?.text) && drift === 'wide' && intention.preferred.length >= 1);
+      return (
+        !state.excludedIds.has(id) &&
+        identityEligible &&
+        !intention.missingRequired.length &&
+        (!(brief.detailedGenres || []).length ||
+          brief.detailedGenres.some((genre) => trackMatchesSetDetailedGenre(track, genre))) &&
+        !(brief.excludedGenres || []).some((genre) => trackMatchesSetGenre(track, genre)) &&
+        (!brief.bpmMin || bpm >= brief.bpmMin) &&
+        (!Number.isFinite(brief.bpmMax) || !brief.bpmMax || bpm <= brief.bpmMax) &&
+        (brief.vocals === 'all' || setVocalProfile(track) === brief.vocals) &&
+        (brief.timing === 'all' || timingProfile(track) === brief.timing)
+      );
     });
   }
   async function generateDeterministicSetPlan() {
-    const brief = setBrief(); const eligiblePool = eligibleSetTracks(brief);
-    const requiredIds=new Set(state.requiredIds);const intendedGenres=[...(brief.identity?.requestedGenres||[]),...(brief.identity?.optionalGenres||[])];const coarseScore=track=>intentionEvaluation(track,brief).score+(intendedGenres.some(term=>trackMatchesIntendedGenre(track,term))?40:0)-Math.abs(songEnergy(track)-targetSetEnergy(0,2,brief))*12;
-    const shortlistLimit=800;const pool=eligiblePool.length<=shortlistLimit?eligiblePool:[...eligiblePool].sort((a,b)=>coarseScore(b)-coarseScore(a)).slice(0,shortlistLimit);
-    eligiblePool.filter(track=>requiredIds.has(setTrackId(track))&&!pool.includes(track)).forEach(track=>pool.push(track));
-    if (pool.length < 2) { $('#set-builder-message').textContent = 'Not enough analyzed tracks match this brief. Relax a filter and try again.'; return; }
-    const averageSeconds = pool.reduce((sum,track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
-    const count = Math.max(2, Math.min(pool.length, Math.ceil(brief.length * 60 / averageSeconds)));
-    const required = pool.filter(track => state.requiredIds.has(setTrackId(track)));
-    const genreTargets=genreAllocationTargets(brief.genres,brief.genreWeights,count);
+    const brief = setBrief();
+    const eligiblePool = eligibleSetTracks(brief);
+    const requiredIds = new Set(state.requiredIds);
+    const intendedGenres = [...(brief.identity?.requestedGenres || []), ...(brief.identity?.optionalGenres || [])];
+    const coarseScore = (track) =>
+      intentionEvaluation(track, brief).score +
+      (intendedGenres.some((term) => trackMatchesIntendedGenre(track, term)) ? 40 : 0) -
+      Math.abs(songEnergy(track) - targetSetEnergy(0, 2, brief)) * 12;
+    const shortlistLimit = 800;
+    const pool =
+      eligiblePool.length <= shortlistLimit
+        ? eligiblePool
+        : [...eligiblePool].sort((a, b) => coarseScore(b) - coarseScore(a)).slice(0, shortlistLimit);
+    eligiblePool
+      .filter((track) => requiredIds.has(setTrackId(track)) && !pool.includes(track))
+      .forEach((track) => pool.push(track));
+    if (pool.length < 2) {
+      $('#set-builder-message').textContent =
+        'Not enough analyzed tracks match this brief. Relax a filter and try again.';
+      return;
+    }
+    const averageSeconds =
+      pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
+    const count = Math.max(2, Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)));
+    const required = pool.filter((track) => state.requiredIds.has(setTrackId(track)));
+    const genreTargets = genreAllocationTargets(brief.genres, brief.genreWeights, count);
     const previousPlan = state.plan;
-    const buildVariation = (strategy,generatedTrackIds) => {
-      const remaining = new Map(pool.map(track => [setTrackId(track), track])); const nextPlan = []; const genreUsage=Object.fromEntries((brief.genres||[]).map(genre=>[genre,0])); const previousPlanIds=new Set(previousPlan.map(setTrackId)); let failed = false;
-      const recordGenre=track=>{const matches=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));if(!matches.length)return;const genre=matches.sort((a,b)=>((genreTargets[b]||0)-(genreUsage[b]||0))-((genreTargets[a]||0)-(genreUsage[a]||0)))[0];genreUsage[genre]=(genreUsage[genre]||0)+1;};
-      const nextGenre=()=>{const configuredOrder=state.genreSelectionOrder.filter(genre=>(brief.genres||[]).includes(genre)).concat((brief.genres||[]).filter(genre=>!state.genreSelectionOrder.includes(genre)));const open=configuredOrder.filter(genre=>(genreUsage[genre]||0)<(genreTargets[genre]||0)&&[...remaining.values()].some(track=>trackMatchesSetGenre(track,genre)));if(!open.length)return '';return open.sort((a,b)=>{const deficitA=(genreTargets[a]||0)-(genreUsage[a]||0),deficitB=(genreTargets[b]||0)-(genreUsage[b]||0);if(brief.genreFlow==='blend')return deficitB/Math.max(1,genreTargets[b]||0)-deficitA/Math.max(1,genreTargets[a]||0);return configuredOrder.indexOf(a)-configuredOrder.indexOf(b);})[0];};
+    const buildVariation = (strategy, generatedTrackIds) => {
+      const remaining = new Map(pool.map((track) => [setTrackId(track), track]));
+      const nextPlan = [];
+      const genreUsage = Object.fromEntries((brief.genres || []).map((genre) => [genre, 0]));
+      const previousPlanIds = new Set(previousPlan.map(setTrackId));
+      let failed = false;
+      const recordGenre = (track) => {
+        const matches = (brief.genres || []).filter((genre) => trackMatchesSetGenre(track, genre));
+        if (!matches.length) return;
+        const genre = matches.sort(
+          (a, b) => (genreTargets[b] || 0) - (genreUsage[b] || 0) - ((genreTargets[a] || 0) - (genreUsage[a] || 0)),
+        )[0];
+        genreUsage[genre] = (genreUsage[genre] || 0) + 1;
+      };
+      const nextGenre = () => {
+        const configuredOrder = state.genreSelectionOrder
+          .filter((genre) => (brief.genres || []).includes(genre))
+          .concat((brief.genres || []).filter((genre) => !state.genreSelectionOrder.includes(genre)));
+        const open = configuredOrder.filter(
+          (genre) =>
+            (genreUsage[genre] || 0) < (genreTargets[genre] || 0) &&
+            [...remaining.values()].some((track) => trackMatchesSetGenre(track, genre)),
+        );
+        if (!open.length) return '';
+        return open.sort((a, b) => {
+          const deficitA = (genreTargets[a] || 0) - (genreUsage[a] || 0),
+            deficitB = (genreTargets[b] || 0) - (genreUsage[b] || 0);
+          if (brief.genreFlow === 'blend')
+            return deficitB / Math.max(1, genreTargets[b] || 0) - deficitA / Math.max(1, genreTargets[a] || 0);
+          return configuredOrder.indexOf(a) - configuredOrder.indexOf(b);
+        })[0];
+      };
       state.generationNonce += 1;
-      Array.from({length:count}, (_, index) => {
+      Array.from({ length: count }, (_, index) => {
         if (failed) return;
         const locked = previousPlan[index];
-        if (locked && state.lockedIds.has(setTrackId(locked)) && remaining.has(setTrackId(locked))) { remaining.delete(setTrackId(locked)); nextPlan.push(locked); recordGenre(locked); return; }
-        const requiredIndex = required.length ? Math.round(index * (required.length + 1) / count) - 1 : -1;
+        if (locked && state.lockedIds.has(setTrackId(locked)) && remaining.has(setTrackId(locked))) {
+          remaining.delete(setTrackId(locked));
+          nextPlan.push(locked);
+          recordGenre(locked);
+          return;
+        }
+        const requiredIndex = required.length ? Math.round((index * (required.length + 1)) / count) - 1 : -1;
         const forced = required[requiredIndex];
-        if (forced && remaining.has(setTrackId(forced))) { remaining.delete(setTrackId(forced)); nextPlan.push(forced); recordGenre(forced); return; }
+        if (forced && remaining.has(setTrackId(forced))) {
+          remaining.delete(setTrackId(forced));
+          nextPlan.push(forced);
+          recordGenre(forced);
+          return;
+        }
         const previous = nextPlan[index - 1] || null;
-        const targetGenre=nextGenre();const identityTarget=intendedGenreForPosition(brief.identity,index,count);const available=[...remaining.values()];const identityTargeted=identityTarget?available.filter(track=>trackMatchesIntendedGenre(track,identityTarget)):[];const targeted=targetGenre?available.filter(track=>trackMatchesSetGenre(track,targetGenre)):available;const candidatePool=identityTargeted.length?identityTargeted:targeted.length?targeted:available;
-        const ranked = candidatePool.map(track=>{const id=setTrackId(track),wasSamePosition=Boolean(previousPlan[index])&&setTrackId(previousPlan[index])===id,wasInPrevious=previousPlanIds.has(id);return {track,score:setCandidateScore(track,previous,index,count,brief,strategy,generatedTrackIds)-(wasSamePosition?12:wasInPrevious?3:0)};}).sort((a,b)=>b.score-a.score);
-        if (!ranked.length) { failed = true; return; }
-        const competitive=ranked.filter(item=>item.score>=ranked[0].score-18).slice(0,18);
-        const weights=competitive.map(item=>Math.exp((item.score-competitive.at(-1).score)/5));const total=weights.reduce((sum,value)=>sum+value,0);let pick=(Math.abs(Math.sin(state.generationNonce*9283+index*3343))*total),choice=competitive[0]?.track;for(let option=0;option<competitive.length;option+=1){pick-=weights[option];if(pick<=0){choice=competitive[option].track;break;}}
-        if (choice) { remaining.delete(setTrackId(choice)); nextPlan.push(choice); recordGenre(choice); }
+        const targetGenre = nextGenre();
+        const identityTarget = intendedGenreForPosition(brief.identity, index, count);
+        const available = [...remaining.values()];
+        const identityTargeted = identityTarget
+          ? available.filter((track) => trackMatchesIntendedGenre(track, identityTarget))
+          : [];
+        const targeted = targetGenre
+          ? available.filter((track) => trackMatchesSetGenre(track, targetGenre))
+          : available;
+        const candidatePool = identityTargeted.length ? identityTargeted : targeted.length ? targeted : available;
+        const ranked = candidatePool
+          .map((track) => {
+            const id = setTrackId(track),
+              wasSamePosition = Boolean(previousPlan[index]) && setTrackId(previousPlan[index]) === id,
+              wasInPrevious = previousPlanIds.has(id);
+            return {
+              track,
+              score:
+                setCandidateScore(track, previous, index, count, brief, strategy, generatedTrackIds) -
+                (wasSamePosition ? 12 : wasInPrevious ? 3 : 0),
+            };
+          })
+          .sort((a, b) => b.score - a.score);
+        if (!ranked.length) {
+          failed = true;
+          return;
+        }
+        const competitive = ranked.filter((item) => item.score >= ranked[0].score - 18).slice(0, 18);
+        const weights = competitive.map((item) => Math.exp((item.score - competitive.at(-1).score) / 5));
+        const total = weights.reduce((sum, value) => sum + value, 0);
+        let pick = Math.abs(Math.sin(state.generationNonce * 9283 + index * 3343)) * total,
+          choice = competitive[0]?.track;
+        for (let option = 0; option < competitive.length; option += 1) {
+          pick -= weights[option];
+          if (pick <= 0) {
+            choice = competitive[option].track;
+            break;
+          }
+        }
+        if (choice) {
+          remaining.delete(setTrackId(choice));
+          nextPlan.push(choice);
+          recordGenre(choice);
+        }
       });
-      required.forEach(track => { if (!nextPlan.some(item => setTrackId(item) === setTrackId(track))) nextPlan.push(track); });
-      intendedGenres.forEach(term=>{
-        if(nextPlan.some(track=>trackMatchesIntendedGenre(track,term)))return;
-        const replacement=[...remaining.values()].filter(track=>trackMatchesIntendedGenre(track,term)).sort((a,b)=>coarseScore(b)-coarseScore(a))[0];
-        if(!replacement)return;
-        const replaceIndex=nextPlan.map((track,index)=>({track,index,score:setCandidateScore(track,nextPlan[index-1]||null,index,count,brief,strategy,generatedTrackIds)})).filter(item=>item.index>0&&!state.lockedIds.has(setTrackId(item.track))&&!state.requiredIds.has(setTrackId(item.track))).sort((a,b)=>a.score-b.score)[0]?.index;
-        if(replaceIndex==null)return;
-        remaining.set(setTrackId(nextPlan[replaceIndex]),nextPlan[replaceIndex]);remaining.delete(setTrackId(replacement));nextPlan[replaceIndex]=replacement;
+      required.forEach((track) => {
+        if (!nextPlan.some((item) => setTrackId(item) === setTrackId(track))) nextPlan.push(track);
+      });
+      intendedGenres.forEach((term) => {
+        if (nextPlan.some((track) => trackMatchesIntendedGenre(track, term))) return;
+        const replacement = [...remaining.values()]
+          .filter((track) => trackMatchesIntendedGenre(track, term))
+          .sort((a, b) => coarseScore(b) - coarseScore(a))[0];
+        if (!replacement) return;
+        const replaceIndex = nextPlan
+          .map((track, index) => ({
+            track,
+            index,
+            score: setCandidateScore(
+              track,
+              nextPlan[index - 1] || null,
+              index,
+              count,
+              brief,
+              strategy,
+              generatedTrackIds,
+            ),
+          }))
+          .filter(
+            (item) =>
+              item.index > 0 &&
+              !state.lockedIds.has(setTrackId(item.track)) &&
+              !state.requiredIds.has(setTrackId(item.track)),
+          )
+          .sort((a, b) => a.score - b.score)[0]?.index;
+        if (replaceIndex == null) return;
+        remaining.set(setTrackId(nextPlan[replaceIndex]), nextPlan[replaceIndex]);
+        remaining.delete(setTrackId(replacement));
+        nextPlan[replaceIndex] = replacement;
       });
       return failed ? [] : nextPlan;
     };
-    const result=await classicPlanner.generate({count,minimumHealth:brief.minimumHealth,buildVariation,improveOrder:plan=>improveSetOrder(plan,brief),evaluate:setHealth,trackId:setTrackId,snapshot:plan=>({tracks:plan.map(setTrackId),locked:[...state.lockedIds],transitions:{}})});
-    if(!result.accepted.length){const issues=setHealthIssues(result.best.health,brief.minimumHealth);$('#set-builder-message').textContent=`No direction was applied. The best search reached ${result.best.health.score}/100, below your ${brief.minimumHealth} target. ${issues.slice(0,2).join(' · ')||'Relax a constraint or lower the health floor.'}`;return;}
-    if(state.plan.length)pushSetHistory();state.proposals=result.proposals;const preferred=result.preferred;state.activeProposal=preferred.id;restoreSetSnapshot(preferred.snapshot,false);$('#set-builder-message').textContent=`Built ${result.accepted.length} distinct direction${result.accepted.length===1?'':'s'}. Optimizing transition techniques for ${preferred.label}…`;await autoOptimizeSetTransitions();preferred.snapshot=setPlanSnapshot();preferred.health=setHealth();currentPlanningReceipt={version:1,mode:$('#set-planning-mode').value==='classic'?'classic':'ai-interpreted',provider:brief.identity?.provider||'offline',model:null,summary:`${preferred.label} selected from ${result.accepted.length} deterministic direction${result.accepted.length===1?'':'s'}.`,warnings:[],evaluation:null,candidatePool:null,planningDurationMs:null,generatedAt:new Date().toISOString()};renderSetPlan();$('#set-builder-message').textContent=`${result.accepted.length} distinct direction${result.accepted.length===1?'':'s'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
+    const result = await classicPlanner.generate({
+      count,
+      minimumHealth: brief.minimumHealth,
+      buildVariation,
+      improveOrder: (plan) => improveSetOrder(plan, brief),
+      evaluate: setHealth,
+      trackId: setTrackId,
+      snapshot: (plan) => ({ tracks: plan.map(setTrackId), locked: [...state.lockedIds], transitions: {} }),
+    });
+    if (!result.accepted.length) {
+      const issues = setHealthIssues(result.best.health, brief.minimumHealth);
+      $('#set-builder-message').textContent =
+        `No direction was applied. The best search reached ${result.best.health.score}/100, below your ${brief.minimumHealth} target. ${issues.slice(0, 2).join(' · ') || 'Relax a constraint or lower the health floor.'}`;
+      return;
+    }
+    if (state.plan.length) pushSetHistory();
+    state.proposals = result.proposals;
+    const preferred = result.preferred;
+    state.activeProposal = preferred.id;
+    restoreSetSnapshot(preferred.snapshot, false);
+    $('#set-builder-message').textContent =
+      `Built ${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'}. Optimizing transition techniques for ${preferred.label}…`;
+    await autoOptimizeSetTransitions();
+    preferred.snapshot = setPlanSnapshot();
+    preferred.health = setHealth();
+    currentPlanningReceipt = {
+      version: 1,
+      mode: $('#set-planning-mode').value === 'classic' ? 'classic' : 'ai-interpreted',
+      provider: brief.identity?.provider || 'offline',
+      model: null,
+      summary: `${preferred.label} selected from ${result.accepted.length} deterministic direction${result.accepted.length === 1 ? '' : 's'}.`,
+      warnings: [],
+      evaluation: null,
+      candidatePool: null,
+      planningDurationMs: null,
+      generatedAt: new Date().toISOString(),
+    };
+    renderSetPlan();
+    $('#set-builder-message').textContent =
+      `${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
   }
   function planningJourney(brief) {
     if (brief.identity?.journey?.sections?.length) return brief.identity.journey;
-    const genres=[...brief.detailedGenres,...brief.genres];
-    const energy={rise:[3.5,7.5],'peak-release':[4,8],waves:[4.5,7],steady:[5.5,5.5]}[brief.curve]||[4.5,6.5];
+    const genres = [...brief.detailedGenres, ...brief.genres];
+    const energy = { rise: [3.5, 7.5], 'peak-release': [4, 8], waves: [4.5, 7], steady: [5.5, 5.5] }[brief.curve] || [
+      4.5, 6.5,
+    ];
     return {
-      version:1,
-      summary:'Single editable journey derived from the structured set brief.',
-      durationMinutes:brief.length,
-      sections:[{
-        id:'section-1', name:'Full set', durationPercent:100,
-        energyStart:energy[0], energyEnd:energy[1], genres,
-        characteristics:[brief.vibe,brief.curve].filter(Boolean),
-        purpose:'Honor the structured brief while maintaining a playable flow.',
-      }],
+      version: 1,
+      summary: 'Single editable journey derived from the structured set brief.',
+      durationMinutes: brief.length,
+      sections: [
+        {
+          id: 'section-1',
+          name: 'Full set',
+          durationPercent: 100,
+          energyStart: energy[0],
+          energyEnd: energy[1],
+          genres,
+          characteristics: [brief.vibe, brief.curve].filter(Boolean),
+          purpose: 'Honor the structured brief while maintaining a playable flow.',
+        },
+      ],
     };
   }
   function planningTrackCount(brief) {
-    const pool=eligibleSetTracks(brief);
-    if(pool.length<2)throw new Error('Not enough analyzed tracks match this brief. Relax a filter and try again.');
-    const averageSeconds=pool.reduce((sum,track)=>sum+Math.max(90,Number(track.duration_seconds||210)-30),0)/pool.length;
-    const protectedCount=new Set([...state.requiredIds,...state.lockedIds]).size;
-    if(protectedCount>100)throw new Error('AI Planned mode supports at most 100 required or locked tracks.');
-    return Math.max(2,protectedCount,Math.min(pool.length,Math.ceil(brief.length*60/averageSeconds)));
+    const pool = eligibleSetTracks(brief);
+    if (pool.length < 2) throw new Error('Not enough analyzed tracks match this brief. Relax a filter and try again.');
+    const averageSeconds =
+      pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
+    const protectedCount = new Set([...state.requiredIds, ...state.lockedIds]).size;
+    if (protectedCount > 100) throw new Error('AI Planned mode supports at most 100 required or locked tracks.');
+    return Math.max(2, protectedCount, Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)));
   }
   function catalogIds(ids) {
-    const bySetId=new Map(state.library.map(track=>[setTrackId(track),setCatalogTrackId(track)]));
-    return [...ids].map(id=>bySetId.get(id)).filter(Boolean);
+    const bySetId = new Map(state.library.map((track) => [setTrackId(track), setCatalogTrackId(track)]));
+    return [...ids].map((id) => bySetId.get(id)).filter(Boolean);
   }
   async function cancelAITrackPlan() {
     planningController?.abort();
-    const jobId=activePlanningJobId;activePlanningJobId='';
-    if(jobId)await planningClient.cancel(jobId).catch(()=>null);
+    const jobId = activePlanningJobId;
+    activePlanningJobId = '';
+    if (jobId) await planningClient.cancel(jobId).catch(() => null);
   }
-  async function loadAIObservability(){const status=$('#set-ai-operations-status'),root=$('#set-ai-operations-summary');if(!status||!root)return;try{const report=await planningClient.observability();status.textContent=`${report.completedCount} completed · ${report.failedCount} failed · ${report.canceledCount} canceled`;root.innerHTML=aiObservabilityCards(report,escapeHtml);}catch(error){status.textContent=error.message||String(error);root.innerHTML='';}}
+  async function loadAIObservability() {
+    const status = $('#set-ai-operations-status'),
+      root = $('#set-ai-operations-summary');
+    if (!status || !root) return;
+    try {
+      const report = await planningClient.observability();
+      status.textContent = `${report.completedCount} completed · ${report.failedCount} failed · ${report.canceledCount} canceled`;
+      root.innerHTML = aiObservabilityCards(report, escapeHtml);
+    } catch (error) {
+      status.textContent = error.message || String(error);
+      root.innerHTML = '';
+    }
+  }
   async function generateAITrackPlan() {
     await cancelAITrackPlan();
-    const brief=setBrief(),journey=planningJourney(brief),targetTrackCount=planningTrackCount(brief);
-    planningController=new AbortController();
-    const started=await planningClient.start({
-      brief,journey,target_duration_minutes:brief.length,target_track_count:targetTrackCount,
-      required_track_ids:catalogIds(state.requiredIds),excluded_track_ids:catalogIds(state.excludedIds),
-      locked_track_ids:catalogIds(state.lockedIds),per_section_limit:Math.min(100,Math.max(30,targetTrackCount)),total_limit:100,
+    const brief = setBrief(),
+      journey = planningJourney(brief),
+      targetTrackCount = planningTrackCount(brief);
+    planningController = new AbortController();
+    const started = await planningClient.start({
+      brief,
+      journey,
+      target_duration_minutes: brief.length,
+      target_track_count: targetTrackCount,
+      required_track_ids: catalogIds(state.requiredIds),
+      excluded_track_ids: catalogIds(state.excludedIds),
+      locked_track_ids: catalogIds(state.lockedIds),
+      per_section_limit: Math.min(100, Math.max(30, targetTrackCount)),
+      total_limit: 100,
     });
-    activePlanningJobId=started.jobId;
-    $('#set-cancel-planning').hidden=false;
-    const result=await planningClient.wait(started.jobId,{
-      signal:planningController.signal,
-      onProgress:state=>{$('#set-builder-message').textContent=`${state.stage} · ${state.progress||0}%`;},
+    activePlanningJobId = started.jobId;
+    $('#set-cancel-planning').hidden = false;
+    const result = await planningClient.wait(started.jobId, {
+      signal: planningController.signal,
+      onProgress: (state) => {
+        $('#set-builder-message').textContent = `${state.stage} · ${state.progress || 0}%`;
+      },
     });
-    activePlanningJobId='';planningController=null;$('#set-cancel-planning').hidden=true;
-    const byCatalogId=new Map(state.library.map(track=>[setCatalogTrackId(track),track]));
-    const selected=result.plan.map(item=>{
-      const track=byCatalogId.get(item.id);if(!track)throw new Error(`Validated catalog track ${item.id} is not loaded in the browser.`);
-      track._aiSelectionReason=item.selectionReason;track._planSectionId=item.sectionId;track._candidateMetrics={technicalScore:item.technicalScore||0,preferenceAdjustment:item.preferenceAdjustment||0,baselineRank:item.baselineRank||0,personalizedRank:item.personalizedRank||0,rankDelta:item.rankDelta||0,matchTier:item.matchTier||'unknown'};return track;
+    activePlanningJobId = '';
+    planningController = null;
+    $('#set-cancel-planning').hidden = true;
+    const byCatalogId = new Map(state.library.map((track) => [setCatalogTrackId(track), track]));
+    const selected = result.plan.map((item) => {
+      const track = byCatalogId.get(item.id);
+      if (!track) throw new Error(`Validated catalog track ${item.id} is not loaded in the browser.`);
+      track._aiSelectionReason = item.selectionReason;
+      track._planSectionId = item.sectionId;
+      track._candidateMetrics = {
+        technicalScore: item.technicalScore || 0,
+        preferenceAdjustment: item.preferenceAdjustment || 0,
+        baselineRank: item.baselineRank || 0,
+        personalizedRank: item.personalizedRank || 0,
+        rankDelta: item.rankDelta || 0,
+        matchTier: item.matchTier || 'unknown',
+      };
+      return track;
     });
-    if(state.plan.length)pushSetHistory();
-    state.plan=selected;resetSetReviewDraft();state.proposals=[];state.activeProposal='';state.transitionSettings={};
-    currentPlanningReceipt={version:1,mode:result.mode,provider:result.provider,model:result.model,summary:result.summary,warnings:result.warnings||[],evaluation:result.evaluation||null,comparison:result.comparison||null,modelRepairs:result.modelRepairs||[],candidatePool:result.candidatePool||null,fallbackReason:result.fallbackReason||null,planningDurationMs:result.planningDurationMs??null,generatedAt:new Date().toISOString()};
-    currentPlanningReceipt.observability=result.observability||null;void loadAIObservability();
-    $('#set-builder-message').textContent='Validated track order ready. Optimizing transition techniques…';
-    await autoOptimizeSetTransitions();renderSetPlan();
-    const warningCount=result.warnings?.length||0;
-    const source=result.mode==='ai-planned'?`${result.provider} · ${result.model}`:'deterministic safety fallback';
-    $('#set-builder-message').textContent=`${result.summary} ${selected.length} tracks · ${source} · ${warningCount} validation warning${warningCount===1?'':'s'}.`;
-  }
-  function setPlanSnapshot() { return snapshotSetPlan(state,setTrackId); }
-  function restoreSetSnapshot(snapshot,render=true) { restoreSetPlan(state,snapshot,state.library,setTrackId);if(render)renderSetPlan(); }
-  async function selectSetProposal(id){
-    const next=state.proposals.find(proposal=>proposal.id===id&&proposal.accepted);if(!next||id===state.activeProposal)return;
-    const current=state.proposals.find(proposal=>proposal.id===state.activeProposal);if(current){current.snapshot=setPlanSnapshot();current.health=setHealth();}
-    stopTransitionPreview();pushSetHistory();state.activeProposal=id;restoreSetSnapshot(next.snapshot,false);
-    const switchNonce=++proposalSwitchNonce;
-    const needsOptimization=!Object.keys(state.transitionSettings).length;
+    if (state.plan.length) pushSetHistory();
+    state.plan = selected;
+    resetSetReviewDraft();
+    state.proposals = [];
+    state.activeProposal = '';
+    state.transitionSettings = {};
+    currentPlanningReceipt = {
+      version: 1,
+      mode: result.mode,
+      provider: result.provider,
+      model: result.model,
+      summary: result.summary,
+      warnings: result.warnings || [],
+      evaluation: result.evaluation || null,
+      comparison: result.comparison || null,
+      modelRepairs: result.modelRepairs || [],
+      candidatePool: result.candidatePool || null,
+      fallbackReason: result.fallbackReason || null,
+      planningDurationMs: result.planningDurationMs ?? null,
+      generatedAt: new Date().toISOString(),
+    };
+    currentPlanningReceipt.observability = result.observability || null;
+    void loadAIObservability();
+    $('#set-builder-message').textContent = 'Validated track order ready. Optimizing transition techniques…';
+    await autoOptimizeSetTransitions();
     renderSetPlan();
-    $('#set-builder-message').textContent=needsOptimization?`${next.label} applied · ${setHealth().score}/100 health. Optimizing its transitions in the background…`:`${next.label} applied · ${setHealth().score}/100 health. Your edits to the other directions are saved.`;
-    if(!needsOptimization)return;
-    try{
-      const optimized=await autoOptimizeSetTransitions();
-      if(switchNonce!==proposalSwitchNonce||state.activeProposal!==id)return;
-      next.snapshot=setPlanSnapshot();next.health=setHealth();renderSetPlan();
-      $('#set-builder-message').textContent=`${next.label} applied · ${next.health.score}/100 health · ${optimized} transition${optimized===1?'':'s'} optimized. Your edits to the other directions are saved.`;
-    }catch(error){
-      if(switchNonce!==proposalSwitchNonce||state.activeProposal!==id)return;
-      console.error('Set proposal optimization failed',error);
-      $('#set-builder-message').textContent=`${next.label} is ready, but automatic transition optimization failed: ${error?.message||error}. You can still edit each mix manually.`;
-      notify('The set direction changed, but some transitions could not be optimized.','danger');
+    const warningCount = result.warnings?.length || 0;
+    const source =
+      result.mode === 'ai-planned' ? `${result.provider} · ${result.model}` : 'deterministic safety fallback';
+    $('#set-builder-message').textContent =
+      `${result.summary} ${selected.length} tracks · ${source} · ${warningCount} validation warning${warningCount === 1 ? '' : 's'}.`;
+  }
+  function setPlanSnapshot() {
+    return snapshotSetPlan(state, setTrackId);
+  }
+  function restoreSetSnapshot(snapshot, render = true) {
+    restoreSetPlan(state, snapshot, state.library, setTrackId);
+    if (render) renderSetPlan();
+  }
+  async function selectSetProposal(id) {
+    const next = state.proposals.find((proposal) => proposal.id === id && proposal.accepted);
+    if (!next || id === state.activeProposal) return;
+    const current = state.proposals.find((proposal) => proposal.id === state.activeProposal);
+    if (current) {
+      current.snapshot = setPlanSnapshot();
+      current.health = setHealth();
+    }
+    stopTransitionPreview();
+    pushSetHistory();
+    state.activeProposal = id;
+    restoreSetSnapshot(next.snapshot, false);
+    const switchNonce = ++proposalSwitchNonce;
+    const needsOptimization = !Object.keys(state.transitionSettings).length;
+    renderSetPlan();
+    $('#set-builder-message').textContent = needsOptimization
+      ? `${next.label} applied · ${setHealth().score}/100 health. Optimizing its transitions in the background…`
+      : `${next.label} applied · ${setHealth().score}/100 health. Your edits to the other directions are saved.`;
+    if (!needsOptimization) return;
+    try {
+      const optimized = await autoOptimizeSetTransitions();
+      if (switchNonce !== proposalSwitchNonce || state.activeProposal !== id) return;
+      next.snapshot = setPlanSnapshot();
+      next.health = setHealth();
+      renderSetPlan();
+      $('#set-builder-message').textContent =
+        `${next.label} applied · ${next.health.score}/100 health · ${optimized} transition${optimized === 1 ? '' : 's'} optimized. Your edits to the other directions are saved.`;
+    } catch (error) {
+      if (switchNonce !== proposalSwitchNonce || state.activeProposal !== id) return;
+      console.error('Set proposal optimization failed', error);
+      $('#set-builder-message').textContent =
+        `${next.label} is ready, but automatic transition optimization failed: ${error?.message || error}. You can still edit each mix manually.`;
+      notify('The set direction changed, but some transitions could not be optimized.', 'danger');
     }
   }
-  function renderSetProposals(){const root=$('#set-proposals');if(!root)return;root.innerHTML=setProposalMarkup(state.proposals,state.activeProposal,escapeHtml);root.querySelectorAll('[data-proposal]').forEach(button=>{button.onclick=()=>selectSetProposal(button.dataset.proposal);button.onkeydown=event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();const available=[...root.querySelectorAll('[data-proposal]:not(:disabled)')];const offset=['ArrowRight','ArrowDown'].includes(event.key)?1:-1;const next=available[(available.indexOf(button)+offset+available.length)%available.length];next?.focus();next?.click();};});}
-  function pushSetHistory() { editCommands.checkpoint();updateSetHistoryButtons(); }
-  function updateSetHistoryButtons() { const undo=$('#set-undo'),redo=$('#set-redo');if(undo)undo.disabled=!state.history.length;if(redo)redo.disabled=!state.future.length; }
-  function undoSetEdit() { if(editCommands.undo())updateSetHistoryButtons(); }
-  function redoSetEdit() { if(editCommands.redo())updateSetHistoryButtons(); }
-  function setTransitionOverlap(left,right) { const duration=Number(left?.duration_seconds||0);const tail=Number.isFinite(Number(left?.mix_out))&&Number(left.mix_out)>0&&duration>Number(left.mix_out)?duration-Number(left.mix_out):0;const lead=Number(right?.mix_in||0);const bpm=Math.max(60,Number(left?.bpm||right?.bpm||120));const bars=Math.min(Number(left?.outro?.mixable_bars||left?.dj_readiness?.outro_mixable_bars||0),Number(right?.intro?.mixable_bars||right?.dj_readiness?.intro_mixable_bars||0));const musical=bars>0?bars*4*60/bpm:0;return Math.max(8,Math.min(90,Math.max(tail,lead,musical,30))); }
-  function setRuntime(plan=state.plan) { return plan.reduce((sum,track,index) => sum + Number(track.duration_seconds || 210) - (index ? setTransitionOverlap(plan[index-1],track) : 0), 0); }
-  function setHealth(plan=state.plan) { if(plan.length<2)return {score:100,transitions:[],vocalClashes:0};const transitions=plan.slice(1).map((track,index)=>({...compatibility(plan[index],track),from:index,to:index+1}));const average=transitions.reduce((sum,item)=>sum+item.score,0)/transitions.length;const vocalClashes=plan.slice(1).filter((track,index)=>setVocalProfile(plan[index])==='vocal-forward'&&setVocalProfile(track)==='vocal-forward').length;const score=Math.max(0,Math.min(100,Math.round(average-vocalClashes*3)));return {score,transitions,vocalClashes}; }
-  function setOrderFitness(plan,brief) { const health=setHealth(plan);const energyPenalty=plan.reduce((sum,track,index)=>sum+Math.abs(songEnergy(track)-targetSetEnergy(index,plan.length,brief)),0)*3;const journeyFit=plan.reduce((sum,track,index)=>{const target=intendedGenreForPosition(brief.identity,index,plan.length);return sum+(target&&trackMatchesIntendedGenre(track,target)?16:0);},0);const openingCount=Math.max(1,Math.ceil(plan.length*.18));const openingFit=String(brief.identity?.opening||'').includes('melodic')?plan.slice(0,openingCount).filter(track=>identityTermMatches(track,'melodic')).length*12:0;return health.score*5-energyPenalty+journeyFit+openingFit; }
-  function improveSetOrder(plan,brief) { const improved=[...plan];const fixed=new Set(improved.map((track,index)=>state.lockedIds.has(setTrackId(track))?index:null).filter(index=>index!=null));let current=setOrderFitness(improved,brief);for(let pass=0;pass<5;pass+=1){let best=current,bestSwap=null;for(let left=0;left<improved.length-1;left+=1){if(fixed.has(left))continue;for(let right=left+1;right<improved.length;right+=1){if(fixed.has(right))continue;[improved[left],improved[right]]=[improved[right],improved[left]];const score=setOrderFitness(improved,brief);[improved[left],improved[right]]=[improved[right],improved[left]];if(score>best+.01){best=score;bestSwap=[left,right];}}}if(!bestSwap)break;[improved[bestSwap[0]],improved[bestSwap[1]]]=[improved[bestSwap[1]],improved[bestSwap[0]]];current=best;}return improved; }
-  function setHealthIssues(health, threshold) { const issues=[];health.transitions.filter(item=>item.score<threshold).sort((a,b)=>a.score-b.score).slice(0,4).forEach(item=>{const weakest=Object.entries(item.components).sort((a,b)=>a[1]-b[1])[0]?.[0]||'compatibility';issues.push(`${item.from+1}→${item.to+1} ${item.score}% (${weakest}${item.key==='distant key'?', distant keys':''})`);});if(health.vocalClashes)issues.push(`${health.vocalClashes} vocal clash${health.vocalClashes===1?'':'es'}`);return issues; }
-  function transitionSettingKey(left,right) { return `${setTrackId(left)}→${setTrackId(right)}`; }
-  function transitionSettings(index) { const left=state.plan[index-1],right=state.plan[index];const key=transitionSettingKey(left,right);const bars=Number($('#set-transition-bars')?.value||16);const bpm=Math.max(60,Number(left?.bpm||120));const overlap=bars*4*60/bpm;return state.transitionSettings[key]||{mixOut:Math.max(0,Number(left?.mix_out||Number(left?.duration_seconds||210)-overlap)),mixIn:Math.max(0,Number(right?.mix_in||0)),bars,curve:'smooth',technique:'crossfade',tempoSync:true,notes:''}; }
-  function saveTransitionSettings(index,values) { const key=transitionSettingKey(state.plan[index-1],state.plan[index]);state.transitionSettings[key]={...transitionSettings(index),...values}; }
-  function stopTransitionPreview(nextPreviewLabel='▶ Preview mix') { if(transitionPreviewFrame)cancelAnimationFrame(transitionPreviewFrame);if(transitionPreviewPlayheadFrame)cancelAnimationFrame(transitionPreviewPlayheadFrame);if(transitionPreviewTimer)clearTimeout(transitionPreviewTimer);transitionPreviewFrame=0;transitionPreviewPlayheadFrame=0;transitionPreviewTimer=0;const previewEditor=transitionPreviewState?.button.closest('.transition-editor');if(previewEditor)updateTransitionFadePlayhead(previewEditor,0,transitionPreviewState.settings.curve,false,transitionPreviewState.settings.technique||'crossfade');transitionPreviewState?.audioGraph?.context?.close?.().catch(()=>{});transitionPreviewAudio.forEach(audio=>{audio.pause();audio.removeAttribute('src');});transitionPreviewAudio=[];transitionPreviewState=null;$$('.set-audition').forEach(button=>{button.disabled=false;button.textContent='Mix transition';button.style.removeProperty('--mix-progress');button.classList.remove('playing','paused');});$$('.preview-transition').forEach(button=>{button.disabled=false;button.textContent=nextPreviewLabel;button.style.removeProperty('--mix-progress');button.classList.remove('playing','paused');}); }
-  function audioMetadata(audio) { return audio.readyState>=1?Promise.resolve():new Promise((resolve,reject)=>{audio.addEventListener('loadedmetadata',resolve,{once:true});audio.addEventListener('error',()=>reject(new Error('Transition audio unavailable')),{once:true});audio.load();}); }
-  function createTransitionAudioGraph(outgoing,incoming,technique){const AudioContextClass=window.AudioContext||window.webkitAudioContext;if(!AudioContextClass||technique==='crossfade'||technique==='vocal-duck'||technique==='drop-swap')return null;try{const context=new AudioContextClass(),outSource=context.createMediaElementSource(outgoing),inSource=context.createMediaElementSource(incoming),outFilter=context.createBiquadFilter(),inFilter=context.createBiquadFilter(),outEq=context.createBiquadFilter(),inEq=context.createBiquadFilter(),outGain=context.createGain(),inGain=context.createGain();outFilter.type='lowpass';outFilter.frequency.value=20000;inFilter.type='highpass';inFilter.frequency.value=20;outEq.type='lowshelf';outEq.frequency.value=180;inEq.type='lowshelf';inEq.frequency.value=180;outSource.connect(outFilter).connect(outEq).connect(outGain).connect(context.destination);inSource.connect(inFilter).connect(inEq).connect(inGain).connect(context.destination);const graph={context,outFilter,inFilter,outEq,inEq,outGain,inGain};if(technique==='echo-out'){const delay=context.createDelay(1),feedback=context.createGain(),echoGain=context.createGain();delay.delayTime.value=.32;feedback.gain.value=.28;echoGain.gain.value=0;outEq.connect(delay);delay.connect(feedback).connect(delay);delay.connect(echoGain).connect(context.destination);Object.assign(graph,{delay,feedback,echoGain});}return graph;}catch(_){return null;}}
-  async function auditionTransition(index,button) {
-    if(transitionPreviewState?.button===button){toggleTransitionPreview();return;}
-    stopTransitionPreview();const previous=state.plan[index-1],next=state.plan[index];if(!previous?._job?.id||!next?._job?.id)return;
-    stopCompactAudio();document.querySelectorAll('audio').forEach(audio=>audio.pause());const settings=transitionSettings(index);const bars=Number(settings.bars||16);const outgoingBpm=Math.max(60,Number(previous.bpm||120));const incomingBpm=Math.max(60,Number(next.bpm||outgoingBpm));const overlap=bars*4*60/outgoingBpm;const lead=Math.min(6,overlap*.25);
-    const outgoing=new Audio(`/api/jobs/${previous._job.id}/audio/wav`);const incoming=new Audio(`/api/jobs/${next._job.id}/audio/wav`);outgoing.preload='auto';incoming.preload='auto';incoming.volume=0;incoming.playbackRate=settings.tempoSync?Math.max(.92,Math.min(1.08,outgoingBpm/incomingBpm)):1;transitionPreviewAudio=[outgoing,incoming];button.disabled=true;button.textContent=`Preparing ${bars}-bar mix…`;
-    try{await Promise.all([audioMetadata(outgoing),audioMetadata(incoming)]);const outgoingStart=Math.max(0,Number(settings.mixOut||0)-lead);outgoing.currentTime=Math.min(outgoingStart,Math.max(0,outgoing.duration-1));incoming.currentTime=Math.min(Math.max(0,Number(settings.mixIn||0)),Math.max(0,incoming.duration-1));const audioGraph=createTransitionAudioGraph(outgoing,incoming,settings.technique||'crossfade');transitionPreviewState={button,outgoing,incoming,settings,bars,overlap,lead,outgoingBpm,audioGraph,phase:'lead',remaining:lead,progress:0,paused:false};button.disabled=false;button.classList.add('playing');await audioGraph?.context?.resume?.();await outgoing.play();followTransitionPreviewPlayheads();runTransitionPreviewPhase();}catch(error){console.error('Transition preview failed',error);stopTransitionPreview();const message=error?.message||'Transition audio unavailable';button.textContent='Preview unavailable';button.title=message;notify(`Mix preview could not play: ${message}`,'danger');setTimeout(()=>{button.textContent=button.classList.contains('preview-transition')?'▶ Preview mix':'Mix transition';},2400);}
+  function renderSetProposals() {
+    const root = $('#set-proposals');
+    if (!root) return;
+    root.innerHTML = setProposalMarkup(state.proposals, state.activeProposal, escapeHtml);
+    root.querySelectorAll('[data-proposal]').forEach((button) => {
+      button.onclick = () => selectSetProposal(button.dataset.proposal);
+      button.onkeydown = (event) => {
+        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        event.preventDefault();
+        const available = [...root.querySelectorAll('[data-proposal]:not(:disabled)')];
+        const offset = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1;
+        const next = available[(available.indexOf(button) + offset + available.length) % available.length];
+        next?.focus();
+        next?.click();
+      };
+    });
   }
-  function followTransitionPreviewPlayheads(){if(transitionPreviewPlayheadFrame)cancelAnimationFrame(transitionPreviewPlayheadFrame);const tick=()=>{const state=transitionPreviewState;if(!state||state.paused)return;const editor=state.button.closest('.transition-editor');if(editor){const outgoingInput=editor.querySelector('.transition-mix-out'),incomingInput=editor.querySelector('.transition-mix-in');[[outgoingInput,state.outgoing],[incomingInput,state.incoming]].forEach(([input,audio])=>{const surface=input?._transitionSurface;if(!surface)return;const localTime=Math.max(0,Math.min(60,Number(audio.currentTime||0)-Number(input._transitionWindowStart||0)));surface.setTime(localTime);});const fadeProgress=state.phase==='lead'?0:state.phase==='tail'?1:state.progress;updateTransitionFadePlayhead(editor,fadeProgress,state.settings.curve,true,state.settings.technique||'crossfade');}transitionPreviewPlayheadFrame=requestAnimationFrame(tick);};transitionPreviewPlayheadFrame=requestAnimationFrame(tick);}
-  function applyTransitionFade(state,progress){const {outgoing,incoming,settings,audioGraph}=state,technique=settings.technique||'crossfade';let {outgoing:outLevel,incoming:inLevel}=transitionFadeLevels(settings.curve,progress,technique);if(technique==='echo-out'&&audioGraph?.echoGain){audioGraph.echoGain.gain.setTargetAtTime(Math.max(0,(progress-.45)*1.35),audioGraph.context.currentTime,.03);}else if(technique==='bass-swap'&&audioGraph){const swap=Math.max(0,Math.min(1,(progress-.4)/.2));audioGraph.outEq.gain.setTargetAtTime(-20*swap,audioGraph.context.currentTime,.03);audioGraph.inEq.gain.setTargetAtTime(-20*(1-swap),audioGraph.context.currentTime,.03);}else if(technique==='filter-blend'&&audioGraph){audioGraph.outFilter.frequency.setTargetAtTime(20000*Math.pow(.025,progress),audioGraph.context.currentTime,.03);audioGraph.inFilter.frequency.setTargetAtTime(20*Math.pow(75,1-progress),audioGraph.context.currentTime,.03);}else if(technique==='loop-assist'&&progress>.05&&progress<.72){const beat=60/Math.max(60,Number(state.outgoingBpm||120)),loopEnd=Number(settings.mixOut||0),loopStart=Math.max(0,loopEnd-beat*8);state.loopRepeats??=0;if(outgoing.currentTime>=loopEnd-.045&&state.loopRepeats<2&&!state.loopPending){state.loopPending=true;const gain=audioGraph?.outGain?.gain,now=audioGraph?.context?.currentTime||0;if(gain){gain.cancelScheduledValues(now);gain.setValueAtTime(gain.value,now);gain.linearRampToValueAtTime(0,now+.035);}setTimeout(()=>{if(transitionPreviewState!==state)return;outgoing.currentTime=loopStart;state.loopRepeats+=1;state.loopPending=false;if(gain){const resumeAt=audioGraph.context.currentTime;gain.cancelScheduledValues(resumeAt);gain.setValueAtTime(0,resumeAt);gain.linearRampToValueAtTime(1,resumeAt+.045);}},38);}}outgoing.volume=Math.max(0,Math.min(1,outLevel));incoming.volume=Math.max(0,Math.min(1,inLevel));}
-  function runTransitionPreviewPhase(){const state=transitionPreviewState;if(!state||state.paused)return;const {button,outgoing,incoming}=state;button.classList.add('playing');button.classList.remove('paused');if(state.phase==='lead'){button.textContent=`❚❚ Outgoing · mix in ${Math.ceil(state.remaining)}s`;state.started=performance.now();transitionPreviewTimer=setTimeout(async()=>{if(!transitionPreviewState||state.paused)return;state.phase='mix';state.progress=0;try{await incoming.play();runTransitionPreviewPhase();}catch(_){stopTransitionPreview();}},state.remaining*1000);return;}button.textContent=`❚❚ Mixing ${state.bars} bars…`;state.started=performance.now()-state.progress*state.overlap*1000;const fade=now=>{if(!transitionPreviewState||state.paused)return;state.progress=Math.max(0,Math.min(1,(now-state.started)/(state.overlap*1000)));applyTransitionFade(state,state.progress);button.style.setProperty('--mix-progress',`${Math.round(state.progress*100)}%`);if(state.progress<1)transitionPreviewFrame=requestAnimationFrame(fade);else stopTransitionPreview();};transitionPreviewFrame=requestAnimationFrame(fade);}
-  function toggleTransitionPreview(){const state=transitionPreviewState;if(!state)return;if(!state.paused){state.paused=true;if(transitionPreviewTimer)clearTimeout(transitionPreviewTimer);if(transitionPreviewFrame)cancelAnimationFrame(transitionPreviewFrame);if(transitionPreviewPlayheadFrame)cancelAnimationFrame(transitionPreviewPlayheadFrame);transitionPreviewTimer=0;transitionPreviewFrame=0;transitionPreviewPlayheadFrame=0;if(state.phase!=='mix')state.remaining=Math.max(0,(state.remaining*1000-(performance.now()-state.started))/1000);state.outgoing.pause();state.incoming.pause();state.audioGraph?.context?.suspend?.();state.button.classList.remove('playing');state.button.classList.add('paused');state.button.textContent='▶ Resume mix';return;}state.paused=false;state.audioGraph?.context?.resume?.();state.button.classList.remove('paused');if(state.phase==='lead')state.outgoing.play().catch(stopTransitionPreview);else if(state.phase==='mix')Promise.all([state.outgoing.play(),state.incoming.play()]).catch(stopTransitionPreview);else state.incoming.play().catch(stopTransitionPreview);followTransitionPreviewPlayheads();runTransitionPreviewPhase();}
-  async function initializeTransitionWave(container,track,input,color) { container.textContent='Loading waveform…';try{const wave=await transitionWaveData(track);if(!wave)throw new Error();container.replaceChildren();const windowSeconds=60,halfWindow=windowSeconds/2,sourcePeaks=Array.from(wave.peaks||[]),peaksPerSecond=sourcePeaks.length/Math.max(1,wave.duration),windowPeakCount=Math.max(240,Math.round(peaksPerSecond*windowSeconds));const surface=WaveSurfer.create({container,height:58,waveColor:'#77806f',progressColor:color,cursorColor:'#f2f3ed',cursorWidth:2,barWidth:2,barGap:1,barRadius:2,normalize:true,dragToSeek:true,minPxPerSec:0});transitionEditorSurfaces.push(surface);input._transitionSurface=surface;const renderWindow=position=>{const center=Math.max(0,Math.min(wave.duration,Number(position)||0)),windowStart=center-halfWindow,windowPeaks=Array.from({length:windowPeakCount},(_,index)=>{const absoluteTime=windowStart+(index/windowPeakCount)*windowSeconds;if(absoluteTime<0||absoluteTime>=wave.duration)return 0;const sourceIndex=Math.min(sourcePeaks.length-1,Math.max(0,Math.floor(absoluteTime*peaksPerSecond)));return sourcePeaks[sourceIndex]||0;});input._transitionWindowStart=windowStart;surface.load('',[Float32Array.from(windowPeaks)],windowSeconds).then(()=>surface.setTime(halfWindow)).catch(()=>{});};input._renderTransitionWindow=renderWindow;surface.on('interaction',seconds=>{input._recordTransitionUndo?.();const actual=Math.max(0,Math.min(wave.duration,input._transitionWindowStart+Number(seconds)));input.value=actual.toFixed(1);input.dispatchEvent(new Event('input',{bubbles:true}));});renderWindow(input.value);}catch(_){container.textContent='Waveform unavailable · use the timing slider below.';} }
-  function transitionFadeLevels(curve,progress,technique='crossfade'){let outgoing=1-progress,incoming=progress;if(curve==='quick-cut'){outgoing=progress<.55?1:Math.max(0,1-(progress-.55)/.2);incoming=progress<.45?0:Math.min(1,(progress-.45)/.2);}else if(curve==='long-blend'){outgoing=Math.cos(progress*Math.PI/2)*.9;incoming=Math.sin(progress*Math.PI/2)*.9;}else if(curve==='smooth'){outgoing=Math.cos(progress*Math.PI/2);incoming=Math.sin(progress*Math.PI/2);}if(technique==='vocal-duck'){const duck=1-.32*Math.sin(progress*Math.PI)**2;outgoing*=duck;incoming*=duck;}else if(technique==='drop-swap'){outgoing=progress<.5?1:0;incoming=progress<.5?0:1;}else if(technique==='echo-out')outgoing*=progress<.55?1:Math.max(0,1-(progress-.55)/.3);return {outgoing,incoming};}
-  function renderTransitionFadeCurve(panel,curve,bars,technique='crossfade'){const outgoing=panel.querySelector('.fade-out-path'),incoming=panel.querySelector('.fade-in-path'),label=panel.querySelector('.fade-curve-length');if(!outgoing||!incoming)return;const points=48,path=key=>Array.from({length:points+1},(_,index)=>{const progress=index/points,x=progress*100,y=22-transitionFadeLevels(curve,progress,technique)[key]*20;return `${index?'L':'M'}${x.toFixed(2)} ${y.toFixed(2)}`;}).join(' ');outgoing.setAttribute('d',path('outgoing'));incoming.setAttribute('d',path('incoming'));label.textContent=`${bars} bars`;updateTransitionFadePlayhead(panel,0,curve,false,technique);}
-  function updateTransitionFadePlayhead(panel,progress,curve,isActive=true,technique='crossfade'){const cursor=panel?.querySelector('.fade-live-line'),outgoing=panel?.querySelector('.fade-live-out'),incoming=panel?.querySelector('.fade-live-in'),status=panel?.querySelector('.fade-live-status');if(!cursor||!outgoing||!incoming)return;const value=Math.max(0,Math.min(1,Number(progress)||0)),x=value*100,levels=transitionFadeLevels(curve,value,technique);cursor.setAttribute('x1',x);cursor.setAttribute('x2',x);outgoing.setAttribute('cx',x);outgoing.setAttribute('cy',22-levels.outgoing*20);incoming.setAttribute('cx',x);incoming.setAttribute('cy',22-levels.incoming*20);cursor.closest('svg')?.classList.toggle('is-live',isActive);if(status)status.textContent=isActive?`${Math.round(value*100)}% through fade`:'Preview to follow the fade';}
-  function transitionWaveEnergy(wave,time,windowSeconds=8){const peaks=Array.from(wave?.peaks||[]);if(!peaks.length||!wave?.duration)return .5;const start=Math.max(0,Math.floor((time-windowSeconds/2)/wave.duration*peaks.length)),end=Math.min(peaks.length,Math.ceil((time+windowSeconds/2)/wave.duration*peaks.length));const values=peaks.slice(start,Math.max(start+1,end)).map(value=>Math.abs(Number(value)||0));return values.reduce((sum,value)=>sum+value,0)/Math.max(1,values.length);}
-  function transitionWaveData(track){const id=track?._job?.id;if(!id)return Promise.resolve(null);if(!transitionWaveCache.has(id))transitionWaveCache.set(id,setBuilderApi.waveform(id).catch(()=>null));return transitionWaveCache.get(id);}
-  function transitionCueCandidates(track,side='in') {
-    const duration=Math.max(1,Number(track?.duration_seconds||210));
-    const bpm=Math.max(60,Number(track?.bpm||120));
-    const bar=4*60/bpm,phrase=bar*8;
-    const points=[];
-    const add=(time,label,reason,score)=>{const value=Math.max(0,Math.min(duration,Math.round(Number(time||0)/bar)*bar));if(!Number.isFinite(value))return;points.push({time:value,label,reason,score});};
-    if(side==='in'){
-      add(0,'Track start','Opening downbeat',100);
-      add(Number(track?.mix_in||0),'Primary mix in','Existing analyzed cue',105);
-      add(phrase,'First clean phrase','Eight bars after the opening',96);
-      add(phrase*2,'Second phrase','Sixteen bars after the opening',90);
+  function pushSetHistory() {
+    editCommands.checkpoint();
+    updateSetHistoryButtons();
+  }
+  function updateSetHistoryButtons() {
+    const undo = $('#set-undo'),
+      redo = $('#set-redo');
+    if (undo) undo.disabled = !state.history.length;
+    if (redo) redo.disabled = !state.future.length;
+  }
+  function undoSetEdit() {
+    if (editCommands.undo()) updateSetHistoryButtons();
+  }
+  function redoSetEdit() {
+    if (editCommands.redo()) updateSetHistoryButtons();
+  }
+  function setTransitionOverlap(left, right) {
+    const duration = Number(left?.duration_seconds || 0);
+    const tail =
+      Number.isFinite(Number(left?.mix_out)) && Number(left.mix_out) > 0 && duration > Number(left.mix_out)
+        ? duration - Number(left.mix_out)
+        : 0;
+    const lead = Number(right?.mix_in || 0);
+    const bpm = Math.max(60, Number(left?.bpm || right?.bpm || 120));
+    const bars = Math.min(
+      Number(left?.outro?.mixable_bars || left?.dj_readiness?.outro_mixable_bars || 0),
+      Number(right?.intro?.mixable_bars || right?.dj_readiness?.intro_mixable_bars || 0),
+    );
+    const musical = bars > 0 ? (bars * 4 * 60) / bpm : 0;
+    return Math.max(8, Math.min(90, Math.max(tail, lead, musical, 30)));
+  }
+  function setRuntime(plan = state.plan) {
+    return plan.reduce(
+      (sum, track, index) =>
+        sum + Number(track.duration_seconds || 210) - (index ? setTransitionOverlap(plan[index - 1], track) : 0),
+      0,
+    );
+  }
+  function setHealth(plan = state.plan) {
+    if (plan.length < 2) return { score: 100, transitions: [], vocalClashes: 0 };
+    const transitions = plan
+      .slice(1)
+      .map((track, index) => ({ ...compatibility(plan[index], track), from: index, to: index + 1 }));
+    const average = transitions.reduce((sum, item) => sum + item.score, 0) / transitions.length;
+    const vocalClashes = plan
+      .slice(1)
+      .filter(
+        (track, index) =>
+          setVocalProfile(plan[index]) === 'vocal-forward' && setVocalProfile(track) === 'vocal-forward',
+      ).length;
+    const score = Math.max(0, Math.min(100, Math.round(average - vocalClashes * 3)));
+    return { score, transitions, vocalClashes };
+  }
+  function setOrderFitness(plan, brief) {
+    const health = setHealth(plan);
+    const energyPenalty =
+      plan.reduce(
+        (sum, track, index) => sum + Math.abs(songEnergy(track) - targetSetEnergy(index, plan.length, brief)),
+        0,
+      ) * 3;
+    const journeyFit = plan.reduce((sum, track, index) => {
+      const target = intendedGenreForPosition(brief.identity, index, plan.length);
+      return sum + (target && trackMatchesIntendedGenre(track, target) ? 16 : 0);
+    }, 0);
+    const openingCount = Math.max(1, Math.ceil(plan.length * 0.18));
+    const openingFit = String(brief.identity?.opening || '').includes('melodic')
+      ? plan.slice(0, openingCount).filter((track) => identityTermMatches(track, 'melodic')).length * 12
+      : 0;
+    return health.score * 5 - energyPenalty + journeyFit + openingFit;
+  }
+  function improveSetOrder(plan, brief) {
+    const improved = [...plan];
+    const fixed = new Set(
+      improved
+        .map((track, index) => (state.lockedIds.has(setTrackId(track)) ? index : null))
+        .filter((index) => index != null),
+    );
+    let current = setOrderFitness(improved, brief);
+    for (let pass = 0; pass < 5; pass += 1) {
+      let best = current,
+        bestSwap = null;
+      for (let left = 0; left < improved.length - 1; left += 1) {
+        if (fixed.has(left)) continue;
+        for (let right = left + 1; right < improved.length; right += 1) {
+          if (fixed.has(right)) continue;
+          [improved[left], improved[right]] = [improved[right], improved[left]];
+          const score = setOrderFitness(improved, brief);
+          [improved[left], improved[right]] = [improved[right], improved[left]];
+          if (score > best + 0.01) {
+            best = score;
+            bestSwap = [left, right];
+          }
+        }
+      }
+      if (!bestSwap) break;
+      [improved[bestSwap[0]], improved[bestSwap[1]]] = [improved[bestSwap[1]], improved[bestSwap[0]]];
+      current = best;
+    }
+    return improved;
+  }
+  function setHealthIssues(health, threshold) {
+    const issues = [];
+    health.transitions
+      .filter((item) => item.score < threshold)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 4)
+      .forEach((item) => {
+        const weakest = Object.entries(item.components).sort((a, b) => a[1] - b[1])[0]?.[0] || 'compatibility';
+        issues.push(
+          `${item.from + 1}→${item.to + 1} ${item.score}% (${weakest}${item.key === 'distant key' ? ', distant keys' : ''})`,
+        );
+      });
+    if (health.vocalClashes) issues.push(`${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}`);
+    return issues;
+  }
+  function transitionSettingKey(left, right) {
+    return `${setTrackId(left)}→${setTrackId(right)}`;
+  }
+  function transitionSettings(index) {
+    const left = state.plan[index - 1],
+      right = state.plan[index];
+    const key = transitionSettingKey(left, right);
+    const bars = Number($('#set-transition-bars')?.value || 16);
+    const bpm = Math.max(60, Number(left?.bpm || 120));
+    const overlap = (bars * 4 * 60) / bpm;
+    return (
+      state.transitionSettings[key] || {
+        mixOut: Math.max(0, Number(left?.mix_out || Number(left?.duration_seconds || 210) - overlap)),
+        mixIn: Math.max(0, Number(right?.mix_in || 0)),
+        bars,
+        curve: 'smooth',
+        technique: 'crossfade',
+        tempoSync: true,
+        notes: '',
+      }
+    );
+  }
+  function saveTransitionSettings(index, values) {
+    const key = transitionSettingKey(state.plan[index - 1], state.plan[index]);
+    state.transitionSettings[key] = { ...transitionSettings(index), ...values };
+  }
+  function stopTransitionPreview(nextPreviewLabel = '▶ Preview mix') {
+    if (transitionPreviewFrame) cancelAnimationFrame(transitionPreviewFrame);
+    if (transitionPreviewPlayheadFrame) cancelAnimationFrame(transitionPreviewPlayheadFrame);
+    if (transitionPreviewTimer) clearTimeout(transitionPreviewTimer);
+    transitionPreviewFrame = 0;
+    transitionPreviewPlayheadFrame = 0;
+    transitionPreviewTimer = 0;
+    const previewEditor = transitionPreviewState?.button.closest('.transition-editor');
+    if (previewEditor)
+      updateTransitionFadePlayhead(
+        previewEditor,
+        0,
+        transitionPreviewState.settings.curve,
+        false,
+        transitionPreviewState.settings.technique || 'crossfade',
+      );
+    transitionPreviewState?.audioGraph?.context?.close?.().catch(() => {});
+    transitionPreviewAudio.forEach((audio) => {
+      audio.pause();
+      audio.removeAttribute('src');
+    });
+    transitionPreviewAudio = [];
+    transitionPreviewState = null;
+    $$('.set-audition').forEach((button) => {
+      button.disabled = false;
+      button.textContent = 'Mix transition';
+      button.style.removeProperty('--mix-progress');
+      button.classList.remove('playing', 'paused');
+    });
+    $$('.preview-transition').forEach((button) => {
+      button.disabled = false;
+      button.textContent = nextPreviewLabel;
+      button.style.removeProperty('--mix-progress');
+      button.classList.remove('playing', 'paused');
+    });
+  }
+  function audioMetadata(audio) {
+    return audio.readyState >= 1
+      ? Promise.resolve()
+      : new Promise((resolve, reject) => {
+          audio.addEventListener('loadedmetadata', resolve, { once: true });
+          audio.addEventListener('error', () => reject(new Error('Transition audio unavailable')), { once: true });
+          audio.load();
+        });
+  }
+  function createTransitionAudioGraph(outgoing, incoming, technique) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass || technique === 'crossfade' || technique === 'vocal-duck' || technique === 'drop-swap')
+      return null;
+    try {
+      const context = new AudioContextClass(),
+        outSource = context.createMediaElementSource(outgoing),
+        inSource = context.createMediaElementSource(incoming),
+        outFilter = context.createBiquadFilter(),
+        inFilter = context.createBiquadFilter(),
+        outEq = context.createBiquadFilter(),
+        inEq = context.createBiquadFilter(),
+        outGain = context.createGain(),
+        inGain = context.createGain();
+      outFilter.type = 'lowpass';
+      outFilter.frequency.value = 20000;
+      inFilter.type = 'highpass';
+      inFilter.frequency.value = 20;
+      outEq.type = 'lowshelf';
+      outEq.frequency.value = 180;
+      inEq.type = 'lowshelf';
+      inEq.frequency.value = 180;
+      outSource.connect(outFilter).connect(outEq).connect(outGain).connect(context.destination);
+      inSource.connect(inFilter).connect(inEq).connect(inGain).connect(context.destination);
+      const graph = { context, outFilter, inFilter, outEq, inEq, outGain, inGain };
+      if (technique === 'echo-out') {
+        const delay = context.createDelay(1),
+          feedback = context.createGain(),
+          echoGain = context.createGain();
+        delay.delayTime.value = 0.32;
+        feedback.gain.value = 0.28;
+        echoGain.gain.value = 0;
+        outEq.connect(delay);
+        delay.connect(feedback).connect(delay);
+        delay.connect(echoGain).connect(context.destination);
+        Object.assign(graph, { delay, feedback, echoGain });
+      }
+      return graph;
+    } catch (_) {
+      return null;
+    }
+  }
+  async function auditionTransition(index, button) {
+    if (transitionPreviewState?.button === button) {
+      toggleTransitionPreview();
+      return;
+    }
+    stopTransitionPreview();
+    const previous = state.plan[index - 1],
+      next = state.plan[index];
+    if (!previous?._job?.id || !next?._job?.id) return;
+    stopCompactAudio();
+    document.querySelectorAll('audio').forEach((audio) => audio.pause());
+    const settings = transitionSettings(index);
+    const bars = Number(settings.bars || 16);
+    const outgoingBpm = Math.max(60, Number(previous.bpm || 120));
+    const incomingBpm = Math.max(60, Number(next.bpm || outgoingBpm));
+    const overlap = (bars * 4 * 60) / outgoingBpm;
+    const lead = Math.min(6, overlap * 0.25);
+    const outgoing = new Audio(`/api/jobs/${previous._job.id}/audio/wav`);
+    const incoming = new Audio(`/api/jobs/${next._job.id}/audio/wav`);
+    outgoing.preload = 'auto';
+    incoming.preload = 'auto';
+    incoming.volume = 0;
+    incoming.playbackRate = settings.tempoSync ? Math.max(0.92, Math.min(1.08, outgoingBpm / incomingBpm)) : 1;
+    transitionPreviewAudio = [outgoing, incoming];
+    button.disabled = true;
+    button.textContent = `Preparing ${bars}-bar mix…`;
+    try {
+      await Promise.all([audioMetadata(outgoing), audioMetadata(incoming)]);
+      const outgoingStart = Math.max(0, Number(settings.mixOut || 0) - lead);
+      outgoing.currentTime = Math.min(outgoingStart, Math.max(0, outgoing.duration - 1));
+      incoming.currentTime = Math.min(Math.max(0, Number(settings.mixIn || 0)), Math.max(0, incoming.duration - 1));
+      const audioGraph = createTransitionAudioGraph(outgoing, incoming, settings.technique || 'crossfade');
+      transitionPreviewState = {
+        button,
+        outgoing,
+        incoming,
+        settings,
+        bars,
+        overlap,
+        lead,
+        outgoingBpm,
+        audioGraph,
+        phase: 'lead',
+        remaining: lead,
+        progress: 0,
+        paused: false,
+      };
+      button.disabled = false;
+      button.classList.add('playing');
+      await audioGraph?.context?.resume?.();
+      await outgoing.play();
+      followTransitionPreviewPlayheads();
+      runTransitionPreviewPhase();
+    } catch (error) {
+      console.error('Transition preview failed', error);
+      stopTransitionPreview();
+      const message = error?.message || 'Transition audio unavailable';
+      button.textContent = 'Preview unavailable';
+      button.title = message;
+      notify(`Mix preview could not play: ${message}`, 'danger');
+      setTimeout(() => {
+        button.textContent = button.classList.contains('preview-transition') ? '▶ Preview mix' : 'Mix transition';
+      }, 2400);
+    }
+  }
+  function followTransitionPreviewPlayheads() {
+    if (transitionPreviewPlayheadFrame) cancelAnimationFrame(transitionPreviewPlayheadFrame);
+    const tick = () => {
+      const state = transitionPreviewState;
+      if (!state || state.paused) return;
+      const editor = state.button.closest('.transition-editor');
+      if (editor) {
+        const outgoingInput = editor.querySelector('.transition-mix-out'),
+          incomingInput = editor.querySelector('.transition-mix-in');
+        [
+          [outgoingInput, state.outgoing],
+          [incomingInput, state.incoming],
+        ].forEach(([input, audio]) => {
+          const surface = input?._transitionSurface;
+          if (!surface) return;
+          const localTime = Math.max(
+            0,
+            Math.min(60, Number(audio.currentTime || 0) - Number(input._transitionWindowStart || 0)),
+          );
+          surface.setTime(localTime);
+        });
+        const fadeProgress = state.phase === 'lead' ? 0 : state.phase === 'tail' ? 1 : state.progress;
+        updateTransitionFadePlayhead(
+          editor,
+          fadeProgress,
+          state.settings.curve,
+          true,
+          state.settings.technique || 'crossfade',
+        );
+      }
+      transitionPreviewPlayheadFrame = requestAnimationFrame(tick);
+    };
+    transitionPreviewPlayheadFrame = requestAnimationFrame(tick);
+  }
+  function applyTransitionFade(state, progress) {
+    const { outgoing, incoming, settings, audioGraph } = state,
+      technique = settings.technique || 'crossfade';
+    let { outgoing: outLevel, incoming: inLevel } = transitionFadeLevels(settings.curve, progress, technique);
+    if (technique === 'echo-out' && audioGraph?.echoGain) {
+      audioGraph.echoGain.gain.setTargetAtTime(
+        Math.max(0, (progress - 0.45) * 1.35),
+        audioGraph.context.currentTime,
+        0.03,
+      );
+    } else if (technique === 'bass-swap' && audioGraph) {
+      const swap = Math.max(0, Math.min(1, (progress - 0.4) / 0.2));
+      audioGraph.outEq.gain.setTargetAtTime(-20 * swap, audioGraph.context.currentTime, 0.03);
+      audioGraph.inEq.gain.setTargetAtTime(-20 * (1 - swap), audioGraph.context.currentTime, 0.03);
+    } else if (technique === 'filter-blend' && audioGraph) {
+      audioGraph.outFilter.frequency.setTargetAtTime(
+        20000 * Math.pow(0.025, progress),
+        audioGraph.context.currentTime,
+        0.03,
+      );
+      audioGraph.inFilter.frequency.setTargetAtTime(
+        20 * Math.pow(75, 1 - progress),
+        audioGraph.context.currentTime,
+        0.03,
+      );
+    } else if (technique === 'loop-assist' && progress > 0.05 && progress < 0.72) {
+      const beat = 60 / Math.max(60, Number(state.outgoingBpm || 120)),
+        loopEnd = Number(settings.mixOut || 0),
+        loopStart = Math.max(0, loopEnd - beat * 8);
+      state.loopRepeats ??= 0;
+      if (outgoing.currentTime >= loopEnd - 0.045 && state.loopRepeats < 2 && !state.loopPending) {
+        state.loopPending = true;
+        const gain = audioGraph?.outGain?.gain,
+          now = audioGraph?.context?.currentTime || 0;
+        if (gain) {
+          gain.cancelScheduledValues(now);
+          gain.setValueAtTime(gain.value, now);
+          gain.linearRampToValueAtTime(0, now + 0.035);
+        }
+        setTimeout(() => {
+          if (transitionPreviewState !== state) return;
+          outgoing.currentTime = loopStart;
+          state.loopRepeats += 1;
+          state.loopPending = false;
+          if (gain) {
+            const resumeAt = audioGraph.context.currentTime;
+            gain.cancelScheduledValues(resumeAt);
+            gain.setValueAtTime(0, resumeAt);
+            gain.linearRampToValueAtTime(1, resumeAt + 0.045);
+          }
+        }, 38);
+      }
+    }
+    outgoing.volume = Math.max(0, Math.min(1, outLevel));
+    incoming.volume = Math.max(0, Math.min(1, inLevel));
+  }
+  function runTransitionPreviewPhase() {
+    const state = transitionPreviewState;
+    if (!state || state.paused) return;
+    const { button, outgoing, incoming } = state;
+    button.classList.add('playing');
+    button.classList.remove('paused');
+    if (state.phase === 'lead') {
+      button.textContent = `❚❚ Outgoing · mix in ${Math.ceil(state.remaining)}s`;
+      state.started = performance.now();
+      transitionPreviewTimer = setTimeout(async () => {
+        if (!transitionPreviewState || state.paused) return;
+        state.phase = 'mix';
+        state.progress = 0;
+        try {
+          await incoming.play();
+          runTransitionPreviewPhase();
+        } catch (_) {
+          stopTransitionPreview();
+        }
+      }, state.remaining * 1000);
+      return;
+    }
+    button.textContent = `❚❚ Mixing ${state.bars} bars…`;
+    state.started = performance.now() - state.progress * state.overlap * 1000;
+    const fade = (now) => {
+      if (!transitionPreviewState || state.paused) return;
+      state.progress = Math.max(0, Math.min(1, (now - state.started) / (state.overlap * 1000)));
+      applyTransitionFade(state, state.progress);
+      button.style.setProperty('--mix-progress', `${Math.round(state.progress * 100)}%`);
+      if (state.progress < 1) transitionPreviewFrame = requestAnimationFrame(fade);
+      else stopTransitionPreview();
+    };
+    transitionPreviewFrame = requestAnimationFrame(fade);
+  }
+  function toggleTransitionPreview() {
+    const state = transitionPreviewState;
+    if (!state) return;
+    if (!state.paused) {
+      state.paused = true;
+      if (transitionPreviewTimer) clearTimeout(transitionPreviewTimer);
+      if (transitionPreviewFrame) cancelAnimationFrame(transitionPreviewFrame);
+      if (transitionPreviewPlayheadFrame) cancelAnimationFrame(transitionPreviewPlayheadFrame);
+      transitionPreviewTimer = 0;
+      transitionPreviewFrame = 0;
+      transitionPreviewPlayheadFrame = 0;
+      if (state.phase !== 'mix')
+        state.remaining = Math.max(0, (state.remaining * 1000 - (performance.now() - state.started)) / 1000);
+      state.outgoing.pause();
+      state.incoming.pause();
+      state.audioGraph?.context?.suspend?.();
+      state.button.classList.remove('playing');
+      state.button.classList.add('paused');
+      state.button.textContent = '▶ Resume mix';
+      return;
+    }
+    state.paused = false;
+    state.audioGraph?.context?.resume?.();
+    state.button.classList.remove('paused');
+    if (state.phase === 'lead') state.outgoing.play().catch(stopTransitionPreview);
+    else if (state.phase === 'mix')
+      Promise.all([state.outgoing.play(), state.incoming.play()]).catch(stopTransitionPreview);
+    else state.incoming.play().catch(stopTransitionPreview);
+    followTransitionPreviewPlayheads();
+    runTransitionPreviewPhase();
+  }
+  async function initializeTransitionWave(container, track, input, color) {
+    container.textContent = 'Loading waveform…';
+    try {
+      const wave = await transitionWaveData(track);
+      if (!wave) throw new Error();
+      container.replaceChildren();
+      const windowSeconds = 60,
+        halfWindow = windowSeconds / 2,
+        sourcePeaks = Array.from(wave.peaks || []),
+        peaksPerSecond = sourcePeaks.length / Math.max(1, wave.duration),
+        windowPeakCount = Math.max(240, Math.round(peaksPerSecond * windowSeconds));
+      const surface = WaveSurfer.create({
+        container,
+        height: 58,
+        waveColor: '#77806f',
+        progressColor: color,
+        cursorColor: '#f2f3ed',
+        cursorWidth: 2,
+        barWidth: 2,
+        barGap: 1,
+        barRadius: 2,
+        normalize: true,
+        dragToSeek: true,
+        minPxPerSec: 0,
+      });
+      transitionEditorSurfaces.push(surface);
+      input._transitionSurface = surface;
+      const renderWindow = (position) => {
+        const center = Math.max(0, Math.min(wave.duration, Number(position) || 0)),
+          windowStart = center - halfWindow,
+          windowPeaks = Array.from({ length: windowPeakCount }, (_, index) => {
+            const absoluteTime = windowStart + (index / windowPeakCount) * windowSeconds;
+            if (absoluteTime < 0 || absoluteTime >= wave.duration) return 0;
+            const sourceIndex = Math.min(
+              sourcePeaks.length - 1,
+              Math.max(0, Math.floor(absoluteTime * peaksPerSecond)),
+            );
+            return sourcePeaks[sourceIndex] || 0;
+          });
+        input._transitionWindowStart = windowStart;
+        surface
+          .load('', [Float32Array.from(windowPeaks)], windowSeconds)
+          .then(() => surface.setTime(halfWindow))
+          .catch(() => {});
+      };
+      input._renderTransitionWindow = renderWindow;
+      surface.on('interaction', (seconds) => {
+        input._recordTransitionUndo?.();
+        const actual = Math.max(0, Math.min(wave.duration, input._transitionWindowStart + Number(seconds)));
+        input.value = actual.toFixed(1);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+      renderWindow(input.value);
+    } catch (_) {
+      container.textContent = 'Waveform unavailable · use the timing slider below.';
+    }
+  }
+  function transitionFadeLevels(curve, progress, technique = 'crossfade') {
+    let outgoing = 1 - progress,
+      incoming = progress;
+    if (curve === 'quick-cut') {
+      outgoing = progress < 0.55 ? 1 : Math.max(0, 1 - (progress - 0.55) / 0.2);
+      incoming = progress < 0.45 ? 0 : Math.min(1, (progress - 0.45) / 0.2);
+    } else if (curve === 'long-blend') {
+      outgoing = Math.cos((progress * Math.PI) / 2) * 0.9;
+      incoming = Math.sin((progress * Math.PI) / 2) * 0.9;
+    } else if (curve === 'smooth') {
+      outgoing = Math.cos((progress * Math.PI) / 2);
+      incoming = Math.sin((progress * Math.PI) / 2);
+    }
+    if (technique === 'vocal-duck') {
+      const duck = 1 - 0.32 * Math.sin(progress * Math.PI) ** 2;
+      outgoing *= duck;
+      incoming *= duck;
+    } else if (technique === 'drop-swap') {
+      outgoing = progress < 0.5 ? 1 : 0;
+      incoming = progress < 0.5 ? 0 : 1;
+    } else if (technique === 'echo-out') outgoing *= progress < 0.55 ? 1 : Math.max(0, 1 - (progress - 0.55) / 0.3);
+    return { outgoing, incoming };
+  }
+  function renderTransitionFadeCurve(panel, curve, bars, technique = 'crossfade') {
+    const outgoing = panel.querySelector('.fade-out-path'),
+      incoming = panel.querySelector('.fade-in-path'),
+      label = panel.querySelector('.fade-curve-length');
+    if (!outgoing || !incoming) return;
+    const points = 48,
+      path = (key) =>
+        Array.from({ length: points + 1 }, (_, index) => {
+          const progress = index / points,
+            x = progress * 100,
+            y = 22 - transitionFadeLevels(curve, progress, technique)[key] * 20;
+          return `${index ? 'L' : 'M'}${x.toFixed(2)} ${y.toFixed(2)}`;
+        }).join(' ');
+    outgoing.setAttribute('d', path('outgoing'));
+    incoming.setAttribute('d', path('incoming'));
+    label.textContent = `${bars} bars`;
+    updateTransitionFadePlayhead(panel, 0, curve, false, technique);
+  }
+  function updateTransitionFadePlayhead(panel, progress, curve, isActive = true, technique = 'crossfade') {
+    const cursor = panel?.querySelector('.fade-live-line'),
+      outgoing = panel?.querySelector('.fade-live-out'),
+      incoming = panel?.querySelector('.fade-live-in'),
+      status = panel?.querySelector('.fade-live-status');
+    if (!cursor || !outgoing || !incoming) return;
+    const value = Math.max(0, Math.min(1, Number(progress) || 0)),
+      x = value * 100,
+      levels = transitionFadeLevels(curve, value, technique);
+    cursor.setAttribute('x1', x);
+    cursor.setAttribute('x2', x);
+    outgoing.setAttribute('cx', x);
+    outgoing.setAttribute('cy', 22 - levels.outgoing * 20);
+    incoming.setAttribute('cx', x);
+    incoming.setAttribute('cy', 22 - levels.incoming * 20);
+    cursor.closest('svg')?.classList.toggle('is-live', isActive);
+    if (status)
+      status.textContent = isActive ? `${Math.round(value * 100)}% through fade` : 'Preview to follow the fade';
+  }
+  function transitionWaveEnergy(wave, time, windowSeconds = 8) {
+    const peaks = Array.from(wave?.peaks || []);
+    if (!peaks.length || !wave?.duration) return 0.5;
+    const start = Math.max(0, Math.floor(((time - windowSeconds / 2) / wave.duration) * peaks.length)),
+      end = Math.min(peaks.length, Math.ceil(((time + windowSeconds / 2) / wave.duration) * peaks.length));
+    const values = peaks.slice(start, Math.max(start + 1, end)).map((value) => Math.abs(Number(value) || 0));
+    return values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+  }
+  function transitionWaveData(track) {
+    const id = track?._job?.id;
+    if (!id) return Promise.resolve(null);
+    if (!transitionWaveCache.has(id))
+      transitionWaveCache.set(
+        id,
+        setBuilderApi.waveform(id).catch(() => null),
+      );
+    return transitionWaveCache.get(id);
+  }
+  function transitionCueCandidates(track, side = 'in') {
+    const duration = Math.max(1, Number(track?.duration_seconds || 210));
+    const bpm = Math.max(60, Number(track?.bpm || 120));
+    const bar = (4 * 60) / bpm,
+      phrase = bar * 8;
+    const points = [];
+    const add = (time, label, reason, score) => {
+      const value = Math.max(0, Math.min(duration, Math.round(Number(time || 0) / bar) * bar));
+      if (!Number.isFinite(value)) return;
+      points.push({ time: value, label, reason, score });
+    };
+    if (side === 'in') {
+      add(0, 'Track start', 'Opening downbeat', 100);
+      add(Number(track?.mix_in || 0), 'Primary mix in', 'Existing analyzed cue', 105);
+      add(phrase, 'First clean phrase', 'Eight bars after the opening', 96);
+      add(phrase * 2, 'Second phrase', 'Sixteen bars after the opening', 90);
     } else {
-      add(Number(track?.mix_out??duration-phrase),'Primary mix out','Existing analyzed cue',105);
-      add(duration-phrase*2,'Earlier exit','Sixteen bars before the ending',90);
-      add(duration-phrase,'Final clean phrase','Eight bars before the ending',96);
-      add(duration,'Track end','End of the recording',100);
+      add(Number(track?.mix_out ?? duration - phrase), 'Primary mix out', 'Existing analyzed cue', 105);
+      add(duration - phrase * 2, 'Earlier exit', 'Sixteen bars before the ending', 90);
+      add(duration - phrase, 'Final clean phrase', 'Eight bars before the ending', 96);
+      add(duration, 'Track end', 'End of the recording', 100);
     }
-    (track?.arrangement_sections||[]).forEach(section=>{
-      const label=String(section.label||'section').toLowerCase(),confidence=Number(section.confidence||.5);
-      if(side==='in'){
-        if(section.start<=duration*.8&&/drop|chorus|groove|main|verse/.test(label))add(section.start,`${label.includes('drop')?'Drop':'Groove'} entry`,`${section.label} begins`,80+confidence*12);
-        if(section.end<=duration*.8&&/intro|break|build/.test(label))add(section.end,`After ${section.label}`,`Clean boundary after ${section.label}`,76+confidence*12);
+    (track?.arrangement_sections || []).forEach((section) => {
+      const label = String(section.label || 'section').toLowerCase(),
+        confidence = Number(section.confidence || 0.5);
+      if (side === 'in') {
+        if (section.start <= duration * 0.8 && /drop|chorus|groove|main|verse/.test(label))
+          add(
+            section.start,
+            `${label.includes('drop') ? 'Drop' : 'Groove'} entry`,
+            `${section.label} begins`,
+            80 + confidence * 12,
+          );
+        if (section.end <= duration * 0.8 && /intro|break|build/.test(label))
+          add(section.end, `After ${section.label}`, `Clean boundary after ${section.label}`, 76 + confidence * 12);
       } else {
-        if(section.start>=duration*.25&&/break|outro|build/.test(label))add(section.start,`${section.label} begins`,`Exit at the start of ${section.label}`,82+confidence*12);
-        if(section.end>=duration*.25&&/drop|chorus|groove|main|verse/.test(label))add(section.end,`After ${section.label}`,`Exit after ${section.label}`,74+confidence*12);
+        if (section.start >= duration * 0.25 && /break|outro|build/.test(label))
+          add(section.start, `${section.label} begins`, `Exit at the start of ${section.label}`, 82 + confidence * 12);
+        if (section.end >= duration * 0.25 && /drop|chorus|groove|main|verse/.test(label))
+          add(section.end, `After ${section.label}`, `Exit after ${section.label}`, 74 + confidence * 12);
       }
     });
-    (track?.section_profiles||[]).forEach(section=>{
-      const name=String(section.name||section.style||'section'),style=String(section.style||'').toLowerCase(),confidence=Number(section.confidence||.5);
-      if(side==='in'&&section.start<=duration*.8&&/instrument|sparse|groove|steady|break/.test(style))add(section.start,`${name} entry`,`Low-conflict section · ${section.style}`,72+confidence*10);
-      if(side==='out'&&section.start>=duration*.25&&/closing|break|sparse|transition/.test(style))add(section.start,`${name} exit`,`Transition-safe section · ${section.style}`,76+confidence*10);
+    (track?.section_profiles || []).forEach((section) => {
+      const name = String(section.name || section.style || 'section'),
+        style = String(section.style || '').toLowerCase(),
+        confidence = Number(section.confidence || 0.5);
+      if (side === 'in' && section.start <= duration * 0.8 && /instrument|sparse|groove|steady|break/.test(style))
+        add(section.start, `${name} entry`, `Low-conflict section · ${section.style}`, 72 + confidence * 10);
+      if (side === 'out' && section.start >= duration * 0.25 && /closing|break|sparse|transition/.test(style))
+        add(section.start, `${name} exit`, `Transition-safe section · ${section.style}`, 76 + confidence * 10);
     });
-    const deduped=new Map();points.forEach(point=>{const key=Math.round(point.time*2)/2,existing=deduped.get(key);if(!existing||point.score>existing.score)deduped.set(key,point);});
-    const ranked=[...deduped.values()].sort((a,b)=>b.score-a.score),chosen=[];
-    ranked.forEach(point=>{const repeated=chosen.filter(item=>item.label===point.label).length>=2,tooClose=chosen.some(item=>Math.abs(item.time-point.time)<phrase/2);if(chosen.length<8&&(!repeated||point.score>=100)&&(!tooClose||point.score>=96))chosen.push(point);});
-    return chosen.sort((a,b)=>a.time-b.time);
+    const deduped = new Map();
+    points.forEach((point) => {
+      const key = Math.round(point.time * 2) / 2,
+        existing = deduped.get(key);
+      if (!existing || point.score > existing.score) deduped.set(key, point);
+    });
+    const ranked = [...deduped.values()].sort((a, b) => b.score - a.score),
+      chosen = [];
+    ranked.forEach((point) => {
+      const repeated = chosen.filter((item) => item.label === point.label).length >= 2,
+        tooClose = chosen.some((item) => Math.abs(item.time - point.time) < phrase / 2);
+      if (chosen.length < 8 && (!repeated || point.score >= 100) && (!tooClose || point.score >= 96))
+        chosen.push(point);
+    });
+    return chosen.sort((a, b) => a.time - b.time);
   }
-  async function optimizeTransitionCandidates(left,right){const [leftWave,rightWave]=await Promise.all([transitionWaveData(left),transitionWaveData(right)]);const bpmA=Math.max(60,Number(left.bpm||120)),bpmB=Math.max(60,Number(right.bpm||bpmA)),durationA=Math.max(1,Number(left.duration_seconds||leftWave?.duration||210)),durationB=Math.max(1,Number(right.duration_seconds||rightWave?.duration||210)),tempoDifference=Math.min(Math.abs(bpmA-bpmB)/bpmA,Math.abs(bpmA-bpmB*2)/bpmA,Math.abs(bpmA-bpmB/2)/bpmA),harmonic=harmonicCompatibility(left.key,right.key),energyDifference=Math.abs(songEnergy(left)-songEnergy(right)),vocalCollision=setVocalProfile(left)==='vocal-forward'&&setVocalProfile(right)==='vocal-forward',outroInstrumental=Math.max(Number(left.outro?.instrumentalness||0),Number(left.intro?.instrumentalness||0)),variableTiming=timingProfile(left)==='variable'||timingProfile(right)==='variable',genre=`${left._genre||''} ${right._genre||''}`.toLowerCase(),danceGenre=/house|techno|electronic|reggaeton|salsa|bachata|dance/.test(genre),techniques=['crossfade','bass-swap','filter-blend','vocal-duck','echo-out','drop-swap','loop-assist'],curves=['smooth','linear','quick-cut','long-blend'],outCues=transitionCueCandidates(left,'out'),inCues=transitionCueCandidates(right,'in'),candidates=[];for(const bars of [8,16,32]){const overlap=bars*4*60/bpmA,eligibleOut=outCues.filter(cue=>cue.time>=overlap&&cue.time<durationA),eligibleIn=inCues.filter(cue=>cue.time+overlap<=durationB);for(const outCue of (eligibleOut.length?eligibleOut:outCues.slice(-1)))for(const inCue of (eligibleIn.length?eligibleIn:inCues.slice(0,1))){const mixOut=Math.max(overlap,Math.min(durationA-1,outCue.time)),mixIn=Math.max(0,Math.min(durationB-1,inCue.time)),outEnergy=transitionWaveEnergy(leftWave,mixOut),inEnergy=transitionWaveEnergy(rightWave,mixIn),loudnessScore=15*Math.max(0,1-Math.abs(outEnergy-inEnergy)/Math.max(.05,outEnergy,inEnergy));for(const technique of techniques)for(const curve of curves){let phraseScore=20*Math.min(1,Math.min(Number(left.beat_grid_confidence??.75),Number(right.beat_grid_confidence??.75))+.2)+5*Math.min(1,(Number(outCue.score||0)+Number(inCue.score||0))/210);const availableBars=Math.min(Number(left.outro?.mixable_bars||left.dj_readiness?.outro_mixable_bars||32),Number(right.intro?.mixable_bars||right.dj_readiness?.intro_mixable_bars||32));if(bars>availableBars)phraseScore-=Math.min(10,(bars-availableBars)/2);const tempoScore=25*Math.max(0,1-tempoDifference/.12),keyScore=15*(harmonic.score/40),energyScore=10*Math.max(0,1-energyDifference/.65),timingScore=variableTiming?3:5;let vocalScore=vocalCollision?(technique==='vocal-duck'?10:technique==='echo-out'||technique==='drop-swap'?8:3):10,techniqueBonus=0;if(technique==='bass-swap'&&danceGenre)techniqueBonus+=5;if(technique==='filter-blend'&&!variableTiming)techniqueBonus+=4;if(technique==='echo-out'&&tempoDifference>.05)techniqueBonus+=5;if(technique==='drop-swap'){techniqueBonus-=16;if(tempoDifference>.1&&energyDifference>.4&&Number(left.beat_grid_confidence||0)>.85&&Number(right.beat_grid_confidence||0)>.85)techniqueBonus+=8;}if(technique==='loop-assist'){techniqueBonus-=22;if(variableTiming&&outroInstrumental>=.85&&Number(left.beat_grid_confidence||0)>.9)techniqueBonus+=6;if(vocalCollision)techniqueBonus-=6;}if(technique==='crossfade'&&tempoDifference<.025&&!vocalCollision)techniqueBonus+=3;if(curve==='quick-cut'&&(technique==='drop-swap'||tempoDifference>.07))techniqueBonus+=3;if(curve==='smooth'&&(technique==='crossfade'||technique==='bass-swap'||technique==='filter-blend'))techniqueBonus+=2;const rawScore=phraseScore+tempoScore+keyScore+loudnessScore+vocalScore+energyScore+timingScore+techniqueBonus,score=Math.max(0,Math.min(100,Math.round(rawScore/1.15)));candidates.push({score,mixOut,mixIn,outCueLabel:outCue.label,inCueLabel:inCue.label,bars,curve,technique,tempoSync:tempoDifference>.008,components:{phrase:Math.round(phraseScore),tempo:Math.round(tempoScore),key:Math.round(keyScore),loudness:Math.round(loudnessScore),vocals:Math.round(vocalScore),energy:Math.round(energyScore),timing:Math.round(timingScore)},reason:`${outCue.label} → ${inCue.label} · ${harmonic.label} · ${Math.round(loudnessScore)}/15 loudness · ${vocalCollision?'vocal protection':'clear vocals'}`});}}}return candidates.sort((a,b)=>b.score-a.score).filter((candidate,index,list)=>list.findIndex(item=>item.technique===candidate.technique)===index).slice(0,3);}
-  async function runBounded(tasks,limit=3){let cursor=0;const worker=async()=>{while(cursor<tasks.length){const task=tasks[cursor++];await task();}};await Promise.all(Array.from({length:Math.min(limit,tasks.length)},worker));}
-  function personalizeTransitionCandidates(candidates,left,right){return candidates.map(candidate=>{const features={...transitionReviewFeatures(left,right,1),bars:String(candidate.bars),technique:candidate.technique};const preferenceAdjustment=transitionPreferenceAdjustment(features);return {...candidate,preferenceAdjustment,score:Math.max(0,Math.min(100,candidate.score+preferenceAdjustment))};}).sort((a,b)=>b.score-a.score);}
-  async function autoOptimizeSetTransitions(){const pending=[];for(let index=1;index<state.plan.length;index+=1){const key=transitionSettingKey(state.plan[index-1],state.plan[index]),existing=state.transitionSettings[key];if(existing&&(!existing.optimized||Number(existing.optimizedVersion||0)>=4))continue;pending.push(async()=>{const candidates=personalizeTransitionCandidates(await optimizeTransitionCandidates(state.plan[index-1],state.plan[index]),state.plan[index-1],state.plan[index]);if(candidates[0])state.transitionSettings[key]={...transitionSettings(index),...candidates[0],optimized:true,optimizedVersion:5};});}await runBounded(pending,3);return pending.length;}
-  function openTransitionEditor(index,card) { document.querySelectorAll('.transition-editor').forEach(editor=>editor.remove());transitionEditorSurfaces.forEach(surface=>surface.destroy());transitionEditorSurfaces=[];const left=state.plan[index-1],right=state.plan[index],settings=transitionSettings(index);const panel=document.createElement('section');panel.className='transition-editor';const leftDuration=Math.max(1,Number(left.duration_seconds||210)),rightDuration=Math.max(1,Number(right.duration_seconds||210));panel.innerHTML=`<header><div><strong>Transition ${index} → ${index+1}</strong><span>${escapeHtml(left.source_name.replace(/\.[^.]+$/,''))} into ${escapeHtml(right.source_name.replace(/\.[^.]+$/,''))}</span></div><div class="transition-header-actions"><button type="button" class="optimize-transition">✦ Find best</button><button type="button" class="undo-transition-timing" disabled>↶ Undo timing</button><button type="button" class="close-transition-editor">×</button></div></header><div class="transition-wave-stack"><span class="transition-point-label">Mix starts here · matched 60-second view</span><span class="transition-point-line" aria-hidden="true"></span><div class="transition-wave-row"><label>Outgoing mix-out <b class="mix-out-label">${clock(settings.mixOut)}</b></label><div class="transition-wave outgoing-wave"></div><input class="transition-mix-out" type="range" min="0" max="${leftDuration}" step="0.1" value="${settings.mixOut}"><div class="transition-cue-options outgoing-cues" aria-label="Alternative outgoing cue points"></div></div><div class="transition-wave-row"><label>Incoming mix-in <b class="mix-in-label">${clock(settings.mixIn)}</b></label><div class="transition-wave incoming-wave"></div><input class="transition-mix-in" type="range" min="0" max="${rightDuration}" step="0.1" value="${settings.mixIn}"><div class="transition-cue-options incoming-cues" aria-label="Alternative incoming cue points"></div></div></div><div class="transition-fade-visual"><div><span>Fade shape</span><b class="fade-curve-length">${settings.bars} bars</b></div><svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-label="Transition fade curve"><path class="fade-grid" d="M0 12 H100 M50 1 V23"></path><path class="fade-out-path"></path><path class="fade-in-path"></path><line class="fade-live-line" x1="0" x2="0" y1="1" y2="23"></line><circle class="fade-live-out" cx="0" cy="2" r="1.6"></circle><circle class="fade-live-in" cx="0" cy="22" r="1.6"></circle></svg><div class="fade-legend"><span class="fade-out-key">Outgoing</span><span class="fade-in-key">Incoming</span><small class="fade-live-status">Preview to follow the fade</small></div></div><div class="transition-optimizer-results" hidden></div><div class="transition-editor-controls"><label>Length<select class="transition-bars"><option value="8">8 bars</option><option value="16">16 bars</option><option value="32">32 bars</option></select></label><label>Fade curve<select class="transition-curve"><option value="smooth">Smooth equal-power</option><option value="linear">Linear</option><option value="quick-cut">Quick cut</option><option value="long-blend">Long blend</option></select></label><label>Technique<select class="transition-technique"><option value="crossfade">Classic crossfade</option><option value="bass-swap">Bass swap</option><option value="filter-blend">Filter blend</option><option value="vocal-duck">Vocal duck</option><option value="echo-out">Echo out</option><option value="drop-swap">Drop swap</option><option value="loop-assist">Loop-assisted blend</option></select></label><label class="transition-tempo"><input type="checkbox" class="transition-tempo-sync"> Tempo match</label><label class="transition-notes">Transition notes<input class="transition-note" type="text" maxlength="300" placeholder="Loop 8 bars, swap bass on phrase…" value="${escapeHtml(settings.notes||'')}"></label><button type="button" class="preview-transition">▶ Preview mix</button></div>`;card.append(panel);const mixOut=panel.querySelector('.transition-mix-out'),mixIn=panel.querySelector('.transition-mix-in'),bars=panel.querySelector('.transition-bars'),curve=panel.querySelector('.transition-curve'),technique=panel.querySelector('.transition-technique'),sync=panel.querySelector('.transition-tempo-sync'),notes=panel.querySelector('.transition-note'),undo=panel.querySelector('.undo-transition-timing'),optimizer=panel.querySelector('.optimize-transition'),optimizerResults=panel.querySelector('.transition-optimizer-results');bars.value=String(settings.bars);curve.value=settings.curve;technique.value=settings.technique||'crossfade';sync.checked=settings.tempoSync;const withCurrentCue=(cues,time)=>cues.some(cue=>Math.abs(cue.time-Number(time))<.25)?cues:[...cues,{time:Number(time),label:'Current selection',reason:'Current optimized or manually selected cue',score:110}].sort((a,b)=>a.time-b.time);const cueBindings=[[panel.querySelector('.outgoing-cues'),withCurrentCue(transitionCueCandidates(left,'out'),settings.mixOut),mixOut],[panel.querySelector('.incoming-cues'),withCurrentCue(transitionCueCandidates(right,'in'),settings.mixIn),mixIn]];const refreshCueButtons=()=>cueBindings.forEach(([root,cues,input])=>root.querySelectorAll('button').forEach(button=>button.classList.toggle('active',Math.abs(Number(button.dataset.time)-Number(input.value))<.25)));cueBindings.forEach(([root,cues,input])=>{root.innerHTML=cues.map(cue=>`<button type="button" data-time="${cue.time.toFixed(2)}" title="${escapeHtml(cue.reason)}"><b>${escapeHtml(cue.label)}</b><span>${clock(cue.time)}</span></button>`).join('');root.querySelectorAll('button').forEach(button=>button.onclick=()=>{recordTimingUndo();input.value=button.dataset.time;input.dispatchEvent(new Event('input',{bubbles:true}));refreshCueButtons();});});const persist=()=>saveTransitionSettings(index,{mixOut:Number(mixOut.value),mixIn:Number(mixIn.value),bars:Number(bars.value),curve:curve.value,technique:technique.value,tempoSync:sync.checked,notes:notes.value,optimized:false});const restartPreview=()=>{if(transitionPreviewState?.button.closest('.transition-editor')===panel)stopTransitionPreview('↻ Preview updated mix');};const timingHistory=[];const timingSnapshot=()=>({mixOut:Number(mixOut.value),mixIn:Number(mixIn.value)});const recordTimingUndo=()=>{const snapshot=timingSnapshot(),last=timingHistory.at(-1);if(last&&last.mixOut===snapshot.mixOut&&last.mixIn===snapshot.mixIn)return;timingHistory.push(snapshot);undo.disabled=false;};mixOut._recordTransitionUndo=recordTimingUndo;mixIn._recordTransitionUndo=recordTimingUndo;const syncWave=input=>input._renderTransitionWindow?.(Number(input.value));const refreshTiming=()=>{panel.querySelector('.mix-out-label').textContent=clock(Number(mixOut.value));panel.querySelector('.mix-in-label').textContent=clock(Number(mixIn.value));syncWave(mixOut);syncWave(mixIn);restartPreview();persist();};mixOut.oninput=()=>{panel.querySelector('.mix-out-label').textContent=clock(Number(mixOut.value));syncWave(mixOut);restartPreview();persist();refreshCueButtons();};mixIn.oninput=()=>{panel.querySelector('.mix-in-label').textContent=clock(Number(mixIn.value));syncWave(mixIn);restartPreview();persist();refreshCueButtons();};undo.onclick=()=>{const previous=timingHistory.pop();if(!previous)return;mixOut.value=previous.mixOut;mixIn.value=previous.mixIn;refreshTiming();undo.disabled=!timingHistory.length;};panel.querySelectorAll('input,select,button,.transition-wave').forEach(control=>control.addEventListener('pointerdown',event=>event.stopPropagation()));panel.querySelectorAll('input[type="range"]').forEach(control=>{control.addEventListener('pointerdown',()=>{recordTimingUndo();card.draggable=false;});control.addEventListener('keydown',event=>{if(event.key.startsWith('Arrow')||event.key==='Home'||event.key==='End')recordTimingUndo();});control.addEventListener('pointerup',()=>{card.draggable=!card.classList.contains('locked');});control.addEventListener('pointercancel',()=>{card.draggable=!card.classList.contains('locked');});});[bars,curve,technique,sync].forEach(control=>control.addEventListener('change',()=>{restartPreview();persist();}));notes.addEventListener('change',persist);[bars,curve,technique].forEach(control=>control.addEventListener('change',()=>renderTransitionFadeCurve(panel,curve.value,Number(bars.value),technique.value)));renderTransitionFadeCurve(panel,curve.value,Number(bars.value),technique.value);refreshCueButtons();optimizer.onclick=async()=>{optimizer.disabled=true;optimizer.textContent='Scoring…';optimizerResults.hidden=false;optimizerResults.innerHTML='<p>Comparing timing, phrasing, harmony, loudness, vocals, energy, and technique…</p>';try{const candidates=await optimizeTransitionCandidates(left,right);optimizerResults.innerHTML=candidates.map((candidate,candidateIndex)=>`<article class="${candidateIndex?'':'recommended'}" data-candidate="${candidateIndex}"><div><b>${candidateIndex?'Alternative '+(candidateIndex+1):'Recommended'} · ${candidate.score}/100</b><strong>${escapeHtml(candidate.technique.replaceAll('-',' '))} · ${candidate.bars} bars · ${escapeHtml(candidate.curve.replaceAll('-',' '))}</strong><span>${clock(candidate.mixOut)} → ${clock(candidate.mixIn)} · ${escapeHtml(candidate.reason)}</span><small>Phrase ${candidate.components.phrase}/25 · tempo ${candidate.components.tempo}/25 · key ${candidate.components.key}/15 · loudness ${candidate.components.loudness}/15 · vocals ${candidate.components.vocals}/10</small></div><button type="button">Apply</button></article>`).join('');optimizerResults.querySelectorAll('[data-candidate]').forEach(row=>row.querySelector('button').onclick=()=>{const candidate=candidates[Number(row.dataset.candidate)];recordTimingUndo();mixOut.value=candidate.mixOut;mixIn.value=candidate.mixIn;bars.value=String(candidate.bars);curve.value=candidate.curve;technique.value=candidate.technique;sync.checked=candidate.tempoSync;refreshTiming();renderTransitionFadeCurve(panel,curve.value,Number(bars.value),technique.value);optimizerResults.querySelectorAll('article').forEach(item=>item.classList.toggle('applied',item===row));});}catch(error){optimizerResults.innerHTML=`<p>Could not score this transition: ${escapeHtml(error.message)}</p>`;}finally{optimizer.disabled=false;optimizer.textContent='✦ Find best';}};panel.querySelector('.close-transition-editor').onclick=()=>{stopTransitionPreview();transitionEditorSurfaces.forEach(surface=>surface.destroy());transitionEditorSurfaces=[];panel.remove();};panel.querySelector('.preview-transition').onclick=event=>{persist();auditionTransition(index,event.currentTarget);};initializeTransitionWave(panel.querySelector('.outgoing-wave'),left,mixOut,'#ffb45c');initializeTransitionWave(panel.querySelector('.incoming-wave'),right,mixIn,'#d6ff44');panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+  async function optimizeTransitionCandidates(left, right) {
+    const [leftWave, rightWave] = await Promise.all([transitionWaveData(left), transitionWaveData(right)]);
+    const bpmA = Math.max(60, Number(left.bpm || 120)),
+      bpmB = Math.max(60, Number(right.bpm || bpmA)),
+      durationA = Math.max(1, Number(left.duration_seconds || leftWave?.duration || 210)),
+      durationB = Math.max(1, Number(right.duration_seconds || rightWave?.duration || 210)),
+      tempoDifference = Math.min(
+        Math.abs(bpmA - bpmB) / bpmA,
+        Math.abs(bpmA - bpmB * 2) / bpmA,
+        Math.abs(bpmA - bpmB / 2) / bpmA,
+      ),
+      harmonic = harmonicCompatibility(left.key, right.key),
+      energyDifference = Math.abs(songEnergy(left) - songEnergy(right)),
+      vocalCollision = setVocalProfile(left) === 'vocal-forward' && setVocalProfile(right) === 'vocal-forward',
+      outroInstrumental = Math.max(
+        Number(left.outro?.instrumentalness || 0),
+        Number(left.intro?.instrumentalness || 0),
+      ),
+      variableTiming = timingProfile(left) === 'variable' || timingProfile(right) === 'variable',
+      genre = `${left._genre || ''} ${right._genre || ''}`.toLowerCase(),
+      danceGenre = /house|techno|electronic|reggaeton|salsa|bachata|dance/.test(genre),
+      techniques = ['crossfade', 'bass-swap', 'filter-blend', 'vocal-duck', 'echo-out', 'drop-swap', 'loop-assist'],
+      curves = ['smooth', 'linear', 'quick-cut', 'long-blend'],
+      outCues = transitionCueCandidates(left, 'out'),
+      inCues = transitionCueCandidates(right, 'in'),
+      candidates = [];
+    for (const bars of [8, 16, 32]) {
+      const overlap = (bars * 4 * 60) / bpmA,
+        eligibleOut = outCues.filter((cue) => cue.time >= overlap && cue.time < durationA),
+        eligibleIn = inCues.filter((cue) => cue.time + overlap <= durationB);
+      for (const outCue of eligibleOut.length ? eligibleOut : outCues.slice(-1))
+        for (const inCue of eligibleIn.length ? eligibleIn : inCues.slice(0, 1)) {
+          const mixOut = Math.max(overlap, Math.min(durationA - 1, outCue.time)),
+            mixIn = Math.max(0, Math.min(durationB - 1, inCue.time)),
+            outEnergy = transitionWaveEnergy(leftWave, mixOut),
+            inEnergy = transitionWaveEnergy(rightWave, mixIn),
+            loudnessScore = 15 * Math.max(0, 1 - Math.abs(outEnergy - inEnergy) / Math.max(0.05, outEnergy, inEnergy));
+          for (const technique of techniques)
+            for (const curve of curves) {
+              let phraseScore =
+                20 *
+                  Math.min(
+                    1,
+                    Math.min(Number(left.beat_grid_confidence ?? 0.75), Number(right.beat_grid_confidence ?? 0.75)) +
+                      0.2,
+                  ) +
+                5 * Math.min(1, (Number(outCue.score || 0) + Number(inCue.score || 0)) / 210);
+              const availableBars = Math.min(
+                Number(left.outro?.mixable_bars || left.dj_readiness?.outro_mixable_bars || 32),
+                Number(right.intro?.mixable_bars || right.dj_readiness?.intro_mixable_bars || 32),
+              );
+              if (bars > availableBars) phraseScore -= Math.min(10, (bars - availableBars) / 2);
+              const tempoScore = 25 * Math.max(0, 1 - tempoDifference / 0.12),
+                keyScore = 15 * (harmonic.score / 40),
+                energyScore = 10 * Math.max(0, 1 - energyDifference / 0.65),
+                timingScore = variableTiming ? 3 : 5;
+              let vocalScore = vocalCollision
+                  ? technique === 'vocal-duck'
+                    ? 10
+                    : technique === 'echo-out' || technique === 'drop-swap'
+                      ? 8
+                      : 3
+                  : 10,
+                techniqueBonus = 0;
+              if (technique === 'bass-swap' && danceGenre) techniqueBonus += 5;
+              if (technique === 'filter-blend' && !variableTiming) techniqueBonus += 4;
+              if (technique === 'echo-out' && tempoDifference > 0.05) techniqueBonus += 5;
+              if (technique === 'drop-swap') {
+                techniqueBonus -= 16;
+                if (
+                  tempoDifference > 0.1 &&
+                  energyDifference > 0.4 &&
+                  Number(left.beat_grid_confidence || 0) > 0.85 &&
+                  Number(right.beat_grid_confidence || 0) > 0.85
+                )
+                  techniqueBonus += 8;
+              }
+              if (technique === 'loop-assist') {
+                techniqueBonus -= 22;
+                if (variableTiming && outroInstrumental >= 0.85 && Number(left.beat_grid_confidence || 0) > 0.9)
+                  techniqueBonus += 6;
+                if (vocalCollision) techniqueBonus -= 6;
+              }
+              if (technique === 'crossfade' && tempoDifference < 0.025 && !vocalCollision) techniqueBonus += 3;
+              if (curve === 'quick-cut' && (technique === 'drop-swap' || tempoDifference > 0.07)) techniqueBonus += 3;
+              if (
+                curve === 'smooth' &&
+                (technique === 'crossfade' || technique === 'bass-swap' || technique === 'filter-blend')
+              )
+                techniqueBonus += 2;
+              const rawScore =
+                  phraseScore +
+                  tempoScore +
+                  keyScore +
+                  loudnessScore +
+                  vocalScore +
+                  energyScore +
+                  timingScore +
+                  techniqueBonus,
+                score = Math.max(0, Math.min(100, Math.round(rawScore / 1.15)));
+              candidates.push({
+                score,
+                mixOut,
+                mixIn,
+                outCueLabel: outCue.label,
+                inCueLabel: inCue.label,
+                bars,
+                curve,
+                technique,
+                tempoSync: tempoDifference > 0.008,
+                components: {
+                  phrase: Math.round(phraseScore),
+                  tempo: Math.round(tempoScore),
+                  key: Math.round(keyScore),
+                  loudness: Math.round(loudnessScore),
+                  vocals: Math.round(vocalScore),
+                  energy: Math.round(energyScore),
+                  timing: Math.round(timingScore),
+                },
+                reason: `${outCue.label} → ${inCue.label} · ${harmonic.label} · ${Math.round(loudnessScore)}/15 loudness · ${vocalCollision ? 'vocal protection' : 'clear vocals'}`,
+              });
+            }
+        }
+    }
+    return candidates
+      .sort((a, b) => b.score - a.score)
+      .filter((candidate, index, list) => list.findIndex((item) => item.technique === candidate.technique) === index)
+      .slice(0, 3);
+  }
+  async function runBounded(tasks, limit = 3) {
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < tasks.length) {
+        const task = tasks[cursor++];
+        await task();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+  }
+  function personalizeTransitionCandidates(candidates, left, right) {
+    return candidates
+      .map((candidate) => {
+        const features = {
+          ...transitionReviewFeatures(left, right, 1),
+          bars: String(candidate.bars),
+          technique: candidate.technique,
+        };
+        const preferenceAdjustment = transitionPreferenceAdjustment(features);
+        return {
+          ...candidate,
+          preferenceAdjustment,
+          score: Math.max(0, Math.min(100, candidate.score + preferenceAdjustment)),
+        };
+      })
+      .sort((a, b) => b.score - a.score);
+  }
+  async function autoOptimizeSetTransitions() {
+    const pending = [];
+    for (let index = 1; index < state.plan.length; index += 1) {
+      const key = transitionSettingKey(state.plan[index - 1], state.plan[index]),
+        existing = state.transitionSettings[key];
+      if (existing && (!existing.optimized || Number(existing.optimizedVersion || 0) >= 4)) continue;
+      pending.push(async () => {
+        const candidates = personalizeTransitionCandidates(
+          await optimizeTransitionCandidates(state.plan[index - 1], state.plan[index]),
+          state.plan[index - 1],
+          state.plan[index],
+        );
+        if (candidates[0])
+          state.transitionSettings[key] = {
+            ...transitionSettings(index),
+            ...candidates[0],
+            optimized: true,
+            optimizedVersion: 5,
+          };
+      });
+    }
+    await runBounded(pending, 3);
+    return pending.length;
+  }
+  function openTransitionEditor(index, card) {
+    document.querySelectorAll('.transition-editor').forEach((editor) => editor.remove());
+    transitionEditorSurfaces.forEach((surface) => surface.destroy());
+    transitionEditorSurfaces = [];
+    const left = state.plan[index - 1],
+      right = state.plan[index],
+      settings = transitionSettings(index);
+    const panel = document.createElement('section');
+    panel.className = 'transition-editor';
+    const leftDuration = Math.max(1, Number(left.duration_seconds || 210)),
+      rightDuration = Math.max(1, Number(right.duration_seconds || 210));
+    panel.innerHTML = `<header><div><strong>Transition ${index} → ${index + 1}</strong><span>${escapeHtml(left.source_name.replace(/\.[^.]+$/, ''))} into ${escapeHtml(right.source_name.replace(/\.[^.]+$/, ''))}</span></div><div class="transition-header-actions"><button type="button" class="optimize-transition">✦ Find best</button><button type="button" class="undo-transition-timing" disabled>↶ Undo timing</button><button type="button" class="close-transition-editor">×</button></div></header><div class="transition-wave-stack"><span class="transition-point-label">Mix starts here · matched 60-second view</span><span class="transition-point-line" aria-hidden="true"></span><div class="transition-wave-row"><label>Outgoing mix-out <b class="mix-out-label">${clock(settings.mixOut)}</b></label><div class="transition-wave outgoing-wave"></div><input class="transition-mix-out" type="range" min="0" max="${leftDuration}" step="0.1" value="${settings.mixOut}"><div class="transition-cue-options outgoing-cues" aria-label="Alternative outgoing cue points"></div></div><div class="transition-wave-row"><label>Incoming mix-in <b class="mix-in-label">${clock(settings.mixIn)}</b></label><div class="transition-wave incoming-wave"></div><input class="transition-mix-in" type="range" min="0" max="${rightDuration}" step="0.1" value="${settings.mixIn}"><div class="transition-cue-options incoming-cues" aria-label="Alternative incoming cue points"></div></div></div><div class="transition-fade-visual"><div><span>Fade shape</span><b class="fade-curve-length">${settings.bars} bars</b></div><svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-label="Transition fade curve"><path class="fade-grid" d="M0 12 H100 M50 1 V23"></path><path class="fade-out-path"></path><path class="fade-in-path"></path><line class="fade-live-line" x1="0" x2="0" y1="1" y2="23"></line><circle class="fade-live-out" cx="0" cy="2" r="1.6"></circle><circle class="fade-live-in" cx="0" cy="22" r="1.6"></circle></svg><div class="fade-legend"><span class="fade-out-key">Outgoing</span><span class="fade-in-key">Incoming</span><small class="fade-live-status">Preview to follow the fade</small></div></div><div class="transition-optimizer-results" hidden></div><div class="transition-editor-controls"><label>Length<select class="transition-bars"><option value="8">8 bars</option><option value="16">16 bars</option><option value="32">32 bars</option></select></label><label>Fade curve<select class="transition-curve"><option value="smooth">Smooth equal-power</option><option value="linear">Linear</option><option value="quick-cut">Quick cut</option><option value="long-blend">Long blend</option></select></label><label>Technique<select class="transition-technique"><option value="crossfade">Classic crossfade</option><option value="bass-swap">Bass swap</option><option value="filter-blend">Filter blend</option><option value="vocal-duck">Vocal duck</option><option value="echo-out">Echo out</option><option value="drop-swap">Drop swap</option><option value="loop-assist">Loop-assisted blend</option></select></label><label class="transition-tempo"><input type="checkbox" class="transition-tempo-sync"> Tempo match</label><label class="transition-notes">Transition notes<input class="transition-note" type="text" maxlength="300" placeholder="Loop 8 bars, swap bass on phrase…" value="${escapeHtml(settings.notes || '')}"></label><button type="button" class="preview-transition">▶ Preview mix</button></div>`;
+    card.append(panel);
+    const mixOut = panel.querySelector('.transition-mix-out'),
+      mixIn = panel.querySelector('.transition-mix-in'),
+      bars = panel.querySelector('.transition-bars'),
+      curve = panel.querySelector('.transition-curve'),
+      technique = panel.querySelector('.transition-technique'),
+      sync = panel.querySelector('.transition-tempo-sync'),
+      notes = panel.querySelector('.transition-note'),
+      undo = panel.querySelector('.undo-transition-timing'),
+      optimizer = panel.querySelector('.optimize-transition'),
+      optimizerResults = panel.querySelector('.transition-optimizer-results');
+    bars.value = String(settings.bars);
+    curve.value = settings.curve;
+    technique.value = settings.technique || 'crossfade';
+    sync.checked = settings.tempoSync;
+    const withCurrentCue = (cues, time) =>
+      cues.some((cue) => Math.abs(cue.time - Number(time)) < 0.25)
+        ? cues
+        : [
+            ...cues,
+            {
+              time: Number(time),
+              label: 'Current selection',
+              reason: 'Current optimized or manually selected cue',
+              score: 110,
+            },
+          ].sort((a, b) => a.time - b.time);
+    const cueBindings = [
+      [
+        panel.querySelector('.outgoing-cues'),
+        withCurrentCue(transitionCueCandidates(left, 'out'), settings.mixOut),
+        mixOut,
+      ],
+      [
+        panel.querySelector('.incoming-cues'),
+        withCurrentCue(transitionCueCandidates(right, 'in'), settings.mixIn),
+        mixIn,
+      ],
+    ];
+    const refreshCueButtons = () =>
+      cueBindings.forEach(([root, cues, input]) =>
+        root
+          .querySelectorAll('button')
+          .forEach((button) =>
+            button.classList.toggle('active', Math.abs(Number(button.dataset.time) - Number(input.value)) < 0.25),
+          ),
+      );
+    cueBindings.forEach(([root, cues, input]) => {
+      root.innerHTML = cues
+        .map(
+          (cue) =>
+            `<button type="button" data-time="${cue.time.toFixed(2)}" title="${escapeHtml(cue.reason)}"><b>${escapeHtml(cue.label)}</b><span>${clock(cue.time)}</span></button>`,
+        )
+        .join('');
+      root.querySelectorAll('button').forEach(
+        (button) =>
+          (button.onclick = () => {
+            recordTimingUndo();
+            input.value = button.dataset.time;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            refreshCueButtons();
+          }),
+      );
+    });
+    const persist = () =>
+      saveTransitionSettings(index, {
+        mixOut: Number(mixOut.value),
+        mixIn: Number(mixIn.value),
+        bars: Number(bars.value),
+        curve: curve.value,
+        technique: technique.value,
+        tempoSync: sync.checked,
+        notes: notes.value,
+        optimized: false,
+      });
+    const restartPreview = () => {
+      if (transitionPreviewState?.button.closest('.transition-editor') === panel)
+        stopTransitionPreview('↻ Preview updated mix');
+    };
+    const timingHistory = [];
+    const timingSnapshot = () => ({ mixOut: Number(mixOut.value), mixIn: Number(mixIn.value) });
+    const recordTimingUndo = () => {
+      const snapshot = timingSnapshot(),
+        last = timingHistory.at(-1);
+      if (last && last.mixOut === snapshot.mixOut && last.mixIn === snapshot.mixIn) return;
+      timingHistory.push(snapshot);
+      undo.disabled = false;
+    };
+    mixOut._recordTransitionUndo = recordTimingUndo;
+    mixIn._recordTransitionUndo = recordTimingUndo;
+    const syncWave = (input) => input._renderTransitionWindow?.(Number(input.value));
+    const refreshTiming = () => {
+      panel.querySelector('.mix-out-label').textContent = clock(Number(mixOut.value));
+      panel.querySelector('.mix-in-label').textContent = clock(Number(mixIn.value));
+      syncWave(mixOut);
+      syncWave(mixIn);
+      restartPreview();
+      persist();
+    };
+    mixOut.oninput = () => {
+      panel.querySelector('.mix-out-label').textContent = clock(Number(mixOut.value));
+      syncWave(mixOut);
+      restartPreview();
+      persist();
+      refreshCueButtons();
+    };
+    mixIn.oninput = () => {
+      panel.querySelector('.mix-in-label').textContent = clock(Number(mixIn.value));
+      syncWave(mixIn);
+      restartPreview();
+      persist();
+      refreshCueButtons();
+    };
+    undo.onclick = () => {
+      const previous = timingHistory.pop();
+      if (!previous) return;
+      mixOut.value = previous.mixOut;
+      mixIn.value = previous.mixIn;
+      refreshTiming();
+      undo.disabled = !timingHistory.length;
+    };
+    panel
+      .querySelectorAll('input,select,button,.transition-wave')
+      .forEach((control) => control.addEventListener('pointerdown', (event) => event.stopPropagation()));
+    panel.querySelectorAll('input[type="range"]').forEach((control) => {
+      control.addEventListener('pointerdown', () => {
+        recordTimingUndo();
+        card.draggable = false;
+      });
+      control.addEventListener('keydown', (event) => {
+        if (event.key.startsWith('Arrow') || event.key === 'Home' || event.key === 'End') recordTimingUndo();
+      });
+      control.addEventListener('pointerup', () => {
+        card.draggable = !card.classList.contains('locked');
+      });
+      control.addEventListener('pointercancel', () => {
+        card.draggable = !card.classList.contains('locked');
+      });
+    });
+    [bars, curve, technique, sync].forEach((control) =>
+      control.addEventListener('change', () => {
+        restartPreview();
+        persist();
+      }),
+    );
+    notes.addEventListener('change', persist);
+    [bars, curve, technique].forEach((control) =>
+      control.addEventListener('change', () =>
+        renderTransitionFadeCurve(panel, curve.value, Number(bars.value), technique.value),
+      ),
+    );
+    renderTransitionFadeCurve(panel, curve.value, Number(bars.value), technique.value);
+    refreshCueButtons();
+    optimizer.onclick = async () => {
+      optimizer.disabled = true;
+      optimizer.textContent = 'Scoring…';
+      optimizerResults.hidden = false;
+      optimizerResults.innerHTML =
+        '<p>Comparing timing, phrasing, harmony, loudness, vocals, energy, and technique…</p>';
+      try {
+        const candidates = await optimizeTransitionCandidates(left, right);
+        optimizerResults.innerHTML = candidates
+          .map(
+            (candidate, candidateIndex) =>
+              `<article class="${candidateIndex ? '' : 'recommended'}" data-candidate="${candidateIndex}"><div><b>${candidateIndex ? 'Alternative ' + (candidateIndex + 1) : 'Recommended'} · ${candidate.score}/100</b><strong>${escapeHtml(candidate.technique.replaceAll('-', ' '))} · ${candidate.bars} bars · ${escapeHtml(candidate.curve.replaceAll('-', ' '))}</strong><span>${clock(candidate.mixOut)} → ${clock(candidate.mixIn)} · ${escapeHtml(candidate.reason)}</span><small>Phrase ${candidate.components.phrase}/25 · tempo ${candidate.components.tempo}/25 · key ${candidate.components.key}/15 · loudness ${candidate.components.loudness}/15 · vocals ${candidate.components.vocals}/10</small></div><button type="button">Apply</button></article>`,
+          )
+          .join('');
+        optimizerResults.querySelectorAll('[data-candidate]').forEach(
+          (row) =>
+            (row.querySelector('button').onclick = () => {
+              const candidate = candidates[Number(row.dataset.candidate)];
+              recordTimingUndo();
+              mixOut.value = candidate.mixOut;
+              mixIn.value = candidate.mixIn;
+              bars.value = String(candidate.bars);
+              curve.value = candidate.curve;
+              technique.value = candidate.technique;
+              sync.checked = candidate.tempoSync;
+              refreshTiming();
+              renderTransitionFadeCurve(panel, curve.value, Number(bars.value), technique.value);
+              optimizerResults
+                .querySelectorAll('article')
+                .forEach((item) => item.classList.toggle('applied', item === row));
+            }),
+        );
+      } catch (error) {
+        optimizerResults.innerHTML = `<p>Could not score this transition: ${escapeHtml(error.message)}</p>`;
+      } finally {
+        optimizer.disabled = false;
+        optimizer.textContent = '✦ Find best';
+      }
+    };
+    panel.querySelector('.close-transition-editor').onclick = () => {
+      stopTransitionPreview();
+      transitionEditorSurfaces.forEach((surface) => surface.destroy());
+      transitionEditorSurfaces = [];
+      panel.remove();
+    };
+    panel.querySelector('.preview-transition').onclick = (event) => {
+      persist();
+      auditionTransition(index, event.currentTarget);
+    };
+    initializeTransitionWave(panel.querySelector('.outgoing-wave'), left, mixOut, '#ffb45c');
+    initializeTransitionWave(panel.querySelector('.incoming-wave'), right, mixIn, '#d6ff44');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
   function setSvgCurve(selector, values, color) {
-    const svg = $(selector); if (!values.length) { svg.replaceChildren(); return; }
-    const low = Math.min(...values); const high = Math.max(...values); const range = Math.max(.001, high-low);
-    const points = values.map((value,index) => `${index * 600 / Math.max(1,values.length-1)},${80-(value-low)/range*65}`).join(' ');
+    const svg = $(selector);
+    if (!values.length) {
+      svg.replaceChildren();
+      return;
+    }
+    const low = Math.min(...values);
+    const high = Math.max(...values);
+    const range = Math.max(0.001, high - low);
+    const points = values
+      .map((value, index) => `${(index * 600) / Math.max(1, values.length - 1)},${80 - ((value - low) / range) * 65}`)
+      .join(' ');
     svg.innerHTML = `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="3" vector-effect="non-scaling-stroke"/><line x1="0" y1="80" x2="600" y2="80" stroke="#30332f"/>`;
   }
   function renderSetRules() {
-    const byId = new Map(state.library.map(track => [setTrackId(track), track]));
+    const byId = new Map(state.library.map((track) => [setTrackId(track), track]));
     const ruleTotal = state.requiredIds.size + state.excludedIds.size;
     $('#set-rule-count').textContent = `${ruleTotal} rule${ruleTotal === 1 ? '' : 's'}`;
-    $('#set-rule-chips').innerHTML = [...state.requiredIds].map(id => `<button type="button" class="required-chip" data-rule="required" data-id="${escapeHtml(id)}">Required · ${escapeHtml(byId.get(id)?.source_name || id)} ×</button>`).concat([...state.excludedIds].map(id => `<button type="button" class="excluded-chip" data-rule="excluded" data-id="${escapeHtml(id)}">Excluded · ${escapeHtml(byId.get(id)?.source_name || id)} ×</button>`)).join('');
-    $('#set-rule-chips').querySelectorAll('button').forEach(button => button.onclick = () => { (button.dataset.rule === 'required' ? state.requiredIds : state.excludedIds).delete(button.dataset.id); renderSetRules(); });
+    $('#set-rule-chips').innerHTML = [...state.requiredIds]
+      .map(
+        (id) =>
+          `<button type="button" class="required-chip" data-rule="required" data-id="${escapeHtml(id)}">Required · ${escapeHtml(byId.get(id)?.source_name || id)} ×</button>`,
+      )
+      .concat(
+        [...state.excludedIds].map(
+          (id) =>
+            `<button type="button" class="excluded-chip" data-rule="excluded" data-id="${escapeHtml(id)}">Excluded · ${escapeHtml(byId.get(id)?.source_name || id)} ×</button>`,
+        ),
+      )
+      .join('');
+    $('#set-rule-chips')
+      .querySelectorAll('button')
+      .forEach(
+        (button) =>
+          (button.onclick = () => {
+            (button.dataset.rule === 'required' ? state.requiredIds : state.excludedIds).delete(button.dataset.id);
+            renderSetRules();
+          }),
+      );
   }
   function transitionExplanation(previous, track) {
-    if (!previous) return {score:null,text:'Opening track · establishes the starting mood'};
-    const match = compatibility(previous,track); const tempo = match.difference <= .02 ? 'tempo locked' : `${(match.difference*100).toFixed(1)}% tempo move`;
-    return {score:match.score,text:`${tempo} · ${match.key} · energy ${match.components.energy}/10`};
+    if (!previous) return { score: null, text: 'Opening track · establishes the starting mood' };
+    const match = compatibility(previous, track);
+    const tempo = match.difference <= 0.02 ? 'tempo locked' : `${(match.difference * 100).toFixed(1)}% tempo move`;
+    return { score: match.score, text: `${tempo} · ${match.key} · energy ${match.components.energy}/10` };
   }
   function setSelectionExplanation(track, index, brief) {
-    const reasons=[]; const id=setTrackId(track); const previous=state.plan[index-1]; const next=state.plan[index+1];
-    const energy=songEnergy(track); const target=targetSetEnergy(index,state.plan.length,brief); const energyDelta=energy-target;
-    const matchingGenres=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));
-    const matchingDetailed=(brief.detailedGenres||[]).filter(genre=>trackMatchesSetDetailedGenre(track,genre));
-    if(track._aiSelectionReason?.text)reasons.push({kind:track._aiSelectionReason.evidence||'ai-suggested',text:track._aiSelectionReason.text});
-    if(state.requiredIds.has(id))reasons.push({kind:'required',text:'Selected because it is a must-play track.'});
-    const intention=intentionEvaluation(track,brief);if(intention.required.length)reasons.push({kind:'identity',text:`Meets the hard identity requirement: ${intention.required.join(' + ')}.`});else if(intention.preferred.length)reasons.push({kind:'identity',text:`Matches the requested identity through ${intention.preferred.slice(0,2).join(' + ')}.`});if(intention.avoided.length)reasons.push({kind:'relaxed',text:`Uses a limited characteristic (${intention.avoided.join(' + ')}) only to preserve runtime or flow.`});
-    if(matchingDetailed.length)reasons.push({kind:'genre',text:`Direct detailed-genre match: ${matchingDetailed.slice(0,2).join(' + ')}.`});
-    else if(matchingGenres.length)reasons.push({kind:'genre',text:`Fits the requested ${matchingGenres.slice(0,2).join(' + ')} direction.`});
-    if(Math.abs(energyDelta)<=.1)reasons.push({kind:'energy',text:`Matches the ${energyBand(target)} target energy for this point in the set.`});
-    else if(energyDelta>0)reasons.push({kind:'energy',text:`Adds an intentional energy lift toward ${energyBand(energy)}.`});
-    else reasons.push({kind:'energy',text:`Creates an energy reset before the next build.`});
-    if(previous){
-      const incoming=compatibility(previous,track); const fromBpm=Number(previous.bpm||0),toBpm=Number(track.bpm||0);
-      reasons.push({kind:'tempo',text:Math.abs(fromBpm-toBpm)<.6?`Keeps the tempo steady near ${toBpm.toFixed(1)} BPM.`:`Moves from ${fromBpm.toFixed(1)} to ${toBpm.toFixed(1)} BPM.`});
-      if(incoming.components.key>=20)reasons.push({kind:'key',text:`Compatible key: ${formatLibraryKey(previous.key)} → ${formatLibraryKey(track.key)} (${incoming.key}).`});
-      if(setVocalProfile(previous)==='vocal-forward'&&setVocalProfile(track)!=='vocal-forward')reasons.push({kind:'vocals',text:'Restores vocal space after a vocal-forward track.'});
-    } else reasons.push({kind:'opening',text:`Opens with ${energyBand(energy)} energy and establishes the set direction.`});
-    if(next){const outgoing=compatibility(track,next);if(outgoing.score>=70)reasons.push({kind:'neighbor',text:`Also sets up the next track with a ${outgoing.score}% transition match.`});}
-    if(timingProfile(track)==='steady'&&reasons.length<5)reasons.push({kind:'timing',text:'Steady timing supports a longer, dependable blend.'});
-    return reasons.slice(0,5);
+    const reasons = [];
+    const id = setTrackId(track);
+    const previous = state.plan[index - 1];
+    const next = state.plan[index + 1];
+    const energy = songEnergy(track);
+    const target = targetSetEnergy(index, state.plan.length, brief);
+    const energyDelta = energy - target;
+    const matchingGenres = (brief.genres || []).filter((genre) => trackMatchesSetGenre(track, genre));
+    const matchingDetailed = (brief.detailedGenres || []).filter((genre) => trackMatchesSetDetailedGenre(track, genre));
+    if (track._aiSelectionReason?.text)
+      reasons.push({ kind: track._aiSelectionReason.evidence || 'ai-suggested', text: track._aiSelectionReason.text });
+    if (state.requiredIds.has(id))
+      reasons.push({ kind: 'required', text: 'Selected because it is a must-play track.' });
+    const intention = intentionEvaluation(track, brief);
+    if (intention.required.length)
+      reasons.push({
+        kind: 'identity',
+        text: `Meets the hard identity requirement: ${intention.required.join(' + ')}.`,
+      });
+    else if (intention.preferred.length)
+      reasons.push({
+        kind: 'identity',
+        text: `Matches the requested identity through ${intention.preferred.slice(0, 2).join(' + ')}.`,
+      });
+    if (intention.avoided.length)
+      reasons.push({
+        kind: 'relaxed',
+        text: `Uses a limited characteristic (${intention.avoided.join(' + ')}) only to preserve runtime or flow.`,
+      });
+    if (matchingDetailed.length)
+      reasons.push({
+        kind: 'genre',
+        text: `Direct detailed-genre match: ${matchingDetailed.slice(0, 2).join(' + ')}.`,
+      });
+    else if (matchingGenres.length)
+      reasons.push({ kind: 'genre', text: `Fits the requested ${matchingGenres.slice(0, 2).join(' + ')} direction.` });
+    if (Math.abs(energyDelta) <= 0.1)
+      reasons.push({
+        kind: 'energy',
+        text: `Matches the ${energyBand(target)} target energy for this point in the set.`,
+      });
+    else if (energyDelta > 0)
+      reasons.push({ kind: 'energy', text: `Adds an intentional energy lift toward ${energyBand(energy)}.` });
+    else reasons.push({ kind: 'energy', text: `Creates an energy reset before the next build.` });
+    if (previous) {
+      const incoming = compatibility(previous, track);
+      const fromBpm = Number(previous.bpm || 0),
+        toBpm = Number(track.bpm || 0);
+      reasons.push({
+        kind: 'tempo',
+        text:
+          Math.abs(fromBpm - toBpm) < 0.6
+            ? `Keeps the tempo steady near ${toBpm.toFixed(1)} BPM.`
+            : `Moves from ${fromBpm.toFixed(1)} to ${toBpm.toFixed(1)} BPM.`,
+      });
+      if (incoming.components.key >= 20)
+        reasons.push({
+          kind: 'key',
+          text: `Compatible key: ${formatLibraryKey(previous.key)} → ${formatLibraryKey(track.key)} (${incoming.key}).`,
+        });
+      if (setVocalProfile(previous) === 'vocal-forward' && setVocalProfile(track) !== 'vocal-forward')
+        reasons.push({ kind: 'vocals', text: 'Restores vocal space after a vocal-forward track.' });
+    } else
+      reasons.push({
+        kind: 'opening',
+        text: `Opens with ${energyBand(energy)} energy and establishes the set direction.`,
+      });
+    if (next) {
+      const outgoing = compatibility(track, next);
+      if (outgoing.score >= 70)
+        reasons.push({
+          kind: 'neighbor',
+          text: `Also sets up the next track with a ${outgoing.score}% transition match.`,
+        });
+    }
+    if (timingProfile(track) === 'steady' && reasons.length < 5)
+      reasons.push({ kind: 'timing', text: 'Steady timing supports a longer, dependable blend.' });
+    return reasons.slice(0, 5);
   }
-  function setFallbackTier(track,brief){if((brief.genres||[]).some(genre=>trackMatchesSetGenre(track,genre)))return 0;const evaluation=intentionEvaluation(track,brief),tags=trackIdentity(track);if(evaluation.preferred.length>=2)return 1;if(evaluation.preferred.length||tags.includes('latin identity'))return 2;if(libraryRoles(track).includes('bridge')||evaluation.score>=0)return 3;return 4;}
+  function setFallbackTier(track, brief) {
+    if ((brief.genres || []).some((genre) => trackMatchesSetGenre(track, genre))) return 0;
+    const evaluation = intentionEvaluation(track, brief),
+      tags = trackIdentity(track);
+    if (evaluation.preferred.length >= 2) return 1;
+    if (evaluation.preferred.length || tags.includes('latin identity')) return 2;
+    if (libraryRoles(track).includes('bridge') || evaluation.score >= 0) return 3;
+    return 4;
+  }
   function renderSetSelectionSummary(brief) {
-    const root=$('#set-selection-summary');if(!root)return;
-    const targets=genreAllocationTargets(brief.genres,brief.genreWeights,state.plan.length),usage=Object.fromEntries((brief.genres||[]).map(genre=>[genre,0])),groups=Object.fromEntries((brief.genres||[]).map(genre=>[genre,[]])),unassigned=[];
-    state.plan.forEach(track=>{const matches=(brief.genres||[]).filter(genre=>trackMatchesSetGenre(track,genre));if(!matches.length){unassigned.push(track);return;}const genre=matches.sort((a,b)=>((targets[b]||0)-(usage[b]||0))-((targets[a]||0)-(usage[a]||0)))[0];usage[genre]=(usage[genre]||0)+1;groups[genre].push(track);});
-    const totalWeight=Math.max(1,Object.values(brief.genreWeights||{}).reduce((sum,value)=>sum+Math.max(0,Number(value||0)),0));
-    const genreRows=(brief.genres||[]).map(genre=>{const requested=Math.round(Math.max(0,Number(brief.genreWeights?.[genre]||0))/totalWeight*1000)/10,actual=usage[genre]||0,names=(groups[genre]||[]).map(track=>track.source_name.replace(/\.[^.]+$/,'')).join(', ');return `<article class="${actual===(targets[genre]||0)?'met':'adjusted'}"><div><strong>${escapeHtml(genre)}</strong><span>${requested}% requested · ${targets[genre]||0} target · ${actual} chosen</span></div><p>${names?escapeHtml(names):'No track selected for this allocation.'}</p></article>`;}).join('');
-    const mustPlays=state.plan.filter(track=>state.requiredIds.has(setTrackId(track)));const tierLabels=['Direct matches','Identity matches','Adjacent genres','Neutral bridges','Flow-only foundations'];const tierCounts=state.plan.reduce((counts,track)=>{const tier=setFallbackTier(track,brief);counts[tier]=(counts[tier]||0)+1;return counts;},{});const relaxed=state.plan.filter(track=>intentionEvaluation(track,brief).avoided.length);const intentionRows=brief.identity?.text?`<section class="set-intention-outcome"><strong>Intention fulfillment</strong><p>${escapeHtml(brief.identity.text)}</p><div>${tierLabels.map((label,index)=>`<span class="${index>1&&tierCounts[index]?'adjusted':''}"><b>${tierCounts[index]||0}</b>${label}</span>`).join('')}</div>${relaxed.length?`<p class="set-relaxation-warning">${relaxed.length} track${relaxed.length===1?'':'s'} relaxed a “limit or avoid” preference to preserve runtime or transition flow. No hard requirement was relaxed.</p>`:'<p>No stated preference was relaxed.</p>'}</section>`:'';
-    const fallback=unassigned.length?`<article class="adjusted"><div><strong>Manual or bridge tracks</strong><span>${unassigned.length} outside the weighted genres</span></div><p>${escapeHtml(unassigned.map(track=>track.source_name.replace(/\.[^.]+$/,'')).join(', '))}</p></article>`:'';
-    const receipt=currentPlanningReceipt,evaluation=receipt?.evaluation,comparison=receipt?.comparison;const receiptRows=receipt?`<section class="set-planning-receipt"><strong>${escapeHtml(receipt.mode==='ai-planned'?'AI Planned':receipt.mode==='deterministic-fallback'?'Validated fallback':receipt.mode==='ai-interpreted'?'AI Interpreted':'Classic rules')}</strong><span>${escapeHtml(receipt.provider||'offline')}${receipt.model?` · ${escapeHtml(receipt.model)}`:''}${receipt.planningDurationMs!=null?` · ${(receipt.planningDurationMs/1000).toFixed(1)}s`:''}</span><p>${escapeHtml(receipt.summary||'')}</p>${receipt.modelRepairs?.length?`<p>${receipt.modelRepairs.length} structural model selection${receipt.modelRepairs.length===1?' was':'s were'} repaired before validation.</p>`:''}${comparison?`<p><strong>AI ${comparison.ai?.qualityScore??'—'} · Baseline ${comparison.deterministic?.qualityScore??'—'}</strong> — ${escapeHtml(comparison.reason||'')}</p>`:''}${evaluation?.disclosures?.map(text=>`<p>${escapeHtml(text)}</p>`).join('')||''}${receipt.fallbackReason?'<p class="set-relaxation-warning">The AI result was replaced by the deterministic safety fallback.</p>':''}</section>`:'';
-    root.querySelector('div').innerHTML=`<p class="set-selection-overview">${state.plan.length} songs chosen by allocating the requested genre balance first, then ranking candidates for musical identity, energy shape, BPM and key compatibility, vocal spacing, timing, and transition health.${mustPlays.length?` ${mustPlays.length} must-play track${mustPlays.length===1?' was':'s were'} preserved.`:''}</p>${receiptRows}${intentionRows}<div class="set-selection-groups">${genreRows}${fallback}</div><p class="set-selection-note">Open “Why this track” on any song for its position-specific explanation. Counts may differ only when a locked, required, manually added, or unavailable genre track prevents the requested allocation. Any expansion beyond direct matches is disclosed above.</p>`;
+    const root = $('#set-selection-summary');
+    if (!root) return;
+    const targets = genreAllocationTargets(brief.genres, brief.genreWeights, state.plan.length),
+      usage = Object.fromEntries((brief.genres || []).map((genre) => [genre, 0])),
+      groups = Object.fromEntries((brief.genres || []).map((genre) => [genre, []])),
+      unassigned = [];
+    state.plan.forEach((track) => {
+      const matches = (brief.genres || []).filter((genre) => trackMatchesSetGenre(track, genre));
+      if (!matches.length) {
+        unassigned.push(track);
+        return;
+      }
+      const genre = matches.sort(
+        (a, b) => (targets[b] || 0) - (usage[b] || 0) - ((targets[a] || 0) - (usage[a] || 0)),
+      )[0];
+      usage[genre] = (usage[genre] || 0) + 1;
+      groups[genre].push(track);
+    });
+    const totalWeight = Math.max(
+      1,
+      Object.values(brief.genreWeights || {}).reduce((sum, value) => sum + Math.max(0, Number(value || 0)), 0),
+    );
+    const genreRows = (brief.genres || [])
+      .map((genre) => {
+        const requested = Math.round((Math.max(0, Number(brief.genreWeights?.[genre] || 0)) / totalWeight) * 1000) / 10,
+          actual = usage[genre] || 0,
+          names = (groups[genre] || []).map((track) => track.source_name.replace(/\.[^.]+$/, '')).join(', ');
+        return `<article class="${actual === (targets[genre] || 0) ? 'met' : 'adjusted'}"><div><strong>${escapeHtml(genre)}</strong><span>${requested}% requested · ${targets[genre] || 0} target · ${actual} chosen</span></div><p>${names ? escapeHtml(names) : 'No track selected for this allocation.'}</p></article>`;
+      })
+      .join('');
+    const mustPlays = state.plan.filter((track) => state.requiredIds.has(setTrackId(track)));
+    const tierLabels = [
+      'Direct matches',
+      'Identity matches',
+      'Adjacent genres',
+      'Neutral bridges',
+      'Flow-only foundations',
+    ];
+    const tierCounts = state.plan.reduce((counts, track) => {
+      const tier = setFallbackTier(track, brief);
+      counts[tier] = (counts[tier] || 0) + 1;
+      return counts;
+    }, {});
+    const relaxed = state.plan.filter((track) => intentionEvaluation(track, brief).avoided.length);
+    const intentionRows = brief.identity?.text
+      ? `<section class="set-intention-outcome"><strong>Intention fulfillment</strong><p>${escapeHtml(brief.identity.text)}</p><div>${tierLabels.map((label, index) => `<span class="${index > 1 && tierCounts[index] ? 'adjusted' : ''}"><b>${tierCounts[index] || 0}</b>${label}</span>`).join('')}</div>${relaxed.length ? `<p class="set-relaxation-warning">${relaxed.length} track${relaxed.length === 1 ? '' : 's'} relaxed a “limit or avoid” preference to preserve runtime or transition flow. No hard requirement was relaxed.</p>` : '<p>No stated preference was relaxed.</p>'}</section>`
+      : '';
+    const fallback = unassigned.length
+      ? `<article class="adjusted"><div><strong>Manual or bridge tracks</strong><span>${unassigned.length} outside the weighted genres</span></div><p>${escapeHtml(unassigned.map((track) => track.source_name.replace(/\.[^.]+$/, '')).join(', '))}</p></article>`
+      : '';
+    const receipt = currentPlanningReceipt,
+      evaluation = receipt?.evaluation,
+      comparison = receipt?.comparison;
+    const receiptRows = receipt
+      ? `<section class="set-planning-receipt"><strong>${escapeHtml(receipt.mode === 'ai-planned' ? 'AI Planned' : receipt.mode === 'deterministic-fallback' ? 'Validated fallback' : receipt.mode === 'ai-interpreted' ? 'AI Interpreted' : 'Classic rules')}</strong><span>${escapeHtml(receipt.provider || 'offline')}${receipt.model ? ` · ${escapeHtml(receipt.model)}` : ''}${receipt.planningDurationMs != null ? ` · ${(receipt.planningDurationMs / 1000).toFixed(1)}s` : ''}</span><p>${escapeHtml(receipt.summary || '')}</p>${receipt.modelRepairs?.length ? `<p>${receipt.modelRepairs.length} structural model selection${receipt.modelRepairs.length === 1 ? ' was' : 's were'} repaired before validation.</p>` : ''}${comparison ? `<p><strong>AI ${comparison.ai?.qualityScore ?? '—'} · Baseline ${comparison.deterministic?.qualityScore ?? '—'}</strong> — ${escapeHtml(comparison.reason || '')}</p>` : ''}${evaluation?.disclosures?.map((text) => `<p>${escapeHtml(text)}</p>`).join('') || ''}${receipt.fallbackReason ? '<p class="set-relaxation-warning">The AI result was replaced by the deterministic safety fallback.</p>' : ''}</section>`
+      : '';
+    root.querySelector('div').innerHTML =
+      `<p class="set-selection-overview">${state.plan.length} songs chosen by allocating the requested genre balance first, then ranking candidates for musical identity, energy shape, BPM and key compatibility, vocal spacing, timing, and transition health.${mustPlays.length ? ` ${mustPlays.length} must-play track${mustPlays.length === 1 ? ' was' : 's were'} preserved.` : ''}</p>${receiptRows}${intentionRows}<div class="set-selection-groups">${genreRows}${fallback}</div><p class="set-selection-note">Open “Why this track” on any song for its position-specific explanation. Counts may differ only when a locked, required, manually added, or unavailable genre track prevents the requested allocation. Any expansion beyond direct matches is disclosed above.</p>`;
   }
   function renderSetPlan() {
-    const result = $('#set-result'); result.hidden = !state.plan.length; if (!state.plan.length) return;
-    transitionEditorSurfaces.forEach(surface=>surface.destroy());transitionEditorSurfaces=[];
-    result.classList.toggle('compact-planning',state.compactMode);$('#set-compact').textContent=state.compactMode?'Comfortable view':'Compact view';updateSetHistoryButtons();
-    const activeProposal=state.proposals.find(proposal=>proposal.id===state.activeProposal);if(activeProposal){activeProposal.snapshot=setPlanSnapshot();activeProposal.health=setHealth();}
+    const result = $('#set-result');
+    result.hidden = !state.plan.length;
+    if (!state.plan.length) return;
+    transitionEditorSurfaces.forEach((surface) => surface.destroy());
+    transitionEditorSurfaces = [];
+    result.classList.toggle('compact-planning', state.compactMode);
+    $('#set-compact').textContent = state.compactMode ? 'Comfortable view' : 'Compact view';
+    updateSetHistoryButtons();
+    const activeProposal = state.proposals.find((proposal) => proposal.id === state.activeProposal);
+    if (activeProposal) {
+      activeProposal.snapshot = setPlanSnapshot();
+      activeProposal.health = setHealth();
+    }
     renderSetProposals();
-    const brief = setBrief(); const runtime = setRuntime();
-    const resultName=$('#set-result-name');if(document.activeElement!==resultName)resultName.value=brief.name;
-    const genreSummary=(brief.detailedGenres||[]).length?brief.detailedGenres.join(' + '):brief.genres.length?brief.genres.join(' + '):'open genre mix';
-    $('#set-result-summary').textContent = `${state.plan.length} tracks · approximately ${Math.round(runtime/60)} minutes · ${genreSummary} · ${brief.genreFlow.replace('-', ' ')} · ${brief.curve.replace('-', ' ')}`;
+    const brief = setBrief();
+    const runtime = setRuntime();
+    const resultName = $('#set-result-name');
+    if (document.activeElement !== resultName) resultName.value = brief.name;
+    const genreSummary = (brief.detailedGenres || []).length
+      ? brief.detailedGenres.join(' + ')
+      : brief.genres.length
+        ? brief.genres.join(' + ')
+        : 'open genre mix';
+    $('#set-result-summary').textContent =
+      `${state.plan.length} tracks · approximately ${Math.round(runtime / 60)} minutes · ${genreSummary} · ${brief.genreFlow.replace('-', ' ')} · ${brief.curve.replace('-', ' ')}`;
     renderSetSelectionSummary(brief);
-    const exportStatus=$('#set-export-status');exportStatus.className='set-export-status';exportStatus.innerHTML='<span>Rekordbox paths will be checked before export.</span>';
-    const health=setHealth();const healthThreshold=brief.minimumHealth;const healthAccepted=health.score>=healthThreshold;const weak=health.transitions.filter(item=>item.score<healthThreshold).sort((a,b)=>a.score-b.score);const healthDetail=weak.length?weak.slice(0,8).map(item=>`<button type="button" data-transition="${item.to}"><b>${item.from+1} → ${item.to+1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`).join(''):healthAccepted?`<p>Health target met. No transitions fall below ${healthThreshold}.</p>`:`<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes===1?' is':'s are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;$('#set-health').className=`set-health ${healthAccepted?'good':health.score>=healthThreshold-10?'fair':'weak'}`;$('#set-health').innerHTML=`<summary><strong>${health.score}</strong><span>Set health</span><small>${healthAccepted?'target met':'below target · regenerate required'} · target ${healthThreshold} · ${weak.length} transition${weak.length===1?'':'s'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes===1?'':'es'}</small></summary><div>${healthDetail}</div>`;$('#set-health').querySelectorAll('[data-transition]').forEach(button=>button.onclick=()=>document.querySelector(`.set-track-card[data-index="${button.dataset.transition}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}));
-    ['#save-set','#export-set-csv','#export-set-m3u'].forEach(selector=>{const button=$(selector);button.disabled=!healthAccepted;button.title=healthAccepted?'':`Set health must reach ${healthThreshold} before saving or exporting.`;});
-    $('#set-track-list').innerHTML = state.plan.map((track,index) => {
-      const transition = transitionExplanation(state.plan[index-1],track); const id = setTrackId(track); const locked = state.lockedIds.has(id); const selectionReasons=setSelectionExplanation(track,index,brief);
-      const preview=track._job?.id?compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`,track.duration_seconds,true):'';
-      const review=trackReviewDraft.get(id)||{},metrics=track._candidateMetrics||{};const pairId=index?`${setCatalogTrackId(state.plan[index-1])}→${setCatalogTrackId(track)}`:'';
-      return `<article class="set-track-card${locked?' locked':''}" draggable="${locked?'false':'true'}" data-index="${index}"><span class="set-position">${index+1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(track).map(role => LIBRARY_ROLE_INFO[role]?.[0] || role).join(', ')}</span>${preview}</div><div class="set-track-meta"><strong>${Number(track.bpm||0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended?'Extended edit available':'Original analyzed track'}${metrics.preferenceAdjustment?` · preference ${metrics.preferenceAdjustment>0?'+':''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta>0?'+':''}${metrics.rankDelta}`:''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons.map(reason=>{const label=['verified','estimated','ai-suggested'].includes(reason.kind)?`<em>${escapeHtml(reason.kind)}</em>`:'';return `<li data-reason="${reason.kind}">${label}${escapeHtml(reason.text)}</li>`;}).join('')}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision==='accept'?'active':''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision==='reject'?'active':''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold?'warning':'good'}"><b>${transition.score == null?'OPEN':`${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index?`<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>`:''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index===0?'disabled':''}>↑ Earlier</button><button type="button" class="set-move-down" ${index===state.plan.length-1?'disabled':''}>↓ Later</button><button type="button" class="set-lock">${locked?'Unlock':'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">Find alternative</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
-    }).join('');
+    const exportStatus = $('#set-export-status');
+    exportStatus.className = 'set-export-status';
+    exportStatus.innerHTML = '<span>Rekordbox paths will be checked before export.</span>';
+    const health = setHealth();
+    const healthThreshold = brief.minimumHealth;
+    const healthAccepted = health.score >= healthThreshold;
+    const weak = health.transitions.filter((item) => item.score < healthThreshold).sort((a, b) => a.score - b.score);
+    const healthDetail = weak.length
+      ? weak
+          .slice(0, 8)
+          .map(
+            (item) =>
+              `<button type="button" data-transition="${item.to}"><b>${item.from + 1} → ${item.to + 1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`,
+          )
+          .join('')
+      : healthAccepted
+        ? `<p>Health target met. No transitions fall below ${healthThreshold}.</p>`
+        : `<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes === 1 ? ' is' : 's are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;
+    $('#set-health').className =
+      `set-health ${healthAccepted ? 'good' : health.score >= healthThreshold - 10 ? 'fair' : 'weak'}`;
+    $('#set-health').innerHTML =
+      `<summary><strong>${health.score}</strong><span>Set health</span><small>${healthAccepted ? 'target met' : 'below target · regenerate required'} · target ${healthThreshold} · ${weak.length} transition${weak.length === 1 ? '' : 's'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}</small></summary><div>${healthDetail}</div>`;
+    $('#set-health')
+      .querySelectorAll('[data-transition]')
+      .forEach(
+        (button) =>
+          (button.onclick = () =>
+            document
+              .querySelector(`.set-track-card[data-index="${button.dataset.transition}"]`)
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' })),
+      );
+    ['#save-set', '#export-set-csv', '#export-set-m3u'].forEach((selector) => {
+      const button = $(selector);
+      button.disabled = !healthAccepted;
+      button.title = healthAccepted ? '' : `Set health must reach ${healthThreshold} before saving or exporting.`;
+    });
+    $('#set-track-list').innerHTML = state.plan
+      .map((track, index) => {
+        const transition = transitionExplanation(state.plan[index - 1], track);
+        const id = setTrackId(track);
+        const locked = state.lockedIds.has(id);
+        const selectionReasons = setSelectionExplanation(track, index, brief);
+        const preview = track._job?.id
+          ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
+          : '';
+        const review = trackReviewDraft.get(id) || {},
+          metrics = track._candidateMetrics || {};
+        const pairId = index ? `${setCatalogTrackId(state.plan[index - 1])}→${setCatalogTrackId(track)}` : '';
+        return `<article class="set-track-card${locked ? ' locked' : ''}" draggable="${locked ? 'false' : 'true'}" data-index="${index}"><span class="set-position">${index + 1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
+          track,
+        )
+          .map((role) => LIBRARY_ROLE_INFO[role]?.[0] || role)
+          .join(
+            ', ',
+          )}</span>${preview}</div><div class="set-track-meta"><strong>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended ? 'Extended edit available' : 'Original analyzed track'}${metrics.preferenceAdjustment ? ` · preference ${metrics.preferenceAdjustment > 0 ? '+' : ''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta > 0 ? '+' : ''}${metrics.rankDelta}` : ''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons
+          .map((reason) => {
+            const label = ['verified', 'estimated', 'ai-suggested'].includes(reason.kind)
+              ? `<em>${escapeHtml(reason.kind)}</em>`
+              : '';
+            return `<li data-reason="${reason.kind}">${label}${escapeHtml(reason.text)}</li>`;
+          })
+          .join(
+            '',
+          )}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision === 'accept' ? 'active' : ''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision === 'reject' ? 'active' : ''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">Find alternative</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
+      })
+      .join('');
     bindSetRows();
     bindCompactAudio($('#set-track-list'));
-    setSvgCurve('#set-energy-curve',state.plan.map(songEnergy),'#d6ff44');
-    setSvgCurve('#set-bpm-curve',state.plan.map(track => Number(track.bpm||0)),'#ffb45c');
+    setSvgCurve('#set-energy-curve', state.plan.map(songEnergy), '#d6ff44');
+    setSvgCurve(
+      '#set-bpm-curve',
+      state.plan.map((track) => Number(track.bpm || 0)),
+      '#ffb45c',
+    );
     const warnings = [];
-    state.plan.slice(1).forEach((track,index) => { const match=compatibility(state.plan[index],track); if(match.score<healthThreshold) { const weakest=Object.entries(match.components).sort((a,b)=>a[1]-b[1])[0]?.[0]||'compatibility';warnings.push(`Transition ${index+1} → ${index+2}: ${match.score}% is below the ${healthThreshold}% target; weakest area is ${weakest}${match.key==='distant key'?' with distant keys':''}.`); } if(setVocalProfile(state.plan[index])==='vocal-forward'&&setVocalProfile(track)==='vocal-forward') warnings.push(`Transition ${index+1} → ${index+2}: both tracks are vocal-forward; avoid overlapping verses.`); });
-    const serverWarnings=(currentPlanningReceipt?.warnings||[]).map(warning=>{const labels={'large-bpm-jump':'Large BPM jump','weak-key-transition':'Weak harmonic transition','vocal-collision':'Possible vocal collision','expanded-genre-match':'Expanded genre match'};return `${labels[warning.code]||warning.code}${warning.position?` at position ${warning.position}`:''}${warning.from&&warning.to?` · ${warning.from} → ${warning.to}`:''}.`;});warnings.push(...serverWarnings);
-    $('#set-warnings').innerHTML = warnings.length ? warnings.map(text=>`<p>${escapeHtml(text)}</p>`).join('') : `<p class="set-ready">Set health target ${healthThreshold} met with no transition warnings. Listen through the plan before performing it live.</p>`;
+    state.plan.slice(1).forEach((track, index) => {
+      const match = compatibility(state.plan[index], track);
+      if (match.score < healthThreshold) {
+        const weakest = Object.entries(match.components).sort((a, b) => a[1] - b[1])[0]?.[0] || 'compatibility';
+        warnings.push(
+          `Transition ${index + 1} → ${index + 2}: ${match.score}% is below the ${healthThreshold}% target; weakest area is ${weakest}${match.key === 'distant key' ? ' with distant keys' : ''}.`,
+        );
+      }
+      if (setVocalProfile(state.plan[index]) === 'vocal-forward' && setVocalProfile(track) === 'vocal-forward')
+        warnings.push(
+          `Transition ${index + 1} → ${index + 2}: both tracks are vocal-forward; avoid overlapping verses.`,
+        );
+    });
+    const serverWarnings = (currentPlanningReceipt?.warnings || []).map((warning) => {
+      const labels = {
+        'large-bpm-jump': 'Large BPM jump',
+        'weak-key-transition': 'Weak harmonic transition',
+        'vocal-collision': 'Possible vocal collision',
+        'expanded-genre-match': 'Expanded genre match',
+      };
+      return `${labels[warning.code] || warning.code}${warning.position ? ` at position ${warning.position}` : ''}${warning.from && warning.to ? ` · ${warning.from} → ${warning.to}` : ''}.`;
+    });
+    warnings.push(...serverWarnings);
+    $('#set-warnings').innerHTML = warnings.length
+      ? warnings.map((text) => `<p>${escapeHtml(text)}</p>`).join('')
+      : `<p class="set-ready">Set health target ${healthThreshold} met with no transition warnings. Listen through the plan before performing it live.</p>`;
   }
-  function moveSetTrack(from,to) { if(editCommands.move(from,to))updateSetHistoryButtons(); }
+  function moveSetTrack(from, to) {
+    if (editCommands.move(from, to)) updateSetHistoryButtons();
+  }
   function bindSetRows() {
     let dragging = null;
-    $$('.set-track-card').forEach(card => {
-      const index=Number(card.dataset.index);
-      card.querySelector('.set-move-up').onclick=()=>moveSetTrack(index,index-1); card.querySelector('.set-move-down').onclick=()=>moveSetTrack(index,index+1);
-      card.querySelector('.set-lock').onclick=()=>{pushSetHistory();const track=state.plan[index],id=setTrackId(track),locking=!state.lockedIds.has(id);locking?state.lockedIds.add(id):state.lockedIds.delete(id);if(locking)void recordPreference('lock',track);renderSetPlan();};
-      card.querySelector('.set-remove').onclick=()=>{pushSetHistory();const track=state.plan[index];state.lockedIds.delete(setTrackId(track));state.plan.splice(index,1);void recordPreference('remove',track);renderSetPlan();};
-      card.querySelector('.set-add-after').onclick=()=>addSetTrack(index+1,card);
-      card.querySelector('.set-alternative').onclick=()=>replaceSetTrack(index);
-      card.querySelector('.set-identity').onclick=()=>openTrackIdentityEditor(index,card);
-      card.querySelectorAll('[data-track-review]').forEach(button=>button.onclick=()=>{const track=state.plan[index],reason=card.querySelector('.set-reject-reason').value;trackReviewDraft.set(setTrackId(track),{decision:button.dataset.trackReview,reason:button.dataset.trackReview==='reject'?reason:''});renderSetPlan();});
-      const rejectReason=card.querySelector('.set-reject-reason');rejectReason.value=trackReviewDraft.get(setTrackId(state.plan[index]))?.reason||'';rejectReason.onchange=event=>{const track=state.plan[index],current=trackReviewDraft.get(setTrackId(track));if(current?.decision==='reject')trackReviewDraft.set(setTrackId(track),{...current,reason:event.currentTarget.value});};
-      const rating=card.querySelector('.set-transition-rating select');if(rating){rating.value=String(transitionReviewDraft.get(rating.dataset.pairId)||3);rating.onchange=event=>transitionReviewDraft.set(event.currentTarget.dataset.pairId,Number(event.currentTarget.value));}
-      card.querySelector('.set-audition')?.addEventListener('click',event=>auditionTransition(index,event.currentTarget));
-      card.querySelector('.edit-transition')?.addEventListener('click',()=>openTransitionEditor(index,card));
-      card.ondragstart=event=>{if(event.target.closest('input,select,button,audio,.transition-editor,.set-compact-audio')){event.preventDefault();return;}dragging=index;card.classList.add('dragging');}; card.ondragend=()=>card.classList.remove('dragging'); card.ondragover=event=>event.preventDefault(); card.ondrop=event=>{event.preventDefault();moveSetTrack(dragging,index);};
+    $$('.set-track-card').forEach((card) => {
+      const index = Number(card.dataset.index);
+      card.querySelector('.set-move-up').onclick = () => moveSetTrack(index, index - 1);
+      card.querySelector('.set-move-down').onclick = () => moveSetTrack(index, index + 1);
+      card.querySelector('.set-lock').onclick = () => {
+        pushSetHistory();
+        const track = state.plan[index],
+          id = setTrackId(track),
+          locking = !state.lockedIds.has(id);
+        locking ? state.lockedIds.add(id) : state.lockedIds.delete(id);
+        if (locking) void recordPreference('lock', track);
+        renderSetPlan();
+      };
+      card.querySelector('.set-remove').onclick = () => {
+        pushSetHistory();
+        const track = state.plan[index];
+        state.lockedIds.delete(setTrackId(track));
+        state.plan.splice(index, 1);
+        void recordPreference('remove', track);
+        renderSetPlan();
+      };
+      card.querySelector('.set-add-after').onclick = () => addSetTrack(index + 1, card);
+      card.querySelector('.set-alternative').onclick = () => replaceSetTrack(index);
+      card.querySelector('.set-identity').onclick = () => openTrackIdentityEditor(index, card);
+      card.querySelectorAll('[data-track-review]').forEach(
+        (button) =>
+          (button.onclick = () => {
+            const track = state.plan[index],
+              reason = card.querySelector('.set-reject-reason').value;
+            trackReviewDraft.set(setTrackId(track), {
+              decision: button.dataset.trackReview,
+              reason: button.dataset.trackReview === 'reject' ? reason : '',
+            });
+            renderSetPlan();
+          }),
+      );
+      const rejectReason = card.querySelector('.set-reject-reason');
+      rejectReason.value = trackReviewDraft.get(setTrackId(state.plan[index]))?.reason || '';
+      rejectReason.onchange = (event) => {
+        const track = state.plan[index],
+          current = trackReviewDraft.get(setTrackId(track));
+        if (current?.decision === 'reject')
+          trackReviewDraft.set(setTrackId(track), { ...current, reason: event.currentTarget.value });
+      };
+      const rating = card.querySelector('.set-transition-rating select');
+      if (rating) {
+        rating.value = String(transitionReviewDraft.get(rating.dataset.pairId) || 3);
+        rating.onchange = (event) =>
+          transitionReviewDraft.set(event.currentTarget.dataset.pairId, Number(event.currentTarget.value));
+      }
+      card
+        .querySelector('.set-audition')
+        ?.addEventListener('click', (event) => auditionTransition(index, event.currentTarget));
+      card.querySelector('.edit-transition')?.addEventListener('click', () => openTransitionEditor(index, card));
+      card.ondragstart = (event) => {
+        if (event.target.closest('input,select,button,audio,.transition-editor,.set-compact-audio')) {
+          event.preventDefault();
+          return;
+        }
+        dragging = index;
+        card.classList.add('dragging');
+      };
+      card.ondragend = () => card.classList.remove('dragging');
+      card.ondragover = (event) => event.preventDefault();
+      card.ondrop = (event) => {
+        event.preventDefault();
+        moveSetTrack(dragging, index);
+      };
     });
   }
-  function openTrackIdentityEditor(index,card){card.querySelector('.set-identity-editor')?.remove();const track=state.plan[index],host=document.createElement('section');host.className='set-identity-editor';host.innerHTML=descriptorEditorMarkup(track._descriptors||[]);card.append(host);const editor=host.querySelector('.track-descriptor-editor');editor.hidden=false;const close=()=>host.remove();editor.querySelector('.cancel-descriptors').onclick=close;editor.querySelector('.close-descriptor-editor').onclick=close;editor.querySelector('.infer-descriptors').onclick=async event=>{if(!track._downloadedId){notify('Catalog this track before inferring identity tags.','danger');return;}const action=event.currentTarget,original=action.textContent;action.disabled=true;action.textContent='Inferring…';try{await inferDescriptorEditor(editor,[track._downloadedId]);}catch(error){notify(error.message,'danger');}finally{action.disabled=false;action.textContent=original;}};editor.querySelector('.save-descriptors').onclick=async event=>{const action=event.currentTarget;action.disabled=true;action.textContent='Saving…';try{if(track._downloadedId){const result=await saveDescriptorEditor(editor,[track._downloadedId]);track._descriptors=result.values||[];track._manualIdentity=track._descriptors.map(item=>item.value);const store=identityStore();delete store[setTrackId(track)];localStorage.setItem(SET_IDENTITY_STORAGE_KEY,JSON.stringify(store));}else{const terms=[...editor.querySelectorAll('[data-descriptor-category]')].flatMap(input=>parseIdentityTerms(input.value));saveManualTrackIdentity(track,terms);}renderSetPlan();$('#set-builder-message').textContent=`Identity tags saved for ${track.source_name.replace(/\.[^.]+$/,'')} in the persistent track catalog.`;}catch(error){notify(error.message,'danger');action.disabled=false;action.textContent='Save changes';}};editor.querySelector('input')?.focus();}
-  function addSetTrack(insertIndex=state.plan.length, anchor=null) {
-    document.querySelectorAll('.set-add-track-panel').forEach(item=>item.remove());
-    const used=new Set(state.plan.map(setTrackId));const brief=setBrief();const previous=state.plan[insertIndex-1];const next=state.plan[insertIndex];
-    const available=state.library.filter(track=>!used.has(setTrackId(track))).map(track=>({track,score:setCandidateScore(track,previous,insertIndex,state.plan.length+1,brief)+(next?compatibility(track,next).score*.3:0)})).sort((a,b)=>b.score-a.score);
-    const panel=document.createElement('section');panel.className='set-alternative-panel set-add-track-panel';const genres=[...new Set(available.map(choice=>choice.track._genre).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-    panel.innerHTML=`<header><div><strong>${insertIndex>=state.plan.length?'Add a track to the end':`Add a track at position ${insertIndex+1}`}</strong><span>Search any unused song in your DJ Library.</span></div><button type="button" class="close-alternatives" aria-label="Close track browser">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map(genre=>`<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
-    const list=panel.querySelector('.set-alternative-list');const status=panel.querySelector('.set-alternative-status');
-    const renderChoices=()=>{const query=panel.querySelector('.alternative-search').value.trim().toLowerCase();const genre=panel.querySelector('.alternative-genre').value;const matches=available.filter(({track})=>{const haystack=`${track.source_name||''} ${track.artist||''} ${track._genre||''}`.toLowerCase();return (!query||haystack.includes(query))&&(!genre||track._genre===genre);});const choices=matches.slice(0,query||genre?30:5);status.textContent=`${matches.length} available track${matches.length===1?'':'s'} · showing ${choices.length}${query||genre?'':' best fits'}`;list.innerHTML=choices.length?choices.map((choice,choiceIndex)=>{const track=choice.track;const preview=track._job?.id?compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`,track.duration_seconds,true):'';return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</strong><span>${track.artist?`${escapeHtml(track.artist)} · `:''}${escapeHtml(track._genre)} · ${Number(track.bpm||0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">Add to set</button></article>`;}).join(''):'<p class="empty">No unused tracks match that search.</p>';list.querySelectorAll('.use-alternative').forEach(button=>button.onclick=()=>{const choice=choices[Number(button.closest('article').dataset.choice)];if(!choice)return;pushSetHistory();state.plan.splice(Math.min(insertIndex,state.plan.length),0,choice.track);void recordPreference('replace-in',choice.track);renderSetPlan();});bindCompactAudio(list);};
-    (anchor||$('#set-add-track-panel-host')).append(panel);panel.querySelector('.close-alternatives').onclick=()=>panel.remove();panel.querySelector('.alternative-search').oninput=renderChoices;panel.querySelector('.alternative-genre').onchange=renderChoices;renderChoices();panel.scrollIntoView({behavior:'smooth',block:'nearest'});panel.querySelector('.alternative-search').focus();
+  function openTrackIdentityEditor(index, card) {
+    card.querySelector('.set-identity-editor')?.remove();
+    const track = state.plan[index],
+      host = document.createElement('section');
+    host.className = 'set-identity-editor';
+    host.innerHTML = descriptorEditorMarkup(track._descriptors || []);
+    card.append(host);
+    const editor = host.querySelector('.track-descriptor-editor');
+    editor.hidden = false;
+    const close = () => host.remove();
+    editor.querySelector('.cancel-descriptors').onclick = close;
+    editor.querySelector('.close-descriptor-editor').onclick = close;
+    editor.querySelector('.infer-descriptors').onclick = async (event) => {
+      if (!track._downloadedId) {
+        notify('Catalog this track before inferring identity tags.', 'danger');
+        return;
+      }
+      const action = event.currentTarget,
+        original = action.textContent;
+      action.disabled = true;
+      action.textContent = 'Inferring…';
+      try {
+        await inferDescriptorEditor(editor, [track._downloadedId]);
+      } catch (error) {
+        notify(error.message, 'danger');
+      } finally {
+        action.disabled = false;
+        action.textContent = original;
+      }
+    };
+    editor.querySelector('.save-descriptors').onclick = async (event) => {
+      const action = event.currentTarget;
+      action.disabled = true;
+      action.textContent = 'Saving…';
+      try {
+        if (track._downloadedId) {
+          const result = await saveDescriptorEditor(editor, [track._downloadedId]);
+          track._descriptors = result.values || [];
+          track._manualIdentity = track._descriptors.map((item) => item.value);
+          const store = identityStore();
+          delete store[setTrackId(track)];
+          localStorage.setItem(SET_IDENTITY_STORAGE_KEY, JSON.stringify(store));
+        } else {
+          const terms = [...editor.querySelectorAll('[data-descriptor-category]')].flatMap((input) =>
+            parseIdentityTerms(input.value),
+          );
+          saveManualTrackIdentity(track, terms);
+        }
+        renderSetPlan();
+        $('#set-builder-message').textContent =
+          `Identity tags saved for ${track.source_name.replace(/\.[^.]+$/, '')} in the persistent track catalog.`;
+      } catch (error) {
+        notify(error.message, 'danger');
+        action.disabled = false;
+        action.textContent = 'Save changes';
+      }
+    };
+    editor.querySelector('input')?.focus();
+  }
+  function addSetTrack(insertIndex = state.plan.length, anchor = null) {
+    document.querySelectorAll('.set-add-track-panel').forEach((item) => item.remove());
+    const used = new Set(state.plan.map(setTrackId));
+    const brief = setBrief();
+    const previous = state.plan[insertIndex - 1];
+    const next = state.plan[insertIndex];
+    const available = state.library
+      .filter((track) => !used.has(setTrackId(track)))
+      .map((track) => ({
+        track,
+        score:
+          setCandidateScore(track, previous, insertIndex, state.plan.length + 1, brief) +
+          (next ? compatibility(track, next).score * 0.3 : 0),
+      }))
+      .sort((a, b) => b.score - a.score);
+    const panel = document.createElement('section');
+    panel.className = 'set-alternative-panel set-add-track-panel';
+    const genres = [...new Set(available.map((choice) => choice.track._genre).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    panel.innerHTML = `<header><div><strong>${insertIndex >= state.plan.length ? 'Add a track to the end' : `Add a track at position ${insertIndex + 1}`}</strong><span>Search any unused song in your DJ Library.</span></div><button type="button" class="close-alternatives" aria-label="Close track browser">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
+    const list = panel.querySelector('.set-alternative-list');
+    const status = panel.querySelector('.set-alternative-status');
+    const renderChoices = () => {
+      const query = panel.querySelector('.alternative-search').value.trim().toLowerCase();
+      const genre = panel.querySelector('.alternative-genre').value;
+      const matches = available.filter(({ track }) => {
+        const haystack = `${track.source_name || ''} ${track.artist || ''} ${track._genre || ''}`.toLowerCase();
+        return (!query || haystack.includes(query)) && (!genre || track._genre === genre);
+      });
+      const choices = matches.slice(0, query || genre ? 30 : 5);
+      status.textContent = `${matches.length} available track${matches.length === 1 ? '' : 's'} · showing ${choices.length}${query || genre ? '' : ' best fits'}`;
+      list.innerHTML = choices.length
+        ? choices
+            .map((choice, choiceIndex) => {
+              const track = choice.track;
+              const preview = track._job?.id
+                ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
+                : '';
+              return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">Add to set</button></article>`;
+            })
+            .join('')
+        : '<p class="empty">No unused tracks match that search.</p>';
+      list.querySelectorAll('.use-alternative').forEach(
+        (button) =>
+          (button.onclick = () => {
+            const choice = choices[Number(button.closest('article').dataset.choice)];
+            if (!choice) return;
+            pushSetHistory();
+            state.plan.splice(Math.min(insertIndex, state.plan.length), 0, choice.track);
+            void recordPreference('replace-in', choice.track);
+            renderSetPlan();
+          }),
+      );
+      bindCompactAudio(list);
+    };
+    (anchor || $('#set-add-track-panel-host')).append(panel);
+    panel.querySelector('.close-alternatives').onclick = () => panel.remove();
+    panel.querySelector('.alternative-search').oninput = renderChoices;
+    panel.querySelector('.alternative-genre').onchange = renderChoices;
+    renderChoices();
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    panel.querySelector('.alternative-search').focus();
   }
   function replaceSetTrack(index) {
-    const used=new Set(state.plan.map(setTrackId)); const brief=setBrief(); const previous=state.plan[index-1]; const next=state.plan[index+1];
-    const rankTrack=track=>({track,score:setCandidateScore(track,previous,index,state.plan.length,brief)+(next?compatibility(track,next).score*.3:0)});
-    const available=state.library.filter(track=>!used.has(setTrackId(track))).map(rankTrack).sort((a,b)=>b.score-a.score);
-    const recommendedIds=new Set(eligibleSetTracks(brief).filter(track=>!used.has(setTrackId(track))).map(setTrackId));
-    const card=$(`.set-track-card[data-index="${index}"]`);if(!card)return;card.querySelector('.set-alternative-panel')?.remove();
-    const panel=document.createElement('section');panel.className='set-alternative-panel';
-    const genres=[...new Set(available.map(choice=>choice.track._genre).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-    panel.innerHTML=`<header><div><strong>Replace this track</strong><span>Start with recommended matches or search your entire DJ Library.</span></div><button type="button" class="close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map(genre=>`<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
-    const list=panel.querySelector('.set-alternative-list');const status=panel.querySelector('.set-alternative-status');
-    const renderChoices=()=>{const query=panel.querySelector('.alternative-search').value.trim().toLowerCase();const genre=panel.querySelector('.alternative-genre').value;const searching=Boolean(query||genre);const matches=available.filter(choice=>{const track=choice.track;const haystack=`${track.source_name||''} ${track.artist||''} ${track._genre||''}`.toLowerCase();return (!query||haystack.includes(query))&&(!genre||track._genre===genre);});const choices=(searching?matches:matches.filter(choice=>recommendedIds.has(setTrackId(choice.track)))).slice(0,searching?30:5);status.textContent=searching?`${matches.length} matching unused track${matches.length===1?'':'s'} · showing ${choices.length}`:`${choices.length} recommended replacement${choices.length===1?'':'s'} · search to choose any track`;list.innerHTML=choices.length?choices.map((choice,choiceIndex)=>{const track=choice.track;const preview=track._job?.id?compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`,track.duration_seconds,true):'';return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</strong><span>${track.artist?`${escapeHtml(track.artist)} · `:''}${escapeHtml(track._genre)} · ${Number(track.bpm||0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">Use this track</button></article>`;}).join(''):'<p class="empty">No unused tracks match that search.</p>';list.querySelectorAll('.use-alternative').forEach(button=>button.onclick=()=>{const choice=choices[Number(button.closest('article').dataset.choice)];if(!choice)return;pushSetHistory();const replaced=state.plan[index];state.lockedIds.delete(setTrackId(replaced));state.plan[index]=choice.track;void recordPreference('replace-out',replaced);void recordPreference('replace-in',choice.track);renderSetPlan();});bindCompactAudio(list);};
-    card.append(panel);panel.querySelector('.close-alternatives').onclick=()=>panel.remove();panel.querySelector('.alternative-search').oninput=renderChoices;panel.querySelector('.alternative-genre').onchange=renderChoices;renderChoices();panel.scrollIntoView({behavior:'smooth',block:'nearest'});panel.querySelector('.alternative-search').focus();
+    const used = new Set(state.plan.map(setTrackId));
+    const brief = setBrief();
+    const previous = state.plan[index - 1];
+    const next = state.plan[index + 1];
+    const rankTrack = (track) => ({
+      track,
+      score:
+        setCandidateScore(track, previous, index, state.plan.length, brief) +
+        (next ? compatibility(track, next).score * 0.3 : 0),
+    });
+    const available = state.library
+      .filter((track) => !used.has(setTrackId(track)))
+      .map(rankTrack)
+      .sort((a, b) => b.score - a.score);
+    const recommendedIds = new Set(
+      eligibleSetTracks(brief)
+        .filter((track) => !used.has(setTrackId(track)))
+        .map(setTrackId),
+    );
+    const card = $(`.set-track-card[data-index="${index}"]`);
+    if (!card) return;
+    card.querySelector('.set-alternative-panel')?.remove();
+    const panel = document.createElement('section');
+    panel.className = 'set-alternative-panel';
+    const genres = [...new Set(available.map((choice) => choice.track._genre).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b),
+    );
+    panel.innerHTML = `<header><div><strong>Replace this track</strong><span>Start with recommended matches or search your entire DJ Library.</span></div><button type="button" class="close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
+    const list = panel.querySelector('.set-alternative-list');
+    const status = panel.querySelector('.set-alternative-status');
+    const renderChoices = () => {
+      const query = panel.querySelector('.alternative-search').value.trim().toLowerCase();
+      const genre = panel.querySelector('.alternative-genre').value;
+      const searching = Boolean(query || genre);
+      const matches = available.filter((choice) => {
+        const track = choice.track;
+        const haystack = `${track.source_name || ''} ${track.artist || ''} ${track._genre || ''}`.toLowerCase();
+        return (!query || haystack.includes(query)) && (!genre || track._genre === genre);
+      });
+      const choices = (
+        searching ? matches : matches.filter((choice) => recommendedIds.has(setTrackId(choice.track)))
+      ).slice(0, searching ? 30 : 5);
+      status.textContent = searching
+        ? `${matches.length} matching unused track${matches.length === 1 ? '' : 's'} · showing ${choices.length}`
+        : `${choices.length} recommended replacement${choices.length === 1 ? '' : 's'} · search to choose any track`;
+      list.innerHTML = choices.length
+        ? choices
+            .map((choice, choiceIndex) => {
+              const track = choice.track;
+              const preview = track._job?.id
+                ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
+                : '';
+              return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">Use this track</button></article>`;
+            })
+            .join('')
+        : '<p class="empty">No unused tracks match that search.</p>';
+      list.querySelectorAll('.use-alternative').forEach(
+        (button) =>
+          (button.onclick = () => {
+            const choice = choices[Number(button.closest('article').dataset.choice)];
+            if (!choice) return;
+            pushSetHistory();
+            const replaced = state.plan[index];
+            state.lockedIds.delete(setTrackId(replaced));
+            state.plan[index] = choice.track;
+            void recordPreference('replace-out', replaced);
+            void recordPreference('replace-in', choice.track);
+            renderSetPlan();
+          }),
+      );
+      bindCompactAudio(list);
+    };
+    card.append(panel);
+    panel.querySelector('.close-alternatives').onclick = () => panel.remove();
+    panel.querySelector('.alternative-search').oninput = renderChoices;
+    panel.querySelector('.alternative-genre').onchange = renderChoices;
+    renderChoices();
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    panel.querySelector('.alternative-search').focus();
   }
-  function cachedSavedSets() { try{return JSON.parse(localStorage.getItem(SET_STORAGE_KEY)||'[]');}catch(_){return [];} } function savedSets() { return savedSetRecords; }
-  function cacheSavedSets(sets) { savedSetRecords=sets;localStorage.setItem(SET_STORAGE_KEY,JSON.stringify(sets));renderSavedSets(); } async function loadSavedSets() { const legacy=cachedSavedSets(),needsMigration=localStorage.getItem(SET_STORAGE_MIGRATION_KEY)!=='true';try{let result=await setBuilderApi.savedSets();if(needsMigration&&legacy.length)result=(await setBuilderApi.migrateSavedSets(legacy)).document;savedSetRecords=result.sets||[];localStorage.setItem(SET_STORAGE_KEY,JSON.stringify(savedSetRecords));localStorage.setItem(SET_STORAGE_MIGRATION_KEY,'true');}catch(error){savedSetRecords=legacy;console.warn('Durable saved sets unavailable; using browser recovery cache:',error);} }
-  function renderSavedSets() { const select=$('#saved-set-select'); const current=select.value; const sets=savedSets(); select.replaceChildren(option('','Choose a saved set'),...sets.map(set=>option(set.id,`${set.name} · ${set.tracks.length} tracks`))); select.value=sets.some(set=>set.id===current)?current:''; }
-  async function saveCurrentSet() { if(!state.plan.length)return;const button=$('#save-set'); const sets=[...savedSets()]; const id=$('#saved-set-select').value||String(Date.now()); const record={id,name:setBrief().name,brief:setBrief(),planningMode:$('#set-planning-mode').value,planningReceipt:currentPlanningReceipt,tracks:state.plan.map(setTrackId),trackDetails:state.plan.map(track=>({id:setTrackId(track),source_name:track.source_name,artist:track.artist||'',genre:track._genre,bpm:Number(track.bpm||0),key:track.key||'',selectionReason:track._aiSelectionReason||null,sectionId:track._planSectionId||null})),transitions:structuredClone(state.transitionSettings),locked:[...state.lockedIds],required:[...state.requiredIds],excluded:[...state.excludedIds],updatedAt:new Date().toISOString()};button.disabled=true;button.textContent='Saving…';try{await setBuilderApi.saveSet(record);const existing=sets.findIndex(set=>set.id===id);existing>=0?sets.splice(existing,1,record):sets.unshift(record);cacheSavedSets(sets);void recordPreference('save',state.plan);$('#saved-set-select').value=id;const entries=setM3uEntries();try{const result=await setBuilderApi.savePlaylist({name:record.name,tracks:entries.map(({track,path})=>({path,title:`${track.artist?`${track.artist} - `:''}${track.source_name.replace(/\.[^.]+$/,'')}`,duration_seconds:Number(track.duration_seconds||0)}))});$('#set-builder-message').textContent=`Set saved durably · playlist written to ${result.path}`;}catch(error){$('#set-builder-message').textContent=`Set saved durably and will survive restart. The optional playlist file needs attention: ${error.message||error}`;}}catch(error){$('#set-builder-message').textContent=`Set was not saved: ${error.message||error}`;notify('The set could not be saved. Your current draft remains open.','danger');}finally{button.disabled=false;button.textContent='Save set';} }
-  function recoveryScore(candidate,detail,previous) { const wanted=String(detail?.source_name||detail?.id||'').toLowerCase().replace(/\.[^.]+$/,'');const words=wanted.split(/\W+/).filter(word=>word.length>2);const haystack=`${candidate.source_name} ${candidate.artist||''}`.toLowerCase();const titleScore=words.length?words.filter(word=>haystack.includes(word)).length/words.length*45:0;const genreScore=detail?.genre&&trackMatchesSetGenre(candidate,detail.genre)?25:0;const bpmScore=detail?.bpm?Math.max(0,20-Math.abs(Number(candidate.bpm||0)-Number(detail.bpm))):0;return titleScore+genreScore+bpmScore+(previous?compatibility(previous,candidate).score*.15:0); }
+  function cachedSavedSets() {
+    try {
+      return JSON.parse(localStorage.getItem(SET_STORAGE_KEY) || '[]');
+    } catch (_) {
+      return [];
+    }
+  }
+  function savedSets() {
+    return savedSetRecords;
+  }
+  function cacheSavedSets(sets) {
+    savedSetRecords = sets;
+    localStorage.setItem(SET_STORAGE_KEY, JSON.stringify(sets));
+    renderSavedSets();
+  }
+  async function loadSavedSets() {
+    const legacy = cachedSavedSets(),
+      needsMigration = localStorage.getItem(SET_STORAGE_MIGRATION_KEY) !== 'true';
+    try {
+      let result = await setBuilderApi.savedSets();
+      if (needsMigration && legacy.length) result = (await setBuilderApi.migrateSavedSets(legacy)).document;
+      savedSetRecords = result.sets || [];
+      localStorage.setItem(SET_STORAGE_KEY, JSON.stringify(savedSetRecords));
+      localStorage.setItem(SET_STORAGE_MIGRATION_KEY, 'true');
+    } catch (error) {
+      savedSetRecords = legacy;
+      console.warn('Durable saved sets unavailable; using browser recovery cache:', error);
+    }
+  }
+  function renderSavedSets() {
+    const select = $('#saved-set-select');
+    const current = select.value;
+    const sets = savedSets();
+    select.replaceChildren(
+      option('', 'Choose a saved set'),
+      ...sets.map((set) => option(set.id, `${set.name} · ${set.tracks.length} tracks`)),
+    );
+    select.value = sets.some((set) => set.id === current) ? current : '';
+  }
+  async function saveCurrentSet() {
+    if (!state.plan.length) return;
+    const button = $('#save-set');
+    const sets = [...savedSets()];
+    const id = $('#saved-set-select').value || String(Date.now());
+    const record = {
+      id,
+      name: setBrief().name,
+      brief: setBrief(),
+      planningMode: $('#set-planning-mode').value,
+      planningReceipt: currentPlanningReceipt,
+      tracks: state.plan.map(setTrackId),
+      trackDetails: state.plan.map((track) => ({
+        id: setTrackId(track),
+        source_name: track.source_name,
+        artist: track.artist || '',
+        genre: track._genre,
+        bpm: Number(track.bpm || 0),
+        key: track.key || '',
+        selectionReason: track._aiSelectionReason || null,
+        sectionId: track._planSectionId || null,
+      })),
+      transitions: structuredClone(state.transitionSettings),
+      locked: [...state.lockedIds],
+      required: [...state.requiredIds],
+      excluded: [...state.excludedIds],
+      updatedAt: new Date().toISOString(),
+    };
+    button.disabled = true;
+    button.textContent = 'Saving…';
+    try {
+      await setBuilderApi.saveSet(record);
+      const existing = sets.findIndex((set) => set.id === id);
+      existing >= 0 ? sets.splice(existing, 1, record) : sets.unshift(record);
+      cacheSavedSets(sets);
+      void recordPreference('save', state.plan);
+      $('#saved-set-select').value = id;
+      const entries = setM3uEntries();
+      try {
+        const result = await setBuilderApi.savePlaylist({
+          name: record.name,
+          tracks: entries.map(({ track, path }) => ({
+            path,
+            title: `${track.artist ? `${track.artist} - ` : ''}${track.source_name.replace(/\.[^.]+$/, '')}`,
+            duration_seconds: Number(track.duration_seconds || 0),
+          })),
+        });
+        $('#set-builder-message').textContent = `Set saved durably · playlist written to ${result.path}`;
+      } catch (error) {
+        $('#set-builder-message').textContent =
+          `Set saved durably and will survive restart. The optional playlist file needs attention: ${error.message || error}`;
+      }
+    } catch (error) {
+      $('#set-builder-message').textContent = `Set was not saved: ${error.message || error}`;
+      notify('The set could not be saved. Your current draft remains open.', 'danger');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Save set';
+    }
+  }
+  function recoveryScore(candidate, detail, previous) {
+    const wanted = String(detail?.source_name || detail?.id || '')
+      .toLowerCase()
+      .replace(/\.[^.]+$/, '');
+    const words = wanted.split(/\W+/).filter((word) => word.length > 2);
+    const haystack = `${candidate.source_name} ${candidate.artist || ''}`.toLowerCase();
+    const titleScore = words.length ? (words.filter((word) => haystack.includes(word)).length / words.length) * 45 : 0;
+    const genreScore = detail?.genre && trackMatchesSetGenre(candidate, detail.genre) ? 25 : 0;
+    const bpmScore = detail?.bpm ? Math.max(0, 20 - Math.abs(Number(candidate.bpm || 0) - Number(detail.bpm))) : 0;
+    return titleScore + genreScore + bpmScore + (previous ? compatibility(previous, candidate).score * 0.15 : 0);
+  }
   async function loadSavedSet(record) {
-    if(!record)return;const byId=new Map(state.library.map(track=>[setTrackId(track),track]));const brief=record.brief||{};
-    Object.entries(brief).forEach(([key,value])=>{if(['genres','detailedGenres','excludedGenres','genreWeights','identity'].includes(key))return;const element=$(`#set-${key.replace(/[A-Z]/g,letter=>`-${letter.toLowerCase()}`)}`);if(element&&value!==Infinity&&!Array.isArray(value))element.value=value;});
-    const savedIdentity=brief.identity||interpretSetIntention('');$('#set-intention').value=savedIdentity.text||'';if(savedIdentity.text||savedIdentity.required?.length||savedIdentity.preferred?.length||savedIdentity.avoided?.length)applyIntentionInterpretation(savedIdentity,{announce:false});else $('#set-intention-interpretation').hidden=true;
-    const savedGenres=brief.genres||(brief.genre&&brief.genre!=='all'?[brief.genre]:[]);[...$('#set-genre').options].forEach(option=>{option.selected=savedGenres.length?savedGenres.includes(option.value):option.value==='all';});populateSetDetailedGenres(brief.detailedGenres||[]);[...$('#set-excluded-genres').options].forEach(option=>{option.selected=(brief.excludedGenres||[]).includes(option.value);});state.genreSelectionOrder=[...savedGenres];renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();Object.entries(brief.genreWeights||{}).forEach(([genre,value])=>{const input=[...$('#set-genre-weights').querySelectorAll('input')].find(item=>item.dataset.genre===genre);if(input)input.value=value;});$('#set-genre').dispatchEvent(new Event('change',{bubbles:true}));$('#set-detailed-genres').dispatchEvent(new Event('change',{bubbles:true}));$('#set-excluded-genres').dispatchEvent(new Event('change',{bubbles:true}));
-    const details=new Map((record.trackDetails||[]).map(item=>[item.id,item]));const used=new Set();const recoveredPlan=[];let recovered=0;
-    (record.tracks||[]).forEach(id=>{let track=byId.get(id);if(!track){track=state.library.filter(candidate=>!used.has(setTrackId(candidate))).map(candidate=>({candidate,score:recoveryScore(candidate,details.get(id)||{id},recoveredPlan.at(-1))})).sort((a,b)=>b.score-a.score)[0]?.candidate;if(track)recovered+=1;}if(track){const detail=details.get(id);track._aiSelectionReason=detail?.selectionReason||null;track._planSectionId=detail?.sectionId||null;used.add(setTrackId(track));recoveredPlan.push(track);}});
-    state.plan=recoveredPlan;currentPlanningReceipt=record.planningReceipt||null;$('#set-planning-mode').value=record.planningMode||'classic';state.lockedIds=new Set(record.locked||[]);state.requiredIds=new Set(record.required||[]);state.excludedIds=new Set(record.excluded||[]);state.transitionSettings=record.transitions||{};state.proposals=[];state.activeProposal='';state.history=[];state.future=[];renderSetRules();const optimized=await autoOptimizeSetTransitions();renderSetPlan();$('#set-builder-message').textContent=(recovered?`Loaded set and recovered ${recovered} unavailable track${recovered===1?'':'s'} with the closest Library matches.`:'Saved set loaded with every track available.')+(optimized?` Optimized ${optimized} transition${optimized===1?'':'s'} that previously used defaults.`:'');
+    if (!record) return;
+    const byId = new Map(state.library.map((track) => [setTrackId(track), track]));
+    const brief = record.brief || {};
+    Object.entries(brief).forEach(([key, value]) => {
+      if (['genres', 'detailedGenres', 'excludedGenres', 'genreWeights', 'identity'].includes(key)) return;
+      const element = $(`#set-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`);
+      if (element && value !== Infinity && !Array.isArray(value)) element.value = value;
+    });
+    const savedIdentity = brief.identity || interpretSetIntention('');
+    $('#set-intention').value = savedIdentity.text || '';
+    if (
+      savedIdentity.text ||
+      savedIdentity.required?.length ||
+      savedIdentity.preferred?.length ||
+      savedIdentity.avoided?.length
+    )
+      applyIntentionInterpretation(savedIdentity, { announce: false });
+    else $('#set-intention-interpretation').hidden = true;
+    const savedGenres = brief.genres || (brief.genre && brief.genre !== 'all' ? [brief.genre] : []);
+    [...$('#set-genre').options].forEach((option) => {
+      option.selected = savedGenres.length ? savedGenres.includes(option.value) : option.value === 'all';
+    });
+    populateSetDetailedGenres(brief.detailedGenres || []);
+    [...$('#set-excluded-genres').options].forEach((option) => {
+      option.selected = (brief.excludedGenres || []).includes(option.value);
+    });
+    state.genreSelectionOrder = [...savedGenres];
+    renderSetGenreMix();
+    renderSetDetailedGenres();
+    renderExcludedSetGenres();
+    Object.entries(brief.genreWeights || {}).forEach(([genre, value]) => {
+      const input = [...$('#set-genre-weights').querySelectorAll('input')].find((item) => item.dataset.genre === genre);
+      if (input) input.value = value;
+    });
+    $('#set-genre').dispatchEvent(new Event('change', { bubbles: true }));
+    $('#set-detailed-genres').dispatchEvent(new Event('change', { bubbles: true }));
+    $('#set-excluded-genres').dispatchEvent(new Event('change', { bubbles: true }));
+    const details = new Map((record.trackDetails || []).map((item) => [item.id, item]));
+    const used = new Set();
+    const recoveredPlan = [];
+    let recovered = 0;
+    (record.tracks || []).forEach((id) => {
+      let track = byId.get(id);
+      if (!track) {
+        track = state.library
+          .filter((candidate) => !used.has(setTrackId(candidate)))
+          .map((candidate) => ({
+            candidate,
+            score: recoveryScore(candidate, details.get(id) || { id }, recoveredPlan.at(-1)),
+          }))
+          .sort((a, b) => b.score - a.score)[0]?.candidate;
+        if (track) recovered += 1;
+      }
+      if (track) {
+        const detail = details.get(id);
+        track._aiSelectionReason = detail?.selectionReason || null;
+        track._planSectionId = detail?.sectionId || null;
+        used.add(setTrackId(track));
+        recoveredPlan.push(track);
+      }
+    });
+    state.plan = recoveredPlan;
+    currentPlanningReceipt = record.planningReceipt || null;
+    $('#set-planning-mode').value = record.planningMode || 'classic';
+    state.lockedIds = new Set(record.locked || []);
+    state.requiredIds = new Set(record.required || []);
+    state.excludedIds = new Set(record.excluded || []);
+    state.transitionSettings = record.transitions || {};
+    state.proposals = [];
+    state.activeProposal = '';
+    state.history = [];
+    state.future = [];
+    renderSetRules();
+    const optimized = await autoOptimizeSetTransitions();
+    renderSetPlan();
+    $('#set-builder-message').textContent =
+      (recovered
+        ? `Loaded set and recovered ${recovered} unavailable track${recovered === 1 ? '' : 's'} with the closest Library matches.`
+        : 'Saved set loaded with every track available.') +
+      (optimized
+        ? ` Optimized ${optimized} transition${optimized === 1 ? '' : 's'} that previously used defaults.`
+        : '');
   }
-  function downloadSetText(filename,text,type='text/plain') { const url=URL.createObjectURL(new Blob([text],{type}));const link=document.createElement('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000); }
-  function safeSetFilename() { return (setBrief().name||'DJ Set').replace(/[^\w .-]+/g,'').trim()||'DJ Set'; }
-  function exportSetCsv() { const rows=[['Position','Track','BPM','Key','Camelot','Energy','Genre','Roles','Transition Match','Mix In','Mix Out','Transition Bars','Fade Curve','Technique','Tempo Sync','Transition Notes']];state.plan.forEach((track,index)=>{const match=index?compatibility(state.plan[index-1],track):null;const settings=index?transitionSettings(index):{};rows.push([index+1,track.source_name,Number(track.bpm||0).toFixed(1),track.key||'',camelotKey(track.key),energyBand(songEnergy(track)),track._genre,libraryRoles(track).join('; '),match?.score??'',index?settings.mixIn:(track.mix_in??''),index?settings.mixOut:(track.mix_out??''),settings.bars||'',settings.curve||'',settings.technique||'',index?(settings.tempoSync?'yes':'no'):'',settings.notes||'']);});downloadSetText(`${safeSetFilename()}.csv`,rows.map(row=>row.map(value=>`"${String(value).replaceAll('"','""')}"`).join(',')).join('\n'),'text/csv');void recordPreference('export',state.plan); }
-  function setM3uEntries() { const preference=setBrief().edits;return state.plan.map(track=>{const extended=track._hasExtended?track._job?.extended_path:'';const original=track._libraryPath||track._job?.library_path||track.file_path||track.wav_path||track._job?.wav_path||track.output_path;return {track,path:preference==='original'?original:(extended||original)};}); }
-  function downloadSetM3uEntries(entries) { const lines=['#EXTM3U',...entries.flatMap(({track,path})=>[`#EXTINF:${Math.round(track.duration_seconds||0)},${track.artist?`${track.artist} - `:''}${track.source_name.replace(/\.[^.]+$/,'')}`,path])];downloadSetText(`${safeSetFilename()}.m3u8`,lines.join('\r\n'),'audio/x-mpegurl;charset=utf-8');void recordPreference('export',entries.map(entry=>entry.track)); }
-  async function exportSetM3u() { const button=$('#export-set-m3u');const status=$('#set-export-status');const entries=setM3uEntries();button.disabled=true;button.textContent='Checking paths…';status.className='set-export-status checking';status.innerHTML=`<span>Checking ${entries.length} tracks on disk…</span>`;try{const result=await setBuilderApi.exportPreflight(entries.map(entry=>entry.path||''));const validEntries=entries.filter((entry,index)=>result.items[index]?.exists);if(result.ready){status.className='set-export-status ready';status.innerHTML=`<strong>Ready for Rekordbox: ${result.valid}/${result.total} tracks</strong><span>All audio files were found. Downloading the playlist now.</span>`;downloadSetM3uEntries(validEntries);}else{const missing=entries.filter((entry,index)=>!result.items[index]?.exists);status.className='set-export-status warning';status.innerHTML=`<strong>${result.missing} of ${result.total} tracks need attention</strong><span>The playlist was not downloaded because these files are unavailable:</span><ul>${missing.map(({track,path})=>`<li><b>${escapeHtml(track.source_name.replace(/\.[^.]+$/,''))}</b><small>${escapeHtml(path||'No file path')}</small></li>`).join('')}</ul>${validEntries.length?'<button type="button" class="button secondary export-valid-only">Export valid tracks only</button>':''}`;status.querySelector('.export-valid-only')?.addEventListener('click',()=>downloadSetM3uEntries(validEntries));}}catch(error){status.className='set-export-status warning';status.innerHTML=`<strong>Could not validate the playlist</strong><span>${escapeHtml(error.message||String(error))}</span>`;}finally{button.disabled=false;button.textContent='Export M3U8';} }
+  function downloadSetText(filename, text, type = 'text/plain') {
+    const url = URL.createObjectURL(new Blob([text], { type }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function safeSetFilename() {
+    return (setBrief().name || 'DJ Set').replace(/[^\w .-]+/g, '').trim() || 'DJ Set';
+  }
+  function exportSetCsv() {
+    const rows = [
+      [
+        'Position',
+        'Track',
+        'BPM',
+        'Key',
+        'Camelot',
+        'Energy',
+        'Genre',
+        'Roles',
+        'Transition Match',
+        'Mix In',
+        'Mix Out',
+        'Transition Bars',
+        'Fade Curve',
+        'Technique',
+        'Tempo Sync',
+        'Transition Notes',
+      ],
+    ];
+    state.plan.forEach((track, index) => {
+      const match = index ? compatibility(state.plan[index - 1], track) : null;
+      const settings = index ? transitionSettings(index) : {};
+      rows.push([
+        index + 1,
+        track.source_name,
+        Number(track.bpm || 0).toFixed(1),
+        track.key || '',
+        camelotKey(track.key),
+        energyBand(songEnergy(track)),
+        track._genre,
+        libraryRoles(track).join('; '),
+        match?.score ?? '',
+        index ? settings.mixIn : (track.mix_in ?? ''),
+        index ? settings.mixOut : (track.mix_out ?? ''),
+        settings.bars || '',
+        settings.curve || '',
+        settings.technique || '',
+        index ? (settings.tempoSync ? 'yes' : 'no') : '',
+        settings.notes || '',
+      ]);
+    });
+    downloadSetText(
+      `${safeSetFilename()}.csv`,
+      rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n'),
+      'text/csv',
+    );
+    void recordPreference('export', state.plan);
+  }
+  function setM3uEntries() {
+    const preference = setBrief().edits;
+    return state.plan.map((track) => {
+      const extended = track._hasExtended ? track._job?.extended_path : '';
+      const original =
+        track._libraryPath ||
+        track._job?.library_path ||
+        track.file_path ||
+        track.wav_path ||
+        track._job?.wav_path ||
+        track.output_path;
+      return { track, path: preference === 'original' ? original : extended || original };
+    });
+  }
+  function downloadSetM3uEntries(entries) {
+    const lines = [
+      '#EXTM3U',
+      ...entries.flatMap(({ track, path }) => [
+        `#EXTINF:${Math.round(track.duration_seconds || 0)},${track.artist ? `${track.artist} - ` : ''}${track.source_name.replace(/\.[^.]+$/, '')}`,
+        path,
+      ]),
+    ];
+    downloadSetText(`${safeSetFilename()}.m3u8`, lines.join('\r\n'), 'audio/x-mpegurl;charset=utf-8');
+    void recordPreference(
+      'export',
+      entries.map((entry) => entry.track),
+    );
+  }
+  async function exportSetM3u() {
+    const button = $('#export-set-m3u');
+    const status = $('#set-export-status');
+    const entries = setM3uEntries();
+    button.disabled = true;
+    button.textContent = 'Checking paths…';
+    status.className = 'set-export-status checking';
+    status.innerHTML = `<span>Checking ${entries.length} tracks on disk…</span>`;
+    try {
+      const result = await setBuilderApi.exportPreflight(entries.map((entry) => entry.path || ''));
+      const validEntries = entries.filter((entry, index) => result.items[index]?.exists);
+      if (result.ready) {
+        status.className = 'set-export-status ready';
+        status.innerHTML = `<strong>Ready for Rekordbox: ${result.valid}/${result.total} tracks</strong><span>All audio files were found. Downloading the playlist now.</span>`;
+        downloadSetM3uEntries(validEntries);
+      } else {
+        const missing = entries.filter((entry, index) => !result.items[index]?.exists);
+        status.className = 'set-export-status warning';
+        status.innerHTML = `<strong>${result.missing} of ${result.total} tracks need attention</strong><span>The playlist was not downloaded because these files are unavailable:</span><ul>${missing.map(({ track, path }) => `<li><b>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</b><small>${escapeHtml(path || 'No file path')}</small></li>`).join('')}</ul>${validEntries.length ? '<button type="button" class="button secondary export-valid-only">Export valid tracks only</button>' : ''}`;
+        status
+          .querySelector('.export-valid-only')
+          ?.addEventListener('click', () => downloadSetM3uEntries(validEntries));
+      }
+    } catch (error) {
+      status.className = 'set-export-status warning';
+      status.innerHTML = `<strong>Could not validate the playlist</strong><span>${escapeHtml(error.message || String(error))}</span>`;
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Export M3U8';
+    }
+  }
   async function loadSetBuilder() {
     refreshIntentionProviderStatus();
     await loadPreferenceProfile();
     await loadSetReviewReport();
     await loadAIObservability();
-    const catalog=await setBuilderApi.catalog();
-    const identities=identityStore();state.library=(catalog.tracks||[]).map(item=>{const song=item.analysis||{};const job=item.job||{};const hasExtended=Boolean(job.extended_path)&&!JSON.parse(job.config_json||'{}').analysis_only;const preferred=$('#set-edits').value;const libraryPath=job.library_path||song.file_path||song.wav_path||job.wav_path;const track={...song,_job:job,_genre:item.genre||song.detected_style||'Other',_detailedGenre:item.detailed_genre||'',_hasExtended:hasExtended,_libraryPath:libraryPath,_selectedPath:preferred==='original'?libraryPath:(hasExtended?job.extended_path:libraryPath),_downloadedId:item.downloaded_id||null,_descriptors:item.descriptors||[]};track._manualIdentity=[...new Set([...(track._descriptors||[]).map(descriptor=>descriptor.value),...(identities[setTrackId(track)]||[])])];return track;});
-    const names=state.library.slice().sort((a,b)=>a.source_name.localeCompare(b.source_name)); const trackOptions=names.map(track=>option(setTrackId(track),track.source_name.replace(/\.[^.]+$/,''))); $('#set-required').replaceChildren(option('','Choose a track'),...trackOptions.map(item=>item.cloneNode(true)));$('#set-excluded').replaceChildren(option('','Choose a track'),...trackOptions);
-    const leafGenres=[...new Set(state.library.map(track=>track._genre))].sort();const genre=$('#set-genre');const excluded=$('#set-excluded-genres');const current=selectedSetGenres();const currentDetailed=selectedSetDetailedGenres();const currentExcluded=selectedExcludedSetGenres();const choices=new Map();leafGenres.forEach(name=>{const parts=name.split(' / ');for(let index=1;index<parts.length;index+=1){const parent=parts.slice(0,index).join(' / ');choices.set(parent,`All ${parent}`);}choices.set(name,name);});const sortedChoices=[...choices].sort((a,b)=>a[0].localeCompare(b[0]));genre.replaceChildren(option('all','Any parent genre'),...sortedChoices.map(([value,label])=>option(value,label)));excluded.replaceChildren(...sortedChoices.map(([value,label])=>option(value,label)));[...genre.options].forEach(item=>{item.selected=current.length?current.includes(item.value):item.value==='all';});populateSetDetailedGenres(currentDetailed);[...excluded.options].forEach(item=>{item.selected=currentExcluded.includes(item.value);});if(current.length)state.genreSelectionOrder=state.genreSelectionOrder.filter(value=>current.includes(value)).concat(current.filter(value=>!state.genreSelectionOrder.includes(value)));
-    await loadSavedSets();bindSetBuilder();renderFallbackPolicy();renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();renderSavedSets();renderSetRules();if(state.plan.length)renderSetPlan();
+    const catalog = await setBuilderApi.catalog();
+    const identities = identityStore();
+    state.library = (catalog.tracks || []).map((item) => {
+      const song = item.analysis || {};
+      const job = item.job || {};
+      const hasExtended = Boolean(job.extended_path) && !JSON.parse(job.config_json || '{}').analysis_only;
+      const preferred = $('#set-edits').value;
+      const libraryPath = job.library_path || song.file_path || song.wav_path || job.wav_path;
+      const track = {
+        ...song,
+        _job: job,
+        _genre: item.genre || song.detected_style || 'Other',
+        _detailedGenre: item.detailed_genre || '',
+        _hasExtended: hasExtended,
+        _libraryPath: libraryPath,
+        _selectedPath: preferred === 'original' ? libraryPath : hasExtended ? job.extended_path : libraryPath,
+        _downloadedId: item.downloaded_id || null,
+        _descriptors: item.descriptors || [],
+      };
+      track._manualIdentity = [
+        ...new Set([
+          ...(track._descriptors || []).map((descriptor) => descriptor.value),
+          ...(identities[setTrackId(track)] || []),
+        ]),
+      ];
+      return track;
+    });
+    const names = state.library.slice().sort((a, b) => a.source_name.localeCompare(b.source_name));
+    const trackOptions = names.map((track) => option(setTrackId(track), track.source_name.replace(/\.[^.]+$/, '')));
+    $('#set-required').replaceChildren(
+      option('', 'Choose a track'),
+      ...trackOptions.map((item) => item.cloneNode(true)),
+    );
+    $('#set-excluded').replaceChildren(option('', 'Choose a track'), ...trackOptions);
+    const leafGenres = [...new Set(state.library.map((track) => track._genre))].sort();
+    const genre = $('#set-genre');
+    const excluded = $('#set-excluded-genres');
+    const current = selectedSetGenres();
+    const currentDetailed = selectedSetDetailedGenres();
+    const currentExcluded = selectedExcludedSetGenres();
+    const choices = new Map();
+    leafGenres.forEach((name) => {
+      const parts = name.split(' / ');
+      for (let index = 1; index < parts.length; index += 1) {
+        const parent = parts.slice(0, index).join(' / ');
+        choices.set(parent, `All ${parent}`);
+      }
+      choices.set(name, name);
+    });
+    const sortedChoices = [...choices].sort((a, b) => a[0].localeCompare(b[0]));
+    genre.replaceChildren(
+      option('all', 'Any parent genre'),
+      ...sortedChoices.map(([value, label]) => option(value, label)),
+    );
+    excluded.replaceChildren(...sortedChoices.map(([value, label]) => option(value, label)));
+    [...genre.options].forEach((item) => {
+      item.selected = current.length ? current.includes(item.value) : item.value === 'all';
+    });
+    populateSetDetailedGenres(currentDetailed);
+    [...excluded.options].forEach((item) => {
+      item.selected = currentExcluded.includes(item.value);
+    });
+    if (current.length)
+      state.genreSelectionOrder = state.genreSelectionOrder
+        .filter((value) => current.includes(value))
+        .concat(current.filter((value) => !state.genreSelectionOrder.includes(value)));
+    await loadSavedSets();
+    bindSetBuilder();
+    renderFallbackPolicy();
+    renderSetGenreMix();
+    renderSetDetailedGenres();
+    renderExcludedSetGenres();
+    renderSavedSets();
+    renderSetRules();
+    if (state.plan.length) renderSetPlan();
   }
   function bindSetBuilder() {
-    if(state.bound)return;state.bound=true;
-    $('#set-builder-form').onsubmit=async event=>{event.preventDefault();const intentionText=$('#set-intention').value.trim(),interpretation=$('#set-intention-interpretation'),button=$('#set-generate'),mode=$('#set-planning-mode').value;button.disabled=true;try{if(mode!=='classic'&&intentionText&&(interpretation.hidden||interpretation.dataset.source!==intentionText)){button.textContent='Planning journey…';applyIntentionInterpretation(await interpretAndPlan(intentionText));}button.textContent=mode==='ai-planned'?'AI planning tracks…':'Building and optimizing…';$('#set-builder-message').textContent=mode==='ai-planned'?'Retrieving a safe catalog candidate pool…':'Ranking compatible tracks and shaping the energy journey…';await new Promise(resolve=>requestAnimationFrame(resolve));if(mode==='ai-planned')await generateAITrackPlan();else await generateDeterministicSetPlan();}catch(error){if(error instanceof SetPlanningCanceled){$('#set-builder-message').textContent='Set planning canceled. Your current set and brief were not changed.';}else{console.error('Set generation failed:',error);$('#set-builder-message').textContent=`Set generation failed: ${error?.message||error}. Your set brief was preserved; adjust it or try again.`;notify('The set could not be generated. Your set brief was preserved.','danger');}}finally{button.disabled=false;button.textContent='Generate set plan';$('#set-cancel-planning').hidden=true;}};
-    $('#set-cancel-planning').onclick=async()=>{await cancelAITrackPlan();$('#set-builder-message').textContent='Cancel requested. Your current set will remain unchanged.';};
-    $('#refresh-set-ai-operations').onclick=()=>void loadAIObservability();
-    $('#interpret-set-intention').onclick=async event=>{const text=$('#set-intention').value.trim(),button=event.currentTarget;if(!text){$('#set-intention-interpretation').hidden=true;$('#set-journey-preview').hidden=true;$('#set-builder-message').textContent='Describe the set first, then interpret it.';return;}button.disabled=true;button.textContent='Planning journey…';try{applyIntentionInterpretation(await interpretAndPlan(text));}finally{button.disabled=false;button.textContent='Interpret intention';}};
-    const briefName=$('#set-name'),resultName=$('#set-result-name');
-    briefName.addEventListener('input',()=>{if(document.activeElement!==resultName)resultName.value=briefName.value;});
-    resultName.addEventListener('input',()=>{briefName.value=resultName.value;});
-    resultName.addEventListener('blur',()=>{const name=resultName.value.trim()||'New DJ Set';resultName.value=name;briefName.value=name;});
-    $('#add-required-track').onclick=()=>{const id=$('#set-required').value;if(id){state.requiredIds.add(id);state.excludedIds.delete(id);renderSetRules();}};
-    $('#add-excluded-track').onclick=()=>{const id=$('#set-excluded').value;if(id){state.excludedIds.add(id);state.requiredIds.delete(id);renderSetRules();}};
-    $('#set-genre').addEventListener('change',()=>{const selected=selectedSetGenres();state.genreSelectionOrder=state.genreSelectionOrder.filter(value=>selected.includes(value)).concat(selected.filter(value=>!state.genreSelectionOrder.includes(value)));renderSetGenreMix();populateSetDetailedGenres();});
-    $('#set-detailed-genres').addEventListener('change',renderSetDetailedGenres);
-    $('#set-excluded-genres').addEventListener('change',renderExcludedSetGenres);
-    $('#set-vibe').addEventListener('change',()=>void loadPreferenceProfile());
-    $('#set-personalization-enabled').addEventListener('change',async event=>{try{currentPreferenceProfile=await setBuilderApi.setPersonalization(event.currentTarget.checked);renderPreferenceProfile();}catch(error){notify(error.message,'danger');}});
-    $('#reset-set-preferences').onclick=async()=>{if(!await confirmAction('Reset all learned Set Builder preferences? Your sets and catalog will not change.',{title:'Reset learned preferences',acceptLabel:'Reset'}))return;try{currentPreferenceProfile=await setBuilderApi.resetPreferences();renderPreferenceProfile();$('#set-builder-message').textContent='Learned Set Builder preferences reset.';}catch(error){notify(error.message,'danger');}};
-    $$('[data-set-decision]').forEach(button=>button.onclick=()=>{currentSetDecision=button.dataset.setDecision;$$('[data-set-decision]').forEach(item=>item.classList.toggle('active',item===button));});
-    $('#submit-set-review').onclick=submitSetReview;
-    $('#reset-set-brief').onclick=()=>{$('#set-builder-form').reset();$('#set-intention-interpretation').hidden=true;$('#set-journey-preview').hidden=true;renderFallbackPolicy();[...$('#set-genre').options].forEach(option=>{option.selected=option.value==='all';});populateSetDetailedGenres();[...$('#set-excluded-genres').options].forEach(option=>{option.selected=false;});state.genreSelectionOrder=[];renderSetGenreMix();renderSetDetailedGenres();renderExcludedSetGenres();state.requiredIds.clear();state.excludedIds.clear();state.lockedIds.clear();state.proposals=[];state.activeProposal='';renderSetRules();renderSetProposals();$('#set-builder-message').textContent='Set brief reset.';};
-    $('#set-undo').onclick=undoSetEdit;$('#set-redo').onclick=redoSetEdit;$('#set-compact').onclick=()=>{state.compactMode=!state.compactMode;localStorage.setItem('set-builder-compact',String(state.compactMode));renderSetPlan();};$('#add-set-track').onclick=()=>addSetTrack();$('#save-set').onclick=saveCurrentSet;$('#export-set-csv').onclick=exportSetCsv;$('#export-set-m3u').onclick=exportSetM3u;
-    document.addEventListener('keydown',event=>{if(!$('#set-builder-view').classList.contains('active')||!(event.metaKey||event.ctrlKey)||event.key.toLowerCase()!=='z')return;event.preventDefault();event.shiftKey?redoSetEdit():undoSetEdit();});
-    $('#load-set').onclick=()=>loadSavedSet(savedSets().find(set=>set.id===$('#saved-set-select').value));
-    $('#duplicate-set').onclick=async()=>{const record=savedSets().find(set=>set.id===$('#saved-set-select').value);if(!record)return;const copy={...record,id:String(Date.now()),name:`${record.name} Copy`,brief:{...record.brief,name:`${record.name} Copy`},updatedAt:new Date().toISOString()};try{await setBuilderApi.saveSet(copy);cacheSavedSets([copy,...savedSets()]);$('#saved-set-select').value=copy.id;loadSavedSet(copy);}catch(error){notify(error.message||String(error),'danger');}};
-    $('#delete-set').onclick=async()=>{const id=$('#saved-set-select').value;if(!id||!await confirmAction('Delete this saved set plan? Audio and Library tracks will not be removed.', {title:'Delete saved set', acceptLabel:'Delete', danger:true}))return;try{await setBuilderApi.deleteSet(id);cacheSavedSets(savedSets().filter(set=>set.id!==id));}catch(error){notify(error.message||String(error),'danger');}};
+    if (state.bound) return;
+    state.bound = true;
+    $('#set-builder-form').onsubmit = async (event) => {
+      event.preventDefault();
+      const intentionText = $('#set-intention').value.trim(),
+        interpretation = $('#set-intention-interpretation'),
+        button = $('#set-generate'),
+        mode = $('#set-planning-mode').value;
+      button.disabled = true;
+      try {
+        if (
+          mode !== 'classic' &&
+          intentionText &&
+          (interpretation.hidden || interpretation.dataset.source !== intentionText)
+        ) {
+          button.textContent = 'Planning journey…';
+          applyIntentionInterpretation(await interpretAndPlan(intentionText));
+        }
+        button.textContent = mode === 'ai-planned' ? 'AI planning tracks…' : 'Building and optimizing…';
+        $('#set-builder-message').textContent =
+          mode === 'ai-planned'
+            ? 'Retrieving a safe catalog candidate pool…'
+            : 'Ranking compatible tracks and shaping the energy journey…';
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (mode === 'ai-planned') await generateAITrackPlan();
+        else await generateDeterministicSetPlan();
+      } catch (error) {
+        if (error instanceof SetPlanningCanceled) {
+          $('#set-builder-message').textContent = 'Set planning canceled. Your current set and brief were not changed.';
+        } else {
+          console.error('Set generation failed:', error);
+          $('#set-builder-message').textContent =
+            `Set generation failed: ${error?.message || error}. Your set brief was preserved; adjust it or try again.`;
+          notify('The set could not be generated. Your set brief was preserved.', 'danger');
+        }
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Generate set plan';
+        $('#set-cancel-planning').hidden = true;
+      }
+    };
+    $('#set-cancel-planning').onclick = async () => {
+      await cancelAITrackPlan();
+      $('#set-builder-message').textContent = 'Cancel requested. Your current set will remain unchanged.';
+    };
+    $('#refresh-set-ai-operations').onclick = () => void loadAIObservability();
+    $('#interpret-set-intention').onclick = async (event) => {
+      const text = $('#set-intention').value.trim(),
+        button = event.currentTarget;
+      if (!text) {
+        $('#set-intention-interpretation').hidden = true;
+        $('#set-journey-preview').hidden = true;
+        $('#set-builder-message').textContent = 'Describe the set first, then interpret it.';
+        return;
+      }
+      button.disabled = true;
+      button.textContent = 'Planning journey…';
+      try {
+        applyIntentionInterpretation(await interpretAndPlan(text));
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Interpret intention';
+      }
+    };
+    const briefName = $('#set-name'),
+      resultName = $('#set-result-name');
+    briefName.addEventListener('input', () => {
+      if (document.activeElement !== resultName) resultName.value = briefName.value;
+    });
+    resultName.addEventListener('input', () => {
+      briefName.value = resultName.value;
+    });
+    resultName.addEventListener('blur', () => {
+      const name = resultName.value.trim() || 'New DJ Set';
+      resultName.value = name;
+      briefName.value = name;
+    });
+    $('#add-required-track').onclick = () => {
+      const id = $('#set-required').value;
+      if (id) {
+        state.requiredIds.add(id);
+        state.excludedIds.delete(id);
+        renderSetRules();
+      }
+    };
+    $('#add-excluded-track').onclick = () => {
+      const id = $('#set-excluded').value;
+      if (id) {
+        state.excludedIds.add(id);
+        state.requiredIds.delete(id);
+        renderSetRules();
+      }
+    };
+    $('#set-genre').addEventListener('change', () => {
+      const selected = selectedSetGenres();
+      state.genreSelectionOrder = state.genreSelectionOrder
+        .filter((value) => selected.includes(value))
+        .concat(selected.filter((value) => !state.genreSelectionOrder.includes(value)));
+      renderSetGenreMix();
+      populateSetDetailedGenres();
+    });
+    $('#set-detailed-genres').addEventListener('change', renderSetDetailedGenres);
+    $('#set-excluded-genres').addEventListener('change', renderExcludedSetGenres);
+    $('#set-vibe').addEventListener('change', () => void loadPreferenceProfile());
+    $('#set-personalization-enabled').addEventListener('change', async (event) => {
+      try {
+        currentPreferenceProfile = await setBuilderApi.setPersonalization(event.currentTarget.checked);
+        renderPreferenceProfile();
+      } catch (error) {
+        notify(error.message, 'danger');
+      }
+    });
+    $('#reset-set-preferences').onclick = async () => {
+      if (
+        !(await confirmAction('Reset all learned Set Builder preferences? Your sets and catalog will not change.', {
+          title: 'Reset learned preferences',
+          acceptLabel: 'Reset',
+        }))
+      )
+        return;
+      try {
+        currentPreferenceProfile = await setBuilderApi.resetPreferences();
+        renderPreferenceProfile();
+        $('#set-builder-message').textContent = 'Learned Set Builder preferences reset.';
+      } catch (error) {
+        notify(error.message, 'danger');
+      }
+    };
+    $$('[data-set-decision]').forEach(
+      (button) =>
+        (button.onclick = () => {
+          currentSetDecision = button.dataset.setDecision;
+          $$('[data-set-decision]').forEach((item) => item.classList.toggle('active', item === button));
+        }),
+    );
+    $('#submit-set-review').onclick = submitSetReview;
+    $('#reset-set-brief').onclick = () => {
+      $('#set-builder-form').reset();
+      $('#set-intention-interpretation').hidden = true;
+      $('#set-journey-preview').hidden = true;
+      renderFallbackPolicy();
+      [...$('#set-genre').options].forEach((option) => {
+        option.selected = option.value === 'all';
+      });
+      populateSetDetailedGenres();
+      [...$('#set-excluded-genres').options].forEach((option) => {
+        option.selected = false;
+      });
+      state.genreSelectionOrder = [];
+      renderSetGenreMix();
+      renderSetDetailedGenres();
+      renderExcludedSetGenres();
+      state.requiredIds.clear();
+      state.excludedIds.clear();
+      state.lockedIds.clear();
+      state.proposals = [];
+      state.activeProposal = '';
+      renderSetRules();
+      renderSetProposals();
+      $('#set-builder-message').textContent = 'Set brief reset.';
+    };
+    $('#set-undo').onclick = undoSetEdit;
+    $('#set-redo').onclick = redoSetEdit;
+    $('#set-compact').onclick = () => {
+      state.compactMode = !state.compactMode;
+      localStorage.setItem('set-builder-compact', String(state.compactMode));
+      renderSetPlan();
+    };
+    $('#add-set-track').onclick = () => addSetTrack();
+    $('#save-set').onclick = saveCurrentSet;
+    $('#export-set-csv').onclick = exportSetCsv;
+    $('#export-set-m3u').onclick = exportSetM3u;
+    document.addEventListener('keydown', (event) => {
+      if (
+        !$('#set-builder-view').classList.contains('active') ||
+        !(event.metaKey || event.ctrlKey) ||
+        event.key.toLowerCase() !== 'z'
+      )
+        return;
+      event.preventDefault();
+      event.shiftKey ? redoSetEdit() : undoSetEdit();
+    });
+    $('#load-set').onclick = () => loadSavedSet(savedSets().find((set) => set.id === $('#saved-set-select').value));
+    $('#duplicate-set').onclick = async () => {
+      const record = savedSets().find((set) => set.id === $('#saved-set-select').value);
+      if (!record) return;
+      const copy = {
+        ...record,
+        id: String(Date.now()),
+        name: `${record.name} Copy`,
+        brief: { ...record.brief, name: `${record.name} Copy` },
+        updatedAt: new Date().toISOString(),
+      };
+      try {
+        await setBuilderApi.saveSet(copy);
+        cacheSavedSets([copy, ...savedSets()]);
+        $('#saved-set-select').value = copy.id;
+        loadSavedSet(copy);
+      } catch (error) {
+        notify(error.message || String(error), 'danger');
+      }
+    };
+    $('#delete-set').onclick = async () => {
+      const id = $('#saved-set-select').value;
+      if (
+        !id ||
+        !(await confirmAction('Delete this saved set plan? Audio and Library tracks will not be removed.', {
+          title: 'Delete saved set',
+          acceptLabel: 'Delete',
+          danger: true,
+        }))
+      )
+        return;
+      try {
+        await setBuilderApi.deleteSet(id);
+        cacheSavedSets(savedSets().filter((set) => set.id !== id));
+      } catch (error) {
+        notify(error.message || String(error), 'danger');
+      }
+    };
   }
 
-  return {loadSetBuilder};
+  return { loadSetBuilder };
 }
-import {SetPlanningCanceled} from './set-planning-client.js';
-import {createSetBuilderApi} from './set-builder-api.js';
-import {createClassicSetPlanner} from './set-builder-classic-planner.js';
-import {createSetEditCommands} from './set-builder-commands.js';
-import {createSetBuilderStore, restoreSetPlan, snapshotSetPlan} from './set-builder-state.js';
-import {useFrontendServices} from './frontend-services.js';
-import {SET_PROPOSAL_STRATEGIES, aiObservabilityCards, fallbackPolicyMarkup, intentionProviderView, journeyDurationStatus, setProposalMarkup} from './set-builder-view-model.js';
-export {SET_PROPOSAL_STRATEGIES, intentionProviderView, journeyDurationStatus} from './set-builder-view-model.js';
-export {createSetBuilderStore, createSetBuilderStore as createSetBuilderState} from './set-builder-state.js';
+import { SetPlanningCanceled } from './set-planning-client.js';
+import { createSetBuilderApi } from './set-builder-api.js';
+import { createClassicSetPlanner } from './set-builder-classic-planner.js';
+import { createSetEditCommands } from './set-builder-commands.js';
+import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './set-builder-state.js';
+import { useFrontendServices } from './frontend-services.js';
+import {
+  SET_PROPOSAL_STRATEGIES,
+  aiObservabilityCards,
+  fallbackPolicyMarkup,
+  intentionProviderView,
+  journeyDurationStatus,
+  setProposalMarkup,
+} from './set-builder-view-model.js';
+export { SET_PROPOSAL_STRATEGIES, intentionProviderView, journeyDurationStatus } from './set-builder-view-model.js';
+export { createSetBuilderStore, createSetBuilderStore as createSetBuilderState } from './set-builder-state.js';

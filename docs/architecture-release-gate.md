@@ -61,10 +61,11 @@ PATH="$HOME/.nvm/versions/node/v22.23.3/bin:$PATH" ./scripts/check_quality.sh
 PATH="$HOME/.nvm/versions/node/v22.23.3/bin:$PATH" ./scripts/check_coverage.sh
 ./scripts/run_stability_gate.sh
 .venv/bin/python -m unittest -v \
-  tests.test_library_backup tests.test_library_relocation \
-  tests.test_repository_schema tests.test_saved_sets tests.test_cli_helpers \
-  tests.test_export_service tests.test_web_composition_contracts \
-  tests.test_set_release_gate
+  tests.unit.library.test_backup tests.unit.library.test_relocation \
+  tests.unit.repositories.test_schema tests.unit.set_builder.test_saved_sets \
+  tests.unit.core.test_cli_helpers tests.unit.library.test_export_service \
+  tests.unit.web.test_web_composition_contracts \
+  tests.unit.set_builder.test_set_release_gate
 PATH="$HOME/.nvm/versions/node/v22.23.3/bin:$PATH" npm run check:browser
 env AUDIOEXTENDER_LLM_PROVIDER=offline .venv/bin/python \
   scripts/evaluate_set_builder.py \
@@ -78,7 +79,7 @@ it with that flag to record the human decision. If Ollama is available, also run
 
 ```sh
 env AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 \
-  .venv/bin/python -m unittest -v tests.test_local_intention_acceptance
+  .venv/bin/python -m unittest -v tests.integration.set_builder.test_local_intention_acceptance
 ```
 
 ## Compatibility and intentional differences

@@ -18,7 +18,20 @@ class TrackMetadataMutationDependencies:
     source_metadata_path: Callable[[Path], Path]
     write_wav_metadata: Callable[..., None]
     write_source_metadata: Callable[[Path, dict], Any]
+    cache_track_artwork: Callable[[str, Path], str]
+    safe_audio_name: Callable[[str], str]
     publish_catalog: Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class TrackMetadataUpdate:
+    title: str
+    artist: str = ""
+    genre: str = ""
+    genre_category: str = "Other"
+    playlist_name: str = "Imported Singles"
+    artwork_url: str = ""
+    rename_file: bool = False
 
 
 class TrackMetadataMutationService:
@@ -93,3 +106,103 @@ class TrackMetadataMutationService:
         if publish and completed:
             self.dependencies.publish_catalog()
         return {"updated": len(completed), "genre_category": category}
+
+    def update_metadata(self, track_id: int, update: TrackMetadataUpdate, *, publish: bool = True) -> dict:
+        """Synchronize editable metadata across the WAV, sidecar, and catalog."""
+        repository = self.dependencies.repository
+        track = repository.get_downloaded_track(track_id)
+        if not track:
+            raise LookupError("Downloaded track was not found")
+        source = Path(str(track["file_path"]))
+        if not source.is_file():
+            raise FileNotFoundError("The WAV file is missing and cannot be updated")
+        category = self.dependencies.normalize_genre(update.genre_category.strip())
+        if not category or category == ".":
+            raise ValueError("Choose a valid genre category")
+        title = update.title.strip()
+        artist = update.artist.strip()
+        detailed_genre = update.genre.strip()
+        playlist_name = update.playlist_name.strip() or "Imported Singles"
+        artwork_url = update.artwork_url.strip()
+        filename = source.name
+        if update.rename_file:
+            display_name = " - ".join(value for value in (artist, title) if value) or title
+            filename = f"{self.dependencies.safe_audio_name(display_name)}{source.suffix.lower()}"
+        destination_dir = self.dependencies.genre_directory(category)
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination = destination_dir / filename
+        if destination.resolve() != source.resolve() and destination.exists():
+            raise FileExistsError(f"{destination.name} already exists in {category}")
+        old_metadata = self.dependencies.source_metadata_path(source)
+        moved = destination.resolve() != source.resolve()
+        try:
+            if moved:
+                shutil.move(str(source), str(destination))
+            self.dependencies.write_wav_metadata(
+                destination,
+                title=title,
+                artist=artist,
+                genre=category,
+                album=playlist_name,
+            )
+            artwork_path = str(track.get("artwork_path") or "")
+            if artwork_url and (artwork_url != str(track.get("artwork_url") or "") or not Path(artwork_path).is_file()):
+                artwork_path = self.dependencies.cache_track_artwork(artwork_url, destination)
+                if not artwork_path:
+                    raise ValueError("Artwork could not be downloaded. Use a direct Spotify or YouTube image URL.")
+            metadata = {
+                **track,
+                "title": title,
+                "artist": artist,
+                "genre": detailed_genre,
+                "genre_category": category,
+                "playlist_name": playlist_name,
+                "playlists": [playlist_name],
+                "file_path": str(destination.resolve()),
+                "filename": destination.name,
+                "artwork_url": artwork_url or str(track.get("artwork_url") or ""),
+                "artwork_path": artwork_path,
+            }
+            self.dependencies.write_source_metadata(destination, metadata)
+            repository.update_downloaded_track_metadata(
+                track_id=track_id,
+                old_path=source,
+                new_path=destination,
+                title=title,
+                artist=artist,
+                genre=detailed_genre,
+                genre_category=category,
+                playlist_name=playlist_name,
+            )
+            if artwork_url and artwork_path:
+                repository.update_downloaded_track_artwork(
+                    track_id,
+                    artwork_url=artwork_url,
+                    artwork_path=artwork_path,
+                )
+            if moved:
+                old_metadata.unlink(missing_ok=True)
+                try:
+                    source.parent.rmdir()
+                except OSError:
+                    pass
+        except Exception:
+            if moved and destination.is_file() and not source.exists():
+                shutil.move(str(destination), str(source))
+            raise
+        if publish:
+            self.dependencies.publish_catalog()
+        return {
+            "updated": True,
+            "track_id": track_id,
+            "title": title,
+            "artist": artist,
+            "genre": detailed_genre,
+            "genre_category": category,
+            "playlist_name": playlist_name,
+            "filename": destination.name,
+            "artwork_url": metadata["artwork_url"],
+            "artwork_available": bool(artwork_path),
+            "file_path": str(destination.resolve()),
+            "sidecar_path": str(self.dependencies.source_metadata_path(destination)),
+        }

@@ -8,16 +8,16 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "npm run check:syntax && node --test tests/*.test.js",
+    "check": "npm run check:syntax && node --test tests/javascript/*.test.js",
     "check:browser": "playwright test",
     "check:browser:install": "playwright install chromium",
-    "check:syntax": "node --check web/app.js && node --check web/api-client.js && node --check web/background-task-controller.js && node --check web/candidate-review.js && node --check web/frontend-services.js && node --check web/import-issues.js && node --check web/import-workspace.js && node --check web/local-audio-import.js && node --check web/playlist-import.js && node --check web/processing-workspace.js && node --check web/processing-workspace-view.js && node --check web/request-state-controller.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/set-builder-api.js && node --check web/set-builder-classic-planner.js && node --check web/set-builder-commands.js && node --check web/set-builder-state.js && node --check web/set-builder-view-model.js && node --check web/set-planning-client.js && node --check web/settings.js && node --check web/reporting.js && node --check web/import-queue.js",
-    "lint": "eslint web tests/*.test.js tests/browser/*.spec.js scripts/*.mjs",
+    "check:syntax": "node --check web/app.js && node --check web/api-client.js && node --check web/background-task-controller.js && node --check web/candidate-review.js && node --check web/candidate-waveform-editor.js && node --check web/dj-library-model.js && node --check web/frontend-services.js && node --check web/import-issues.js && node --check web/import-workspace.js && node --check web/local-audio-import.js && node --check web/playlist-import.js && node --check web/processing-job-detail.js && node --check web/processing-workspace.js && node --check web/processing-workspace-view.js && node --check web/request-state-controller.js && node --check web/searchable-selects.js && node --check web/shared-components.js && node --check web/playback.js && node --check web/music-files.js && node --check web/dj-library.js && node --check web/set-builder.js && node --check web/set-builder-policy.js && node --check web/set-builder-api.js && node --check web/set-builder-classic-planner.js && node --check web/set-builder-commands.js && node --check web/set-builder-state.js && node --check web/set-builder-view-model.js && node --check web/set-planning-client.js && node --check web/settings.js && node --check web/track-metadata-ui.js && node --check web/reporting.js && node --check web/import-queue.js",
+    "lint": "eslint web tests/javascript/*.test.js tests/browser/*.spec.js scripts/*.mjs",
     "format:check": "node scripts/check_frontend_format.mjs",
     "quality": "npm run lint && npm run format:check && npm run check",
     "coverage": "npm run coverage:js && npm run coverage:python",
-    "coverage:js": "c8 --all --include='web/**/*.js' --reporter=lcov --reporter=text-summary --reports-dir=coverage node --test tests/*.test.js",
-    "coverage:python": ".venv/bin/python -m coverage erase && .venv/bin/python -m coverage run -m unittest discover -s tests && .venv/bin/python -m coverage report -m && .venv/bin/python -m coverage json && .venv/bin/python -m coverage lcov -o coverage/lcov-python.info"
+    "coverage:js": "c8 --all --include='web/**/*.js' --exclude='web/app.js' --reporter=lcov --reporter=text-summary --reports-dir=coverage node --test tests/javascript/*.test.js",
+    "coverage:python": ".venv/bin/python -m coverage erase && .venv/bin/python -m coverage run -m unittest discover -s tests -t . && .venv/bin/python -m coverage report -m && .venv/bin/python -m coverage json && .venv/bin/python -m coverage lcov -o coverage/lcov-python.info"
   },
   "repository": {
     "type": "git",

@@ -15,7 +15,9 @@ map reflects the current layout; it does not propose moving code.
 │   ├── extensions.json
 │   └── settings.json
 ├── BACKLOG.md
+├── CONTRIBUTING.md
 ├── LICENSE
+├── Makefile
 ├── README.md
 ├── Start AudioExtender.command
 ├── audioextender/
@@ -56,6 +58,7 @@ map reflects the current layout; it does not propose moving code.
 │   ├── imports/
 │   │   ├── __init__.py
 │   │   ├── creative_commons.py
+│   │   ├── creative_commons_worker.py
 │   │   ├── local.py
 │   │   ├── playlist_match.py
 │   │   ├── routes.py
@@ -69,8 +72,11 @@ map reflects the current layout; it does not propose moving code.
 │   │   └── progress.py
 │   ├── library/
 │   │   ├── __init__.py
+│   │   ├── analysis_queue.py
+│   │   ├── artwork_thumbnails.py
 │   │   ├── backup.py
 │   │   ├── catalog_projection.py
+│   │   ├── catalog_projection_builder.py
 │   │   ├── catalog_query_service.py
 │   │   ├── cue_export.py
 │   │   ├── descriptor_service.py
@@ -84,11 +90,16 @@ map reflects the current layout; it does not propose moving code.
 │   │   └── track_overrides.py
 │   ├── processing/
 │   │   ├── __init__.py
+│   │   ├── analysis_preparation.py
 │   │   ├── batch_runner.py
+│   │   ├── candidate_selection_orchestration.py
 │   │   ├── extended_edit.py
 │   │   ├── job_workflows.py
+│   │   ├── processing_failure_cleanup.py
+│   │   ├── render_export_transaction.py
 │   │   ├── track_processing_stages.py
 │   │   ├── track_processor.py
+│   │   ├── track_result_builder.py
 │   │   └── web_jobs.py
 │   ├── reporting/
 │   │   ├── __init__.py
@@ -106,7 +117,14 @@ map reflects the current layout; it does not propose moving code.
 │   │   ├── musical_verification_schema.py
 │   │   ├── schema.py
 │   │   ├── system_state.py
-│   │   └── track_catalog.py
+│   │   ├── track_analysis_state.py
+│   │   ├── track_catalog.py
+│   │   ├── track_catalog_shared.py
+│   │   ├── track_core.py
+│   │   ├── track_descriptors.py
+│   │   ├── track_metadata_state.py
+│   │   ├── track_projections.py
+│   │   └── recording_families.py
 │   ├── set_builder/
 │   │   ├── __init__.py
 │   │   ├── candidate_retriever.py
@@ -145,9 +163,12 @@ map reflects the current layout; it does not propose moving code.
 │   ├── architecture.md
 │   ├── architecture-audit.md
 │   ├── browser-smoke-testing.md
+│   ├── developer-guide.md
 │   ├── development-quality.md
 │   ├── musical-policy-ownership.md
-│   └── repository-map.md
+│   ├── operator-guide.md
+│   ├── repository-map.md
+│   └── user-guide.md
 ├── graphify-out/
 │   └── memory/
 │       ├── query_20260930_170835_47f25d97_extract_the_authorized_youtube_and_soundcloud_impo.md
@@ -166,6 +187,7 @@ map reflects the current layout; it does not propose moving code.
 ├── requirements.txt
 ├── scripts/
 │   ├── benchmark_key_confidence.py
+│   ├── clean_workspace.py
 │   ├── evaluate_key_ensemble.py
 │   ├── evaluate_set_builder.py
 │   ├── check_coverage.sh
@@ -176,73 +198,41 @@ map reflects the current layout; it does not propose moving code.
 ├── settings.py
 ├── tests/
 │   ├── __init__.py
-│   ├── factories.py
-│   ├── fixtures/
-│   │   ├── musical_policy_golden.json
-│   │   └── set_builder_eval_scenarios.json
 │   ├── browser/
 │   │   └── workflows.spec.js
-│   ├── api_client.test.js
-│   ├── frontend_modules.test.js
-│   ├── frontend_workflow_owners.test.js
-│   ├── import_queue.test.js
-│   ├── playback_behavior.test.js
-│   ├── request_state_controller.test.js
-│   ├── set_planning_client.test.js
-│   ├── test_application_services.py
-│   ├── test_architecture_services.py
-│   ├── test_audio_quality.py
-│   ├── test_background_tasks.py
-│   ├── test_batch_operations.py
-│   ├── test_behavior_workflows.py
-│   ├── test_cli_helpers.py
-│   ├── test_config_and_overrides.py
-│   ├── test_dj_readiness.py
-│   ├── test_export_service.py
-│   ├── test_feedback_and_reranking.py
-│   ├── test_frontend_contracts.py
-│   ├── test_import_service.py
-│   ├── test_integration_synthetic.py
-│   ├── test_intention_planner.py
-│   ├── test_journey_planner.py
-│   ├── test_key_analysis.py
-│   ├── test_library_backup.py
-│   ├── test_library_relocation.py
-│   ├── test_local_intention_acceptance.py
-│   ├── test_package_structure.py
-│   ├── test_plan_comparator.py
-│   ├── test_playlist_match_service.py
-│   ├── test_progress_and_resources.py
-│   ├── test_proposal_repairer.py
-│   ├── test_recording_identity.py
-│   ├── test_reports_and_cache.py
-│   ├── test_scoring_and_splices.py
-│   ├── test_set_candidate_planning.py
-│   ├── test_set_plan_evaluator.py
-│   ├── test_set_release_gate.py
-│   ├── test_set_preference_learning.py
-│   ├── test_set_review_service.py
-│   ├── test_stability_workflow.py
-│   ├── test_stem_provider.py
-│   ├── test_style_detector.py
-│   ├── test_track_descriptors.py
-│   ├── test_track_planner.py
-│   ├── test_transition_optimizer.py
-│   ├── test_transition_scorer.py
-│   ├── test_wav_metadata.py
-│   └── test_web_app.py
+│   ├── fixtures/              # Shared checked-in scenario data
+│   ├── integration/           # Cross-package, persistence, filesystem, and provider tests
+│   │   └── set_builder/       # Set Builder provider integration
+│   ├── javascript/            # Node unit and frontend contract tests
+│   ├── support/               # Shared test-only factories and paths
+│   └── unit/                  # Mirrors Python application ownership
+│       ├── analysis/
+│       ├── architecture/
+│       ├── audio/
+│       ├── core/
+│       ├── imports/
+│       ├── infrastructure/
+│       ├── library/
+│       ├── processing/
+│       ├── reporting/
+│       ├── repositories/
+│       ├── set_builder/
+│       └── web/
 ├── web/
 │   ├── app.js
 │   ├── api-client.js
 │   ├── background-task-controller.js
 │   ├── candidate-review.js
+│   ├── candidate-waveform-editor.js
 │   ├── dj-library.js
+│   ├── dj-library-model.js
 │   ├── import-queue.js
 │   ├── import-issues.js
 │   ├── import-workspace.js
 │   ├── local-audio-import.js
 │   ├── playlist-import.js
 │   ├── processing-workspace.js
+│   ├── processing-job-detail.js
 │   ├── processing-workspace-view.js
 │   ├── index.html
 │   ├── music-files.js
@@ -255,6 +245,9 @@ map reflects the current layout; it does not propose moving code.
 │   ├── set-builder-state.js
 │   ├── set-builder-view-model.js
 │   ├── set-builder.js
+│   ├── set-builder-policy.js
+│   ├── searchable-selects.js
+│   ├── track-metadata-ui.js
 │   ├── set-planning-client.js
 │   ├── settings.js
 │   ├── frontend-services.js
@@ -268,24 +261,24 @@ exhaustive manifest. Use `rg --files` for the current tracked inventory.
 
 ## Where Things Belong
 
-| Area | Responsibility |
-| --- | --- |
-| `main.py`, `web_app.py`, `audioextender/web/application.py` | CLI entry, compatibility launcher, and web application composition |
-| `audioextender/core/` | Shared configuration, data models, interfaces, presets, errors, and operation receipts |
-| `audioextender/audio/` | Audio loading, quality, stems, and WAV metadata |
-| `audioextender/analysis/` | Musical analysis, candidate selection/scoring, validation, and splice policy |
-| `audioextender/processing/` | Track and batch workflows, edits, and web-job orchestration |
-| `audioextender/imports/` | Local and external-source imports, playlist matching, and import routes |
-| `audioextender/library/` | Track identity, overrides, backup, relocation, metadata mutation, and exports |
-| `audioextender/repositories/` | SQLite persistence grouped by jobs, catalog, analysis, feedback, and system state |
-| `audioextender/infrastructure/` | Shared cache, progress, background-task, and batch-operation support |
-| `audioextender/reporting/` | Processing summaries and listening feedback |
-| `audioextender/set_builder/` | Intention/journey planning, candidate selection, validation, evaluation, preferences, plan jobs, and production release assessment |
-| `audioextender/web/` | FastAPI composition and focused API route modules |
-| `web/` | Browser shell, feature modules, shared controls, and styles |
-| `scripts/` | Quality, coverage, browser-smoke, stability, evaluation, and benchmark tools |
-| `docs/` | Maintainer architecture and repository navigation documentation |
-| `graphify-out/memory/` | Checked-in Graphify-generated investigation notes; not runtime code or canonical architecture docs |
+| Area                                                        | Responsibility                                                                                                                     |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `main.py`, `web_app.py`, `audioextender/web/application.py` | CLI entry, compatibility launcher, and web application composition                                                                 |
+| `audioextender/core/`                                       | Shared configuration, data models, interfaces, presets, errors, and operation receipts                                             |
+| `audioextender/audio/`                                      | Audio loading, quality, stems, and WAV metadata                                                                                    |
+| `audioextender/analysis/`                                   | Musical analysis, candidate selection/scoring, validation, and splice policy                                                       |
+| `audioextender/processing/`                                 | Track and batch workflows, edits, and web-job orchestration                                                                        |
+| `audioextender/imports/`                                    | Local and external-source imports, playlist matching, and import routes                                                            |
+| `audioextender/library/`                                    | Track identity, overrides, backup, relocation, metadata mutation, and exports                                                      |
+| `audioextender/repositories/`                               | SQLite persistence grouped by jobs, catalog, analysis, feedback, and system state                                                  |
+| `audioextender/infrastructure/`                             | Shared cache, progress, background-task, and batch-operation support                                                               |
+| `audioextender/reporting/`                                  | Processing summaries and listening feedback                                                                                        |
+| `audioextender/set_builder/`                                | Intention/journey planning, candidate selection, validation, evaluation, preferences, plan jobs, and production release assessment |
+| `audioextender/web/`                                        | FastAPI composition and focused API route modules                                                                                  |
+| `web/`                                                      | Browser shell, feature modules, shared controls, and styles                                                                        |
+| `scripts/`                                                  | Quality, coverage, browser-smoke, stability, evaluation, and benchmark tools                                                       |
+| `docs/`                                                     | Maintainer architecture and repository navigation documentation                                                                    |
+| `graphify-out/memory/`                                      | Checked-in Graphify-generated investigation notes; not runtime code or canonical architecture docs                                 |
 
 The intended dependency direction is described in [architecture.md](architecture.md):
 HTTP/CLI delivery calls application services; business workflows use analysis,
@@ -295,20 +288,26 @@ globals. Keep musical decision logic out of route handlers and browser modules.
 
 ## Test Organization
 
-Deterministic Python and Node tests live in the root `tests/` directory and are
-grouped by descriptive filename. Python uses `unittest` and `test_*.py`; Node
-uses `*.test.js`. Real-browser smoke scenarios are the deliberate exception and
-live under `tests/browser/` for Playwright discovery. `factories.py` contains
-shared test data builders, and `fixtures/` contains checked-in scenario data.
+Python unit tests mirror the owning application package under `tests/unit/`.
+Cross-package, persistence, filesystem, and provider tests live under
+`tests/integration/`. Node unit tests live in `tests/javascript/`, while real-
+browser smoke scenarios live under `tests/browser/` for Playwright discovery.
+Shared Python builders and path helpers live in `tests/support/`; checked-in
+scenario data remains in `tests/fixtures/`.
 
-| Test group | Files |
-| --- | --- |
-| Application wiring, architecture, package boundaries, and API | `test_application_services.py`, `test_architecture_services.py`, `test_package_structure.py`, `test_web_app.py` |
-| Audio, musical analysis, and edit quality | `test_audio_quality.py`, `test_dj_readiness.py`, `test_key_analysis.py`, `test_scoring_and_splices.py`, `test_stem_provider.py`, `test_style_detector.py`, `test_track_descriptors.py`, `test_transition_scorer.py`, `test_wav_metadata.py` |
-| Processing, resources, and persistence/reporting | `test_background_tasks.py`, `test_batch_operations.py`, `test_behavior_workflows.py`, `test_cli_helpers.py`, `test_config_and_overrides.py`, `test_export_service.py`, `test_integration_synthetic.py`, `test_progress_and_resources.py`, `test_reports_and_cache.py` |
-| Imports and library identity/lifecycle | `test_import_service.py`, `test_library_backup.py`, `test_library_relocation.py`, `test_playlist_match_service.py`, `test_recording_identity.py`, `test_stability_workflow.py` |
-| Set Builder planning, evaluation, release, and personalization | `test_feedback_and_reranking.py`, `test_intention_planner.py`, `test_journey_planner.py`, `test_local_intention_acceptance.py`, `test_plan_comparator.py`, `test_proposal_repairer.py`, `test_set_candidate_planning.py`, `test_set_plan_evaluator.py`, `test_set_preference_learning.py`, `test_set_release_gate.py`, `test_set_review_service.py`, `test_track_planner.py`, `test_transition_optimizer.py` |
-| Browser contracts and feature modules | `test_frontend_contracts.py`, `api_client.test.js`, `frontend_modules.test.js`, `frontend_workflow_owners.test.js`, `import_queue.test.js`, `playback_behavior.test.js`, `request_state_controller.test.js`, `set_builder_architecture.test.js`, `set_planning_client.test.js` |
+Python uses `unittest` and `test_*.py`; Node uses `*.test.js`. Every nested
+Python test directory is an importable package so focused module execution and
+recursive discovery use the same names. The application itself does not use a
+`src/` installation layout; changing that convention remains a separate
+migration of launchers, imports, coverage, CI, and packaging.
+
+| Test group                               | Files                       |
+| ---------------------------------------- | --------------------------- |
+| Architecture and compatibility           | `unit/architecture/`        |
+| Python package behavior                  | `unit/<owning-package>/`    |
+| Cross-boundary workflows                 | `integration/`              |
+| Set Builder live-provider acceptance     | `integration/set_builder/`  |
+| Browser modules and contracts            | `javascript/`               |
 | Browser workflow and accessibility smoke | `browser/workflows.spec.js` |
 
 The Set Builder scenario file is `fixtures/set_builder_eval_scenarios.json`; it
@@ -343,13 +342,11 @@ reports under `coverage/` for the Python application/scripts and browser code.
 
 ### Test growth guidance
 
-- Keep tests near the current flat `tests/` layout while discovery and ownership
-  remain easy to scan. Use descriptive names and add new behavior to its owning
-  test module where that stays focused.
-- If the suite grows enough to need nested folders, move by language/domain in
-  one deliberate change and preserve the root test commands and discovery
-  patterns; avoid partial nesting that silently stops `unittest` discovery.
-- Keep test data builders in `factories.py` only when they are genuinely shared;
+- Put unit tests in the directory matching the owning application package; put
+  cross-boundary workflows in `integration/` and Node tests in `javascript/`.
+- Keep every Python test directory importable with `__init__.py`, and preserve
+  recursive discovery through the repository-owned quality scripts.
+- Keep test data builders in `support/` only when they are genuinely shared;
   keep domain-specific fixtures under `fixtures/` and avoid checking in real
   audio files or personal library data.
 - Keep slow, external-provider, or catalog-scale checks explicitly opt-in or in
@@ -357,20 +354,22 @@ reports under `coverage/` for the Python application/scripts and browser code.
 
 ## Project Configuration And Operations
 
-| File | Purpose |
-| --- | --- |
-| `README.md` | Setup, user workflows, tests, and maintainer quick guide |
-| `BACKLOG.md` | Planned and audited product work |
-| `docs/decisions/` | Indexed architecture decisions and compatibility guarantees |
-| `pyproject.toml`, `.flake8` | Python coverage, lint, and type-check configuration |
-| `requirements.txt` | Runtime Python dependencies |
-| `requirements-dev.txt` | Development/test tools, including coverage.py |
-| `requirements-demucs.txt` | Optional Demucs dependency set |
-| `package.json`, `package-lock.json` | JavaScript dependencies and test/check/coverage scripts |
-| `.vscode/settings.json`, `.vscode/extensions.json` | Workspace test/editor settings and extension recommendations |
-| `settings.py` | Application configuration/defaults |
-| `Start AudioExtender.command` | macOS launcher |
-| `LICENSE`, `.gitattributes`, `.gitignore` | Licensing and Git behavior |
+| File                                               | Purpose                                                                  |
+| -------------------------------------------------- | ------------------------------------------------------------------------ |
+| `README.md`                                        | Setup, user workflows, tests, and maintainer quick guide                 |
+| `CONTRIBUTING.md`                                  | Contributor setup, placement rules, and definition-of-done commands      |
+| `Makefile`                                         | Stable aliases for the repository-owned quality and verification scripts |
+| `BACKLOG.md`                                       | Planned and audited product work                                         |
+| `docs/decisions/`                                  | Indexed architecture decisions and compatibility guarantees              |
+| `pyproject.toml`, `.flake8`                        | Python coverage, lint, and type-check configuration                      |
+| `requirements.txt`                                 | Runtime Python dependencies                                              |
+| `requirements-dev.txt`                             | Development/test tools, including coverage.py                            |
+| `requirements-demucs.txt`                          | Optional Demucs dependency set                                           |
+| `package.json`, `package-lock.json`                | JavaScript dependencies and test/check/coverage scripts                  |
+| `.vscode/settings.json`, `.vscode/extensions.json` | Workspace test/editor settings and extension recommendations             |
+| `settings.py`                                      | Application configuration/defaults                                       |
+| `Start AudioExtender.command`                      | macOS launcher                                                           |
+| `LICENSE`, `.gitattributes`, `.gitignore`          | Licensing and Git behavior                                               |
 
 ## Local Runtime Folders
 

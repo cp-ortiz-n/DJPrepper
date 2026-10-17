@@ -77,7 +77,7 @@ observable behavior:
 - Preserved `update_downloaded_track_key_analysis` as the key-only catalog write
   boundary; its test proves unrelated catalog fields survive the update.
 
-`tests/test_dead_code_compatibility.py` characterizes all eight decisions and
+`tests/unit/architecture/test_dead_code_compatibility.py` characterizes all eight decisions and
 prevents the removed private helpers from quietly returning.
 
 ## Dependency results

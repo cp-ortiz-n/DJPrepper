@@ -276,7 +276,7 @@ backup/restore behavior are covered by deterministic and browser tests.
 **Status:** Confirmed  
 **Category:** Testing / Frontend  
 **Severity:** Medium  
-**Affected files:** `tests/frontend_modules.test.js`, `tests/test_frontend_contracts.py`  
+**Affected files:** `tests/javascript/frontend_modules.test.js`, `tests/unit/web/test_frontend_contracts.py`
 **Evidence:** tests inspect source with regex/string matching for implementation details; the exact Set Builder allocation/intention/identity test group is repeated multiple times around lines 142–245 and 247–329. Python frontend contracts also read JS/CSS as text.  
 **Problem:** Some tests verify that text exists rather than that user-visible behavior works, and duplicated cases add noise without coverage.  
 **Impact:** Safe refactors fail tests while broken runtime wiring can pass; maintenance cost obscures meaningful regression coverage.  

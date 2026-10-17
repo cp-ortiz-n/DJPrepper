@@ -70,13 +70,7 @@ class MetadataBatchService:
             path = Path(str(track["file_path"]))
             error = ""
             try:
-                updated = self.dependencies.sync_wav_metadata(
-                    path,
-                    title=str(track.get("title") or path.stem),
-                    artist=str(track.get("artist") or ""),
-                    genre=str(track.get("genre_category") or "Other"),
-                    album=str((track.get("playlists") or ["Imported Singles"])[0]),
-                )
+                updated = self.sync_track_wav_metadata(track)
                 tagged += int(updated)
                 skipped += int(not updated)
             except (FileNotFoundError, OSError, ValueError, subprocess.SubprocessError) as exception:
@@ -98,6 +92,35 @@ class MetadataBatchService:
             "failed": failed,
             "stage": "WAV metadata synchronization complete",
         }
+
+    def sync_selected_wav_tags(self, track_ids: list[int]) -> dict:
+        """Synchronize selected catalog records using the same rules as the batch."""
+        self.dependencies.require_library_online()
+        wanted = set(track_ids)
+        tracks = [track for track in self.repository.list_downloaded_tracks() if int(track["id"]) in wanted]
+        if len(tracks) != len(wanted):
+            raise HTTPException(404, "One or more downloaded tracks were not found")
+        tagged: list[int] = []
+        skipped: list[int] = []
+        failed: list[dict[str, object]] = []
+        for track in tracks:
+            try:
+                destination = tagged if self.sync_track_wav_metadata(track) else skipped
+                destination.append(int(track["id"]))
+            except (FileNotFoundError, OSError, ValueError, subprocess.SubprocessError) as error:
+                failed.append({"id": int(track["id"]), "error": str(error)})
+        return {"tracks": tracks, "tagged": tagged, "skipped": skipped, "failed": failed}
+
+    def sync_track_wav_metadata(self, track: dict) -> bool:
+        """Apply the authoritative catalog-to-WAV tag projection to one track."""
+        path = Path(str(track["file_path"]))
+        return self.dependencies.sync_wav_metadata(
+            path,
+            title=str(track.get("title") or path.stem),
+            artist=str(track.get("artist") or ""),
+            genre=str(track.get("genre_category") or "Other"),
+            album=str((track.get("playlists") or ["Imported Singles"])[0]),
+        )
 
     def start_artwork(self, track_ids: list[int]) -> dict:
         self.dependencies.require_library_online()

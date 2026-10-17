@@ -1,10 +1,11 @@
 # Track processing compatibility contract
 
 `TrackProcessor.process` is the public transaction boundary for one source
-track. ARCH-002A froze its observable behavior; ARCH-002B now implements that
-contract through typed analysis, selection, render, export, and result assembly
-stages. The characterization suite lives in
-`tests/test_track_processor_characterization.py`.
+track. ARCH-002A froze its observable behavior; ARCH-002B introduced typed stage
+values. The transaction now delegates analysis preparation, candidate-selection
+orchestration, render/export, result construction, and failure cleanup to
+focused collaborators without changing that contract. The characterization suite lives in
+`tests/unit/processing/test_track_processor_characterization.py`.
 
 ## Stage order and progress
 
@@ -48,10 +49,11 @@ The export service owns the extended WAV, source WAV, previews, and cue sheet.
 `FileResult` exposes the paths and `full_exported` state returned by that service.
 The processor must not fabricate artifact paths from a failed export.
 
-Any exception after progress starts calls `ProgressReporter.stop()` exactly once
-and is re-raised unchanged. A failed loading, analysis, stem, selection, or render
-stage must not invoke export. Cleanup internal to stem separation and export
-remains owned by those services.
+Any exception after progress starts is sent to `ProcessingFailureCleanup`, which
+calls `ProgressReporter.stop()` exactly once, and is re-raised unchanged. A
+failed loading, analysis, stem, selection, or render stage must not invoke
+export. Cleanup internal to stem separation and export remains owned by those
+services.
 
 ## Safe refactoring rule
 

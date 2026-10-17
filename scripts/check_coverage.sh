@@ -11,7 +11,7 @@ fi
 
 printf '\n==> Python coverage\n'
 .venv/bin/python -m coverage erase
-.venv/bin/python -m coverage run -m unittest discover -s tests
+.venv/bin/python -m coverage run -m unittest discover -s tests -t .
 .venv/bin/python -m coverage report -m
 .venv/bin/python -m coverage json
 .venv/bin/python -m coverage lcov -o coverage/lcov-python.info

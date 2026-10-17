@@ -166,7 +166,9 @@ class WebJobService:
                 continue
             job = self.repository.get(job_id)
             if job:
-                paths.append(Path(job["source_path"]))
+                path = Path(job["source_path"])
+                if path.is_file():
+                    paths.append(path)
         workers, _, _ = choose_worker_count(paths, "auto", False)
         return max(1, min(3, workers))
 

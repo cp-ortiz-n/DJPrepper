@@ -108,7 +108,7 @@
     },
     {
       "id": "audio-quality-scan",
-      "owner": "audioextender/web/application.py",
+      "owner": "audioextender/web/audio_quality_routes.py",
       "routes": ["/api/downloaded-library/audio-quality", "/api/downloaded-library/audio-quality/{batch_id}", "/api/downloaded-library/audio-quality-latest"],
       "states": ["processing", "complete"],
       "persistence": "memory",
