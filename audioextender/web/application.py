@@ -107,6 +107,7 @@ from audioextender.web.descriptor_routes import (
 )
 from audioextender.web.downloaded_analysis_routes import (
     DownloadedAnalysisFilterRequest,  # noqa: F401 - compatibility re-export
+    DownloadedAnalysisRouteService,
     create_downloaded_analysis_router,
 )
 from audioextender.web.downloaded_library_models import (
