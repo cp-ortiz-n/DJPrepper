@@ -121,8 +121,10 @@ database and backup opening whenever this sequence changes.
 | ----------------------------------- | ----------------------------------------------------------------------------------- |
 | `web/job_routes.py`                 | Job listing, ordering, clearing, cancel, pause, resume, removal                     |
 | `web/job_media_routes.py`           | Audio delivery, ZIP exports, waveforms, transition scoring, cue editing             |
+| `web/job_review_routes.py`          | Reprocessing, review rejection, candidate auditions, and candidate feedback         |
 | `web/preset_routes.py`              | Persistent custom preset state, effective preset projection, and preset routes      |
 | `web/downloaded_library_routes.py`  | Downloaded catalog reads, media delivery, reveal, and transient ZIP exports          |
+| `web/downloaded_analysis_routes.py` | Selected and filtered catalog analysis/reanalysis queue delivery                     |
 | `web/downloaded_track_mutation_routes.py` | Track deletion, genre/metadata repair, and selected retag orchestration       |
 | `web/recording_family_routes.py`    | Duplicate review, family queries, merge, link, unlink, and separation                |
 | `web/library_routes.py`             | Paginated DJ Library catalog and facets                                             |

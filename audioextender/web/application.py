@@ -74,7 +74,6 @@ from audioextender.library.musical_profile import CAMELOT_KEYS
 from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.job_workflows import (
     JobCreationCommand,
-    JobWorkflowError,
     JobWorkflowService,
     UploadedAudio,
 )
@@ -106,6 +105,10 @@ from audioextender.web.descriptor_routes import (
     DescriptorRouteDependencies,
     create_descriptor_router,
 )
+from audioextender.web.downloaded_analysis_routes import (
+    DownloadedAnalysisFilterRequest,  # noqa: F401 - compatibility re-export
+    create_downloaded_analysis_router,
+)
 from audioextender.web.downloaded_library_models import (
     DownloadedGenreRequest,  # noqa: F401 - compatibility re-export
     DownloadedMetadataRequest,  # noqa: F401 - compatibility re-export
@@ -126,6 +129,13 @@ from audioextender.web.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
     create_job_media_router,
+)
+from audioextender.web.job_review_routes import (
+    FeedbackRequest,  # noqa: F401 - compatibility re-export
+    JobReviewRouteDependencies,
+    JobReviewService,
+    ReprocessRequest,  # noqa: F401 - compatibility re-export
+    create_job_review_router,
 )
 from audioextender.web.job_routes import (
     JobQueueService,
@@ -344,69 +354,12 @@ WEB_DEFAULTS = {
 }
 
 
-class FeedbackRequest(BaseModel):
-    position: str
-    candidate_rank: int | None = None
-    accepted: bool
-    tags: str = ""
-    notes: str = ""
-
-
 class SourceMatchRequest(BaseModel):
     url: str = Field(min_length=10, max_length=500)
 
 
 class ArtworkSyncRequest(BaseModel):
     track_ids: list[int] = Field(default_factory=list, max_length=5000)
-
-
-class DownloadedAnalysisFilterRequest(BaseModel):
-    search: str = Field(default="", max_length=300)
-    genre: str = Field(default="all", max_length=100)
-    detailed_genre: str = Field(default="all", max_length=120)
-    playlist: str = Field(default="all", max_length=200)
-    analysis: str = Field(default="all", max_length=30)
-    quality: str = Field(default="all", max_length=30)
-    sort: str = Field(default="newest", max_length=30)
-
-
-class ReprocessRequest(BaseModel):
-    preset: str | None = None
-    intro_bars: int | None = None
-    outro_bars: int | None = None
-    intro_bars_auto: bool | None = None
-    outro_bars_auto: bool | None = None
-    use_stems: bool | None = None
-    auto_bars: bool | None = None
-    minimum_intro_loop_quality: float | None = Field(None, ge=0, le=100)
-    minimum_outro_loop_quality: float | None = Field(None, ge=0, le=100)
-    maximum_repetitions: int | None = Field(None, ge=1, le=8)
-    crossfade_ms: float | None = Field(None, ge=1, le=100)
-    candidate_count: int | None = Field(None, ge=1, le=8)
-    intro_search_seconds: float | None = Field(None, ge=15, le=600)
-    outro_search_seconds: float | None = Field(None, ge=15, le=600)
-    maximum_vocal_coverage_percent: float | None = Field(None, ge=0, le=100)
-    maximum_vocal_boundary_risk_percent: float | None = Field(None, ge=0, le=100)
-    maximum_buildup_risk_percent: float | None = Field(None, ge=0, le=100)
-    maximum_bass_reset_risk_percent: float | None = Field(None, ge=0, le=100)
-    minimum_stem_reliability_percent: float | None = Field(None, ge=0, le=100)
-    pcm_bits: int | None = None
-    preview_seconds: float | None = Field(None, gt=0, le=60)
-    export_cues: bool | None = None
-    intro_candidate: int | None = Field(None, ge=0, le=3)
-    outro_candidate: int | None = Field(None, ge=0, le=3)
-    review_candidates: bool | None = None
-    custom_intro_start: float | None = Field(None, ge=0)
-    custom_intro_end: float | None = Field(None, gt=0)
-    custom_intro_copies: int | None = Field(None, ge=1, le=8)
-    custom_outro_start: float | None = Field(None, ge=0)
-    custom_outro_end: float | None = Field(None, gt=0)
-    custom_outro_copies: int | None = Field(None, ge=1, le=8)
-    insert_source_start: float | None = Field(None, ge=0)
-    insert_source_end: float | None = Field(None, gt=0)
-    insert_destination: float | None = Field(None, ge=0)
-    insert_copies: int | None = Field(None, ge=1, le=8)
-    clear_insertion: bool = False
 
 
 class OverrideRequest(BaseModel):
@@ -1158,24 +1111,6 @@ def _downloaded_track_payload(track: dict) -> dict:
     return payload
 
 
-@legacy_router.post("/api/downloaded-library/analyze", status_code=202)
-def analyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
-    wanted = set(request.track_ids)
-    tracks = [track for track in repository.list_downloaded_tracks() if track["id"] in wanted]
-    if len(tracks) != len(wanted):
-        raise HTTPException(404, "One or more downloaded tracks were not found")
-    return _queue_downloaded_analysis(tracks)
-
-
-@legacy_router.post("/api/downloaded-library/reanalyze", status_code=202)
-def reanalyze_downloaded_tracks(request: DownloadedTracksRequest) -> dict:
-    wanted = set(request.track_ids)
-    tracks = [track for track in repository.list_downloaded_tracks_with_jobs() if track["id"] in wanted]
-    if len(tracks) != len(wanted):
-        raise HTTPException(404, "One or more downloaded tracks were not found")
-    return _queue_downloaded_analysis(tracks, force=True)
-
-
 def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> dict:
     """Compatibility wrapper around the catalog analysis queue service."""
     return DownloadedTrackAnalysisQueue(
@@ -1183,42 +1118,6 @@ def _queue_downloaded_analysis(tracks: list[dict], *, force: bool = False) -> di
         processor=service,
         effective_settings=_effective_settings,
     ).queue(tracks, force=force)
-
-
-@legacy_router.post("/api/downloaded-library/analyze-matching", status_code=202)
-def analyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest) -> dict:
-    if request.analysis in {"complete", "active"}:
-        return {"job_ids": [], "skipped": [], "unavailable": [], "matched": 0}
-    tracks, _ = repository.page_downloaded_tracks(
-        page=1,
-        page_size=10_000_000,
-        search=request.search,
-        genre=request.genre,
-        detailed_genre=request.detailed_genre,
-        playlist=request.playlist,
-        analysis=("failed" if request.analysis == "failed" else "needs"),
-        quality=request.quality,
-        sort=request.sort,
-    )
-    result = _queue_downloaded_analysis(tracks)
-    return {**result, "matched": len(tracks)}
-
-
-@legacy_router.post("/api/downloaded-library/reanalyze-matching", status_code=202)
-def reanalyze_matching_downloaded_tracks(request: DownloadedAnalysisFilterRequest) -> dict:
-    tracks, _ = repository.page_downloaded_tracks(
-        page=1,
-        page_size=10_000_000,
-        search=request.search,
-        genre=request.genre,
-        detailed_genre=request.detailed_genre,
-        playlist=request.playlist,
-        analysis=request.analysis,
-        quality=request.quality,
-        sort=request.sort,
-    )
-    result = _queue_downloaded_analysis(tracks, force=True)
-    return {**result, "matched": len(tracks)}
 
 
 def _refresh_wav_tag_audit() -> dict:
@@ -1290,90 +1189,6 @@ def remove_library_track(source_name: str) -> dict:
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         pass
     return {"removed_generations": removed, "files_preserved": True}
-
-
-@legacy_router.post("/api/jobs/{job_id}/reprocess", status_code=202)
-def reprocess_job(job_id: int, request: ReprocessRequest | None = None) -> dict:
-    try:
-        return job_workflow_service.reprocess(job_id, request.model_dump() if request is not None else None)
-    except JobWorkflowError as error:
-        raise HTTPException(error.status_code, error.detail) from error
-
-
-@legacy_router.post("/api/jobs/{job_id}/review/reject")
-def reject_review(job_id: int) -> dict:
-    job = repository.get(job_id)
-    if job is None:
-        raise HTTPException(404, "Job not found")
-    if job.get("review_status") != "pending":
-        raise HTTPException(409, "Review is no longer pending")
-    repository.update(job_id, review_status="rejected")
-    return {"ok": True}
-
-
-@legacy_router.get("/api/jobs/{job_id}/candidates")
-def candidates(job_id: int) -> dict:
-    job = repository.get(job_id)
-    if job is None:
-        raise HTTPException(404, "Job not found")
-    return json.loads(job.get("candidates_json") or "{}")
-
-
-@legacy_router.get("/api/jobs/{job_id}/candidate/{position}/{rank}")
-def candidate_audio(job_id: int, position: str, rank: int) -> FileResponse:
-    job = repository.get(job_id)
-    if job is None or position not in {"intro", "outro"} or rank not in {1, 2, 3}:
-        raise HTTPException(404, "Candidate not found")
-    stem = Path(job["source_name"]).stem
-    archived = OUTPUT / "versions" / stem / f"job-{job_id}" / "previews"
-    folder = archived if archived.is_dir() else OUTPUT / "previews" / stem
-    if not folder.is_dir():
-        wanted = Path(job["source_name"]).stem.casefold()
-        previews = OUTPUT / "previews"
-        folder = (
-            next(
-                (item for item in previews.iterdir() if item.is_dir() and item.name.casefold() == wanted),
-                folder,
-            )
-            if previews.is_dir()
-            else folder
-        )
-    path = folder / f"{position.title()} Candidate {rank}.wav"
-    if not path.is_file():
-        raise HTTPException(404, "Candidate preview was not generated")
-    return FileResponse(path, media_type="audio/wav")
-
-
-@legacy_router.post("/api/jobs/{job_id}/feedback")
-def save_feedback(job_id: int, request: FeedbackRequest) -> dict:
-    job = repository.get(job_id)
-    if job is None:
-        raise HTTPException(404, "Job not found")
-    if request.position not in {"intro", "outro"}:
-        raise HTTPException(400, "Position must be intro or outro")
-    feedback_id = repository.add_feedback(
-        job_id,
-        request.position,
-        request.candidate_rank,
-        request.accepted,
-        request.tags.strip(),
-        request.notes.strip(),
-    )
-    append_web_feedback(
-        OUTPUT,
-        job["source_name"],
-        request.position,
-        request.candidate_rank,
-        request.accepted,
-        request.tags.strip(),
-        request.notes.strip(),
-    )
-    return {"id": feedback_id}
-
-
-@legacy_router.get("/api/jobs/{job_id}/feedback")
-def job_feedback(job_id: int) -> list[dict]:
-    return repository.feedback(job_id)
 
 
 @legacy_router.post("/api/jobs", status_code=202)
@@ -1654,7 +1469,7 @@ def create_app(
     global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
     global downloaded_analysis_queue, downloaded_catalog_query_service, downloaded_library_delivery_service
-    global preset_service, job_workflow_service
+    global preset_service, job_workflow_service, job_review_service
     global catalog_projection_builder, catalog_projection_publisher
 
     catalog_projection_builder = _current_catalog_projection_builder()
@@ -1861,6 +1676,14 @@ def create_app(
         effective_settings=_effective_settings,
         preset_snapshot=preset_service.snapshot,
     )
+    job_review_service = JobReviewService(
+        JobReviewRouteDependencies(
+            repository=lambda: repository,
+            workflow=job_workflow_service,
+            output_root=OUTPUT,
+            append_feedback=append_web_feedback,
+        )
+    )
     _run_integrity_scan = library_maintenance_service.run_integrity_scan
     intention_planner = IntentionPlanner.from_environment()
     journey_planner = JourneyPlanner(intention_planner)
@@ -1897,6 +1720,7 @@ def create_app(
         downloaded_analysis_queue=downloaded_analysis_queue,
         catalog_projection_builder=catalog_projection_builder,
         job_workflow_service=job_workflow_service,
+        job_review_service=job_review_service,
         _run_integrity_scan=_run_integrity_scan,
         intention_planner=intention_planner,
         journey_planner=journey_planner,
@@ -1920,6 +1744,18 @@ def create_app(
     application.include_router(legacy_router)
     application.include_router(create_preset_router(preset_service))
     application.include_router(create_downloaded_library_router(downloaded_library_delivery_service))
+    application.include_router(
+        create_downloaded_analysis_router(
+            DownloadedAnalysisRouteService(
+                repository=lambda: repository,
+                queue=lambda: DownloadedTrackAnalysisQueue(
+                    repository=repository,
+                    processor=service,
+                    effective_settings=_effective_settings,
+                ),
+            )
+        )
+    )
     application.include_router(create_recording_family_router(recording_family_service))
     application.include_router(create_downloaded_track_mutation_router(downloaded_track_mutation_service))
     application.include_router(create_audio_quality_router(audio_quality_scan_service))
@@ -2023,6 +1859,7 @@ def create_app(
     application.include_router(
         create_job_router(JobQueueService(repository=lambda: repository, processor=lambda: service))
     )
+    application.include_router(create_job_review_router(job_review_service))
     application.include_router(
         create_job_media_router(
             JobMediaRouteDependencies(

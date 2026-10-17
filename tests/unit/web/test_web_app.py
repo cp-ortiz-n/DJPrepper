@@ -789,6 +789,23 @@ class JobRepositoryTests(unittest.TestCase):
 
 
 class WebJobConfigurationTests(unittest.TestCase):
+    def test_analysis_worker_sizing_ignores_unavailable_queued_sources(self) -> None:
+        repository = Mock()
+        repository.get.return_value = {
+            "source_path": "/deleted/test-source.wav",
+            "use_stems": False,
+            "config_json": '{"analysis_only": true}',
+        }
+        service = WebJobService.__new__(WebJobService)
+        service.repository = repository
+        service._active = set()
+        service._pending = [7]
+
+        with patch("audioextender.processing.web_jobs.choose_worker_count", return_value=(1, 0, 0)) as choose:
+            self.assertEqual(service._analysis_worker_limit(), 1)
+
+        choose.assert_called_once_with([], "auto", False)
+
     def test_web_generations_archive_their_extended_audio_independently(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)

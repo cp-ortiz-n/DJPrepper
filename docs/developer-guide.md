@@ -119,6 +119,11 @@ read/media delivery are owned by `web/preset_routes.py` and
 `web/recording_family_routes.py`; downloaded-track deletion and metadata
 workflows live in `web/downloaded_track_mutation_routes.py` and delegate atomic
 file/tag/sidecar/catalog changes to `library/metadata_mutations.py`.
+Downloaded analysis selection lives in `web/downloaded_analysis_routes.py` and
+delegates job creation to `library/analysis_queue.py`. Job reprocessing,
+candidate auditions, review rejection, and candidate feedback live in
+`web/job_review_routes.py`; queue controls and rendered media remain in their
+existing focused job routers.
 `application.py` wires those owners and retains only small compatibility
 wrappers where scripts and integration tests still rely on the historical entry
 point.

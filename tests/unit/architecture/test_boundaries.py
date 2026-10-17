@@ -163,7 +163,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
 
     def test_known_architecture_hotspots_do_not_grow(self) -> None:
         ceilings = {
-            "audioextender/web/application.py": 2095,
+            "audioextender/web/application.py": 1950,
+            "audioextender/web/downloaded_analysis_routes.py": 100,
+            "audioextender/web/job_review_routes.py": 190,
             "audioextender/web/downloaded_track_mutation_routes.py": 230,
             "audioextender/web/recording_family_routes.py": 125,
             "audioextender/imports/creative_commons_worker.py": 350,
