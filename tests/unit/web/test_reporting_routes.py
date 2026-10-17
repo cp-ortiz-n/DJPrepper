@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -27,6 +28,11 @@ class ReportingRouteTests(unittest.TestCase):
                         append_feedback=lambda *_args: None,
                         refresh_library_index=lambda: refreshes.append("refresh"),
                         valid_keys=frozenset({"A minor"}),
+                        overrides_path=root / "overrides.json",
+                        analytics_cache={"payload": None, "expires_at": 0.0},
+                        analytics_cache_lock=threading.Lock(),
+                        report_cache={"payload": None, "mtime_ns": None},
+                        report_cache_lock=threading.Lock(),
                     )
                 )
             )

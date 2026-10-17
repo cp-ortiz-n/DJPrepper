@@ -25,7 +25,7 @@ from urllib.parse import urlencode, urlparse
 
 import httpx
 import uvicorn
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -71,7 +71,6 @@ from audioextender.library.metadata_mutations import (
     TrackMetadataMutationService,
 )
 from audioextender.library.musical_profile import CAMELOT_KEYS
-from audioextender.library.track_overrides import load_track_overrides
 from audioextender.processing.job_workflows import (
     JobCreationCommand,
     JobWorkflowService,
@@ -170,7 +169,9 @@ from audioextender.web.recording_family_routes import (
     create_recording_family_router,
 )
 from audioextender.web.reporting_routes import (
+    OverrideRequest,  # noqa: F401 - compatibility re-export
     ReportingRouteDependencies,
+    ReportingService,
     create_reporting_router,
 )
 from audioextender.web.set_builder_routes import (
@@ -361,12 +362,6 @@ class SourceMatchRequest(BaseModel):
 
 class ArtworkSyncRequest(BaseModel):
     track_ids: list[int] = Field(default_factory=list, max_length=5000)
-
-
-class OverrideRequest(BaseModel):
-    intro_before: float | None = Field(None, gt=0)
-    outro_after: float | None = Field(None, gt=0)
-    outro_before: float | None = Field(None, gt=0)
 
 
 def _effective_settings() -> dict:
@@ -1253,122 +1248,6 @@ async def create_jobs(
         raise HTTPException(error.status_code, error.detail) from error
 
 
-@legacy_router.get("/api/overrides/{source_name}")
-def get_override(source_name: str) -> dict:
-    override = load_track_overrides(OVERRIDES).get(source_name.casefold())
-    return {
-        "intro_before": override.intro_before if override else None,
-        "outro_after": override.outro_after if override else None,
-        "outro_before": override.outro_before if override else None,
-    }
-
-
-@legacy_router.put("/api/overrides/{source_name}")
-def save_override(source_name: str, request: OverrideRequest) -> dict:
-    if request.outro_after and request.outro_before and request.outro_after >= request.outro_before:
-        raise HTTPException(400, "Outro start must be earlier than outro end")
-    try:
-        document = json.loads(OVERRIDES.read_text()) if OVERRIDES.exists() else {}
-    except (OSError, ValueError) as error:
-        raise HTTPException(500, "Could not read track overrides") from error
-    values = request.model_dump()
-    if any(value is not None for value in values.values()):
-        document[source_name] = values
-    else:
-        for key in list(document):
-            if key.casefold() == source_name.casefold():
-                del document[key]
-    OVERRIDES.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-    return values
-
-
-@legacy_router.get("/api/analytics")
-def analytics() -> dict:
-    now = perf_counter()
-    with analytics_cache_lock:
-        if analytics_cache["payload"] is not None and now < float(cast(Any, analytics_cache["expires_at"])):
-            return cast(dict, analytics_cache["payload"])
-    summary = repository.analytics_summary()
-    feedback = summary["feedback"]
-    accepted = [item for item in feedback if item["accepted"]]
-    tags: dict[str, int] = {}
-    for item in feedback:
-        for tag in str(item["tags"]).split(","):
-            tag = tag.strip().lower()
-            if tag:
-                tags[tag] = tags.get(tag, 0) + 1
-    payload = {
-        "completed": summary["completed"],
-        "feedback_count": len(feedback),
-        "acceptance_rate": len(accepted) / len(feedback) if feedback else None,
-        "stemmed_tracks": summary["stemmed"],
-        "common_tags": sorted(tags.items(), key=lambda item: item[1], reverse=True),
-    }
-    with analytics_cache_lock:
-        analytics_cache.update(payload=payload, expires_at=now + 15.0)
-    return payload
-
-
-def _load_processing_report() -> dict:
-    path = OUTPUT / "reports" / "processing_report.json"
-    if not path.exists():
-        return {"songs": {}}
-    try:
-        mtime_ns = path.stat().st_mtime_ns
-        with report_cache_lock:
-            if report_cache["mtime_ns"] != mtime_ns:
-                report_cache["payload"] = json.loads(path.read_text(encoding="utf-8"))
-                report_cache["mtime_ns"] = mtime_ns
-            return cast(dict, report_cache["payload"])
-    except (OSError, ValueError) as error:
-        raise HTTPException(500, "The report could not be read") from error
-
-
-@legacy_router.get("/api/report", response_model=None)
-def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
-    path = OUTPUT / "reports" / "processing_report.json"
-    if not path.exists():
-        return {"songs": {}}
-    if not recent:
-        return FileResponse(path, media_type="application/json")
-    try:
-        payload = _load_processing_report()
-        songs = [song for song in payload.get("songs", {}).values() if song.get("status") == "updated"]
-        songs.sort(key=lambda song: str(song.get("updated_at") or ""), reverse=True)
-        fields = {"source_name", "status", "updated_at", "bpm", "key", "intro", "outro"}
-        return {
-            "songs": {
-                str(index): {key: value for key, value in song.items() if key in fields}
-                for index, song in enumerate(songs[:recent])
-            }
-        }
-    except (OSError, ValueError) as error:
-        raise HTTPException(500, "The report could not be read") from error
-
-
-@legacy_router.get("/api/report-audio-index")
-def report_audio_index() -> list[dict]:
-    """Expose preview availability without loading the full job queue/history."""
-    result = []
-    for job in repository.list_report_audio_jobs():
-        wav_available = Path(str(job.get("wav_path") or "")).is_file()
-        extended_available = Path(str(job.get("extended_path") or "")).is_file()
-        result.append(
-            {
-                "id": int(job["id"]),
-                "source_name": str(job["source_name"]),
-                "status": "complete",
-                "wav_available": wav_available,
-                "extended_available": extended_available,
-                "downloaded_track_id": job.get("downloaded_track_id"),
-                "detected_key": job.get("latest_detected_key") or "",
-                "key_confidence": job.get("latest_key_confidence"),
-                "key_analyzed_at": job.get("key_analyzed_at") or "",
-            }
-        )
-    return result
-
-
 _CAMELOT_KEYS = CAMELOT_KEYS
 
 
@@ -1421,17 +1300,6 @@ def set_builder_save_playlist(request: SetPlaylistSaveRequest) -> dict:
     return save_playlist_file(request, _music_library_root(), _safe_folder_name)
 
 
-@legacy_router.get("/api/library/jobs/{job_id}/details")
-def library_job_details(job_id: int) -> dict:
-    job = repository.get(job_id)
-    if not job or job.get("status") != "complete":
-        raise HTTPException(404, "Library track not found")
-    return {
-        "job": job,
-        "versions": repository.list_completed_versions(str(job["source_path"])),
-    }
-
-
 def _bind_runtime(runtime: ApplicationRuntime) -> None:
     """Expose one runtime through the legacy module-level compatibility facade."""
     globals().update(runtime_bindings(runtime))
@@ -1451,134 +1319,183 @@ def _log_intention_provider_status() -> None:
         logger.warning("Set Builder AI unavailable: deterministic offline rules will be used")
 
 
-def create_app(
-    runtime: ApplicationRuntime | None = None,
-    *,
-    paths: ApplicationPaths | None = None,
-) -> FastAPI:
-    """Compose an isolated FastAPI application from explicit runtime dependencies."""
-    if runtime is not None and paths is not None:
-        raise ValueError("Pass either runtime or paths, not both")
-    runtime = runtime or ApplicationRuntime.create(paths or DEFAULT_PATHS)
-    _bind_runtime(runtime)
-
-    global import_service, local_import_service, playlist_match_service, creative_commons_service
-    global creative_commons_archive_service, creative_commons_worker, import_issue_service
-    global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service
-    global track_metadata_mutations, metadata_batch_service, downloaded_track_mutation_service
-    global recording_family_service
-    global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
-    global set_review_service, candidate_retriever, set_plan_validator, track_planner
-    global downloaded_analysis_queue, downloaded_catalog_query_service, downloaded_library_delivery_service
-    global preset_service, job_workflow_service, job_review_service
-    global catalog_projection_builder, catalog_projection_publisher
-
-    catalog_projection_builder = _current_catalog_projection_builder()
-    catalog_projection_publisher = CatalogProjectionPublisher(
+def _reporting_dependencies() -> ReportingRouteDependencies:
+    return ReportingRouteDependencies(
         repository=lambda: repository,
-        rebuild=catalog_projection_builder.rebuild,
-        report_path=lambda: OUTPUT / "reports" / "processing_report.json",
-        catalog_path=lambda: SET_BUILDER_CATALOG_CACHE,
-        memory_cache=library_catalog_cache,
-        memory_cache_lock=library_catalog_cache_lock,
-    )
-    artwork_thumbnail_service = ArtworkThumbnailService(
-        thumbnail_root=lambda: _music_library_root() / ".artwork" / "thumbnails",
-        record_cache_result=_record_cache_result,
-        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
-    )
-    preset_service = PresetService(
-        PresetRouteDependencies(
-            state_path=lambda: WEB_PRESETS,
-            built_in_presets=PRESETS,
-            supported_bar_counts=frozenset(SUPPORTED_BAR_COUNTS),
-        )
-    )
-    audio_quality_scan_service = AudioQualityScanService(
-        AudioQualityRouteDependencies(
-            repository=lambda: repository,
-            analyze=analyze_audio_quality,
-            batches=audio_quality_batches,
-            batch_lock=audio_quality_batch_lock,
-            library_status_cache=library_status_cache,
-            library_status_lock=library_status_cache_lock,
-            thread_factory=lambda **kwargs: threading.Thread(**kwargs),
-        )
+        output_root=OUTPUT,
+        append_feedback=append_web_feedback,
+        refresh_library_index=catalog_projection_publisher.publish,
+        valid_keys=frozenset(_CAMELOT_KEYS),
+        overrides_path=OVERRIDES,
+        analytics_cache=analytics_cache,
+        analytics_cache_lock=analytics_cache_lock,
+        report_cache=report_cache,
+        report_cache_lock=report_cache_lock,
     )
 
-    import_service = ImportService(
-        repository=repository,
-        processing_service=service,
-        library_root=_music_library_root,
-        effective_settings=_effective_settings,
-        preset_snapshot=preset_service.snapshot,
-        duplicate_lookup=_cataloged_download_by_youtube_id,
-        probe_audio=_probe_local_audio,
-        cache_artwork=_cache_track_artwork,
-        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+
+def _load_processing_report() -> dict:
+    """Compatibility export for catalog projection and historical callers."""
+    return ReportingService(_reporting_dependencies()).load_report()
+
+
+def _build_set_builder_services() -> dict[str, Any]:
+    """Construct the Set Builder service family and publish compatibility names."""
+    global intention_planner, journey_planner, set_preference_service, set_review_service
+    global candidate_retriever, set_plan_validator, track_planner
+
+    intention_planner = IntentionPlanner.from_environment()
+    journey_planner = JourneyPlanner(intention_planner)
+    set_preference_service = DJPreferenceService(
+        JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
     )
-    local_import_service = LocalAudioImportService(
-        repository=repository,
-        staging_root=INPUT / "local-imports",
-        require_library_online=_require_music_library_online,
-        probe_audio=_probe_local_audio,
-        generalized_genre=_generalized_genre,
-        genre_directory=_genre_directory,
-        write_metadata=write_wav_metadata,
-        write_source_metadata=_write_source_metadata,
-        safe_name=_safe_audio_name,
-        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    set_review_service = SetReviewService(
+        JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_reviews.json")),
+        set_preference_service.profile,
     )
-    playlist_match_service = PlaylistMatchService(
-        _match_tracks_to_youtube,
-        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    candidate_retriever = SetCandidateRetriever(
+        preference_ranker=PersonalizedCandidateRanker(set_preference_service.profile)
     )
-    import_issue_service = ImportIssueService(
-        ImportIssueDependencies(
-            repository=lambda: repository,
-            lifecycle=lambda: creative_commons_service,
-            report_root=OUTPUT / "reports" / "imports",
-            safe_folder_name=_safe_folder_name,
-            generalized_genre=_generalized_genre,
-            normalize_genre=_normalize_genre_category,
-        )
-    )
-    creative_commons_worker = CreativeCommonsBatchWorker(
-        registry=creative_commons_registry,
-        repository=repository,
-        output=OUTPUT,
-        require_library_online=_require_music_library_online,
-        safe_folder_name=_safe_folder_name,
-        generalized_genre=_generalized_genre,
-        normalize_genre_category=_normalize_genre_category,
-        safe_audio_name=_safe_audio_name,
-        duplicate_lookup=_cataloged_download_by_youtube_id,
-        genre_path_parts=_genre_path_parts,
-        source_metadata_path=_source_metadata_path,
-        cache_track_artwork=_cache_track_artwork,
-        write_wav_metadata=write_wav_metadata,
-        write_source_metadata=_write_source_metadata,
-        best_youtube_match=_best_youtube_match,
-        spotify_source_metadata=_spotify_source_metadata,
-        original_import_metadata=import_issue_service.original_metadata,
-        match_factory=CreativeCommonsMatch,
-    )
-    creative_commons_service = CreativeCommonsImportService(
-        creative_commons_registry,
-        require_library_online=_require_music_library_online,
-        worker=creative_commons_worker.run,
-        retry_worker=creative_commons_worker.retry,
-        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
-    )
-    creative_commons_archive_service = CreativeCommonsArchiveService(
-        CreativeCommonsArchiveDependencies(
-            lifecycle=creative_commons_service,
-            music_library_root=lambda: _music_library_root(),
-            safe_folder_name=_safe_folder_name,
-            genre_path_parts=_genre_path_parts,
-            cataloged_download=lambda video_id: _cataloged_download_by_youtube_id(video_id),
-        )
-    )
+    set_plan_validator = SetPlanValidator()
+    track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
+    return {
+        "intention_planner": intention_planner,
+        "journey_planner": journey_planner,
+        "set_preference_service": set_preference_service,
+        "set_review_service": set_review_service,
+        "candidate_retriever": candidate_retriever,
+        "set_plan_validator": set_plan_validator,
+        "track_planner": track_planner,
+    }
+
+
+def _register_routers(application: FastAPI) -> None:
+    """Register feature routers after every dependency family is composed."""
+    routers = [
+        legacy_router,
+        create_preset_router(preset_service),
+        create_downloaded_library_router(downloaded_library_delivery_service),
+        create_downloaded_analysis_router(
+            DownloadedAnalysisRouteService(
+                repository=lambda: repository,
+                queue=lambda: DownloadedTrackAnalysisQueue(
+                    repository=repository, processor=service, effective_settings=_effective_settings
+                ),
+            )
+        ),
+        create_recording_family_router(recording_family_service),
+        create_downloaded_track_mutation_router(downloaded_track_mutation_service),
+        create_audio_quality_router(audio_quality_scan_service),
+        create_creative_commons_router(
+            creative_commons_service, creative_commons_archive_service, import_issue_service
+        ),
+        create_settings_router(
+            SettingsRouteDependencies(
+                repository=lambda: repository,
+                job_service=service,
+                relocation=library_relocation,
+                import_services=(
+                    import_service,
+                    local_import_service,
+                    playlist_match_service,
+                    creative_commons_service,
+                ),
+                project=PROJECT,
+                input_root=INPUT,
+                output_root=OUTPUT,
+                database=DATABASE,
+                overrides_path=OVERRIDES,
+                presets_path=WEB_PRESETS,
+                backup_root=BACKUP_ROOT,
+                storage_snapshot=STORAGE_INVENTORY_SNAPSHOT,
+                cache_folder_name=CACHE_FOLDER_NAME,
+                supported_bar_counts=SUPPORTED_BAR_COUNTS,
+                defaults=WEB_DEFAULTS,
+                available_presets=preset_service.available,
+                effective_settings=_effective_settings,
+                music_library_root=lambda: _music_library_root(),
+                library_location_summary=_library_location_summary,
+                source_metadata_path=_source_metadata_path,
+                refresh_wav_tag_audit=_refresh_wav_tag_audit,
+                metadata_batches=metadata_batch_registry,
+                library_status_cache=library_status_cache,
+                library_status_lock=library_status_cache_lock,
+                storage_inventory_cache=storage_inventory_cache,
+                storage_inventory_lock=storage_inventory_lock,
+                report_cache=report_cache,
+                catalog_cache=library_catalog_cache,
+                pending_restores=pending_backup_restores,
+            )
+        ),
+        create_set_builder_router(
+            SetBuilderRouteDependencies(
+                catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+                ensure_catalog_current=_ensure_library_search_index_current,
+                write_catalog_cache=_write_set_builder_catalog_cache,
+                music_library_root=lambda: _music_library_root(),
+                safe_folder_name=_safe_folder_name,
+                intention_planner=intention_planner,
+                journey_planner=journey_planner,
+                saved_sets=SavedSetService(repository),
+            )
+        ),
+        create_set_planning_router(
+            SetPlanningRouteDependencies(
+                catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
+                ensure_catalog_current=_ensure_library_search_index_current,
+                write_catalog_cache=_write_set_builder_catalog_cache,
+                candidate_retriever=candidate_retriever,
+                plan_validator=set_plan_validator,
+                track_planner=track_planner,
+                planning_job_store_path=SET_BUILDER_CATALOG_CACHE.with_name("set_planning_jobs.json"),
+            )
+        ),
+        create_set_preference_router(set_preference_service),
+        create_set_review_router(set_review_service, set_preference_service),
+        create_library_router(
+            LibraryRouteDependencies(
+                repository=lambda: repository,
+                ensure_search_index_current=_ensure_library_search_index_current,
+                generalized_genre=_generalized_genre,
+                catalog_cache=library_catalog_cache,
+                catalog_cache_lock=library_catalog_cache_lock,
+            )
+        ),
+        create_descriptor_router(
+            DescriptorRouteDependencies(
+                repository=lambda: repository,
+                invalidate_set_catalog=catalog_projection_publisher.publish,
+            )
+        ),
+        create_library_maintenance_router(library_maintenance_service),
+        create_metadata_batch_router(metadata_batch_service),
+        create_job_router(JobQueueService(repository=lambda: repository, processor=lambda: service)),
+        create_job_review_router(job_review_service),
+        create_job_media_router(
+            JobMediaRouteDependencies(
+                repository=lambda: repository,
+                job_service=service,
+                record_cache_result=_record_cache_result,
+                waveform_locks_guard=waveform_generation_locks_guard,
+                waveform_locks=waveform_generation_locks,
+            )
+        ),
+        create_reporting_router(_reporting_dependencies()),
+        create_import_router(
+            import_service, local_import_service, playlist_match_service, _playlist_csv_tracks, _safe_folder_name
+        ),
+    ]
+    for router in routers:
+        application.include_router(router)
+
+
+def _build_library_services() -> dict[str, Any]:
+    """Construct catalog, mutation, analysis, job-review, and reporting services."""
+    global library_maintenance_service, track_metadata_mutations, metadata_batch_service
+    global downloaded_track_mutation_service, recording_family_service
+    global downloaded_catalog_query_service, downloaded_library_delivery_service, downloaded_analysis_queue
+    global job_workflow_service, job_review_service, reporting_service, _run_integrity_scan
+
     library_maintenance_service = LibraryMaintenanceService(
         LibraryMaintenanceDependencies(
             repository=lambda: repository,
@@ -1685,21 +1602,162 @@ def create_app(
             append_feedback=append_web_feedback,
         )
     )
+    reporting_service = ReportingService(_reporting_dependencies())
     _run_integrity_scan = library_maintenance_service.run_integrity_scan
-    intention_planner = IntentionPlanner.from_environment()
-    journey_planner = JourneyPlanner(intention_planner)
-    set_preference_service = DJPreferenceService(
-        JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
+    return {
+        "library_maintenance_service": library_maintenance_service,
+        "track_metadata_mutations": track_metadata_mutations,
+        "metadata_batch_service": metadata_batch_service,
+        "downloaded_track_mutation_service": downloaded_track_mutation_service,
+        "recording_family_service": recording_family_service,
+        "downloaded_catalog_query_service": downloaded_catalog_query_service,
+        "downloaded_library_delivery_service": downloaded_library_delivery_service,
+        "downloaded_analysis_queue": downloaded_analysis_queue,
+        "job_workflow_service": job_workflow_service,
+        "job_review_service": job_review_service,
+        "reporting_service": reporting_service,
+        "_run_integrity_scan": _run_integrity_scan,
+    }
+
+
+def _build_import_services() -> None:
+    """Construct import workflows after shared preset and catalog services."""
+    global import_service, local_import_service, playlist_match_service, creative_commons_service
+    global creative_commons_archive_service, creative_commons_worker, import_issue_service
+
+    import_service = ImportService(
+        repository=repository,
+        processing_service=service,
+        library_root=_music_library_root,
+        effective_settings=_effective_settings,
+        preset_snapshot=preset_service.snapshot,
+        duplicate_lookup=_cataloged_download_by_youtube_id,
+        probe_audio=_probe_local_audio,
+        cache_artwork=_cache_track_artwork,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
-    set_review_service = SetReviewService(
-        JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_reviews.json")),
-        set_preference_service.profile,
+    local_import_service = LocalAudioImportService(
+        repository=repository,
+        staging_root=INPUT / "local-imports",
+        require_library_online=_require_music_library_online,
+        probe_audio=_probe_local_audio,
+        generalized_genre=_generalized_genre,
+        genre_directory=_genre_directory,
+        write_metadata=write_wav_metadata,
+        write_source_metadata=_write_source_metadata,
+        safe_name=_safe_audio_name,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
-    candidate_retriever = SetCandidateRetriever(
-        preference_ranker=PersonalizedCandidateRanker(set_preference_service.profile)
+    playlist_match_service = PlaylistMatchService(
+        _match_tracks_to_youtube,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
-    set_plan_validator = SetPlanValidator()
-    track_planner = AITrackPlanner(SetPlanningModelClient(intention_planner), set_plan_validator)
+    import_issue_service = ImportIssueService(
+        ImportIssueDependencies(
+            repository=lambda: repository,
+            lifecycle=lambda: creative_commons_service,
+            report_root=OUTPUT / "reports" / "imports",
+            safe_folder_name=_safe_folder_name,
+            generalized_genre=_generalized_genre,
+            normalize_genre=_normalize_genre_category,
+        )
+    )
+    creative_commons_worker = CreativeCommonsBatchWorker(
+        registry=creative_commons_registry,
+        repository=repository,
+        output=OUTPUT,
+        require_library_online=_require_music_library_online,
+        safe_folder_name=_safe_folder_name,
+        generalized_genre=_generalized_genre,
+        normalize_genre_category=_normalize_genre_category,
+        safe_audio_name=_safe_audio_name,
+        duplicate_lookup=_cataloged_download_by_youtube_id,
+        genre_path_parts=_genre_path_parts,
+        source_metadata_path=_source_metadata_path,
+        cache_track_artwork=_cache_track_artwork,
+        write_wav_metadata=write_wav_metadata,
+        write_source_metadata=_write_source_metadata,
+        best_youtube_match=_best_youtube_match,
+        spotify_source_metadata=_spotify_source_metadata,
+        original_import_metadata=import_issue_service.original_metadata,
+        match_factory=CreativeCommonsMatch,
+    )
+    creative_commons_service = CreativeCommonsImportService(
+        creative_commons_registry,
+        require_library_online=_require_music_library_online,
+        worker=creative_commons_worker.run,
+        retry_worker=creative_commons_worker.retry,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    creative_commons_archive_service = CreativeCommonsArchiveService(
+        CreativeCommonsArchiveDependencies(
+            lifecycle=creative_commons_service,
+            music_library_root=lambda: _music_library_root(),
+            safe_folder_name=_safe_folder_name,
+            genre_path_parts=_genre_path_parts,
+            cataloged_download=lambda video_id: _cataloged_download_by_youtube_id(video_id),
+        )
+    )
+
+
+def create_app(
+    runtime: ApplicationRuntime | None = None,
+    *,
+    paths: ApplicationPaths | None = None,
+) -> FastAPI:
+    """Compose an isolated FastAPI application from explicit runtime dependencies."""
+    if runtime is not None and paths is not None:
+        raise ValueError("Pass either runtime or paths, not both")
+    runtime = runtime or ApplicationRuntime.create(paths or DEFAULT_PATHS)
+    _bind_runtime(runtime)
+
+    global import_service, local_import_service, playlist_match_service, creative_commons_service
+    global creative_commons_archive_service, creative_commons_worker, import_issue_service
+    global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service
+    global track_metadata_mutations, metadata_batch_service, downloaded_track_mutation_service
+    global recording_family_service
+    global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
+    global set_review_service, candidate_retriever, set_plan_validator, track_planner
+    global downloaded_analysis_queue, downloaded_catalog_query_service, downloaded_library_delivery_service
+    global preset_service, job_workflow_service, job_review_service, reporting_service
+    global catalog_projection_builder, catalog_projection_publisher
+
+    catalog_projection_builder = _current_catalog_projection_builder()
+    catalog_projection_publisher = CatalogProjectionPublisher(
+        repository=lambda: repository,
+        rebuild=catalog_projection_builder.rebuild,
+        report_path=lambda: OUTPUT / "reports" / "processing_report.json",
+        catalog_path=lambda: SET_BUILDER_CATALOG_CACHE,
+        memory_cache=library_catalog_cache,
+        memory_cache_lock=library_catalog_cache_lock,
+    )
+    artwork_thumbnail_service = ArtworkThumbnailService(
+        thumbnail_root=lambda: _music_library_root() / ".artwork" / "thumbnails",
+        record_cache_result=_record_cache_result,
+        thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+    )
+    preset_service = PresetService(
+        PresetRouteDependencies(
+            state_path=lambda: WEB_PRESETS,
+            built_in_presets=PRESETS,
+            supported_bar_counts=frozenset(SUPPORTED_BAR_COUNTS),
+        )
+    )
+    audio_quality_scan_service = AudioQualityScanService(
+        AudioQualityRouteDependencies(
+            repository=lambda: repository,
+            analyze=analyze_audio_quality,
+            batches=audio_quality_batches,
+            batch_lock=audio_quality_batch_lock,
+            library_status_cache=library_status_cache,
+            library_status_lock=library_status_cache_lock,
+            thread_factory=lambda **kwargs: threading.Thread(**kwargs),
+        )
+    )
+
+    _build_import_services()
+    library_services = _build_library_services()
+    set_builder_services = _build_set_builder_services()
     runtime.services.update(
         import_service=import_service,
         local_import_service=local_import_service,
@@ -1711,25 +1769,9 @@ def create_app(
         audio_quality_scan_service=audio_quality_scan_service,
         artwork_thumbnail_service=artwork_thumbnail_service,
         preset_service=preset_service,
-        library_maintenance_service=library_maintenance_service,
-        track_metadata_mutations=track_metadata_mutations,
-        metadata_batch_service=metadata_batch_service,
-        downloaded_track_mutation_service=downloaded_track_mutation_service,
-        recording_family_service=recording_family_service,
-        downloaded_catalog_query_service=downloaded_catalog_query_service,
-        downloaded_library_delivery_service=downloaded_library_delivery_service,
-        downloaded_analysis_queue=downloaded_analysis_queue,
         catalog_projection_builder=catalog_projection_builder,
-        job_workflow_service=job_workflow_service,
-        job_review_service=job_review_service,
-        _run_integrity_scan=_run_integrity_scan,
-        intention_planner=intention_planner,
-        journey_planner=journey_planner,
-        set_preference_service=set_preference_service,
-        set_review_service=set_review_service,
-        candidate_retriever=candidate_retriever,
-        set_plan_validator=set_plan_validator,
-        track_planner=track_planner,
+        **library_services,
+        **set_builder_services,
     )
 
     application = install_error_handlers(FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None))
@@ -1742,156 +1784,7 @@ def create_app(
         name="wavesurfer",
     )
     application.mount("/assets", StaticFiles(directory=WEB, check_dir=False), name="assets")
-    application.include_router(legacy_router)
-    application.include_router(create_preset_router(preset_service))
-    application.include_router(create_downloaded_library_router(downloaded_library_delivery_service))
-    application.include_router(
-        create_downloaded_analysis_router(
-            DownloadedAnalysisRouteService(
-                repository=lambda: repository,
-                queue=lambda: DownloadedTrackAnalysisQueue(
-                    repository=repository,
-                    processor=service,
-                    effective_settings=_effective_settings,
-                ),
-            )
-        )
-    )
-    application.include_router(create_recording_family_router(recording_family_service))
-    application.include_router(create_downloaded_track_mutation_router(downloaded_track_mutation_service))
-    application.include_router(create_audio_quality_router(audio_quality_scan_service))
-    application.include_router(
-        create_creative_commons_router(
-            creative_commons_service,
-            creative_commons_archive_service,
-            import_issue_service,
-        )
-    )
-    application.include_router(
-        create_settings_router(
-            SettingsRouteDependencies(
-                repository=lambda: repository,
-                job_service=service,
-                relocation=library_relocation,
-                import_services=(
-                    import_service,
-                    local_import_service,
-                    playlist_match_service,
-                    creative_commons_service,
-                ),
-                project=PROJECT,
-                input_root=INPUT,
-                output_root=OUTPUT,
-                database=DATABASE,
-                overrides_path=OVERRIDES,
-                presets_path=WEB_PRESETS,
-                backup_root=BACKUP_ROOT,
-                storage_snapshot=STORAGE_INVENTORY_SNAPSHOT,
-                cache_folder_name=CACHE_FOLDER_NAME,
-                supported_bar_counts=SUPPORTED_BAR_COUNTS,
-                defaults=WEB_DEFAULTS,
-                available_presets=preset_service.available,
-                effective_settings=_effective_settings,
-                music_library_root=lambda: _music_library_root(),
-                library_location_summary=_library_location_summary,
-                source_metadata_path=_source_metadata_path,
-                refresh_wav_tag_audit=_refresh_wav_tag_audit,
-                metadata_batches=metadata_batch_registry,
-                library_status_cache=library_status_cache,
-                library_status_lock=library_status_cache_lock,
-                storage_inventory_cache=storage_inventory_cache,
-                storage_inventory_lock=storage_inventory_lock,
-                report_cache=report_cache,
-                catalog_cache=library_catalog_cache,
-                pending_restores=pending_backup_restores,
-            )
-        )
-    )
-    application.include_router(
-        create_set_builder_router(
-            SetBuilderRouteDependencies(
-                catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
-                ensure_catalog_current=_ensure_library_search_index_current,
-                write_catalog_cache=_write_set_builder_catalog_cache,
-                music_library_root=lambda: _music_library_root(),
-                safe_folder_name=_safe_folder_name,
-                intention_planner=intention_planner,
-                journey_planner=journey_planner,
-                saved_sets=SavedSetService(repository),
-            )
-        )
-    )
-    application.include_router(
-        create_set_planning_router(
-            SetPlanningRouteDependencies(
-                catalog_cache_path=SET_BUILDER_CATALOG_CACHE,
-                ensure_catalog_current=_ensure_library_search_index_current,
-                write_catalog_cache=_write_set_builder_catalog_cache,
-                candidate_retriever=candidate_retriever,
-                plan_validator=set_plan_validator,
-                track_planner=track_planner,
-                planning_job_store_path=SET_BUILDER_CATALOG_CACHE.with_name("set_planning_jobs.json"),
-            )
-        )
-    )
-    application.include_router(create_set_preference_router(set_preference_service))
-    application.include_router(create_set_review_router(set_review_service, set_preference_service))
-    application.include_router(
-        create_library_router(
-            LibraryRouteDependencies(
-                repository=lambda: repository,
-                ensure_search_index_current=_ensure_library_search_index_current,
-                generalized_genre=_generalized_genre,
-                catalog_cache=library_catalog_cache,
-                catalog_cache_lock=library_catalog_cache_lock,
-            )
-        )
-    )
-    application.include_router(
-        create_descriptor_router(
-            DescriptorRouteDependencies(
-                repository=lambda: repository,
-                invalidate_set_catalog=catalog_projection_publisher.publish,
-            )
-        )
-    )
-    application.include_router(create_library_maintenance_router(library_maintenance_service))
-    application.include_router(create_metadata_batch_router(metadata_batch_service))
-    application.include_router(
-        create_job_router(JobQueueService(repository=lambda: repository, processor=lambda: service))
-    )
-    application.include_router(create_job_review_router(job_review_service))
-    application.include_router(
-        create_job_media_router(
-            JobMediaRouteDependencies(
-                repository=lambda: repository,
-                job_service=service,
-                record_cache_result=_record_cache_result,
-                waveform_locks_guard=waveform_generation_locks_guard,
-                waveform_locks=waveform_generation_locks,
-            )
-        )
-    )
-    application.include_router(
-        create_reporting_router(
-            ReportingRouteDependencies(
-                repository=lambda: repository,
-                output_root=OUTPUT,
-                append_feedback=append_web_feedback,
-                refresh_library_index=catalog_projection_publisher.publish,
-                valid_keys=frozenset(_CAMELOT_KEYS),
-            )
-        )
-    )
-    application.include_router(
-        create_import_router(
-            import_service,
-            local_import_service,
-            playlist_match_service,
-            _playlist_csv_tracks,
-            _safe_folder_name,
-        )
-    )
+    _register_routers(application)
 
     def startup() -> None:
         runtime.repository.recover_interrupted()

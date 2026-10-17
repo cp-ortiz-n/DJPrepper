@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import json
+from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
+from time import perf_counter
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+from audioextender.library.track_overrides import load_track_overrides
 
 
 class TrackFeedbackRequest(BaseModel):
@@ -34,6 +40,12 @@ class BpmVerificationRequest(BaseModel):
     notes: str = Field(default="", max_length=1000)
 
 
+class OverrideRequest(BaseModel):
+    intro_before: float | None = Field(None, gt=0)
+    outro_after: float | None = Field(None, gt=0)
+    outro_before: float | None = Field(None, gt=0)
+
+
 @dataclass(frozen=True)
 class ReportingRouteDependencies:
     repository: Callable[[], Any]
@@ -41,10 +53,154 @@ class ReportingRouteDependencies:
     append_feedback: Callable[..., Any]
     refresh_library_index: Callable[[], Any]
     valid_keys: frozenset[str]
+    overrides_path: Path
+    analytics_cache: MutableMapping[str, Any]
+    analytics_cache_lock: Lock
+    report_cache: MutableMapping[str, Any]
+    report_cache_lock: Lock
+
+
+class ReportingService:
+    def __init__(self, dependencies: ReportingRouteDependencies) -> None:
+        self._deps = dependencies
+
+    def override(self, source_name: str) -> dict:
+        override = load_track_overrides(self._deps.overrides_path).get(source_name.casefold())
+        return {
+            "intro_before": override.intro_before if override else None,
+            "outro_after": override.outro_after if override else None,
+            "outro_before": override.outro_before if override else None,
+        }
+
+    def save_override(self, source_name: str, request: OverrideRequest) -> dict:
+        if request.outro_after and request.outro_before and request.outro_after >= request.outro_before:
+            raise HTTPException(400, "Outro start must be earlier than outro end")
+        path = self._deps.overrides_path
+        try:
+            document = json.loads(path.read_text()) if path.exists() else {}
+        except (OSError, ValueError) as error:
+            raise HTTPException(500, "Could not read track overrides") from error
+        values = request.model_dump()
+        if any(value is not None for value in values.values()):
+            document[source_name] = values
+        else:
+            for key in list(document):
+                if key.casefold() == source_name.casefold():
+                    del document[key]
+        path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        return values
+
+    def analytics(self) -> dict:
+        now = perf_counter()
+        cache = self._deps.analytics_cache
+        with self._deps.analytics_cache_lock:
+            if cache["payload"] is not None and now < float(cache["expires_at"]):
+                return dict(cache["payload"])
+        summary = self._deps.repository().analytics_summary()
+        feedback = summary["feedback"]
+        accepted = [item for item in feedback if item["accepted"]]
+        tags: dict[str, int] = {}
+        for item in feedback:
+            for tag in str(item["tags"]).split(","):
+                normalized = tag.strip().lower()
+                if normalized:
+                    tags[normalized] = tags.get(normalized, 0) + 1
+        payload = {
+            "completed": summary["completed"],
+            "feedback_count": len(feedback),
+            "acceptance_rate": len(accepted) / len(feedback) if feedback else None,
+            "stemmed_tracks": summary["stemmed"],
+            "common_tags": sorted(tags.items(), key=lambda item: item[1], reverse=True),
+        }
+        with self._deps.analytics_cache_lock:
+            cache.update(payload=payload, expires_at=now + 15.0)
+        return payload
+
+    def report(self, recent: int) -> dict | FileResponse:
+        path = self._report_path()
+        if not path.exists():
+            return {"songs": {}}
+        if not recent:
+            return FileResponse(path, media_type="application/json")
+        payload = self.load_report()
+        songs = [song for song in payload.get("songs", {}).values() if song.get("status") == "updated"]
+        songs.sort(key=lambda song: str(song.get("updated_at") or ""), reverse=True)
+        fields = {"source_name", "status", "updated_at", "bpm", "key", "intro", "outro"}
+        return {
+            "songs": {
+                str(index): {key: value for key, value in song.items() if key in fields}
+                for index, song in enumerate(songs[:recent])
+            }
+        }
+
+    def audio_index(self) -> list[dict]:
+        result = []
+        for job in self._deps.repository().list_report_audio_jobs():
+            result.append(
+                {
+                    "id": int(job["id"]),
+                    "source_name": str(job["source_name"]),
+                    "status": "complete",
+                    "wav_available": Path(str(job.get("wav_path") or "")).is_file(),
+                    "extended_available": Path(str(job.get("extended_path") or "")).is_file(),
+                    "downloaded_track_id": job.get("downloaded_track_id"),
+                    "detected_key": job.get("latest_detected_key") or "",
+                    "key_confidence": job.get("latest_key_confidence"),
+                    "key_analyzed_at": job.get("key_analyzed_at") or "",
+                }
+            )
+        return result
+
+    def library_job(self, job_id: int) -> dict:
+        repository = self._deps.repository()
+        job = repository.get(job_id)
+        if not job or job.get("status") != "complete":
+            raise HTTPException(404, "Library track not found")
+        return {"job": job, "versions": repository.list_completed_versions(str(job["source_path"]))}
+
+    def _report_path(self) -> Path:
+        return self._deps.output_root / "reports" / "processing_report.json"
+
+    def load_report(self) -> dict:
+        path = self._report_path()
+        try:
+            mtime_ns = path.stat().st_mtime_ns
+            with self._deps.report_cache_lock:
+                if self._deps.report_cache["mtime_ns"] != mtime_ns:
+                    self._deps.report_cache["payload"] = json.loads(path.read_text(encoding="utf-8"))
+                    self._deps.report_cache["mtime_ns"] = mtime_ns
+                return dict(self._deps.report_cache["payload"])
+        except (OSError, ValueError) as error:
+            raise HTTPException(500, "The report could not be read") from error
 
 
 def create_reporting_router(deps: ReportingRouteDependencies) -> APIRouter:
     router = APIRouter(tags=["reporting"])
+    service = ReportingService(deps)
+
+    @router.get("/api/overrides/{source_name}")
+    def get_override(source_name: str) -> dict:
+        return service.override(source_name)
+
+    @router.put("/api/overrides/{source_name}")
+    def save_override(source_name: str, request: OverrideRequest) -> dict:
+        return service.save_override(source_name, request)
+
+    @router.get("/api/analytics")
+    def analytics() -> dict:
+        return service.analytics()
+
+    @router.get("/api/report", response_model=None)
+    def report(recent: int = Query(0, ge=0, le=20)) -> dict | FileResponse:
+        return service.report(recent)
+
+    @router.get("/api/report-audio-index")
+    def report_audio_index() -> list[dict]:
+        return service.audio_index()
+
+    @router.get("/api/library/jobs/{job_id}/details")
+    def library_job_details(job_id: int) -> dict:
+        return service.library_job(job_id)
 
     @router.get("/api/report-feedback")
     def report_feedback() -> list[dict]:

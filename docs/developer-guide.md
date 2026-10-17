@@ -124,6 +124,10 @@ delegates job creation to `library/analysis_queue.py`. Job reprocessing,
 candidate auditions, review rejection, and candidate feedback live in
 `web/job_review_routes.py`; queue controls and rendered media remain in their
 existing focused job routers.
+Reporting projections, analytics, track overrides, report audio availability,
+and completed-library job details are owned by `web/reporting_routes.py`.
+`create_app()` delegates service-family construction to private builders and
+uses `_register_routers()` as the single delivery composition boundary.
 `application.py` wires those owners and retains only small compatibility
 wrappers where scripts and integration tests still rely on the historical entry
 point.

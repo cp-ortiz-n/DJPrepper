@@ -130,7 +130,7 @@ database and backup opening whenever this sequence changes.
 | `web/library_routes.py`             | Paginated DJ Library catalog and facets                                             |
 | `web/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs                     |
 | `web/metadata_batch_routes.py`      | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches      |
-| `web/reporting_routes.py`           | Track feedback and manual key verification                                          |
+| `web/reporting_routes.py`           | Reports, analytics, track overrides, job details, feedback, and verification         |
 | `web/set_builder_routes.py`         | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
 | `web/set_planning_routes.py`        | Candidate retrieval, validation, and asynchronous AI track-planning jobs            |
 | `web/set_preference_routes.py`      | Inspect, record, pause, and reset local Set Builder preference signals              |
@@ -141,6 +141,9 @@ database and backup opening whenever this sequence changes.
 Router factories accept explicit dependencies. Wire new dependencies in
 `application.py`; never make a router import `application.py`. Repository
 providers are normally lambdas so tests can replace the active repository.
+The application factory delegates import, library/job/reporting, and Set Builder
+construction to private builders, then registers every router through one
+composition function. These helpers remain wiring code and do not own workflows.
 
 ## Set Builder intention planning
 
