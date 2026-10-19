@@ -191,7 +191,10 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "audioextender/repositories/track_metadata_state.py": 260,
             "audioextender/repositories/track_analysis_state.py": 90,
             "web/app.js": 918,
-            "web/set-builder.js": 3461,
+            "web/set-builder.js": 1700,
+            "web/set-builder-transition-editor.js": 1100,
+            "web/set-builder-plan-view.js": 675,
+            "web/set-builder-saved-sets.js": 400,
         }
         for relative, maximum in ceilings.items():
             with self.subTest(relative=relative):

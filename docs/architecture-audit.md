@@ -222,11 +222,11 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 
 ### ARCH-008 — Set Builder browser module owns too many change axes
 
-**Status:** Confirmed  
+**Status:** Resolved by ARCH-008A and ARCH-008C (2026-10-19)
 **Category:** Frontend / Code Smell  
 **Severity:** High  
 **Affected files:** `web/set-builder.js`, `web/set-planning-client.js`  
-**Evidence:** `set-builder.js` has a single `createSetBuilderFeature` beginning at line 136 and continuing through binding at line 675. It owns mutable plan/history/review state, offline interpretation, deterministic generation, remote AI planning, rendering, transition audition, alternatives, identity editing, preference/review submission, local persistence, and exports.  
+**Evidence:** Before the extraction, `set-builder.js` owned mutable plan/history/review state, offline interpretation, deterministic generation, remote AI planning, rendering, transition audition, alternatives, identity editing, preference/review submission, local persistence, and exports in one closure.
 **Problem:** Independent Set Builder capabilities cannot be changed or tested without the entire feature closure.  
 **Impact:** This is a frequent-change area with high regression potential; async generation, rendering, and editing share state and nonce logic; unit tests largely assert source text.  
 **Recommendation:** Keep one feature entry point but extract a plan-state store, API adapter, deterministic/classic planner, editor commands, and pure render/view-model helpers. Backend remains authoritative for AI-planned proposals and validation.  
@@ -234,6 +234,17 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 **Estimated effort:** L  
 **Regression risk:** High  
 **Validation:** reducer/command tests, DOM workflow tests, save/load compatibility fixtures, live fallback tests.
+
+**Resolution:** The feature entry now coordinates explicit state, API, command,
+workflow, deterministic-planning, transition-editor, plan-view, and saved-set
+owners. `set-builder-transition-editor.js` owns transition health, cue
+optimization, preview playback, and editor cleanup;
+`set-builder-plan-view.js` owns plan rendering and interactive track edits; and
+`set-builder-saved-sets.js` owns durable loading, browser recovery, persistence,
+and CSV/M3U8 serialization. Behavioral tests exercise health/runtime policy,
+rule rendering, durable/cache loading, saving, and export formats. Architecture
+ceilings prevent these responsibilities from collapsing back into the
+coordinator.
 
 ### ARCH-009 — Saved-set ownership is split between browser and durable backend artifacts
 
@@ -381,7 +392,13 @@ A practical frontend boundary is:
 - view model/render helpers: pure transformations where practical;
 - components: only truly repeated controls/dialogs/playback.
 
-`set-builder.js` is the first candidate because it changes frequently and combines the most concerns. `app.js` should be ratcheted below its current 1,878 lines as responsibilities leave; raising its 1,900-line ceiling would conceal regression. `styles.css` requires investigation, not an automatic split. A framework migration is not justified: current complexity comes from responsibility boundaries, not an inability of vanilla JavaScript to express the UI.
+Set Builder now follows this boundary through dedicated transition-editor,
+plan-view, and saved-set controllers while retaining one feature coordinator.
+`app.js` should continue to be ratcheted downward as responsibilities leave;
+raising its ceiling would conceal regression. `styles.css` requires
+investigation, not an automatic split. A framework migration is not justified:
+current complexity comes from responsibility boundaries, not an inability of
+vanilla JavaScript to express the UI.
 
 ## 9. Musical Analysis Findings
 

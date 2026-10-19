@@ -5,7 +5,10 @@ import { createApiClient } from '../../web/api-client.js';
 import { createSetBuilderApi } from '../../web/set-builder-api.js';
 import { createClassicSetPlanner, optimizePlanOrder } from '../../web/set-builder-classic-planner.js';
 import { createSetEditCommands } from '../../web/set-builder-commands.js';
+import { createSetPlanView } from '../../web/set-builder-plan-view.js';
+import { buildSetCsv, buildSetM3u, createSavedSetController } from '../../web/set-builder-saved-sets.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from '../../web/set-builder-state.js';
+import { createSetTransitionEditor } from '../../web/set-builder-transition-editor.js';
 import {
   aiObservabilityCards,
   fallbackPolicyMarkup,
@@ -29,6 +32,86 @@ import {
 const trackId = (track) => track.id;
 const response = (payload, { ok = true, status = 200 } = {}) => ({ ok, status, json: async () => payload });
 const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+function transitionEditorFor(state, overrides = {}) {
+  return createSetTransitionEditor({
+    state,
+    setBuilderApi: {},
+    $: (selector) => (selector === '#set-transition-bars' ? { value: '16' } : null),
+    $$: () => [],
+    notify() {},
+    escapeHtml,
+    clock: { currentTime: 0 },
+    WaveSurfer: {},
+    compatibility: () => ({ score: 80, components: { tempo: 8, key: 20 }, difference: 0, key: 'compatible' }),
+    harmonicCompatibility: () => ({}),
+    songEnergy: (track) => track.energy || 0.5,
+    targetSetEnergy: () => 0.5,
+    intendedGenreForPosition: () => '',
+    trackMatchesIntendedGenre: () => true,
+    identityTermMatches: () => false,
+    optimizePlanOrder: (plan) => plan,
+    setTrackId: trackId,
+    setVocalProfile: (track) => track.vocals || 'instrumental',
+    timingProfile: () => 'steady',
+    stopCompactAudio() {},
+    transitionReviewFeatures: () => ({}),
+    transitionPreferenceAdjustment: () => 0,
+    ...overrides,
+  });
+}
+
+function savedSetControllerFor({ state, elements, api, recordPreference = async () => {} }) {
+  return createSavedSetController({
+    state,
+    dom: {
+      $: (selector) => elements.get(selector),
+      $$: () => [],
+      option: (value, label) => ({ value, label }),
+      escapeHtml,
+      notify() {},
+    },
+    api,
+    storageKeys: { SET_STORAGE_KEY: 'sets', SET_STORAGE_MIGRATION_KEY: 'sets-migrated' },
+    authoring: {
+      inferSetWorkflow: () => ({ trackPlanner: 'deterministic', authoringMode: 'manual' }),
+      interpretSetIntention: () => ({}),
+      applyIntentionInterpretation() {},
+      populateSetDetailedGenres() {},
+      renderSetGenreMix() {},
+      renderSetDetailedGenres() {},
+      renderExcludedSetGenres() {},
+      workflow: { applyBriefMode() {}, syncPlanningMode() {} },
+    },
+    plan: {
+      setBrief: () => ({ name: 'Night, Set', edits: 'original' }),
+      setTrackId: trackId,
+      getPlanningReceipt: () => ({ source: 'deterministic' }),
+      setPlanningReceipt() {},
+      renderSetRules() {},
+      autoOptimizeSetTransitions: async () => 0,
+      renderSetPlan() {},
+      transitionSettings: () => ({
+        mixIn: 8,
+        mixOut: 180,
+        bars: 16,
+        curve: 'smooth',
+        technique: 'crossfade',
+        tempoSync: true,
+        notes: 'Blend, then lift',
+      }),
+    },
+    music: {
+      compatibility: () => ({ score: 84 }),
+      trackMatchesSetGenre: () => true,
+      camelotKey: () => '8A',
+      energyBand: () => 'high',
+      songEnergy: () => 0.8,
+      libraryRoles: () => ['peak-time'],
+    },
+    feedback: { recordPreference },
+  });
+}
 
 test('brief preparation returns both results without requesting a second journey', async () => {
   let requests = 0;
@@ -252,6 +335,346 @@ test('Set edit commands own checkpoint, move, undo, redo, and bounded history', 
   commands.checkpoint();
   assert.equal(store.history.length, 2);
   assert.equal(renders, 3);
+});
+
+test('transition editor owns health, runtime, default transition settings, and order optimization', () => {
+  const state = {
+    plan: [
+      { id: 'a', duration_seconds: 200, bpm: 120, vocals: 'vocal-forward' },
+      { id: 'b', duration_seconds: 200, bpm: 122, vocals: 'vocal-forward' },
+    ],
+    lockedIds: new Set(['a']),
+    transitionSettings: {},
+  };
+  let optimization;
+  const editor = transitionEditorFor(state, {
+    compatibility: () => ({ score: 77, components: { tempo: 4, key: 20 }, difference: 0.01, key: 'compatible' }),
+    optimizePlanOrder: (plan, options) => {
+      optimization = { plan, options };
+      return [...plan].reverse();
+    },
+  });
+
+  assert.deepEqual(editor.setHealth(), {
+    score: 74,
+    transitions: [
+      {
+        score: 77,
+        components: { tempo: 4, key: 20 },
+        difference: 0.01,
+        key: 'compatible',
+        from: 0,
+        to: 1,
+      },
+    ],
+    vocalClashes: 1,
+  });
+  assert.equal(editor.setRuntime(), 370);
+  assert.deepEqual(editor.setHealthIssues(editor.setHealth(), 80), ['1→2 77% (tempo)', '1 vocal clash']);
+  assert.deepEqual(editor.transitionSettings(1), {
+    mixOut: 168,
+    mixIn: 0,
+    bars: 16,
+    curve: 'smooth',
+    technique: 'crossfade',
+    tempoSync: true,
+    notes: '',
+  });
+  assert.deepEqual(editor.improveSetOrder(state.plan, { identity: {} }).map(trackId), ['b', 'a']);
+  assert.equal(optimization.options.isFixed(state.plan[0]), true);
+  assert.equal(optimization.options.isFixed(state.plan[1]), false);
+  assert.equal(Object.isFrozen(editor), true);
+});
+
+test('transition editor starts and stops one isolated audio preview', async () => {
+  const originals = {
+    Audio: globalThis.Audio,
+    document: globalThis.document,
+    window: globalThis.window,
+    requestAnimationFrame: globalThis.requestAnimationFrame,
+    cancelAnimationFrame: globalThis.cancelAnimationFrame,
+  };
+  const audio = [];
+  class FakeAudio {
+    constructor(src) {
+      this.src = src;
+      this.readyState = 1;
+      this.duration = 240;
+      this.currentTime = 0;
+      this.volume = 1;
+      this.playbackRate = 1;
+      this.playCount = 0;
+      this.pauseCount = 0;
+      audio.push(this);
+    }
+    async play() {
+      this.playCount += 1;
+    }
+    pause() {
+      this.pauseCount += 1;
+    }
+    removeAttribute(name) {
+      if (name === 'src') this.src = '';
+    }
+  }
+  globalThis.Audio = FakeAudio;
+  globalThis.document = { querySelectorAll: () => [] };
+  globalThis.window = {};
+  globalThis.requestAnimationFrame = () => 1;
+  globalThis.cancelAnimationFrame = () => {};
+  const classes = new Set();
+  const button = {
+    disabled: false,
+    textContent: 'Mix transition',
+    closest: () => null,
+    classList: {
+      add: (...names) => names.forEach((name) => classes.add(name)),
+      remove: (...names) => names.forEach((name) => classes.delete(name)),
+      contains: (name) => classes.has(name),
+    },
+    style: { setProperty() {}, removeProperty() {} },
+  };
+  const state = {
+    plan: [
+      { id: 'a', _job: { id: 11 }, duration_seconds: 220, bpm: 120 },
+      { id: 'b', _job: { id: 12 }, duration_seconds: 210, bpm: 124 },
+    ],
+    lockedIds: new Set(),
+    transitionSettings: {},
+  };
+  try {
+    const editor = transitionEditorFor(state);
+    await editor.auditionTransition(1, button);
+
+    assert.deepEqual(
+      audio.map((item) => item.src),
+      ['/api/jobs/11/audio/wav', '/api/jobs/12/audio/wav'],
+    );
+    assert.equal(audio[0].playCount, 1);
+    assert.equal(classes.has('playing'), true);
+
+    editor.stopTransitionPreview();
+    assert.equal(
+      audio.every((item) => item.pauseCount === 1 && item.src === ''),
+      true,
+    );
+  } finally {
+    Object.assign(globalThis, originals);
+  }
+});
+
+test('plan view renders required and excluded rules through its focused boundary', () => {
+  const ruleCount = { textContent: '' };
+  const ruleChips = { innerHTML: '', querySelectorAll: () => [] };
+  const elements = new Map([
+    ['#set-rule-count', ruleCount],
+    ['#set-rule-chips', ruleChips],
+  ]);
+  const state = {
+    library: [
+      { id: 'required', source_name: 'Required Track' },
+      { id: 'excluded', source_name: 'Excluded Track' },
+    ],
+    requiredIds: new Set(['required']),
+    excludedIds: new Set(['excluded']),
+  };
+  const planView = createSetPlanView({
+    state,
+    dom: { $: (selector) => elements.get(selector), $$: () => [], escapeHtml },
+    ui: {
+      notify() {},
+      descriptorEditorMarkup() {},
+      saveDescriptorEditor() {},
+      inferDescriptorEditor() {},
+      bindCompactAudio() {},
+      compactAudioMarkup() {},
+    },
+    music: {
+      compatibility() {},
+      energyBand() {},
+      formatLibraryKey() {},
+      LIBRARY_ROLE_INFO: {},
+      libraryRoles() {},
+      songEnergy() {},
+      timingProfile() {},
+    },
+    policy: {
+      SET_IDENTITY_STORAGE_KEY: 'identity',
+      eligibleSetTracks() {},
+      genreAllocationTargets() {},
+      identityStore() {},
+      intentionEvaluation() {},
+      preferenceAdjustment() {},
+      parseIdentityTerms() {},
+      saveManualTrackIdentity() {},
+      setCatalogTrackId: trackId,
+      setCandidateScore() {},
+      setTrackId: trackId,
+      setVocalProfile() {},
+      targetSetEnergy() {},
+      trackIdentity() {},
+      trackMatchesSetDetailedGenre() {},
+      trackMatchesSetGenre() {},
+    },
+    transitions: {
+      auditionTransition() {},
+      closeTransitionEditors() {},
+      openTransitionEditor() {},
+      setHealth() {},
+      setRuntime() {},
+      setSvgCurve() {},
+      transitionSettings() {},
+    },
+    lifecycle: {
+      editCommands: {},
+      getPlanningReceipt() {},
+      pushSetHistory() {},
+      recordPreference() {},
+      renderSetProposals() {},
+      setBrief() {},
+      setPlanSnapshot() {},
+      updateSetHistoryButtons() {},
+    },
+    review: { trackReviewDraft: new Map(), transitionReviewDraft: new Map() },
+  });
+
+  planView.renderSetRules();
+
+  assert.equal(ruleCount.textContent, '2 rules');
+  assert.match(ruleChips.innerHTML, /Required · Required Track/);
+  assert.match(ruleChips.innerHTML, /Excluded · Excluded Track/);
+  assert.equal(Object.isFrozen(planView), true);
+});
+
+test('saved-set export serializers preserve transition and playlist details', () => {
+  const tracks = [
+    { id: 'a', source_name: 'Intro "Edit".wav', artist: 'DJ One', bpm: 120, key: 'Am', _genre: 'House' },
+    { id: 'b', source_name: 'Peak.wav', artist: '', bpm: 124, key: 'Cm', _genre: 'Techno' },
+  ];
+  const csv = buildSetCsv({
+    plan: tracks,
+    compatibility: () => ({ score: 84 }),
+    transitionSettings: () => ({
+      mixIn: 8,
+      mixOut: 180,
+      bars: 16,
+      curve: 'smooth',
+      technique: 'crossfade',
+      tempoSync: true,
+      notes: 'Blend, then lift',
+    }),
+    camelotKey: () => '8A',
+    energyBand: () => 'high',
+    songEnergy: () => 0.8,
+    libraryRoles: () => ['peak-time'],
+  });
+  assert.match(csv, /"Intro ""Edit""\.wav"/);
+  assert.match(csv, /"84","8","180","16","smooth","crossfade","yes","Blend, then lift"/);
+
+  const m3u = buildSetM3u([
+    { track: { source_name: 'Intro.wav', artist: 'DJ One', duration_seconds: 121.6 }, path: '/music/Intro.wav' },
+  ]);
+  assert.equal(m3u, '#EXTM3U\r\n#EXTINF:122,DJ One - Intro\r\n/music/Intro.wav');
+});
+
+test('saved-set controller loads durable records and falls back to the browser recovery cache', async () => {
+  const storage = new Map([['sets', JSON.stringify([{ id: 'legacy', name: 'Legacy', tracks: [] }])]]);
+  const originalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+  try {
+    const elements = new Map();
+    const durable = savedSetControllerFor({
+      state: { plan: [], library: [] },
+      elements,
+      api: {
+        savedSets: async () => ({ sets: [{ id: 'durable', name: 'Durable', tracks: [] }] }),
+        migrateSavedSets: async () => ({ document: { sets: [{ id: 'migrated', name: 'Migrated', tracks: [] }] } }),
+      },
+    });
+    await durable.loadSavedSets();
+    assert.deepEqual(
+      durable.savedSets().map((set) => set.id),
+      ['migrated'],
+    );
+    assert.equal(storage.get('sets-migrated'), 'true');
+
+    storage.delete('sets-migrated');
+    const fallback = savedSetControllerFor({
+      state: { plan: [], library: [] },
+      elements,
+      api: { savedSets: async () => Promise.reject(new Error('offline')) },
+    });
+    await fallback.loadSavedSets();
+    assert.deepEqual(
+      fallback.savedSets().map((set) => set.id),
+      ['migrated'],
+    );
+  } finally {
+    globalThis.localStorage = originalStorage;
+  }
+});
+
+test('saved-set controller persists the plan, recovery cache, and playlist path', async () => {
+  const storage = new Map();
+  const originalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+  const selected = { value: '', replaceChildren() {} };
+  const message = { textContent: '' };
+  const elements = new Map([
+    ['#save-set', { disabled: false, textContent: 'Save set' }],
+    ['#saved-set-select', selected],
+    ['#set-planning-mode', { value: 'classic' }],
+    ['#set-builder-message', message],
+  ]);
+  const calls = [];
+  const state = {
+    plan: [
+      {
+        id: 'track-1',
+        source_name: 'Opening.wav',
+        artist: 'DJ One',
+        bpm: 120,
+        key: 'Am',
+        _genre: 'House',
+        _libraryPath: '/music/Opening.wav',
+        duration_seconds: 180,
+      },
+    ],
+    transitionSettings: {},
+    lockedIds: new Set(['track-1']),
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+  };
+  const controller = savedSetControllerFor({
+    state,
+    elements,
+    api: {
+      saveSet: async (record) => calls.push(['set', record]),
+      savePlaylist: async (payload) => {
+        calls.push(['playlist', payload]);
+        return { path: '/playlists/Night Set.m3u8' };
+      },
+    },
+  });
+
+  try {
+    await controller.saveCurrentSet();
+
+    assert.equal(controller.savedSets().length, 1);
+    assert.deepEqual(controller.savedSets()[0].tracks, ['track-1']);
+    assert.equal(JSON.parse(storage.get('sets')).length, 1);
+    assert.equal(calls[1][1].tracks[0].path, '/music/Opening.wav');
+    assert.match(message.textContent, /playlist written to \/playlists\/Night Set\.m3u8/);
+    assert.equal(selected.value, controller.savedSets()[0].id);
+  } finally {
+    globalThis.localStorage = originalStorage;
+  }
 });
 
 test('Set Builder API owns route serialization and exposes planning lifecycle', async () => {

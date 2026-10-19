@@ -196,6 +196,18 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   snapshots, restoration, command history, route serialization, classic fallback,
   and escaped render evidence. The entry-module size ceiling is ratcheted from
   675 to 663 lines.
+- [x] **ARCH-008C — Finish decomposing the Set Builder frontend.**
+  Priority: P0. Effort: L. Risk: High. Dependencies: ARCH-008A. Acceptance:
+  transition previews/editing, generated-plan rendering/track edits, and saved-
+  set loading/persistence/exports have focused owners while
+  `createSetBuilderFeature()` remains the coordinator; existing payloads and
+  planning algorithms are unchanged; AI, deterministic, edit history,
+  transition, save/load, and export gates pass.
+  Completed 2026-10-19: the transition editor, plan view, and durable saved-set
+  controller are separate injected modules. Export serialization is pure and
+  directly tested, controller behavior covers transition health/runtime, rules,
+  durable/cache recovery, and persistence, and architecture ceilings ratchet the
+  coordinator from 3,456 lines to at most 1,700 lines.
 - [x] **ARCH-007B — Reduce `app.js` to durable composition and navigation.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-007A, ARCH-008A.
   Acceptance: processing/import feature behavior has an explicit owner; `app.js`
