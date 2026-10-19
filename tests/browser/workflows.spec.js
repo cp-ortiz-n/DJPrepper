@@ -91,6 +91,12 @@ test('saved sets survive browser storage clearing and application reload', async
 test('Set Builder keeps brief authoring separate from track planning', async ({ page }) => {
   await openView(page, 'Set Builder');
   const intention = page.locator('#set-intention');
+  const plannerChoices = page.locator('.set-track-planner label > span');
+  await expect(plannerChoices).toHaveCount(2);
+  const plannerWidths = await plannerChoices.evaluateAll((items) =>
+    items.map((item) => item.getBoundingClientRect().width),
+  );
+  expect(plannerWidths.every((width) => width >= 220)).toBe(true);
   await intention.fill('A melodic Latin warm-up that grows into techno.');
 
   await page.getByText('Build manually', { exact: true }).click();
