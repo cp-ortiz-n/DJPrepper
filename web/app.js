@@ -58,7 +58,7 @@ import {
 import { createMusicFilesFeature, createMusicFilesUiState } from './music-files.js?v=20261013-1';
 import { createRequestStateController } from './request-state-controller.js';
 import { createReportingFeature } from './reporting.js?v=20261013-1';
-import { createSetBuilderFeature } from './set-builder.js?v=20261018-1';
+import { createSetBuilderFeature } from './set-builder.js?v=20261018-3';
 import { createSettingsFeature, libraryAvailabilityView } from './settings.js?v=20261013-1';
 import { createAuthorizedImportFeature, createImportWorkspaceApi } from './import-workspace.js';
 import { createBackgroundTaskController } from './background-task-controller.js';

@@ -10,8 +10,11 @@ import { aiObservabilityCards, fallbackPolicyMarkup, setProposalMarkup } from '.
 import {
   SET_BRIEF_MODES,
   SET_TRACK_PLANNERS,
+  allowsCandidateGenre,
   createSetWorkflowController,
   inferSetWorkflow,
+  requiresStrictGenreEligibility,
+  resolveStructuredGenreFilters,
   resolveSetPlanningMode,
   setBriefModeMessage,
 } from '../../web/set-builder-workflow.js';
@@ -47,6 +50,72 @@ test('brief authoring and track planning remain independent choices', () => {
   assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.DETERMINISTIC), 'classic');
   assert.match(setBriefModeMessage(SET_BRIEF_MODES.AI), /Local AI/);
   assert.match(setBriefModeMessage(SET_BRIEF_MODES.MANUAL), /yourself/);
+});
+
+test('AI-authored briefs ignore hidden manual genre filters while manual briefs retain them', () => {
+  const filters = {
+    genres: ['old parent'],
+    detailedGenres: ['old detail'],
+    excludedGenres: ['old exclusion'],
+    weights: { 'old parent': 100 },
+  };
+
+  assert.deepEqual(resolveStructuredGenreFilters(SET_BRIEF_MODES.AI, filters), {
+    genres: [],
+    detailedGenres: [],
+    excludedGenres: [],
+    weights: {},
+  });
+  assert.deepEqual(resolveStructuredGenreFilters(SET_BRIEF_MODES.MANUAL, filters), filters);
+});
+
+test('genre eligibility stays consistent across every authoring and planner combination', () => {
+  const combinations = [
+    [SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.AI, false],
+    [SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.DETERMINISTIC, false],
+    [SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.AI, true],
+    [SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.DETERMINISTIC, true],
+  ];
+
+  combinations.forEach(([authoringMode, planner, expected]) => {
+    assert.equal(requiresStrictGenreEligibility(authoringMode), expected, `${authoringMode}/${planner}`);
+  });
+});
+
+test('AI-authored genres rank candidates without becoming hard catalog filters', () => {
+  assert.equal(
+    allowsCandidateGenre({
+      authoringMode: SET_BRIEF_MODES.AI,
+      directGenre: false,
+      requestedGenreMatch: false,
+      hasInterpretedIdentity: true,
+      drift: 'none',
+      preferredIdentityMatches: 0,
+    }),
+    true,
+  );
+});
+
+test('manual genre filters remain strict while wide identity drift remains available', () => {
+  const base = {
+    authoringMode: SET_BRIEF_MODES.MANUAL,
+    directGenre: false,
+    requestedGenreMatch: false,
+    hasInterpretedIdentity: false,
+    drift: 'none',
+    preferredIdentityMatches: 0,
+  };
+  assert.equal(allowsCandidateGenre(base), false);
+  assert.equal(allowsCandidateGenre({ ...base, directGenre: true, requestedGenreMatch: true }), true);
+  assert.equal(
+    allowsCandidateGenre({
+      ...base,
+      hasInterpretedIdentity: true,
+      drift: 'wide',
+      preferredIdentityMatches: 1,
+    }),
+    true,
+  );
 });
 
 test('saved planning modes migrate into the two-part workflow without losing intention', () => {

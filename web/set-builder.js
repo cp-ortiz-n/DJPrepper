@@ -19,10 +19,12 @@ import {
 import {
   SET_BRIEF_MODES,
   SET_TRACK_PLANNERS,
+  allowsCandidateGenre,
   createSetIntentionController,
   createSetWorkflowController,
   inferSetWorkflow,
-} from './set-builder-workflow.js';
+  resolveStructuredGenreFilters,
+} from './set-builder-workflow.js?v=20261018-3';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -594,22 +596,27 @@ export function createSetBuilderFeature({
     });
   }
   function setBrief() {
-    const genres = selectedSetGenres();
-    const genreWeights = Object.fromEntries(
-      [...$('#set-genre-weights').querySelectorAll('input')].map((input) => [
-        input.dataset.genre,
-        Math.max(0, Number(input.value || 0)),
-      ]),
-    );
+    const authoringMode = workflow.briefMode();
+    const structuredGenres = resolveStructuredGenreFilters(authoringMode, {
+      genres: selectedSetGenres(),
+      detailedGenres: selectedSetDetailedGenres(),
+      excludedGenres: selectedExcludedSetGenres(),
+      weights: Object.fromEntries(
+        [...$('#set-genre-weights').querySelectorAll('input')].map((input) => [
+          input.dataset.genre,
+          Math.max(0, Number(input.value || 0)),
+        ]),
+      ),
+    });
     return {
-      authoringMode: workflow.briefMode(),
+      authoringMode,
       trackPlanner: workflow.trackPlanner(),
       name: $('#set-name').value.trim() || 'New DJ Set',
       length: Number($('#set-length').value),
-      genres,
-      detailedGenres: selectedSetDetailedGenres(),
-      excludedGenres: selectedExcludedSetGenres(),
-      genreWeights,
+      genres: structuredGenres.genres,
+      detailedGenres: structuredGenres.detailedGenres,
+      excludedGenres: structuredGenres.excludedGenres,
+      genreWeights: structuredGenres.weights,
       genreFlow: $('#set-genre-flow').value,
       vibe: $('#set-vibe').value,
       curve: $('#set-curve').value,
@@ -736,9 +743,14 @@ export function createSetBuilderFeature({
         !allIntendedGenres.length || allIntendedGenres.some((term) => trackMatchesIntendedGenre(track, term));
       const directGenre = !brief.genres.length || brief.genres.some((genre) => trackMatchesSetGenre(track, genre));
       const drift = brief.identity?.drift || 'none';
-      const identityEligible =
-        (directGenre && requestedGenreMatch) ||
-        (Boolean(brief.identity?.text) && drift === 'wide' && intention.preferred.length >= 1);
+      const identityEligible = allowsCandidateGenre({
+        authoringMode: brief.authoringMode,
+        directGenre,
+        requestedGenreMatch,
+        hasInterpretedIdentity: Boolean(brief.identity?.text),
+        drift,
+        preferredIdentityMatches: intention.preferred.length,
+      });
       return (
         !state.excludedIds.has(id) &&
         identityEligible &&
@@ -772,7 +784,7 @@ export function createSetBuilderFeature({
       .forEach((track) => pool.push(track));
     if (pool.length < 2) {
       $('#set-builder-message').textContent =
-        'Not enough analyzed tracks match this brief. Relax a filter and try again.';
+        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and required tracks.`;
       return;
     }
     const averageSeconds =
@@ -981,7 +993,10 @@ export function createSetBuilderFeature({
   }
   function planningTrackCount(brief) {
     const pool = eligibleSetTracks(brief);
-    if (pool.length < 2) throw new Error('Not enough analyzed tracks match this brief. Relax a filter and try again.');
+    if (pool.length < 2)
+      throw new Error(
+        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and required tracks.`,
+      );
     const averageSeconds =
       pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
     const protectedCount = new Set([...state.requiredIds, ...state.lockedIds]).size;
@@ -3423,7 +3438,7 @@ export function createSetBuilderFeature({
 }
 import { SetPlanningCanceled } from './set-planning-client.js';
 import { createSetBuilderApi } from './set-builder-api.js';
-import { createClassicSetPlanner, optimizePlanOrder } from './set-builder-classic-planner.js';
+import { createClassicSetPlanner, optimizePlanOrder } from './set-builder-classic-planner.js?v=20261018-1';
 import { createSetEditCommands } from './set-builder-commands.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './set-builder-state.js';
 import { useFrontendServices } from './frontend-services.js';

@@ -27,6 +27,36 @@ export function setBriefModeMessage(authoringMode) {
     : 'Describe the outcome. Local AI will translate it into a brief you can review.';
 }
 
+export function resolveStructuredGenreFilters(authoringMode, { genres, detailedGenres, excludedGenres, weights }) {
+  if (authoringMode === SET_BRIEF_MODES.AI) {
+    return { genres: [], detailedGenres: [], excludedGenres: [], weights: {} };
+  }
+  return {
+    genres: [...genres],
+    detailedGenres: [...detailedGenres],
+    excludedGenres: [...excludedGenres],
+    weights: { ...weights },
+  };
+}
+
+export function requiresStrictGenreEligibility(authoringMode) {
+  return authoringMode === SET_BRIEF_MODES.MANUAL;
+}
+
+export function allowsCandidateGenre({
+  authoringMode,
+  directGenre,
+  requestedGenreMatch,
+  hasInterpretedIdentity,
+  drift,
+  preferredIdentityMatches,
+}) {
+  if (!requiresStrictGenreEligibility(authoringMode)) return true;
+  return (
+    (directGenre && requestedGenreMatch) || (hasInterpretedIdentity && drift === 'wide' && preferredIdentityMatches > 0)
+  );
+}
+
 export function createSetWorkflowController({ $, $$ }) {
   const briefMode = () => $('[name="set-brief-mode"]:checked')?.value || SET_BRIEF_MODES.AI;
   const trackPlanner = () => $('[name="set-track-planner"]:checked')?.value || SET_TRACK_PLANNERS.AI;
