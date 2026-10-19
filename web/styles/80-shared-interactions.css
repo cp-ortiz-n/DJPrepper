@@ -10,7 +10,7 @@
     .preset-editor,
     .transition-editor-controls
   )
-  :where(input:not([type='checkbox']):not([type='range']), select, .select-search-input) {
+  :where(input:not([type='checkbox']):not([type='radio']):not([type='range']), select, .select-search-input) {
   min-height: var(--control-height);
   border: 1px solid var(--line);
   border-radius: var(--control-radius);

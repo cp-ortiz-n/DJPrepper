@@ -11,6 +11,7 @@
 .set-controls,
 .saved-sets-panel,
 .set-result {
+  min-width: 0;
   padding: 20px;
 }
 .set-control-head,
@@ -120,7 +121,7 @@
   display: block;
   margin-top: 16px;
 }
-.set-controls input,
+.set-controls input:not([type='radio']),
 .set-controls select,
 .saved-sets-panel select {
   width: 100%;
@@ -1349,7 +1350,7 @@
 .set-result.compact-planning .set-track-card {
   cursor: grab;
 }
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .set-builder-layout {
     grid-template-columns: 1fr;
   }

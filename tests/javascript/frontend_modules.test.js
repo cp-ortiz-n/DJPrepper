@@ -110,7 +110,9 @@ test('app.js remains a feature composition root', () => {
 test('stylesheet entry point preserves explicit owner order without dead audit selectors', () => {
   const entryPath = fileURLToPath(new URL('../../web/styles.css', import.meta.url));
   const entry = readFileSync(entryPath, 'utf8');
-  const imports = [...entry.matchAll(/@import url\(['"]\.\/styles\/([^'"]+)['"]\);/g)].map((match) => match[1]);
+  const imports = [...entry.matchAll(/@import url\(['"]\.\/styles\/([^'"]+)['"]\);/g)].map(
+    (match) => match[1].split('?')[0],
+  );
   assert.deepEqual(imports, [
     '00-base-shell.css',
     '10-shared-collections.css',

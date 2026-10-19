@@ -88,6 +88,47 @@ test('saved sets survive browser storage clearing and application reload', async
   );
 });
 
+test('Set Builder keeps brief authoring separate from track planning', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await openView(page, 'Set Builder');
+  const overflow = await page.locator('body *').evaluateAll((items) =>
+    items
+      .filter((item) => {
+        const bounds = item.getBoundingClientRect();
+        return bounds.width > 0 && (bounds.left < -1 || bounds.right > window.innerWidth + 1);
+      })
+      .slice(0, 12)
+      .map((item) => ({
+        element: item.id ? `#${item.id}` : `${item.tagName.toLowerCase()}.${item.className}`,
+        name: item.getAttribute('name'),
+        type: item.getAttribute('type'),
+        bounds: item.getBoundingClientRect().toJSON(),
+      })),
+  );
+  expect(overflow).toEqual([]);
+  await expect(page.locator('.saved-sets-panel')).toBeVisible();
+  const intention = page.locator('#set-intention');
+  const plannerChoices = page.locator('.set-track-planner label > span');
+  await expect(plannerChoices).toHaveCount(2);
+  const plannerWidths = await plannerChoices.evaluateAll((items) =>
+    items.map((item) => item.getBoundingClientRect().width),
+  );
+  expect(plannerWidths.every((width) => width >= 220)).toBe(true);
+  await intention.fill('A melodic Latin warm-up that grows into techno.');
+
+  await page.getByText('Build manually', { exact: true }).click();
+  await expect(page.locator('#set-ai-brief')).toBeHidden();
+  await expect(page.locator('#set-manual-brief')).toBeVisible();
+  await expect(page.locator('#set-planning-mode')).toHaveValue('ai-planned');
+
+  await page.getByText('Deterministic', { exact: true }).click();
+  await expect(page.locator('#set-planning-mode')).toHaveValue('classic');
+  await page.getByText('Describe what I want', { exact: true }).click();
+  await expect(page.locator('#set-ai-brief')).toBeVisible();
+  await expect(intention).toHaveValue('A melodic Latin warm-up that grows into techno.');
+  await expect(page.locator('#set-planning-mode')).toHaveValue('interpreted');
+});
+
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
   await page.route('**/api/downloaded-library?*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 180));
