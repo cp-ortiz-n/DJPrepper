@@ -408,6 +408,8 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `set-builder-api.js`             | Set Builder HTTP routes and asynchronous planning-client boundary                                             |
 | `set-builder-commands.js`        | Plan edit commands, bounded history, undo, redo, and movement                                                 |
 | `set-builder-classic-planner.js` | Deterministic proposal generation, acceptance, and safe fallback selection                                    |
+| `set-builder-planning-session.js` | AI/deterministic planning lifecycle, cancellation, proposal switching, observability, and planning receipts  |
+| `set-builder-feedback.js`        | Learned preferences, calibration reporting, personalization controls, and set-review submission               |
 | `set-builder-transition-editor.js` | Transition scoring, cue optimization, preview playback, and transition-editor lifecycle                    |
 | `set-builder-plan-view.js`       | Generated-plan rendering plus track rules, alternatives, identity edits, and row interactions                 |
 | `set-builder-saved-sets.js`      | Durable saved-set recovery, persistence, loading, and CSV/M3U8 export                                         |

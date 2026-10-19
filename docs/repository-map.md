@@ -242,7 +242,9 @@ map reflects the current layout; it does not propose moving code.
 │   ├── set-builder-api.js
 │   ├── set-builder-classic-planner.js
 │   ├── set-builder-commands.js
+│   ├── set-builder-feedback.js
 │   ├── set-builder-plan-view.js
+│   ├── set-builder-planning-session.js
 │   ├── set-builder-saved-sets.js
 │   ├── set-builder-state.js
 │   ├── set-builder-transition-editor.js

@@ -208,6 +208,19 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   directly tested, controller behavior covers transition health/runtime, rules,
   durable/cache recovery, and persistence, and architecture ceilings ratchet the
   coordinator from 3,456 lines to at most 1,700 lines.
+- [x] **ARCH-008D — Extract Set Builder planning-session orchestration.**
+  Priority: P0. Effort: M. Risk: High. Dependencies: ARCH-008C. Acceptance:
+  asynchronous AI planning, deterministic proposal generation, proposal
+  switching, cancellation, receipts, and observability have one lifecycle
+  owner; preference learning and set-review submission have a separate focused
+  owner; `createSetBuilderFeature()` remains the composition coordinator.
+  Completed 2026-10-19: `set-builder-planning-session.js` now owns planning-job
+  lifecycle, safe deterministic fallback, proposal preservation/optimization,
+  and planning receipts. `set-builder-feedback.js` owns learned-preference,
+  calibration, and set-review workflows. Behavioral tests cover deterministic
+  acceptance, AI cancellation and safety fallback, proposal switching, ranking
+  signal loading, and receipt-backed review submission. The coordinator ceiling
+  is ratcheted from 1,700 to 1,150 lines.
 - [x] **ARCH-007B — Reduce `app.js` to durable composition and navigation.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-007A, ARCH-008A.
   Acceptance: processing/import feature behavior has an explicit owner; `app.js`

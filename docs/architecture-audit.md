@@ -222,7 +222,7 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 
 ### ARCH-008 — Set Builder browser module owns too many change axes
 
-**Status:** Resolved by ARCH-008A and ARCH-008C (2026-10-19)
+**Status:** Resolved by ARCH-008A, ARCH-008C, and ARCH-008D (2026-10-19)
 **Category:** Frontend / Code Smell  
 **Severity:** High  
 **Affected files:** `web/set-builder.js`, `web/set-planning-client.js`  
@@ -237,7 +237,11 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 
 **Resolution:** The feature entry now coordinates explicit state, API, command,
 workflow, deterministic-planning, transition-editor, plan-view, and saved-set
-owners. `set-builder-transition-editor.js` owns transition health, cue
+owners. `set-builder-planning-session.js` owns asynchronous AI/deterministic
+planning, cancellation, safe fallback, proposal switching, observability, and
+planning receipts. `set-builder-feedback.js` owns learned preferences,
+calibration, personalization, and receipt-backed review submission.
+`set-builder-transition-editor.js` owns transition health, cue
 optimization, preview playback, and editor cleanup;
 `set-builder-plan-view.js` owns plan rendering and interactive track edits; and
 `set-builder-saved-sets.js` owns durable loading, browser recovery, persistence,

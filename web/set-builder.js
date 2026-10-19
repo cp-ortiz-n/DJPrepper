@@ -71,15 +71,8 @@ export function createSetBuilderFeature({
     useFrontendServices(services);
   const state = createSetBuilderStore();
   const workflow = createSetWorkflowController({ $, $$ });
-  let proposalSwitchNonce = 0;
-  let activePlanningJobId = '';
-  let planningController = null;
-  let currentPlanningReceipt = null;
-  let currentPreferenceProfile = null;
-  let currentSetDecision = 'unreviewed';
   const trackReviewDraft = new Map();
   const transitionReviewDraft = new Map();
-  let currentTransitionProfile = { activeSignals: [] };
   const setBuilderApi = createSetBuilderApi({ api });
   const intentionController = createSetIntentionController({
     $,
@@ -100,213 +93,6 @@ export function createSetBuilderFeature({
     restore: (snapshot) => restoreSetSnapshot(snapshot, false),
     render: () => renderSetPlan(),
   });
-  function preferenceContext() {
-    return $('#set-vibe')?.value || 'balanced';
-  }
-  function preferenceFeatures(track) {
-    const energy = songEnergy(track),
-      bpm = Number(track.bpm || 0);
-    return {
-      genre: [track._genre, ...setTrackDetailedGenres(track)].filter(Boolean),
-      descriptor: (track._descriptors || []).map((item) => item.value).filter(Boolean),
-      artist: track.artist || '',
-      vocals: setVocalProfile(track),
-      energy: energy < 0.4 ? 'low' : energy >= 0.7 ? 'high' : 'medium',
-      bpm: bpm ? `${Math.floor(bpm / 10) * 10}s` : 'unknown',
-    };
-  }
-  function preferenceAdjustment(track) {
-    if (!currentPreferenceProfile?.enabled) return 0;
-    const features = preferenceFeatures(track);
-    const total = (currentPreferenceProfile.activeSignals || []).reduce((sum, signal) => {
-      const values = Array.isArray(features[signal.dimension])
-        ? features[signal.dimension]
-        : [features[signal.dimension]];
-      return values.map((value) => String(value).toLowerCase()).includes(String(signal.value).toLowerCase())
-        ? sum + Number(signal.adjustment || 0)
-        : sum;
-    }, 0);
-    return Math.max(-8, Math.min(8, total * 0.5));
-  }
-  function preferenceEventId() {
-    return globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  }
-  async function recordPreference(action, tracks) {
-    const items = (Array.isArray(tracks) ? tracks : [tracks]).filter(Boolean);
-    if (!items.length) return;
-    try {
-      const result = await setBuilderApi.recordPreference(
-        items.map((track) => ({
-          id: preferenceEventId(),
-          action,
-          trackId: setTrackId(track),
-          context: preferenceContext(),
-          features: preferenceFeatures(track),
-        })),
-      );
-      currentPreferenceProfile = result.profile;
-      renderPreferenceProfile();
-    } catch (error) {
-      console.warn('Set preference feedback failed:', error);
-    }
-  }
-  function renderPreferenceProfile() {
-    const profile = currentPreferenceProfile,
-      status = $('#set-preference-status'),
-      summary = $('#set-preference-summary'),
-      toggle = $('#set-personalization-enabled');
-    if (!profile || !status || !summary || !toggle) return;
-    toggle.checked = Boolean(profile.enabled);
-    const active = profile.activeSignals || [],
-      pending = profile.pendingSignals || [];
-    status.textContent = profile.enabled
-      ? `${active.length} active · ${profile.eventCount} local choices`
-      : 'Personalization paused';
-    summary.innerHTML = active.length
-      ? active
-          .slice(0, 8)
-          .map(
-            (signal) =>
-              `<span><b>${escapeHtml(signal.value)}</b> · ${signal.adjustment > 0 ? '+' : ''}${signal.adjustment} ranking · ${signal.evidenceCount} tracks <button type="button" data-dismiss-signal="${escapeHtml(signal.dimension)}" data-signal-value="${escapeHtml(signal.value)}" aria-label="Dismiss ${escapeHtml(signal.value)}">×</button></span>`,
-          )
-          .join('')
-      : `<span>${pending.length ? 'Learning from more distinct tracks before changing rankings.' : 'No feedback recorded yet.'}</span>`;
-    summary.querySelectorAll('[data-dismiss-signal]').forEach(
-      (button) =>
-        (button.onclick = async () => {
-          try {
-            currentPreferenceProfile = await setBuilderApi.dismissPreference(
-              button.dataset.dismissSignal,
-              button.dataset.signalValue,
-            );
-            renderPreferenceProfile();
-          } catch (error) {
-            console.warn('Set preference dismissal failed:', error);
-          }
-        }),
-    );
-  }
-  async function loadPreferenceProfile() {
-    try {
-      currentPreferenceProfile = await setBuilderApi.preferenceProfile(preferenceContext());
-      renderPreferenceProfile();
-    } catch (error) {
-      console.warn('Set preference profile failed:', error);
-      const status = $('#set-preference-status');
-      if (status) status.textContent = 'Local preferences unavailable';
-    }
-  }
-  function transitionReviewFeatures(left, right, index) {
-    const match = compatibility(left, right),
-      settings = transitionSettings(index),
-      difference = Number(right.bpm || 0) - Number(left.bpm || 0);
-    return {
-      bpmMovement: Math.abs(difference) < 2 ? 'steady' : difference > 0 ? 'rising' : 'falling',
-      keyCompatibility: match.components.key >= 31 ? 'strong' : match.components.key >= 20 ? 'workable' : 'weak',
-      vocalOverlap:
-        setVocalProfile(left) === 'vocal-forward' && setVocalProfile(right) === 'vocal-forward'
-          ? 'both-vocal'
-          : 'spaced',
-      energyMovement:
-        songEnergy(right) - songEnergy(left) > 0.12
-          ? 'rising'
-          : songEnergy(left) - songEnergy(right) > 0.12
-            ? 'falling'
-            : 'steady',
-      bars: String(settings.bars || 16),
-      technique: settings.technique || 'crossfade',
-    };
-  }
-  function renderCalibrationReport(report) {
-    const root = $('#set-calibration-summary');
-    if (!root || !report) return;
-    const tracks = report.tracks || {},
-      transition = report.transitionProfile || {};
-    currentTransitionProfile = transition;
-    root.innerHTML = `<p><b>${tracks.reviewed || 0} tracks reviewed</b> · ${tracks.accepted || 0} accepted · ${tracks.rejected || 0} rejected · ${tracks.changedByPersonalization || 0} changed rank</p><p>Personalized acceptance ${tracks.personalizedAcceptanceRate == null ? 'not enough evidence' : `${Math.round(tracks.personalizedAcceptanceRate * 100)}%`} · neutral ${tracks.neutralAcceptanceRate == null ? 'not enough evidence' : `${Math.round(tracks.neutralAcceptanceRate * 100)}%`} · ${transition.activeSignals?.length || 0} active transition preferences</p>${(report.recommendations || []).map((item) => `<p class="set-relaxation-warning">${escapeHtml(item.message)}</p>`).join('')}`;
-  }
-  function transitionPreferenceAdjustment(features) {
-    return Math.max(
-      -8,
-      Math.min(
-        8,
-        (currentTransitionProfile.activeSignals || []).reduce(
-          (sum, signal) =>
-            String(features[signal.dimension] || '').toLowerCase() === String(signal.value || '').toLowerCase()
-              ? sum + Number(signal.adjustment || 0)
-              : sum,
-          0,
-        ),
-      ),
-    );
-  }
-  async function loadSetReviewReport() {
-    try {
-      renderCalibrationReport(await setBuilderApi.reviewReport(preferenceContext()));
-    } catch (error) {
-      console.warn('Set review report failed:', error);
-    }
-  }
-  async function submitSetReview() {
-    if (!state.plan.length) return;
-    const button = $('#submit-set-review');
-    button.disabled = true;
-    button.textContent = 'Saving…';
-    const transitions = state.plan.slice(1).map((track, index) => {
-      const left = state.plan[index],
-        pairId = `${setCatalogTrackId(left)}→${setCatalogTrackId(track)}`;
-      return {
-        pairId,
-        rating: transitionReviewDraft.get(pairId) || 3,
-        features: transitionReviewFeatures(left, track, index + 1),
-      };
-    });
-    const tracks = state.plan.map((track) => {
-      const metrics = track._candidateMetrics || {};
-      const review = trackReviewDraft.get(setTrackId(track)) || {};
-      return {
-        trackId: setCatalogTrackId(track),
-        title: track.source_name.replace(/\.[^.]+$/, ''),
-        decision: review.decision || 'unreviewed',
-        reason: review.reason || '',
-        features: preferenceFeatures(track),
-        technicalScore: metrics.technicalScore || 0,
-        preferenceAdjustment: metrics.preferenceAdjustment || 0,
-        rankDelta: metrics.rankDelta || 0,
-        matchTier: metrics.matchTier || 'unknown',
-      };
-    });
-    try {
-      const result = await setBuilderApi.submitReview({
-        setId: $('#saved-set-select').value || `draft-${Date.now()}`,
-        setName: setBrief().name,
-        context: preferenceContext(),
-        overallDecision: currentSetDecision,
-        notes: $('#set-review-notes').value,
-        tracks,
-        transitions,
-        evaluation: currentPlanningReceipt?.evaluation || {},
-        comparison: currentPlanningReceipt?.comparison || {},
-      });
-      currentPreferenceProfile = result.preferenceProfile;
-      renderPreferenceProfile();
-      renderCalibrationReport(result.report);
-      $('#set-review-status').textContent = 'Review saved locally and preference evidence updated.';
-    } catch (error) {
-      $('#set-review-status').textContent = error.message || String(error);
-    } finally {
-      button.disabled = false;
-      button.textContent = 'Save review';
-    }
-  }
-  function resetSetReviewDraft() {
-    currentSetDecision = 'unreviewed';
-    trackReviewDraft.clear();
-    transitionReviewDraft.clear();
-    $$('[data-set-decision]').forEach((button) => button.classList.remove('active'));
-    const notes = $('#set-review-notes');
-    if (notes) notes.value = '';
-  }
   function identityStore() {
     try {
       return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY) || '{}');
@@ -758,404 +544,12 @@ export function createSetBuilderFeature({
       });
     });
   }
-  async function generateDeterministicSetPlan() {
-    const brief = setBrief();
-    const eligiblePool = eligibleSetTracks(brief);
-    const requiredIds = new Set(state.requiredIds);
-    const intendedGenres = [...(brief.identity?.requestedGenres || []), ...(brief.identity?.optionalGenres || [])];
-    const coarseScore = (track) =>
-      intentionEvaluation(track, brief).score +
-      (intendedGenres.some((term) => trackMatchesIntendedGenre(track, term)) ? 40 : 0) -
-      Math.abs(songEnergy(track) - targetSetEnergy(0, 2, brief)) * 12;
-    const shortlistLimit = 800;
-    const pool =
-      eligiblePool.length <= shortlistLimit
-        ? eligiblePool
-        : [...eligiblePool].sort((a, b) => coarseScore(b) - coarseScore(a)).slice(0, shortlistLimit);
-    eligiblePool
-      .filter((track) => requiredIds.has(setTrackId(track)) && !pool.includes(track))
-      .forEach((track) => pool.push(track));
-    if (pool.length < 2) {
-      $('#set-builder-message').textContent =
-        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and manually selected genres.`;
-      return;
-    }
-    const averageSeconds =
-      pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
-    const count = Math.max(2, Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)));
-    const required = pool.filter((track) => state.requiredIds.has(setTrackId(track)));
-    const genreTargets = genreAllocationTargets(brief.genres, brief.genreWeights, count);
-    const previousPlan = state.plan;
-    const buildVariation = (strategy, generatedTrackIds) => {
-      const remaining = new Map(pool.map((track) => [setTrackId(track), track]));
-      const nextPlan = [];
-      const genreUsage = Object.fromEntries((brief.genres || []).map((genre) => [genre, 0]));
-      const previousPlanIds = new Set(previousPlan.map(setTrackId));
-      let failed = false;
-      const recordGenre = (track) => {
-        const matches = (brief.genres || []).filter((genre) => trackMatchesSetGenre(track, genre));
-        if (!matches.length) return;
-        const genre = matches.sort(
-          (a, b) => (genreTargets[b] || 0) - (genreUsage[b] || 0) - ((genreTargets[a] || 0) - (genreUsage[a] || 0)),
-        )[0];
-        genreUsage[genre] = (genreUsage[genre] || 0) + 1;
-      };
-      const nextGenre = () => {
-        const configuredOrder = state.genreSelectionOrder
-          .filter((genre) => (brief.genres || []).includes(genre))
-          .concat((brief.genres || []).filter((genre) => !state.genreSelectionOrder.includes(genre)));
-        const open = configuredOrder.filter(
-          (genre) =>
-            (genreUsage[genre] || 0) < (genreTargets[genre] || 0) &&
-            [...remaining.values()].some((track) => trackMatchesSetGenre(track, genre)),
-        );
-        if (!open.length) return '';
-        return open.sort((a, b) => {
-          const deficitA = (genreTargets[a] || 0) - (genreUsage[a] || 0),
-            deficitB = (genreTargets[b] || 0) - (genreUsage[b] || 0);
-          if (brief.genreFlow === 'blend')
-            return deficitB / Math.max(1, genreTargets[b] || 0) - deficitA / Math.max(1, genreTargets[a] || 0);
-          return configuredOrder.indexOf(a) - configuredOrder.indexOf(b);
-        })[0];
-      };
-      state.generationNonce += 1;
-      Array.from({ length: count }, (_, index) => {
-        if (failed) return;
-        const locked = previousPlan[index];
-        if (locked && state.lockedIds.has(setTrackId(locked)) && remaining.has(setTrackId(locked))) {
-          remaining.delete(setTrackId(locked));
-          nextPlan.push(locked);
-          recordGenre(locked);
-          return;
-        }
-        const requiredIndex = required.length ? Math.round((index * (required.length + 1)) / count) - 1 : -1;
-        const forced = required[requiredIndex];
-        if (forced && remaining.has(setTrackId(forced))) {
-          remaining.delete(setTrackId(forced));
-          nextPlan.push(forced);
-          recordGenre(forced);
-          return;
-        }
-        const previous = nextPlan[index - 1] || null;
-        const targetGenre = nextGenre();
-        const identityTarget = intendedGenreForPosition(brief.identity, index, count);
-        const available = [...remaining.values()];
-        const identityTargeted = identityTarget
-          ? available.filter((track) => trackMatchesIntendedGenre(track, identityTarget))
-          : [];
-        const targeted = targetGenre
-          ? available.filter((track) => trackMatchesSetGenre(track, targetGenre))
-          : available;
-        const candidatePool = identityTargeted.length ? identityTargeted : targeted.length ? targeted : available;
-        const ranked = candidatePool
-          .map((track) => {
-            const id = setTrackId(track),
-              wasSamePosition = Boolean(previousPlan[index]) && setTrackId(previousPlan[index]) === id,
-              wasInPrevious = previousPlanIds.has(id);
-            return {
-              track,
-              score:
-                setCandidateScore(track, previous, index, count, brief, strategy, generatedTrackIds) -
-                (wasSamePosition ? 12 : wasInPrevious ? 3 : 0),
-            };
-          })
-          .sort((a, b) => b.score - a.score);
-        if (!ranked.length) {
-          failed = true;
-          return;
-        }
-        const competitive = ranked.filter((item) => item.score >= ranked[0].score - 18).slice(0, 18);
-        const weights = competitive.map((item) => Math.exp((item.score - competitive.at(-1).score) / 5));
-        const total = weights.reduce((sum, value) => sum + value, 0);
-        let pick = Math.abs(Math.sin(state.generationNonce * 9283 + index * 3343)) * total,
-          choice = competitive[0]?.track;
-        for (let option = 0; option < competitive.length; option += 1) {
-          pick -= weights[option];
-          if (pick <= 0) {
-            choice = competitive[option].track;
-            break;
-          }
-        }
-        if (choice) {
-          remaining.delete(setTrackId(choice));
-          nextPlan.push(choice);
-          recordGenre(choice);
-        }
-      });
-      required.forEach((track) => {
-        if (!nextPlan.some((item) => setTrackId(item) === setTrackId(track))) nextPlan.push(track);
-      });
-      intendedGenres.forEach((term) => {
-        if (nextPlan.some((track) => trackMatchesIntendedGenre(track, term))) return;
-        const replacement = [...remaining.values()]
-          .filter((track) => trackMatchesIntendedGenre(track, term))
-          .sort((a, b) => coarseScore(b) - coarseScore(a))[0];
-        if (!replacement) return;
-        const replaceIndex = nextPlan
-          .map((track, index) => ({
-            track,
-            index,
-            score: setCandidateScore(
-              track,
-              nextPlan[index - 1] || null,
-              index,
-              count,
-              brief,
-              strategy,
-              generatedTrackIds,
-            ),
-          }))
-          .filter(
-            (item) =>
-              item.index > 0 &&
-              !state.lockedIds.has(setTrackId(item.track)) &&
-              !state.requiredIds.has(setTrackId(item.track)),
-          )
-          .sort((a, b) => a.score - b.score)[0]?.index;
-        if (replaceIndex == null) return;
-        remaining.set(setTrackId(nextPlan[replaceIndex]), nextPlan[replaceIndex]);
-        remaining.delete(setTrackId(replacement));
-        nextPlan[replaceIndex] = replacement;
-      });
-      return failed ? [] : nextPlan;
-    };
-    const result = await classicPlanner.generate({
-      count,
-      minimumHealth: brief.minimumHealth,
-      buildVariation,
-      improveOrder: (plan) => improveSetOrder(plan, brief),
-      evaluate: setHealth,
-      trackId: setTrackId,
-      snapshot: (plan) => ({ tracks: plan.map(setTrackId), locked: [...state.lockedIds], transitions: {} }),
-    });
-    if (!result.accepted.length) {
-      const issues = setHealthIssues(result.best.health, brief.minimumHealth);
-      $('#set-builder-message').textContent =
-        `No direction was applied. The best search reached ${result.best.health.score}/100, below your ${brief.minimumHealth} target. ${issues.slice(0, 2).join(' · ') || 'Relax a constraint or lower the health floor.'}`;
-      return;
-    }
-    if (state.plan.length) pushSetHistory();
-    state.proposals = result.proposals;
-    const preferred = result.preferred;
-    state.activeProposal = preferred.id;
-    restoreSetSnapshot(preferred.snapshot, false);
-    $('#set-builder-message').textContent =
-      `Built ${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'}. Optimizing transition techniques for ${preferred.label}…`;
-    await autoOptimizeSetTransitions();
-    preferred.snapshot = setPlanSnapshot();
-    preferred.health = setHealth();
-    currentPlanningReceipt = {
-      version: 1,
-      mode: $('#set-planning-mode').value === 'classic' ? 'classic' : 'ai-interpreted',
-      provider: brief.identity?.provider || 'offline',
-      model: null,
-      summary: `${preferred.label} selected from ${result.accepted.length} deterministic direction${result.accepted.length === 1 ? '' : 's'}.`,
-      warnings: [],
-      evaluation: null,
-      candidatePool: null,
-      planningDurationMs: null,
-      generatedAt: new Date().toISOString(),
-    };
-    renderSetPlan();
-    $('#set-builder-message').textContent =
-      `${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
-  }
-  function planningJourney(brief) {
-    if (brief.identity?.journey?.sections?.length) return brief.identity.journey;
-    const genres = [...brief.detailedGenres, ...brief.genres];
-    const energy = { rise: [3.5, 7.5], 'peak-release': [4, 8], waves: [4.5, 7], steady: [5.5, 5.5] }[brief.curve] || [
-      4.5, 6.5,
-    ];
-    return {
-      version: 1,
-      summary: 'Single editable journey derived from the structured set brief.',
-      durationMinutes: brief.length,
-      sections: [
-        {
-          id: 'section-1',
-          name: 'Full set',
-          durationPercent: 100,
-          energyStart: energy[0],
-          energyEnd: energy[1],
-          genres,
-          characteristics: [brief.vibe, brief.curve].filter(Boolean),
-          purpose: 'Honor the structured brief while maintaining a playable flow.',
-        },
-      ],
-    };
-  }
-  function planningTrackCount(brief) {
-    const pool = eligibleSetTracks(brief);
-    if (pool.length < 2)
-      throw new Error(
-        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and manually selected genres.`,
-      );
-    const averageSeconds =
-      pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
-    const protectedCount = new Set([...state.requiredIds, ...state.lockedIds]).size;
-    if (protectedCount > 100) throw new Error('AI Planned mode supports at most 100 required or locked tracks.');
-    return Math.max(2, protectedCount, Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)));
-  }
-  function catalogIds(ids) {
-    const bySetId = new Map(state.library.map((track) => [setTrackId(track), setCatalogTrackId(track)]));
-    return [...ids].map((id) => bySetId.get(id)).filter(Boolean);
-  }
-  async function cancelAITrackPlan() {
-    planningController?.abort();
-    const jobId = activePlanningJobId;
-    activePlanningJobId = '';
-    if (jobId) await planningClient.cancel(jobId).catch(() => null);
-  }
-  async function loadAIObservability() {
-    const status = $('#set-ai-operations-status'),
-      root = $('#set-ai-operations-summary');
-    if (!status || !root) return;
-    try {
-      const report = await planningClient.observability();
-      status.textContent = `${report.completedCount} completed · ${report.failedCount} failed · ${report.canceledCount} canceled`;
-      root.innerHTML = aiObservabilityCards(report, escapeHtml);
-    } catch (error) {
-      status.textContent = error.message || String(error);
-      root.innerHTML = '';
-    }
-  }
-  async function generateAITrackPlan() {
-    await cancelAITrackPlan();
-    const brief = setBrief(),
-      journey = planningJourney(brief),
-      targetTrackCount = planningTrackCount(brief);
-    planningController = new AbortController();
-    const started = await planningClient.start({
-      brief,
-      journey,
-      target_duration_minutes: brief.length,
-      target_track_count: targetTrackCount,
-      required_track_ids: catalogIds(state.requiredIds),
-      excluded_track_ids: catalogIds(state.excludedIds),
-      locked_track_ids: catalogIds(state.lockedIds),
-      per_section_limit: Math.min(100, Math.max(30, targetTrackCount)),
-      total_limit: 100,
-    });
-    activePlanningJobId = started.jobId;
-    $('#set-cancel-planning').hidden = false;
-    const result = await planningClient.wait(started.jobId, {
-      signal: planningController.signal,
-      onProgress: (state) => {
-        $('#set-builder-message').textContent = `${state.stage} · ${state.progress || 0}%`;
-      },
-    });
-    activePlanningJobId = '';
-    planningController = null;
-    $('#set-cancel-planning').hidden = true;
-    const byCatalogId = new Map(state.library.map((track) => [setCatalogTrackId(track), track]));
-    const selected = result.plan.map((item) => {
-      const track = byCatalogId.get(item.id);
-      if (!track) throw new Error(`Validated catalog track ${item.id} is not loaded in the browser.`);
-      track._aiSelectionReason = item.selectionReason;
-      track._planSectionId = item.sectionId;
-      track._candidateMetrics = {
-        technicalScore: item.technicalScore || 0,
-        preferenceAdjustment: item.preferenceAdjustment || 0,
-        baselineRank: item.baselineRank || 0,
-        personalizedRank: item.personalizedRank || 0,
-        rankDelta: item.rankDelta || 0,
-        matchTier: item.matchTier || 'unknown',
-      };
-      return track;
-    });
-    if (state.plan.length) pushSetHistory();
-    state.plan = improveSetOrder(selected, brief);
-    resetSetReviewDraft();
-    state.proposals = [];
-    state.activeProposal = '';
-    state.transitionSettings = {};
-    currentPlanningReceipt = {
-      version: 1,
-      mode: result.mode,
-      provider: result.provider,
-      model: result.model,
-      summary: result.summary,
-      warnings: result.warnings || [],
-      evaluation: result.evaluation || null,
-      comparison: result.comparison || null,
-      modelRepairs: result.modelRepairs || [],
-      candidatePool: result.candidatePool || null,
-      fallbackReason: result.fallbackReason || null,
-      planningDurationMs: result.planningDurationMs ?? null,
-      generatedAt: new Date().toISOString(),
-    };
-    currentPlanningReceipt.observability = result.observability || null;
-    void loadAIObservability();
-    $('#set-builder-message').textContent = 'Validated track order ready. Optimizing transition techniques…';
-    await autoOptimizeSetTransitions();
-    renderSetPlan();
-    const mixHealth = setHealth();
-    const warningCount = result.warnings?.length || 0;
-    const source =
-      result.mode === 'ai-planned' ? `${result.provider} · ${result.model}` : 'deterministic safety fallback';
-    $('#set-builder-message').textContent =
-      mixHealth.score >= brief.minimumHealth
-        ? `${result.summary} ${selected.length} tracks · ${source} · ${mixHealth.score}/100 mix health.`
-        : `${result.summary} Draft retained for repair · ${mixHealth.score}/100 mix health is below your ${brief.minimumHealth} target · ${warningCount} validation warning${warningCount === 1 ? '' : 's'}.`;
-  }
   function setPlanSnapshot() {
     return snapshotSetPlan(state, setTrackId);
   }
   function restoreSetSnapshot(snapshot, render = true) {
     restoreSetPlan(state, snapshot, state.library, setTrackId);
     if (render) renderSetPlan();
-  }
-  async function selectSetProposal(id) {
-    const next = state.proposals.find((proposal) => proposal.id === id && proposal.accepted);
-    if (!next || id === state.activeProposal) return;
-    const current = state.proposals.find((proposal) => proposal.id === state.activeProposal);
-    if (current) {
-      current.snapshot = setPlanSnapshot();
-      current.health = setHealth();
-    }
-    stopTransitionPreview();
-    pushSetHistory();
-    state.activeProposal = id;
-    restoreSetSnapshot(next.snapshot, false);
-    const switchNonce = ++proposalSwitchNonce;
-    const needsOptimization = !Object.keys(state.transitionSettings).length;
-    renderSetPlan();
-    $('#set-builder-message').textContent = needsOptimization
-      ? `${next.label} applied · ${setHealth().score}/100 health. Optimizing its transitions in the background…`
-      : `${next.label} applied · ${setHealth().score}/100 health. Your edits to the other directions are saved.`;
-    if (!needsOptimization) return;
-    try {
-      const optimized = await autoOptimizeSetTransitions();
-      if (switchNonce !== proposalSwitchNonce || state.activeProposal !== id) return;
-      next.snapshot = setPlanSnapshot();
-      next.health = setHealth();
-      renderSetPlan();
-      $('#set-builder-message').textContent =
-        `${next.label} applied · ${next.health.score}/100 health · ${optimized} transition${optimized === 1 ? '' : 's'} optimized. Your edits to the other directions are saved.`;
-    } catch (error) {
-      if (switchNonce !== proposalSwitchNonce || state.activeProposal !== id) return;
-      console.error('Set proposal optimization failed', error);
-      $('#set-builder-message').textContent =
-        `${next.label} is ready, but automatic transition optimization failed: ${error?.message || error}. You can still edit each mix manually.`;
-      notify('The set direction changed, but some transitions could not be optimized.', 'danger');
-    }
-  }
-  function renderSetProposals() {
-    const root = $('#set-proposals');
-    if (!root) return;
-    root.innerHTML = setProposalMarkup(state.proposals, state.activeProposal, escapeHtml);
-    root.querySelectorAll('[data-proposal]').forEach((button) => {
-      button.onclick = () => selectSetProposal(button.dataset.proposal);
-      button.onkeydown = (event) => {
-        if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
-        event.preventDefault();
-        const available = [...root.querySelectorAll('[data-proposal]:not(:disabled)')];
-        const offset = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1;
-        const next = available[(available.indexOf(button) + offset + available.length) % available.length];
-        next?.focus();
-        next?.click();
-      };
-    });
   }
   function pushSetHistory() {
     editCommands.checkpoint();
@@ -1173,7 +567,41 @@ export function createSetBuilderFeature({
   function redoSetEdit() {
     if (editCommands.redo()) updateSetHistoryButtons();
   }
-  const transitionEditor = createSetTransitionEditor({
+  let transitionEditor;
+  let planningSession;
+  const feedbackController = createSetBuilderFeedback({
+    state,
+    dom: { $, $$, escapeHtml },
+    api: setBuilderApi,
+    music: {
+      compatibility,
+      setTrackDetailedGenres,
+      setTrackId,
+      setCatalogTrackId,
+      setVocalProfile,
+      songEnergy,
+    },
+    planning: {
+      setBrief,
+      getPlanningReceipt: () => planningSession.receipt(),
+      transitionSettings: (index) => transitionEditor.transitionSettings(index),
+    },
+    review: { trackReviewDraft, transitionReviewDraft },
+  });
+  const {
+    loadPreferenceProfile,
+    loadSetReviewReport,
+    preferenceAdjustment,
+    recordPreference,
+    resetPreferences,
+    resetSetReviewDraft,
+    setOverallDecision,
+    setPersonalizationEnabled,
+    submitSetReview,
+    transitionPreferenceAdjustment,
+    transitionReviewFeatures,
+  } = feedbackController;
+  transitionEditor = createSetTransitionEditor({
     state,
     setBuilderApi,
     $,
@@ -1210,6 +638,41 @@ export function createSetBuilderFeature({
     stopTransitionPreview,
     transitionSettings,
   } = transitionEditor;
+  planningSession = createSetPlanningSession({
+    state,
+    dom: { $, escapeHtml, notify },
+    clients: { planningClient, classicPlanner },
+    policy: {
+      genreAllocationTargets,
+      intendedGenreForPosition,
+      intentionEvaluation,
+      setCandidateScore,
+      setCatalogTrackId,
+      setTrackId,
+      songEnergy,
+      targetSetEnergy,
+      trackMatchesIntendedGenre,
+      trackMatchesSetGenre,
+    },
+    transitions: transitionEditor,
+    lifecycle: {
+      eligibleSetTracks,
+      pushSetHistory,
+      renderSetPlan: () => renderSetPlan(),
+      resetSetReviewDraft,
+      restoreSetSnapshot,
+      setBrief,
+      setPlanSnapshot,
+    },
+    view: { aiObservabilityCards, setProposalMarkup },
+  });
+  const {
+    cancelAITrackPlan,
+    generateAITrackPlan,
+    generateDeterministicSetPlan,
+    loadAIObservability,
+    renderSetProposals,
+  } = planningSession;
   const planView = createSetPlanView({
     state,
     dom: { $, $$, escapeHtml },
@@ -1251,7 +714,7 @@ export function createSetBuilderFeature({
     transitions: transitionEditor,
     lifecycle: {
       editCommands,
-      getPlanningReceipt: () => currentPlanningReceipt,
+      getPlanningReceipt: () => planningSession.receipt(),
       pushSetHistory,
       recordPreference,
       renderSetProposals,
@@ -1280,10 +743,8 @@ export function createSetBuilderFeature({
     plan: {
       setBrief,
       setTrackId,
-      getPlanningReceipt: () => currentPlanningReceipt,
-      setPlanningReceipt: (receipt) => {
-        currentPlanningReceipt = receipt;
-      },
+      getPlanningReceipt: () => planningSession.receipt(),
+      setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt),
       renderSetRules,
       autoOptimizeSetTransitions,
       renderSetPlan,
@@ -1513,8 +974,7 @@ export function createSetBuilderFeature({
     $('#set-vibe').addEventListener('change', () => void loadPreferenceProfile());
     $('#set-personalization-enabled').addEventListener('change', async (event) => {
       try {
-        currentPreferenceProfile = await setBuilderApi.setPersonalization(event.currentTarget.checked);
-        renderPreferenceProfile();
+        await setPersonalizationEnabled(event.currentTarget.checked);
       } catch (error) {
         notify(error.message, 'danger');
       }
@@ -1528,8 +988,7 @@ export function createSetBuilderFeature({
       )
         return;
       try {
-        currentPreferenceProfile = await setBuilderApi.resetPreferences();
-        renderPreferenceProfile();
+        await resetPreferences();
         $('#set-builder-message').textContent = 'Learned Set Builder preferences reset.';
       } catch (error) {
         notify(error.message, 'danger');
@@ -1538,7 +997,7 @@ export function createSetBuilderFeature({
     $$('[data-set-decision]').forEach(
       (button) =>
         (button.onclick = () => {
-          currentSetDecision = button.dataset.setDecision;
+          setOverallDecision(button.dataset.setDecision);
           $$('[data-set-decision]').forEach((item) => item.classList.toggle('active', item === button));
         }),
     );
@@ -1636,7 +1095,9 @@ import { SetPlanningCanceled } from './set-planning-client.js';
 import { createSetBuilderApi } from './set-builder-api.js';
 import { createClassicSetPlanner, optimizePlanOrder } from './set-builder-classic-planner.js';
 import { createSetEditCommands } from './set-builder-commands.js';
+import { createSetBuilderFeedback } from './set-builder-feedback.js';
 import { createSetPlanView } from './set-builder-plan-view.js';
+import { createSetPlanningSession } from './set-builder-planning-session.js';
 import { createSavedSetController } from './set-builder-saved-sets.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './set-builder-state.js';
 import { createSetTransitionEditor } from './set-builder-transition-editor.js';

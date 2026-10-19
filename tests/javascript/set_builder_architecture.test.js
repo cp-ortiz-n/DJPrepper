@@ -5,7 +5,9 @@ import { createApiClient } from '../../web/api-client.js';
 import { createSetBuilderApi } from '../../web/set-builder-api.js';
 import { createClassicSetPlanner, optimizePlanOrder } from '../../web/set-builder-classic-planner.js';
 import { createSetEditCommands } from '../../web/set-builder-commands.js';
+import { createSetBuilderFeedback } from '../../web/set-builder-feedback.js';
 import { createSetPlanView } from '../../web/set-builder-plan-view.js';
+import { createSetPlanningSession } from '../../web/set-builder-planning-session.js';
 import { buildSetCsv, buildSetM3u, createSavedSetController } from '../../web/set-builder-saved-sets.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from '../../web/set-builder-state.js';
 import { createSetTransitionEditor } from '../../web/set-builder-transition-editor.js';
@@ -111,6 +113,70 @@ function savedSetControllerFor({ state, elements, api, recordPreference = async 
     },
     feedback: { recordPreference },
   });
+}
+
+function planningSessionFor({ state, elements, planningClient, classicPlanner, overrides = {} }) {
+  const snapshots = [];
+  const session = createSetPlanningSession({
+    state,
+    dom: {
+      $: (selector) => elements.get(selector),
+      escapeHtml,
+      notify() {},
+    },
+    clients: { planningClient, classicPlanner },
+    policy: {
+      genreAllocationTargets: () => ({}),
+      intendedGenreForPosition: () => '',
+      intentionEvaluation: () => ({ score: 0 }),
+      setCandidateScore: () => 50,
+      setCatalogTrackId: (track) => track.catalogId,
+      setTrackId: trackId,
+      songEnergy: () => 0.5,
+      targetSetEnergy: () => 0.5,
+      trackMatchesIntendedGenre: () => false,
+      trackMatchesSetGenre: () => true,
+      ...overrides.policy,
+    },
+    transitions: {
+      autoOptimizeSetTransitions: async () => 0,
+      improveSetOrder: (plan) => plan,
+      setHealth: () => ({ score: 82, transitions: [], vocalClashes: 0 }),
+      setHealthIssues: () => [],
+      stopTransitionPreview() {},
+      ...overrides.transitions,
+    },
+    lifecycle: {
+      eligibleSetTracks: () => state.library,
+      pushSetHistory() {},
+      renderSetPlan() {},
+      resetSetReviewDraft() {},
+      restoreSetSnapshot(snapshot) {
+        state.plan = state.library.filter((track) => snapshot.tracks.includes(track.id));
+      },
+      setBrief: () => ({
+        length: 10,
+        genres: [],
+        detailedGenres: [],
+        genreWeights: {},
+        genreFlow: 'blend',
+        minimumHealth: 65,
+        curve: 'steady',
+        identity: {},
+      }),
+      setPlanSnapshot() {
+        const snapshot = { tracks: state.plan.map(trackId), locked: [], transitions: {} };
+        snapshots.push(snapshot);
+        return snapshot;
+      },
+      ...overrides.lifecycle,
+    },
+    view: {
+      aiObservabilityCards: () => '<article>observability</article>',
+      setProposalMarkup: () => '',
+    },
+  });
+  return { session, snapshots };
 }
 
 test('brief preparation returns both results without requesting a second journey', async () => {
@@ -461,6 +527,269 @@ test('transition editor starts and stops one isolated audio preview', async () =
   } finally {
     Object.assign(globalThis, originals);
   }
+});
+
+test('planning session builds and receipts an accepted deterministic proposal', async () => {
+  const state = {
+    library: [
+      { id: 'a', catalogId: 1, duration_seconds: 180 },
+      { id: 'b', catalogId: 2, duration_seconds: 180 },
+      { id: 'c', catalogId: 3, duration_seconds: 180 },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+    genreSelectionOrder: [],
+    generationNonce: 0,
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-planning-mode', { value: 'classic' }],
+  ]);
+  const classicPlanner = {
+    async generate(options) {
+      const plan = options.buildVariation('balanced', new Set());
+      const proposal = {
+        id: 'balanced',
+        label: 'Balanced',
+        accepted: true,
+        snapshot: options.snapshot(plan),
+        health: options.evaluate(plan),
+      };
+      return { accepted: [proposal], proposals: [proposal], preferred: proposal, best: proposal };
+    },
+  };
+  const { session } = planningSessionFor({ state, elements, planningClient: {}, classicPlanner });
+
+  await session.generateDeterministicSetPlan();
+
+  assert.equal(state.plan.length, 3);
+  assert.equal(state.activeProposal, 'balanced');
+  assert.equal(session.receipt().mode, 'classic');
+  assert.match(elements.get('#set-builder-message').textContent, /Balanced applied at 82\/100/);
+  assert.equal(Object.isFrozen(session), true);
+});
+
+test('planning session cancels the active AI job and aborts its pending result', async () => {
+  const state = {
+    library: [
+      { id: 'a', catalogId: 1, duration_seconds: 180 },
+      { id: 'b', catalogId: 2, duration_seconds: 180 },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-cancel-planning', { hidden: true }],
+  ]);
+  const canceled = [];
+  let waitSignal;
+  const planningClient = {
+    start: async () => ({ jobId: 'job-7' }),
+    wait: (_jobId, options) => {
+      waitSignal = options.signal;
+      return new Promise((resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      });
+    },
+    cancel: async (jobId) => canceled.push(jobId),
+  };
+  const { session } = planningSessionFor({ state, elements, planningClient, classicPlanner: {} });
+  const generation = session.generateAITrackPlan().catch((error) => error);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  await session.cancelAITrackPlan();
+  const error = await generation;
+
+  assert.equal(waitSignal.aborted, true);
+  assert.deepEqual(canceled, ['job-7']);
+  assert.equal(error.message, 'aborted');
+  assert.equal(state.plan.length, 0);
+  assert.equal(elements.get('#set-cancel-planning').hidden, true);
+});
+
+test('planning session releases its cancel surface after a failed AI wait', async () => {
+  const state = {
+    library: [
+      { id: 'a', catalogId: 1, duration_seconds: 180 },
+      { id: 'b', catalogId: 2, duration_seconds: 180 },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-cancel-planning', { hidden: true }],
+  ]);
+  const planningClient = {
+    start: async () => ({ jobId: 'job-failed' }),
+    wait: async () => {
+      throw new Error('planning failed');
+    },
+    cancel: async () => {},
+  };
+  const { session } = planningSessionFor({ state, elements, planningClient, classicPlanner: {} });
+
+  await assert.rejects(session.generateAITrackPlan(), /planning failed/);
+
+  assert.equal(elements.get('#set-cancel-planning').hidden, true);
+  await session.cancelAITrackPlan();
+  assert.equal(state.plan.length, 0);
+});
+
+test('planning session retains a validated deterministic safety fallback from the AI lifecycle', async () => {
+  const state = {
+    library: [
+      { id: 'a', catalogId: 1, duration_seconds: 180 },
+      { id: 'b', catalogId: 2, duration_seconds: 180 },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-cancel-planning', { hidden: true }],
+  ]);
+  const planningClient = {
+    start: async () => ({ jobId: 'job-8' }),
+    wait: async () => ({
+      mode: 'deterministic-fallback',
+      provider: 'ollama',
+      model: 'qwen3.5:4b',
+      summary: 'Safety fallback retained.',
+      warnings: ['AI plan rejected'],
+      fallbackReason: 'quality threshold',
+      plan: [
+        { id: 1, technicalScore: 81 },
+        { id: 2, technicalScore: 79 },
+      ],
+    }),
+    cancel: async () => {},
+    observability: async () => ({ completedCount: 1, failedCount: 0, canceledCount: 0 }),
+  };
+  const { session } = planningSessionFor({ state, elements, planningClient, classicPlanner: {} });
+
+  await session.generateAITrackPlan();
+
+  assert.deepEqual(state.plan.map(trackId), ['a', 'b']);
+  assert.equal(session.receipt().mode, 'deterministic-fallback');
+  assert.equal(session.receipt().fallbackReason, 'quality threshold');
+  assert.match(elements.get('#set-builder-message').textContent, /deterministic safety fallback/);
+});
+
+test('planning session switches proposals while preserving edits made to the prior direction', async () => {
+  const state = {
+    library: [
+      { id: 'a', catalogId: 1 },
+      { id: 'b', catalogId: 2 },
+    ],
+    plan: [{ id: 'a', catalogId: 1 }],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: { 'a→b': { bars: 16 } },
+    proposals: [
+      { id: 'first', label: 'First', accepted: true, snapshot: { tracks: ['a'] } },
+      { id: 'second', label: 'Second', accepted: true, snapshot: { tracks: ['b'] } },
+    ],
+    activeProposal: 'first',
+  };
+  const elements = new Map([['#set-builder-message', { textContent: '' }]]);
+  const { session } = planningSessionFor({ state, elements, planningClient: {}, classicPlanner: {} });
+
+  await session.selectSetProposal('second');
+
+  assert.equal(state.activeProposal, 'second');
+  assert.deepEqual(state.plan.map(trackId), ['b']);
+  assert.deepEqual(state.proposals[0].snapshot.tracks, ['a']);
+  assert.match(elements.get('#set-builder-message').textContent, /edits to the other directions are saved/);
+});
+
+test('feedback controller loads ranking signals and submits review evidence with the planning receipt', async () => {
+  const status = { textContent: '' };
+  const summary = { innerHTML: '', querySelectorAll: () => [] };
+  const toggle = { checked: false };
+  const calibration = { innerHTML: '' };
+  const reviewStatus = { textContent: '' };
+  const elements = new Map([
+    ['#set-vibe', { value: 'dance-party' }],
+    ['#set-preference-status', status],
+    ['#set-preference-summary', summary],
+    ['#set-personalization-enabled', toggle],
+    ['#set-calibration-summary', calibration],
+    ['#submit-set-review', { disabled: false, textContent: 'Save review' }],
+    ['#saved-set-select', { value: 'set-1' }],
+    ['#set-review-notes', { value: 'Great flow' }],
+    ['#set-review-status', reviewStatus],
+  ]);
+  const plan = [
+    { id: 'a', catalogId: 1, source_name: 'Intro.wav', bpm: 120, _genre: 'House', energy: 0.5 },
+    { id: 'b', catalogId: 2, source_name: 'Peak.wav', bpm: 124, _genre: 'House', energy: 0.8 },
+  ];
+  let submitted;
+  const profile = {
+    enabled: true,
+    eventCount: 8,
+    activeSignals: [{ dimension: 'genre', value: 'House', adjustment: 6, evidenceCount: 4 }],
+    pendingSignals: [],
+  };
+  const report = { tracks: { reviewed: 2, accepted: 2 }, transitionProfile: { activeSignals: [] } };
+  const feedback = createSetBuilderFeedback({
+    state: { plan },
+    dom: { $: (selector) => elements.get(selector), $$: () => [], escapeHtml },
+    api: {
+      preferenceProfile: async () => profile,
+      submitReview: async (payload) => {
+        submitted = payload;
+        return { preferenceProfile: profile, report };
+      },
+    },
+    music: {
+      compatibility: () => ({ components: { key: 31 } }),
+      setTrackDetailedGenres: () => [],
+      setTrackId: trackId,
+      setCatalogTrackId: (track) => track.catalogId,
+      setVocalProfile: () => 'instrumental',
+      songEnergy: (track) => track.energy,
+    },
+    planning: {
+      setBrief: () => ({ name: 'Night Set' }),
+      getPlanningReceipt: () => ({ evaluation: { score: 82 }, comparison: { winner: 'deterministic' } }),
+      transitionSettings: () => ({ bars: 16, technique: 'crossfade' }),
+    },
+    review: { trackReviewDraft: new Map(), transitionReviewDraft: new Map() },
+  });
+
+  await feedback.loadPreferenceProfile();
+  feedback.setOverallDecision('accept');
+  await feedback.submitSetReview();
+
+  assert.equal(toggle.checked, true);
+  assert.equal(feedback.preferenceAdjustment(plan[0]), 3);
+  assert.equal(submitted.overallDecision, 'accept');
+  assert.deepEqual(submitted.evaluation, { score: 82 });
+  assert.equal(submitted.transitions[0].features.technique, 'crossfade');
+  assert.match(reviewStatus.textContent, /Review saved locally/);
 });
 
 test('plan view renders required and excluded rules through its focused boundary', () => {
