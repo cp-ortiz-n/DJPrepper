@@ -57,6 +57,26 @@ export function allowsCandidateGenre({
   );
 }
 
+export function passesSetCandidateHardFilters({
+  explicitlyExcluded,
+  genreEligible,
+  detailedGenreEligible,
+  excludedGenreMatch,
+  bpmEligible,
+  vocalEligible,
+  timingEligible,
+}) {
+  return (
+    !explicitlyExcluded &&
+    genreEligible &&
+    detailedGenreEligible &&
+    !excludedGenreMatch &&
+    bpmEligible &&
+    vocalEligible &&
+    timingEligible
+  );
+}
+
 export function createSetWorkflowController({ $, $$ }) {
   const briefMode = () => $('[name="set-brief-mode"]:checked')?.value || SET_BRIEF_MODES.AI;
   const trackPlanner = () => $('[name="set-track-planner"]:checked')?.value || SET_TRACK_PLANNERS.AI;

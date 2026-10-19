@@ -127,6 +127,40 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
   await expect(page.locator('#set-ai-brief')).toBeVisible();
   await expect(intention).toHaveValue('A melodic Latin warm-up that grows into techno.');
   await expect(page.locator('#set-planning-mode')).toHaveValue('interpreted');
+
+  await page.evaluate(() => {
+    const sections = document.createElement('div');
+    sections.id = 'journey-layout-probe';
+    sections.className = 'set-journey-sections';
+    sections.style.width = '1000px';
+    sections.innerHTML = `<article class="set-journey-section">
+      <span class="journey-step">1</span>
+      <div class="journey-primary">
+        <label>Section<input value="Warm-up"></label>
+        <label class="journey-duration-label">Duration<input type="number" value="15"><span>%</span></label>
+        <label class="journey-energy">Energy <span class="journey-energy-value">4 → 6</span>
+          <span class="journey-energy-inputs"><input type="number" value="4"><i>to</i><input type="number" value="6"></span>
+        </label>
+      </div>
+      <div class="journey-details">
+        <label class="journey-genres">Genres<input value="disco &amp; funk, latin house"></label>
+        <label>Character<input class="journey-characteristics" value="groovy, melodic"></label>
+        <label class="journey-purpose">Purpose<input value="Build energy gradually"></label>
+      </div>
+    </article>`;
+    document.querySelector('#set-builder-view').append(sections);
+  });
+  const journeyProbe = page.locator('#journey-layout-probe .set-journey-section');
+  await expect(journeyProbe).toBeVisible();
+  const journeyFieldsOverlap = await journeyProbe.evaluateAll((sections) =>
+    sections.some((section) => {
+      const energy = section.querySelector('.journey-energy-inputs')?.getBoundingClientRect();
+      const character = section.querySelector('.journey-characteristics')?.getBoundingClientRect();
+      return energy && character && energy.right > character.left + 1;
+    }),
+  );
+  expect(journeyFieldsOverlap).toBe(false);
+  await page.locator('#journey-layout-probe').evaluate((node) => node.remove());
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {

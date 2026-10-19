@@ -13,6 +13,7 @@ import {
   allowsCandidateGenre,
   createSetWorkflowController,
   inferSetWorkflow,
+  passesSetCandidateHardFilters,
   requiresStrictGenreEligibility,
   resolveStructuredGenreFilters,
   resolveSetPlanningMode,
@@ -116,6 +117,23 @@ test('manual genre filters remain strict while wide identity drift remains avail
     }),
     true,
   );
+});
+
+test('candidate hard filters exclude only explicit catalog and mixing constraints', () => {
+  const eligible = {
+    explicitlyExcluded: false,
+    genreEligible: true,
+    detailedGenreEligible: true,
+    excludedGenreMatch: false,
+    bpmEligible: true,
+    vocalEligible: true,
+    timingEligible: true,
+  };
+  assert.equal(passesSetCandidateHardFilters(eligible), true);
+  Object.keys(eligible).forEach((field) => {
+    const failingValue = field === 'explicitlyExcluded' || field === 'excludedGenreMatch';
+    assert.equal(passesSetCandidateHardFilters({ ...eligible, [field]: failingValue }), false, field);
+  });
 });
 
 test('saved planning modes migrate into the two-part workflow without losing intention', () => {

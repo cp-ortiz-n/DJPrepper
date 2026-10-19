@@ -23,8 +23,9 @@ import {
   createSetIntentionController,
   createSetWorkflowController,
   inferSetWorkflow,
+  passesSetCandidateHardFilters,
   resolveStructuredGenreFilters,
-} from './set-builder-workflow.js?v=20261018-3';
+} from './set-builder-workflow.js?v=20261018-4';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -751,18 +752,19 @@ export function createSetBuilderFeature({
         drift,
         preferredIdentityMatches: intention.preferred.length,
       });
-      return (
-        !state.excludedIds.has(id) &&
-        identityEligible &&
-        !intention.missingRequired.length &&
-        (!(brief.detailedGenres || []).length ||
-          brief.detailedGenres.some((genre) => trackMatchesSetDetailedGenre(track, genre))) &&
-        !(brief.excludedGenres || []).some((genre) => trackMatchesSetGenre(track, genre)) &&
-        (!brief.bpmMin || bpm >= brief.bpmMin) &&
-        (!Number.isFinite(brief.bpmMax) || !brief.bpmMax || bpm <= brief.bpmMax) &&
-        (brief.vocals === 'all' || setVocalProfile(track) === brief.vocals) &&
-        (brief.timing === 'all' || timingProfile(track) === brief.timing)
-      );
+      return passesSetCandidateHardFilters({
+        explicitlyExcluded: state.excludedIds.has(id),
+        genreEligible: identityEligible,
+        detailedGenreEligible:
+          !(brief.detailedGenres || []).length ||
+          brief.detailedGenres.some((genre) => trackMatchesSetDetailedGenre(track, genre)),
+        excludedGenreMatch: (brief.excludedGenres || []).some((genre) => trackMatchesSetGenre(track, genre)),
+        bpmEligible:
+          (!brief.bpmMin || bpm >= brief.bpmMin) &&
+          (!Number.isFinite(brief.bpmMax) || !brief.bpmMax || bpm <= brief.bpmMax),
+        vocalEligible: brief.vocals === 'all' || setVocalProfile(track) === brief.vocals,
+        timingEligible: brief.timing === 'all' || timingProfile(track) === brief.timing,
+      });
     });
   }
   async function generateDeterministicSetPlan() {
@@ -784,7 +786,7 @@ export function createSetBuilderFeature({
       .forEach((track) => pool.push(track));
     if (pool.length < 2) {
       $('#set-builder-message').textContent =
-        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and required tracks.`;
+        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and manually selected genres.`;
       return;
     }
     const averageSeconds =
@@ -995,7 +997,7 @@ export function createSetBuilderFeature({
     const pool = eligibleSetTracks(brief);
     if (pool.length < 2)
       throw new Error(
-        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and required tracks.`,
+        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and manually selected genres.`,
       );
     const averageSeconds =
       pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
