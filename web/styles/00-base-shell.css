@@ -138,6 +138,28 @@ body {
   margin: 0;
   padding: 0 10px;
 }
+@media (max-width: 1100px) {
+  .topbar {
+    height: auto;
+    min-height: 60px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .local-pill {
+    display: none;
+  }
+  .app-nav {
+    order: 3;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .nav-button {
+    flex: 1 0 auto;
+  }
+}
 main {
   max-width: 1420px;
   margin: auto;

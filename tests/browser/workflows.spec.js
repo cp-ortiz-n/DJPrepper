@@ -89,7 +89,24 @@ test('saved sets survive browser storage clearing and application reload', async
 });
 
 test('Set Builder keeps brief authoring separate from track planning', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 900 });
   await openView(page, 'Set Builder');
+  const overflow = await page.locator('body *').evaluateAll((items) =>
+    items
+      .filter((item) => {
+        const bounds = item.getBoundingClientRect();
+        return bounds.width > 0 && (bounds.left < -1 || bounds.right > window.innerWidth + 1);
+      })
+      .slice(0, 12)
+      .map((item) => ({
+        element: item.id ? `#${item.id}` : `${item.tagName.toLowerCase()}.${item.className}`,
+        name: item.getAttribute('name'),
+        type: item.getAttribute('type'),
+        bounds: item.getBoundingClientRect().toJSON(),
+      })),
+  );
+  expect(overflow).toEqual([]);
+  await expect(page.locator('.saved-sets-panel')).toBeVisible();
   const intention = page.locator('#set-intention');
   const plannerChoices = page.locator('.set-track-planner label > span');
   await expect(plannerChoices).toHaveCount(2);
