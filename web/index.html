@@ -279,29 +279,37 @@
       <div class="set-builder-layout">
         <form id="set-builder-form" class="panel set-controls">
           <div class="set-control-head"><div><p class="eyebrow">SET BRIEF</p><h2>Plan the journey</h2><small>Start with the essentials. Refine constraints only when the set needs them.</small></div><button id="reset-set-brief" type="button" class="button tertiary">Reset brief</button></div>
-          <section class="set-intention-card">
-            <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>Optional</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div><span id="set-provider-status" class="set-provider-status checking">Checking local AI…</span></div>
+          <fieldset class="set-brief-mode-picker">
+            <legend>How would you like to begin?</legend>
+            <label><input type="radio" name="set-brief-mode" value="ai" checked><span><strong>Describe what I want</strong><small>AI turns natural language into an editable direction.</small></span></label>
+            <label><input type="radio" name="set-brief-mode" value="manual"><span><strong>Build manually</strong><small>Choose genres, energy, flow, and constraints yourself.</small></span></label>
+            <p id="set-brief-mode-help">Describe the outcome. Local AI will translate it into a brief you can review.</p>
+          </fieldset>
+          <div class="set-objective-fields">
+            <label class="set-name-field">Set name<input id="set-name" type="text" maxlength="100" value="New DJ Set"></label>
+            <label>Target length<select id="set-length"><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60" selected>60 minutes</option><option value="90">90 minutes</option><option value="120">2 hours</option><option value="180">3 hours</option></select></label>
+          </div>
+          <section id="set-ai-brief" class="set-intention-card">
+            <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>AI brief</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div><span id="set-provider-status" class="set-provider-status checking">Checking local AI…</span></div>
             <textarea id="set-intention" rows="4" maxlength="1200" placeholder="Example: Build a driving Latin electronic set with a Techno foundation, Spanish vocals, dembow or Latin percussion, and an Ecuadorian party feel. Allow Latin House and Cumbia edits as bridges."></textarea>
-            <div class="set-intention-actions"><small>We’ll turn this into editable preferences before generating.</small><button id="interpret-set-intention" type="button" class="button secondary">Interpret intention</button></div>
+            <div class="set-intention-actions"><small>We’ll turn this into one reviewable direction before selecting tracks.</small><button id="interpret-set-intention" type="button" class="button secondary">Review set direction</button></div>
             <div id="set-intention-interpretation" class="set-intention-interpretation" hidden>
-              <div class="set-intention-summary"><strong>Editable interpretation</strong><span id="set-intention-status">Review these preferences before generating.</span></div>
-              <div class="set-intention-fields">
+              <div class="set-intention-summary"><strong>Your set direction</strong><span id="set-intention-status">Review these preferences before generating.</span></div>
+              <details class="set-direction-details"><summary>Edit detailed interpretation</summary><div class="set-intention-fields">
                 <label>Hard requirements<input id="set-intention-required" type="text" placeholder="Comma-separated; never relaxed"></label>
                 <label>Weighted preferences<input id="set-intention-preferred" type="text" placeholder="Spanish vocals, Latin percussion, recognizable sample"></label>
                 <label>Limit or avoid<input id="set-intention-avoided" type="text" placeholder="Generic instrumental Techno"></label>
                 <label>Genre drift<select id="set-intention-drift"><option value="none">None · direct genres only</option><option value="low">Low · close variants</option><option value="moderate" selected>Moderate · musical bridges</option><option value="wide">Wide · context before genre</option></select></label>
-              </div>
+              </div></details>
               <section id="set-journey-preview" class="set-journey-preview" hidden>
                 <header><div><strong>Planned journey</strong><small id="set-journey-summary">Review the sections before generating tracks.</small></div><span id="set-journey-evidence"></span></header>
                 <div id="set-journey-sections" class="set-journey-sections"></div>
                 <p id="set-journey-total" class="set-journey-total"></p>
               </section>
-              <ol id="set-fallback-policy" class="set-fallback-policy"></ol>
+              <details class="set-fallback-details"><summary>How scarce music is handled</summary><ol id="set-fallback-policy" class="set-fallback-policy"></ol></details>
             </div>
           </section>
-          <div class="set-basics">
-            <label class="set-name-field">Set name<input id="set-name" type="text" maxlength="100" value="New DJ Set"></label>
-            <label>Target length<select id="set-length"><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60" selected>60 minutes</option><option value="90">90 minutes</option><option value="120">2 hours</option><option value="180">3 hours</option></select></label>
+          <div id="set-manual-brief" class="set-basics" hidden>
             <div class="set-genre-mix"><label>Parent genre mix<select id="set-genre" multiple><option value="all" selected>Any parent genre</option></select></label><div id="set-genre-chips" class="set-genre-chips"></div><div id="set-genre-weights" class="set-genre-weights" hidden></div></div>
             <div class="set-genre-mix"><label>Detailed genres<select id="set-detailed-genres" multiple><option value="all" selected>Any detailed genre</option></select></label><div id="set-detailed-genre-chips" class="set-genre-chips"></div></div>
             <div class="set-genre-mix"><label>Exclude genres<select id="set-excluded-genres" multiple></select></label><div id="set-excluded-genre-chips" class="set-genre-chips excluded-genre-chips"></div></div>
@@ -317,8 +325,9 @@
           </div></details>
           <details class="set-advanced set-track-constraints"><summary><span><strong>Required and excluded tracks</strong><small>Pin must-play tracks or remove songs from consideration</small></span><b id="set-rule-count">0 rules</b></summary><div class="set-track-rules"><label>Required track<select id="set-required"><option value="">Choose a track</option></select></label><button id="add-required-track" type="button" class="button secondary">Add required</button><label>Exclude track<select id="set-excluded"><option value="">Choose a track</option></select></label><button id="add-excluded-track" type="button" class="button secondary">Exclude</button></div><div id="set-rule-chips" class="set-rule-chips"></div></details>
           <div class="set-generate-row">
-            <label class="set-planning-mode">Planning mode<select id="set-planning-mode"><option value="ai-planned" selected>AI Planned · chooses and orders tracks</option><option value="interpreted">AI Interpreted · rules choose tracks</option><option value="classic">Classic · rules only</option></select></label>
-            <button id="set-generate" type="submit">Generate set plan</button>
+            <fieldset class="set-track-planner"><legend>How should tracks be planned?</legend><label><input type="radio" name="set-track-planner" value="ai" checked><span><strong>AI-assisted</strong><small>AI chooses from safe, validated candidates.</small></span></label><label><input type="radio" name="set-track-planner" value="deterministic"><span><strong>Deterministic</strong><small>Compatibility scoring only; no AI planning call.</small></span></label></fieldset>
+            <select id="set-planning-mode" hidden aria-hidden="true"><option value="ai-planned" selected>AI planned</option><option value="interpreted">AI interpreted</option><option value="classic">Classic</option></select>
+            <button id="set-generate" type="submit">Build this set</button>
             <button id="set-cancel-planning" type="button" class="button secondary" hidden>Cancel planning</button>
             <p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p>
           </div>

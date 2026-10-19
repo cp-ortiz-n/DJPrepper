@@ -7,6 +7,14 @@ import { createClassicSetPlanner } from '../../web/set-builder-classic-planner.j
 import { createSetEditCommands } from '../../web/set-builder-commands.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from '../../web/set-builder-state.js';
 import { aiObservabilityCards, fallbackPolicyMarkup, setProposalMarkup } from '../../web/set-builder-view-model.js';
+import {
+  SET_BRIEF_MODES,
+  SET_TRACK_PLANNERS,
+  createSetWorkflowController,
+  inferSetWorkflow,
+  resolveSetPlanningMode,
+  setBriefModeMessage,
+} from '../../web/set-builder-workflow.js';
 
 const trackId = (track) => track.id;
 const response = (payload, { ok = true, status = 200 } = {}) => ({ ok, status, json: async () => payload });
@@ -30,6 +38,63 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
   assert.deepEqual(store.plan, library);
   assert.deepEqual([...store.lockedIds], ['a']);
   assert.deepEqual(store.transitionSettings, { 'a→b': { bars: 16 } });
+});
+
+test('brief authoring and track planning remain independent choices', () => {
+  assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.AI), 'ai-planned');
+  assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.AI), 'ai-planned');
+  assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.DETERMINISTIC), 'interpreted');
+  assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.DETERMINISTIC), 'classic');
+  assert.match(setBriefModeMessage(SET_BRIEF_MODES.AI), /Local AI/);
+  assert.match(setBriefModeMessage(SET_BRIEF_MODES.MANUAL), /yourself/);
+});
+
+test('saved planning modes migrate into the two-part workflow without losing intention', () => {
+  assert.deepEqual(inferSetWorkflow('interpreted'), {
+    authoringMode: SET_BRIEF_MODES.AI,
+    trackPlanner: SET_TRACK_PLANNERS.DETERMINISTIC,
+  });
+  assert.deepEqual(inferSetWorkflow('classic'), {
+    authoringMode: SET_BRIEF_MODES.MANUAL,
+    trackPlanner: SET_TRACK_PLANNERS.DETERMINISTIC,
+  });
+  assert.deepEqual(inferSetWorkflow('ai-planned', true), {
+    authoringMode: SET_BRIEF_MODES.AI,
+    trackPlanner: SET_TRACK_PLANNERS.AI,
+  });
+});
+
+test('workflow controller updates mode surfaces without clearing authored values', () => {
+  const elements = new Map([
+    ['#set-builder-form', { dataset: {} }],
+    ['#set-ai-brief', { hidden: false }],
+    ['#set-manual-brief', { hidden: true }],
+    ['#set-brief-mode-help', { textContent: '' }],
+    ['#set-planning-mode', { value: '' }],
+    ['#set-builder-message', { textContent: '' }],
+  ]);
+  const briefInputs = [
+    { value: 'ai', checked: true },
+    { value: 'manual', checked: false },
+  ];
+  const plannerInputs = [
+    { value: 'ai', checked: true },
+    { value: 'deterministic', checked: false },
+  ];
+  const $ = (selector) => {
+    if (selector === '[name="set-brief-mode"]:checked') return briefInputs.find((item) => item.checked);
+    if (selector === '[name="set-track-planner"]:checked') return plannerInputs.find((item) => item.checked);
+    return elements.get(selector);
+  };
+  const $$ = (selector) => (selector.includes('brief-mode') ? briefInputs : plannerInputs);
+  const controller = createSetWorkflowController({ $, $$ });
+
+  controller.applyBriefMode('manual');
+
+  assert.equal(elements.get('#set-ai-brief').hidden, true);
+  assert.equal(elements.get('#set-manual-brief').hidden, false);
+  assert.equal(elements.get('#set-planning-mode').value, 'ai-planned');
+  assert.match(elements.get('#set-brief-mode-help').textContent, /yourself/);
 });
 
 test('Set edit commands own checkpoint, move, undo, redo, and bounded history', () => {

@@ -16,6 +16,13 @@ import {
   trackMatchesSetDetailedGenre,
   trackMatchesSetGenre,
 } from './set-builder-policy.js';
+import {
+  SET_BRIEF_MODES,
+  SET_TRACK_PLANNERS,
+  createSetIntentionController,
+  createSetWorkflowController,
+  inferSetWorkflow,
+} from './set-builder-workflow.js';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -60,6 +67,7 @@ export function createSetBuilderFeature({
   const { api, $, $$, notify, confirmAction, descriptorEditorMarkup, saveDescriptorEditor, inferDescriptorEditor } =
     useFrontendServices(services);
   const state = createSetBuilderStore();
+  const workflow = createSetWorkflowController({ $, $$ });
   let transitionPreviewAudio = [];
   let transitionPreviewFrame = 0;
   let transitionPreviewTimer = 0;
@@ -78,6 +86,14 @@ export function createSetBuilderFeature({
   let transitionEditorSurfaces = [];
   const transitionWaveCache = new Map();
   const setBuilderApi = createSetBuilderApi({ api });
+  const intentionController = createSetIntentionController({
+    $,
+    api: setBuilderApi,
+    providerView: intentionProviderView,
+    offlineInterpret: interpretSetIntention,
+    vocabulary: intentionVocabulary,
+    durationMinutes: () => Number($('#set-length').value),
+  });
   const planningClient = setBuilderApi.planning;
   const classicPlanner = createClassicSetPlanner({
     strategies: SET_PROPOSAL_STRATEGIES,
@@ -384,14 +400,15 @@ export function createSetBuilderFeature({
     };
   }
   function currentIntention() {
-    const text = $('#set-intention').value.trim(),
+    const usesAIBrief = workflow.briefMode() === SET_BRIEF_MODES.AI,
+      text = usesAIBrief ? $('#set-intention').value.trim() : '',
       panel = $('#set-intention-interpretation'),
       parsed = interpretSetIntention(text, intentionVocabulary());
     let interpreted = {};
     try {
-      if (panel.dataset.source === text) interpreted = JSON.parse(panel.dataset.interpretation || '{}');
+      if (usesAIBrief && panel.dataset.source === text) interpreted = JSON.parse(panel.dataset.interpretation || '{}');
     } catch (_) {}
-    const journey = currentJourney();
+    const journey = usesAIBrief ? currentJourney() : null;
     const journeySequence = journey?.sections.flatMap((section) => section.genres) || [];
     return {
       text,
@@ -411,26 +428,6 @@ export function createSetBuilderFeature({
   }
   function renderFallbackPolicy(policy = DEFAULT_SET_FALLBACK_POLICY) {
     $('#set-fallback-policy').innerHTML = fallbackPolicyMarkup(policy, escapeHtml);
-  }
-  function showIntentionProvider(status) {
-    const badge = $('#set-provider-status');
-    if (!badge) return;
-    const view = intentionProviderView(status);
-    badge.className = view.className;
-    badge.textContent = view.text;
-    badge.title = view.title;
-  }
-  async function refreshIntentionProviderStatus() {
-    const badge = $('#set-provider-status');
-    if (badge) {
-      badge.className = 'set-provider-status checking';
-      badge.textContent = 'Checking local AI…';
-    }
-    try {
-      showIntentionProvider(await setBuilderApi.providerStatus());
-    } catch (_) {
-      showIntentionProvider({ available: false, provider: 'offline' });
-    }
   }
   function renderJourney(journey) {
     const root = $('#set-journey-preview'),
@@ -477,7 +474,7 @@ export function createSetBuilderFeature({
     if (interpreted.curve) $('#set-curve').value = interpreted.curve;
     renderFallbackPolicy(interpreted.fallbackPolicy || DEFAULT_SET_FALLBACK_POLICY);
     if (interpreted.journey) renderJourney(interpreted.journey);
-    showIntentionProvider({
+    intentionController.showProvider({
       available: interpreted.provider !== 'offline',
       provider: interpreted.provider,
       model: interpreted.model,
@@ -492,31 +489,6 @@ export function createSetBuilderFeature({
       $('#set-intention-status').textContent =
         `Interpreted with ${source}. Found ${(interpreted.required || []).length} requirement${(interpreted.required || []).length === 1 ? '' : 's'}, ${(interpreted.preferred || []).length} preference${(interpreted.preferred || []).length === 1 ? '' : 's'}, and ${(interpreted.avoided || []).length} limit${(interpreted.avoided || []).length === 1 ? '' : 's'}. Edit anything before generating.`;
     }
-  }
-  async function interpretIntention(text) {
-    try {
-      const result = await setBuilderApi.interpretIntention(text, intentionVocabulary());
-      return { ...result, text, fallbackPolicy: [...DEFAULT_SET_FALLBACK_POLICY] };
-    } catch (_) {
-      return { ...interpretSetIntention(text, intentionVocabulary()), provider: 'offline' };
-    }
-  }
-  async function planJourney(text, interpreted) {
-    return setBuilderApi.planJourney({
-      brief: text,
-      interpretedIntention: interpreted,
-      catalogVocabulary: intentionVocabulary(),
-      durationMinutes: Number($('#set-length').value),
-    });
-  }
-  async function interpretAndPlan(text) {
-    const interpreted = await interpretIntention(text);
-    try {
-      interpreted.journey = await planJourney(text, interpreted);
-    } catch (error) {
-      console.warn('Journey planning failed:', error);
-    }
-    return interpreted;
   }
   function selectedSetGenres() {
     return [...$('#set-genre').selectedOptions]
@@ -630,6 +602,8 @@ export function createSetBuilderFeature({
       ]),
     );
     return {
+      authoringMode: workflow.briefMode(),
+      trackPlanner: workflow.trackPlanner(),
       name: $('#set-name').value.trim() || 'New DJ Set',
       length: Number($('#set-length').value),
       genres,
@@ -2997,7 +2971,12 @@ export function createSetBuilderFeature({
     });
     state.plan = recoveredPlan;
     currentPlanningReceipt = record.planningReceipt || null;
-    $('#set-planning-mode').value = record.planningMode || 'classic';
+    const workflow = inferSetWorkflow(record.planningMode, Boolean(savedIdentity.text));
+    $$('[name="set-track-planner"]').forEach((input) => {
+      input.checked = input.value === workflow.trackPlanner;
+    });
+    workflow.applyBriefMode(brief.authoringMode || workflow.authoringMode, { announce: false });
+    workflow.syncPlanningMode();
     state.lockedIds = new Set(record.locked || []);
     state.requiredIds = new Set(record.required || []);
     state.excludedIds = new Set(record.excluded || []);
@@ -3138,7 +3117,8 @@ export function createSetBuilderFeature({
     }
   }
   async function loadSetBuilder() {
-    refreshIntentionProviderStatus();
+    intentionController.refreshProviderStatus();
+    bindSetBuilder();
     await loadPreferenceProfile();
     await loadSetReviewReport();
     await loadAIObservability();
@@ -3209,7 +3189,6 @@ export function createSetBuilderFeature({
         .filter((value) => current.includes(value))
         .concat(current.filter((value) => !state.genreSelectionOrder.includes(value)));
     await loadSavedSets();
-    bindSetBuilder();
     renderFallbackPolicy();
     renderSetGenreMix();
     renderSetDetailedGenres();
@@ -3226,16 +3205,20 @@ export function createSetBuilderFeature({
       const intentionText = $('#set-intention').value.trim(),
         interpretation = $('#set-intention-interpretation'),
         button = $('#set-generate'),
-        mode = $('#set-planning-mode').value;
+        briefMode = workflow.briefMode(),
+        mode = workflow.syncPlanningMode();
       button.disabled = true;
       try {
+        if (briefMode === SET_BRIEF_MODES.AI && !intentionText) {
+          throw new Error('Describe the set you want, or switch to Build manually.');
+        }
         if (
-          mode !== 'classic' &&
+          briefMode === SET_BRIEF_MODES.AI &&
           intentionText &&
           (interpretation.hidden || interpretation.dataset.source !== intentionText)
         ) {
           button.textContent = 'Planning journey…';
-          applyIntentionInterpretation(await interpretAndPlan(intentionText));
+          applyIntentionInterpretation(await intentionController.interpretAndPlan(intentionText));
         }
         button.textContent = mode === 'ai-planned' ? 'AI planning tracks…' : 'Building and optimizing…';
         $('#set-builder-message').textContent =
@@ -3256,7 +3239,7 @@ export function createSetBuilderFeature({
         }
       } finally {
         button.disabled = false;
-        button.textContent = 'Generate set plan';
+        button.textContent = 'Build this set';
         $('#set-cancel-planning').hidden = true;
       }
     };
@@ -3277,12 +3260,24 @@ export function createSetBuilderFeature({
       button.disabled = true;
       button.textContent = 'Planning journey…';
       try {
-        applyIntentionInterpretation(await interpretAndPlan(text));
+        applyIntentionInterpretation(await intentionController.interpretAndPlan(text));
       } finally {
         button.disabled = false;
-        button.textContent = 'Interpret intention';
+        button.textContent = 'Review set direction';
       }
     };
+    $$('[name="set-brief-mode"]').forEach((input) => {
+      input.addEventListener('change', () => workflow.applyBriefMode(input.value));
+    });
+    $$('[name="set-track-planner"]').forEach((input) => {
+      input.addEventListener('change', () => {
+        workflow.syncPlanningMode();
+        $('#set-builder-message').textContent =
+          input.value === SET_TRACK_PLANNERS.AI
+            ? 'AI will choose and order tracks from a validated catalog candidate pool.'
+            : 'Compatibility rules will choose and order tracks without an AI planning call.';
+      });
+    });
     const briefName = $('#set-name'),
       resultName = $('#set-result-name');
     briefName.addEventListener('input', () => {
@@ -3357,6 +3352,7 @@ export function createSetBuilderFeature({
     $('#submit-set-review').onclick = submitSetReview;
     $('#reset-set-brief').onclick = () => {
       $('#set-builder-form').reset();
+      workflow.applyBriefMode(SET_BRIEF_MODES.AI, { announce: false });
       $('#set-intention-interpretation').hidden = true;
       $('#set-journey-preview').hidden = true;
       renderFallbackPolicy();

@@ -88,6 +88,24 @@ test('saved sets survive browser storage clearing and application reload', async
   );
 });
 
+test('Set Builder keeps brief authoring separate from track planning', async ({ page }) => {
+  await openView(page, 'Set Builder');
+  const intention = page.locator('#set-intention');
+  await intention.fill('A melodic Latin warm-up that grows into techno.');
+
+  await page.getByText('Build manually', { exact: true }).click();
+  await expect(page.locator('#set-ai-brief')).toBeHidden();
+  await expect(page.locator('#set-manual-brief')).toBeVisible();
+  await expect(page.locator('#set-planning-mode')).toHaveValue('ai-planned');
+
+  await page.getByText('Deterministic', { exact: true }).click();
+  await expect(page.locator('#set-planning-mode')).toHaveValue('classic');
+  await page.getByText('Describe what I want', { exact: true }).click();
+  await expect(page.locator('#set-ai-brief')).toBeVisible();
+  await expect(intention).toHaveValue('A melodic Latin warm-up that grows into techno.');
+  await expect(page.locator('#set-planning-mode')).toHaveValue('interpreted');
+});
+
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
   await page.route('**/api/downloaded-library?*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 180));
