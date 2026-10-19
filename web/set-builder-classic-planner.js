@@ -1,3 +1,29 @@
+export function optimizePlanOrder(plan, { fitness, isFixed = () => false, maximumPasses = 16 }) {
+  const improved = [...plan];
+  let current = fitness(improved);
+  for (let pass = 0; pass < Math.min(maximumPasses, Math.max(1, improved.length)); pass += 1) {
+    let best = current;
+    let bestSwap = null;
+    for (let left = 0; left < improved.length - 1; left += 1) {
+      if (isFixed(improved[left], left)) continue;
+      for (let right = left + 1; right < improved.length; right += 1) {
+        if (isFixed(improved[right], right)) continue;
+        [improved[left], improved[right]] = [improved[right], improved[left]];
+        const score = fitness(improved);
+        [improved[left], improved[right]] = [improved[right], improved[left]];
+        if (score > best + 0.01) {
+          best = score;
+          bestSwap = [left, right];
+        }
+      }
+    }
+    if (!bestSwap) break;
+    [improved[bestSwap[0]], improved[bestSwap[1]]] = [improved[bestSwap[1]], improved[bestSwap[0]]];
+    current = best;
+  }
+  return improved;
+}
+
 export function createClassicSetPlanner({ strategies, schedule = () => Promise.resolve() }) {
   async function generate({ count, minimumHealth, buildVariation, improveOrder, evaluate, trackId, snapshot }) {
     const generatedTrackIds = new Set();

@@ -574,7 +574,7 @@
 }
 .set-health > summary {
   display: grid;
-  grid-template-columns: 42px 90px 1fr;
+  grid-template-columns: 42px minmax(125px, auto) 1fr;
   gap: 8px;
   align-items: center;
   padding: 9px 11px;
@@ -585,8 +585,25 @@
   color: var(--lime);
 }
 .set-health > summary span {
+  display: grid;
+  gap: 2px;
   font-weight: 800;
   font-size: 9px;
+}
+.set-health > summary span b {
+  font: inherit;
+}
+.set-health > summary span em {
+  color: var(--muted);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 700;
+}
+.set-health.fair > summary span em {
+  color: #ffcf72;
+}
+.set-health.weak > summary span em {
+  color: #e6a19b;
 }
 .set-health > summary small {
   color: var(--muted);

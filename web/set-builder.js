@@ -440,7 +440,7 @@ export function createSetBuilderFeature({
     container.innerHTML = (journey.sections || [])
       .map(
         (section, index) =>
-          `<article class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label>Duration %<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"></label><label>Energy <span>${Number(section.energyStart || 5)} → ${Number(section.energyEnd || 5)}</span><span class="journey-energy-inputs"><input class="journey-energy-start" type="number" min="1" max="10" step=".5" value="${Number(section.energyStart || 5)}"><input class="journey-energy-end" type="number" min="1" max="10" step=".5" value="${Number(section.energyEnd || 5)}"></span></label><label class="journey-genres">Genres<input value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres"></label><label>Characteristics<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></article>`,
+          `<article class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"><span class="journey-step" aria-hidden="true">${index + 1}</span><div class="journey-primary"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label class="journey-duration-label">Duration<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"><span>%</span></label><label class="journey-energy">Energy <span class="journey-energy-value">${Number(section.energyStart || 5)} → ${Number(section.energyEnd || 5)}</span><span class="journey-energy-inputs"><input class="journey-energy-start" aria-label="Starting energy" type="number" min="1" max="10" step=".5" value="${Number(section.energyStart || 5)}"><i>to</i><input class="journey-energy-end" aria-label="Ending energy" type="number" min="1" max="10" step=".5" value="${Number(section.energyEnd || 5)}"></span></label></div><div class="journey-details"><label class="journey-genres">Genres<input value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres"></label><label>Character<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></div></article>`,
       )
       .join('');
     const refresh = () => {
@@ -455,7 +455,7 @@ export function createSetBuilderFeature({
         const values = [...row.querySelectorAll('.journey-energy-start,.journey-energy-end')].map((input) =>
           Number(input.value || 5),
         );
-        row.querySelector('label:nth-child(3)>span').textContent = `${values[0]} → ${values[1]}`;
+        row.querySelector('.journey-energy-value').textContent = `${values[0]} → ${values[1]}`;
       });
     };
     container.querySelectorAll('input').forEach((input) => input.addEventListener('input', refresh));
@@ -1056,7 +1056,7 @@ export function createSetBuilderFeature({
       return track;
     });
     if (state.plan.length) pushSetHistory();
-    state.plan = selected;
+    state.plan = improveSetOrder(selected, brief);
     resetSetReviewDraft();
     state.proposals = [];
     state.activeProposal = '';
@@ -1081,11 +1081,14 @@ export function createSetBuilderFeature({
     $('#set-builder-message').textContent = 'Validated track order ready. Optimizing transition techniques…';
     await autoOptimizeSetTransitions();
     renderSetPlan();
+    const mixHealth = setHealth();
     const warningCount = result.warnings?.length || 0;
     const source =
       result.mode === 'ai-planned' ? `${result.provider} · ${result.model}` : 'deterministic safety fallback';
     $('#set-builder-message').textContent =
-      `${result.summary} ${selected.length} tracks · ${source} · ${warningCount} validation warning${warningCount === 1 ? '' : 's'}.`;
+      mixHealth.score >= brief.minimumHealth
+        ? `${result.summary} ${selected.length} tracks · ${source} · ${mixHealth.score}/100 mix health.`
+        : `${result.summary} Draft retained for repair · ${mixHealth.score}/100 mix health is below your ${brief.minimumHealth} target · ${warningCount} validation warning${warningCount === 1 ? '' : 's'}.`;
   }
   function setPlanSnapshot() {
     return snapshotSetPlan(state, setTrackId);
@@ -1217,34 +1220,11 @@ export function createSetBuilderFeature({
     return health.score * 5 - energyPenalty + journeyFit + openingFit;
   }
   function improveSetOrder(plan, brief) {
-    const improved = [...plan];
-    const fixed = new Set(
-      improved
-        .map((track, index) => (state.lockedIds.has(setTrackId(track)) ? index : null))
-        .filter((index) => index != null),
-    );
-    let current = setOrderFitness(improved, brief);
-    for (let pass = 0; pass < 5; pass += 1) {
-      let best = current,
-        bestSwap = null;
-      for (let left = 0; left < improved.length - 1; left += 1) {
-        if (fixed.has(left)) continue;
-        for (let right = left + 1; right < improved.length; right += 1) {
-          if (fixed.has(right)) continue;
-          [improved[left], improved[right]] = [improved[right], improved[left]];
-          const score = setOrderFitness(improved, brief);
-          [improved[left], improved[right]] = [improved[right], improved[left]];
-          if (score > best + 0.01) {
-            best = score;
-            bestSwap = [left, right];
-          }
-        }
-      }
-      if (!bestSwap) break;
-      [improved[bestSwap[0]], improved[bestSwap[1]]] = [improved[bestSwap[1]], improved[bestSwap[0]]];
-      current = best;
-    }
-    return improved;
+    return optimizePlanOrder(plan, {
+      fitness: (candidate) => setOrderFitness(candidate, brief),
+      isFixed: (track) => state.lockedIds.has(setTrackId(track)),
+      maximumPasses: 16,
+    });
   }
   function setHealthIssues(health, threshold) {
     const issues = [];
@@ -2321,6 +2301,8 @@ export function createSetBuilderFeature({
     return reasons.slice(0, 5);
   }
   function setFallbackTier(track, brief) {
+    const verifiedTier = track._candidateMetrics?.matchTier;
+    if (verifiedTier) return { direct: 0, identity: 1, bridge: 2, fallback: 4 }[verifiedTier] ?? 3;
     if ((brief.genres || []).some((genre) => trackMatchesSetGenre(track, genre))) return 0;
     const evaluation = intentionEvaluation(track, brief),
       tags = trackIdentity(track);
@@ -2384,7 +2366,7 @@ export function createSetBuilderFeature({
       evaluation = receipt?.evaluation,
       comparison = receipt?.comparison;
     const receiptRows = receipt
-      ? `<section class="set-planning-receipt"><strong>${escapeHtml(receipt.mode === 'ai-planned' ? 'AI Planned' : receipt.mode === 'deterministic-fallback' ? 'Validated fallback' : receipt.mode === 'ai-interpreted' ? 'AI Interpreted' : 'Classic rules')}</strong><span>${escapeHtml(receipt.provider || 'offline')}${receipt.model ? ` · ${escapeHtml(receipt.model)}` : ''}${receipt.planningDurationMs != null ? ` · ${(receipt.planningDurationMs / 1000).toFixed(1)}s` : ''}</span><p>${escapeHtml(receipt.summary || '')}</p>${receipt.modelRepairs?.length ? `<p>${receipt.modelRepairs.length} structural model selection${receipt.modelRepairs.length === 1 ? ' was' : 's were'} repaired before validation.</p>` : ''}${comparison ? `<p><strong>AI ${comparison.ai?.qualityScore ?? '—'} · Baseline ${comparison.deterministic?.qualityScore ?? '—'}</strong> — ${escapeHtml(comparison.reason || '')}</p>` : ''}${evaluation?.disclosures?.map((text) => `<p>${escapeHtml(text)}</p>`).join('') || ''}${receipt.fallbackReason ? '<p class="set-relaxation-warning">The AI result was replaced by the deterministic safety fallback.</p>' : ''}</section>`
+      ? `<section class="set-planning-receipt"><strong>${escapeHtml(receipt.mode === 'ai-planned' ? 'AI Planned' : receipt.mode === 'deterministic-fallback' ? 'Catalog-safe fallback' : receipt.mode === 'ai-interpreted' ? 'AI Interpreted' : 'Classic rules')}</strong><span>${escapeHtml(receipt.provider || 'offline')}${receipt.model ? ` · ${escapeHtml(receipt.model)}` : ''}${receipt.planningDurationMs != null ? ` · ${(receipt.planningDurationMs / 1000).toFixed(1)}s` : ''}</span><p>${escapeHtml(receipt.summary || '')}</p>${receipt.mode === 'deterministic-fallback' ? '<p>Catalog, constraint, duration, and journey checks passed. Mix health is evaluated separately below.</p>' : ''}${receipt.modelRepairs?.length ? `<p>${receipt.modelRepairs.length} structural model selection${receipt.modelRepairs.length === 1 ? ' was' : 's were'} repaired before validation.</p>` : ''}${comparison ? `<p><strong>AI ${comparison.ai?.qualityScore ?? '—'} · Baseline ${comparison.deterministic?.qualityScore ?? '—'}</strong> — ${escapeHtml(comparison.reason || '')}</p>` : ''}${evaluation?.disclosures?.map((text) => `<p>${escapeHtml(text)}</p>`).join('') || ''}${receipt.fallbackReason ? '<p class="set-relaxation-warning">The AI result was replaced by the deterministic safety fallback.</p>' : ''}</section>`
       : '';
     root.querySelector('div').innerHTML =
       `<p class="set-selection-overview">${state.plan.length} songs chosen by allocating the requested genre balance first, then ranking candidates for musical identity, energy shape, BPM and key compatibility, vocal spacing, timing, and transition health.${mustPlays.length ? ` ${mustPlays.length} must-play track${mustPlays.length === 1 ? ' was' : 's were'} preserved.` : ''}</p>${receiptRows}${intentionRows}<div class="set-selection-groups">${genreRows}${fallback}</div><p class="set-selection-note">Open “Why this track” on any song for its position-specific explanation. Counts may differ only when a locked, required, manually added, or unavailable genre track prevents the requested allocation. Any expansion beyond direct matches is disclosed above.</p>`;
@@ -2437,7 +2419,7 @@ export function createSetBuilderFeature({
     $('#set-health').className =
       `set-health ${healthAccepted ? 'good' : health.score >= healthThreshold - 10 ? 'fair' : 'weak'}`;
     $('#set-health').innerHTML =
-      `<summary><strong>${health.score}</strong><span>Set health</span><small>${healthAccepted ? 'target met' : 'below target · regenerate required'} · target ${healthThreshold} · ${weak.length} transition${weak.length === 1 ? '' : 's'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}</small></summary><div>${healthDetail}</div>`;
+      `<summary><strong>${health.score}</strong><span><b>Mix health</b><em>${healthAccepted ? 'Performance-ready' : 'Draft · repair needed'}</em></span><small>Target ${healthThreshold} · ${weak.length} transition${weak.length === 1 ? '' : 's'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}</small></summary><div>${healthDetail}</div>`;
     $('#set-health')
       .querySelectorAll('[data-transition]')
       .forEach(
@@ -3441,7 +3423,7 @@ export function createSetBuilderFeature({
 }
 import { SetPlanningCanceled } from './set-planning-client.js';
 import { createSetBuilderApi } from './set-builder-api.js';
-import { createClassicSetPlanner } from './set-builder-classic-planner.js';
+import { createClassicSetPlanner, optimizePlanOrder } from './set-builder-classic-planner.js';
 import { createSetEditCommands } from './set-builder-commands.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './set-builder-state.js';
 import { useFrontendServices } from './frontend-services.js';

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createApiClient } from '../../web/api-client.js';
 import { createSetBuilderApi } from '../../web/set-builder-api.js';
-import { createClassicSetPlanner } from '../../web/set-builder-classic-planner.js';
+import { createClassicSetPlanner, optimizePlanOrder } from '../../web/set-builder-classic-planner.js';
 import { createSetEditCommands } from '../../web/set-builder-commands.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from '../../web/set-builder-state.js';
 import { aiObservabilityCards, fallbackPolicyMarkup, setProposalMarkup } from '../../web/set-builder-view-model.js';
@@ -213,6 +213,28 @@ test('classic planner reports the strongest rejected fallback without selecting 
   assert.equal(result.preferred, null);
   assert.equal(result.best.id, 'balanced');
   assert.equal(result.best.attempts, 10);
+});
+
+test('final mix optimization improves returned order without moving locked tracks', () => {
+  const plan = [
+    { id: 'locked', value: 0 },
+    { id: 'high', value: 9 },
+    { id: 'middle', value: 5 },
+  ];
+  const optimized = optimizePlanOrder(plan, {
+    fitness: (candidate) => -Math.abs(candidate[1].value - 5) - Math.abs(candidate[2].value - 9),
+    isFixed: (track) => track.id === 'locked',
+  });
+
+  assert.equal(optimized[0].id, 'locked');
+  assert.deepEqual(
+    optimized.slice(1).map((track) => track.id),
+    ['middle', 'high'],
+  );
+  assert.deepEqual(
+    plan.map((track) => track.id),
+    ['locked', 'high', 'middle'],
+  );
 });
 
 test('Set Builder view helpers escape content and expose planning evidence', () => {
