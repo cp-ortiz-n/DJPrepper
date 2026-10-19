@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Local DJ music library, analysis, set-planning, and extended-edit studio">
+  <meta name="djls-asset-revision" content="__DJLS_ASSET_REVISION__">
   <title>DJ Library Studio</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=20261018-2">
+  <link rel="stylesheet" href="__DJLS_STYLESHEET_URL__">
 </head>
 <body>
   <header class="topbar">
@@ -26,7 +27,9 @@
     <div class="local-pill"><span></span> Local engine</div>
   </header>
   <aside id="app-startup-status" class="app-startup-status" role="alert" hidden>
-    The app did not finish loading. <button id="reload-app" class="button secondary" type="button">Reload app</button>
+    <span><strong>The app did not finish loading.</strong> <span id="app-startup-detail">Reload to try again.</span></span>
+    <button id="copy-startup-diagnostics" class="button secondary" type="button">Copy diagnostics</button>
+    <button id="reload-app" class="button secondary" type="button">Reload app</button>
   </aside>
   <aside id="library-offline-banner" class="library-offline-banner" role="status" hidden><strong>Music library is offline</strong><span>Connect the configured external drive to restore playback and file operations. Your catalog and analysis are still safe.</span><button class="button secondary" data-view="settings-view" type="button">Open storage settings</button></aside>
 
@@ -656,27 +659,101 @@
     </article>
   </template>
   <script>
-    // Keep page navigation available if a module request fails during a server restart.
-    document.addEventListener('click', (event) => {
-      if (window.__djAppNavigationReady) return;
-      const control = event.target.closest('[data-view]');
-      if (!control || control.disabled) return;
-      const target = document.getElementById(control.dataset.view);
-      if (!target?.classList.contains('view')) return;
-      event.preventDefault();
-      document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view === target));
-      document.querySelectorAll('.nav-button').forEach((button) => {
-        button.classList.toggle('active', button.dataset.view === target.id);
+    (() => {
+      // Keep navigation and diagnostics available even when the ES-module graph cannot link.
+      const status = document.getElementById('app-startup-status');
+      const detail = document.getElementById('app-startup-detail');
+      const copyButton = document.getElementById('copy-startup-diagnostics');
+      const revision = document.querySelector('meta[name="djls-asset-revision"]').content;
+      const diagnostics = {
+        assetRevision: revision,
+        page: location.href,
+        startedAt: new Date().toISOString(),
+        failures: [],
+      };
+      window.__djAppStartupDiagnostics = diagnostics;
+
+      const resourceName = (resource) => {
+        if (!resource) return null;
+        try {
+          return new URL(resource, location.href).pathname.split('/').pop() || resource;
+        } catch {
+          return resource;
+        }
+      };
+      const revealFailure = () => {
+        const failure = diagnostics.failures.at(-1);
+        detail.textContent = failure?.resource
+          ? `Could not load ${resourceName(failure.resource)}. Reload to use revision ${revision}.`
+          : `Reload to use frontend revision ${revision}.`;
+        status.hidden = false;
+      };
+      const recordFailure = (kind, message, resource = null) => {
+        diagnostics.failures.push({ kind, message: String(message || 'Unknown startup failure'), resource });
+        if (!window.__djAppNavigationReady) revealFailure();
+      };
+      const onError = (event) => {
+        const resource = event.target?.src || event.target?.href || event.filename || null;
+        recordFailure('error', event.message || 'A frontend resource failed to load.', resource);
+      };
+      const onRejection = (event) => {
+        const reason = event.reason;
+        recordFailure('unhandledrejection', reason?.stack || reason?.message || reason || 'Unhandled startup rejection');
+      };
+      window.addEventListener('error', onError, true);
+      window.addEventListener('unhandledrejection', onRejection);
+
+      window.__djAppMarkNavigationReady = () => {
+        window.__djAppNavigationReady = true;
+        diagnostics.readyAt = new Date().toISOString();
+        status.hidden = true;
+        window.removeEventListener('error', onError, true);
+        window.removeEventListener('unhandledrejection', onRejection);
+      };
+
+      document.addEventListener('click', (event) => {
+        if (window.__djAppNavigationReady) return;
+        const control = event.target.closest('[data-view]');
+        if (!control || control.disabled) return;
+        const target = document.getElementById(control.dataset.view);
+        if (!target?.classList.contains('view')) return;
+        event.preventDefault();
+        document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view === target));
+        document.querySelectorAll('.nav-button').forEach((button) => {
+          button.classList.toggle('active', button.dataset.view === target.id);
+        });
       });
-    });
-    setTimeout(() => {
-      if (!window.__djAppNavigationReady) document.getElementById('app-startup-status').hidden = false;
-    }, 2500);
-    document.getElementById('reload-app').addEventListener('click', () => location.reload());
+      setTimeout(() => {
+        if (!window.__djAppNavigationReady) revealFailure();
+      }, 2500);
+
+      copyButton.addEventListener('click', async () => {
+        const payload = JSON.stringify(
+          { ...diagnostics, capturedAt: new Date().toISOString(), userAgent: navigator.userAgent },
+          null,
+          2,
+        );
+        try {
+          await navigator.clipboard.writeText(payload);
+        } catch {
+          const field = document.createElement('textarea');
+          field.value = payload;
+          field.setAttribute('aria-hidden', 'true');
+          field.style.position = 'fixed';
+          field.style.opacity = '0';
+          document.body.appendChild(field);
+          field.select();
+          document.execCommand('copy');
+          field.remove();
+        }
+        copyButton.textContent = 'Diagnostics copied';
+      });
+      document.getElementById('reload-app').addEventListener('click', () => location.reload());
+    })();
   </script>
   <script type="importmap">
-    {"imports":{"/assets/set-builder-view-model.js":"/assets/set-builder-view-model.js?v=20261019-1"}}
+    __DJLS_IMPORT_MAP__
   </script>
-  <script src="/assets/app.js?v=20261019-4" type="module"></script>
+  <script src="__DJLS_ENTRYPOINT_URL__" type="module"></script>
 </body>
 </html>

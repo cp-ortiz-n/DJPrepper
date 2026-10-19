@@ -2,7 +2,7 @@ import WaveSurfer from '/vendor/wavesurfer/wavesurfer.esm.js';
 import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
-import { AuthorizedImportQueue } from '/assets/import-queue.js?v=20260930-1';
+import { AuthorizedImportQueue } from '/assets/import-queue.js';
 import { createApiClient } from './api-client.js';
 import {
   $,
@@ -27,7 +27,7 @@ import {
   saveDescriptorEditor,
   startKeyAnalysis,
   syncControlUnlessEditing,
-} from './shared-components.js?v=20261013-1';
+} from './shared-components.js';
 import {
   bindCompactAudio,
   bindLazyAudio,
@@ -54,12 +54,12 @@ import {
   songEnergy,
   timingProfile,
   vocalProfile,
-} from './dj-library.js?v=20261013-1';
-import { createMusicFilesFeature, createMusicFilesUiState } from './music-files.js?v=20261013-1';
+} from './dj-library.js';
+import { createMusicFilesFeature, createMusicFilesUiState } from './music-files.js';
 import { createRequestStateController } from './request-state-controller.js';
-import { createReportingFeature } from './reporting.js?v=20261013-1';
-import { createSetBuilderFeature } from './set-builder.js?v=20261019-2';
-import { createSettingsFeature, libraryAvailabilityView } from './settings.js?v=20261013-1';
+import { createReportingFeature } from './reporting.js';
+import { createSetBuilderFeature } from './set-builder.js';
+import { createSettingsFeature, libraryAvailabilityView } from './settings.js';
 import { createAuthorizedImportFeature, createImportWorkspaceApi } from './import-workspace.js';
 import { createBackgroundTaskController } from './background-task-controller.js';
 import { createImportIssuesFeature } from './import-issues.js';
@@ -81,8 +81,7 @@ const navigation = createNavigationController({
   loadView: (id) => loadView(id),
   onError: (error) => notify(error.message || 'This view could not be loaded. Please try again.', 'danger'),
 });
-window.__djAppNavigationReady = true;
-document.getElementById('app-startup-status').hidden = true;
+window.__djAppMarkNavigationReady();
 const api = createApiClient();
 const importWorkspaceApi = createImportWorkspaceApi(api);
 const processingWorkspaceApi = createProcessingWorkspaceApi(api);

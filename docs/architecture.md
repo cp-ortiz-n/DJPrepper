@@ -22,6 +22,7 @@ migration, or the application's deployment/frontend shape.
 | `audioextender/library/artwork_thumbnails.py` | Serialized artwork-thumbnail generation and cache ownership |
 | `audioextender/library/catalog_projection_builder.py` | Library search and Set Builder projection construction |
 | `audioextender/web/composition.py` | Explicit application paths, owned services, registries, locks, queues, and caches     |
+| `audioextender/web/frontend_assets.py` | Validated frontend manifest loading and atomic HTML/import-map rendering           |
 | `web/index.html`                   | Browser shell and workspace markup                                                    |
 | `web/app.js`                       | Browser composition, global navigation, and feature registration only                 |
 
@@ -434,11 +435,15 @@ module. `tests/javascript/frontend_modules.test.js` enforces this boundary and a
 
 The HTML shell is deliberately independent of the ES-module graph until
 `app.js` signals that normal navigation is ready. Its small fallback switches
-primary views and exposes a reload action if module linking or startup fails;
+primary views and exposes reload and diagnostic-copy actions if module linking
+or startup fails;
 it does not initialize features or fetch data. This preserves a usable recovery
 path when an older browser-cached child module no longer exports what a newer
-parent imports. `web/index.html` versions the entry script and the affected
-Set Builder dependency; `audioextender/web/static_assets.py` serves local
+parent imports. `web/asset-manifest.json` is the single frontend revision
+authority. `audioextender/web/frontend_assets.py` validates it and renders the
+HTML shell with one import map that versions the entrypoint, stylesheet, and
+every JavaScript module in the graph atomically. Feature modules must not own
+independent `?v=` strings. `audioextender/web/static_assets.py` serves local
 `/assets` without browser storage, and the application index response uses the
 same `no-store` policy. Navigation and feature ownership remain in `app.js` and
 their feature modules after startup succeeds.

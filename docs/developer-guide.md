@@ -99,7 +99,7 @@ Use this table before searching through the larger composition files:
 | Catalog cancellation, debounce, stale-response protection, or filter persistence            | `web/request-state-controller.js`                                                                                                                                                      |
 | Preview playback behavior                                                                   | `web/playback.js`                                                                                                                                                                      |
 | Shared frontend API, DOM, feedback, or descriptor capabilities                              | `web/frontend-services.js`, `web/api-client.js`                                                                                                                                        |
-| Browser workflow, focus, responsive, or accessibility regression                            | `tests/browser/workflows.spec.js`, `docs/browser-smoke-testing.md`                                                                                                                     |
+| Browser workflow, focus, responsive, accessibility, or warm-cache restart regression        | `tests/browser/workflows.spec.js`, `tests/browser/frontend-restart.spec.js`, `docs/browser-smoke-testing.md`                                                                           |
 | Architecture dependency or placement rule                                                   | `docs/architecture.md`, `docs/decisions/`, `tests/unit/architecture/test_boundaries.py`                                                                                                |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
@@ -452,15 +452,22 @@ Primary navigation binds before feature construction, so a failed feature cannot
 prevent tab clicks from switching views. View-loading failures are surfaced as
 notifications. Because a cached child ES module with obsolete exports can stop
 `app.js` before any initialization runs, the HTML shell also has a minimal
-pre-module tab switcher and shows a **Reload app** notice if startup does not
-complete. After successful initialization the normal navigation controller takes
-over. Application HTML and `/assets` responses use `Cache-Control: no-store`;
-the entry module and changed dependent modules also need versioned URLs when
-their import contract changes. The macOS launcher adds a fresh query parameter
-when opening the app so relaunching does not reuse a stale entry page.
+pre-module tab switcher and shows **Copy diagnostics** and **Reload app** actions
+if startup does not complete. After successful initialization the normal
+navigation controller takes over. Application HTML and `/assets` responses use
+`Cache-Control: no-store`.
+
+`web/asset-manifest.json` is the only frontend revision authority. When a
+frontend release changes, bump its `revision` once. The server renders a complete
+import map so the entrypoint, stylesheet, and every JavaScript module receive
+the same revision. Do not add `?v=` query strings to module imports or edit
+version strings in `app.js`, feature modules, or `index.html`. The macOS launcher
+adds a fresh query parameter when opening the app so relaunching does not reuse a
+stale entry page.
 
 When changing module exports, test both a fresh browser and an already-open
 browser with stale cached modules. The browser smoke suite covers a failed entry
-module, fallback navigation, reload recovery, and a stale Set Builder child
-module. The Python web-composition contract checks cache headers, including
-conditional responses.
+module, fallback navigation, reload recovery, diagnostic capture, and a true
+same-tab restart from one cacheable frontend revision to another. The Python
+web-composition contract checks cache headers, the manifest-rendered module
+graph, and the absence of independent module versions.

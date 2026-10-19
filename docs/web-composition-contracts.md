@@ -26,9 +26,18 @@ The application also serves:
 The HTML shell and local `/assets` responses use `Cache-Control: no-store`,
 including conditional responses. This prevents an older browser-cached ES
 module from being linked against a newer entry module after a local restart.
-The shell provides basic view switching and a reload notice until `app.js`
-initializes normal navigation; a failed module load must not leave every tab
-unclickable. Version changed import URLs when module exports change.
+The shell provides basic view switching, failed-resource diagnostics, and a
+reload action until `app.js` initializes normal navigation; a failed module load
+must not leave every tab unclickable.
+
+`web/asset-manifest.json` is the single asset-revision authority.
+`FrontendAssetService` validates the manifest and renders the shell with one
+revision applied to the stylesheet, entrypoint, and a complete import map of
+all JavaScript modules. Browser modules may not carry independent `?v=` import
+strings. `GET /` exposes the rendered revision in both the HTML metadata and
+`X-DJLS-Asset-Revision` response header. The browser release gate restarts an
+isolated server from one cacheable revision to another in the same tab and
+verifies that no mixed module graph is linked.
 
 ## Response contracts
 

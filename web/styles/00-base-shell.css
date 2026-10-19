@@ -137,6 +137,12 @@ body {
 .app-startup-status[hidden] {
   display: none;
 }
+.app-startup-status > span {
+  flex: 1;
+}
+.app-startup-status strong {
+  color: #f2c1bb;
+}
 .app-startup-status button {
   width: auto;
   height: 29px;

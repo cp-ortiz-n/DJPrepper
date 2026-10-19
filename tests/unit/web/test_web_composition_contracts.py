@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -69,12 +70,48 @@ class WebCompositionContractTests(unittest.TestCase):
         self.assertEqual(json.loads(completed.stdout), {"resolved": False, "repository_bound": False})
 
     def test_shell_and_modules_are_not_cached_between_local_restarts(self) -> None:
-        for path in ("/", "/assets/app.js", "/assets/set-builder-view-model.js"):
+        shell = self.client.get("/")
+        self.assertEqual(shell.status_code, 200)
+        self.assertEqual(shell.headers["cache-control"], "no-store")
+        manifest = json.loads((web.WEB / "asset-manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(shell.headers["x-djls-asset-revision"], manifest["revision"])
+        for path in ("/assets/app.js", "/assets/set-builder-view-model.js"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers["cache-control"], "no-store")
             conditional = self.client.get(path, headers={"If-None-Match": response.headers["etag"]})
             self.assertEqual(conditional.headers["cache-control"], "no-store")
+
+    def test_shell_versions_the_complete_local_module_graph_from_one_manifest(self) -> None:
+        response = self.client.get("/")
+        revision = response.headers["x-djls-asset-revision"]
+        import_map_match = re.search(
+            r'<script type="importmap">\s*(\{.*?\})\s*</script>',
+            response.text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(import_map_match)
+        imports = json.loads(cast(re.Match[str], import_map_match).group(1))["imports"]
+        expected_modules = {
+            f"/assets/{path.relative_to(web.WEB).as_posix()}" for path in web.WEB.rglob("*.js") if path.is_file()
+        }
+
+        self.assertEqual(set(imports), expected_modules)
+        self.assertTrue(all(url == f"{path}?v={revision}" for path, url in imports.items()))
+        self.assertIn(f'<meta name="djls-asset-revision" content="{revision}">', response.text)
+        self.assertIn(f'<script src="/assets/app.js?v={revision}" type="module"></script>', response.text)
+        self.assertIn(f'<link rel="stylesheet" href="/assets/styles.css?v={revision}">', response.text)
+        self.assertNotIn("__DJLS_", response.text)
+
+    def test_javascript_modules_do_not_own_independent_asset_revisions(self) -> None:
+        versioned_import = re.compile(r"(?:from\s+|import\s*\(\s*)['\"][^'\"]+[?]v=")
+        offenders = [
+            path.relative_to(web.WEB).as_posix()
+            for path in web.WEB.rglob("*.js")
+            if versioned_import.search(path.read_text(encoding="utf-8"))
+        ]
+
+        self.assertEqual(offenders, [])
 
     def test_delivery_shell_contract_is_stable(self) -> None:
         shell = web.create_app()

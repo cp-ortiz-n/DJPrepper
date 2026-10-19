@@ -26,7 +26,7 @@ from urllib.parse import urlencode, urlparse
 import httpx
 import uvicorn
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.gzip import GZipMiddleware
@@ -126,6 +126,7 @@ from audioextender.web.downloaded_track_mutation_routes import (
     create_downloaded_track_mutation_router,
 )
 from audioextender.web.error_contracts import install_error_handlers
+from audioextender.web.frontend_assets import FrontendAssetService
 from audioextender.web.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
@@ -329,8 +330,15 @@ def performance_diagnostics_report() -> dict:
 
 
 @legacy_router.get("/")
-def index() -> FileResponse:
-    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-store"})
+def index(request: Request) -> HTMLResponse:
+    shell = cast(FrontendAssetService, request.app.state.frontend_assets).render_index()
+    return HTMLResponse(
+        shell.html,
+        headers={
+            "Cache-Control": "no-store",
+            "X-DJLS-Asset-Revision": shell.revision,
+        },
+    )
 
 
 WEB_DEFAULTS = {
@@ -1781,6 +1789,7 @@ def create_app(
 
     application = install_error_handlers(FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None))
     application.state.runtime = runtime
+    application.state.frontend_assets = FrontendAssetService(runtime.paths.web)
     application.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     application.middleware("http")(record_api_performance)
     application.mount(
@@ -1788,7 +1797,11 @@ def create_app(
         StaticFiles(directory=PROJECT / "node_modules" / "wavesurfer.js" / "dist", check_dir=False),
         name="wavesurfer",
     )
-    application.mount("/assets", UncachedStaticFiles(directory=WEB, check_dir=False), name="assets")
+    application.mount(
+        "/assets",
+        UncachedStaticFiles(directory=runtime.paths.web, check_dir=False),
+        name="assets",
+    )
     _register_routers(application)
 
     def startup() -> None:

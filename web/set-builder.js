@@ -25,7 +25,7 @@ import {
   inferSetWorkflow,
   passesSetCandidateHardFilters,
   resolveStructuredGenreFilters,
-} from './set-builder-workflow.js?v=20261019-1';
+} from './set-builder-workflow.js';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -3438,8 +3438,8 @@ export function createSetBuilderFeature({
   return { loadSetBuilder };
 }
 import { SetPlanningCanceled } from './set-planning-client.js';
-import { createSetBuilderApi } from './set-builder-api.js?v=20261019-1';
-import { createClassicSetPlanner, optimizePlanOrder } from './set-builder-classic-planner.js?v=20261018-1';
+import { createSetBuilderApi } from './set-builder-api.js';
+import { createClassicSetPlanner, optimizePlanOrder } from './set-builder-classic-planner.js';
 import { createSetEditCommands } from './set-builder-commands.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './set-builder-state.js';
 import { useFrontendServices } from './frontend-services.js';

@@ -27,8 +27,10 @@ the app with `Start AudioExtender.command`. A browser may still hold an older
 frontend module while the server is serving a newer one. The app preserves
 basic tab switching during failed startup, but those views will not load data
 until the frontend finishes initializing. If a reload does not restore data,
-confirm the server is running at the address above before troubleshooting the
-music library or Ollama.
+select **Copy diagnostics** before reloading. The copied JSON includes the
+frontend revision, failed module URL or startup error, page URL, and browser
+details. Preserve it with any bug report, then confirm the server is running at
+the address above before troubleshooting the music library or Ollama.
 
 ## Verify the music library
 

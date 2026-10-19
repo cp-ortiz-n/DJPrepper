@@ -1,0 +1,5 @@
+{
+  "revision": "20261019-5",
+  "entrypoint": "app.js",
+  "stylesheet": "styles.css"
+}

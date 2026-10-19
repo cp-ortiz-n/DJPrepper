@@ -77,12 +77,29 @@ test('all primary tabs work with native browser media behavior', async ({ browse
 
 test('tabs remain usable when the app module fails during startup and recover after reload', async ({ browser }) => {
   const page = await browser.newPage();
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          window.__copiedStartupDiagnostics = value;
+        },
+      },
+    });
+  });
   await page.route('**/assets/app.js?**', (route) => route.abort());
   await page.goto('http://127.0.0.1:4173/');
   await expect(page.locator('#app-startup-status')).toBeVisible();
+  await expect(page.locator('#app-startup-detail')).toContainText('app.js');
   await openView(page, 'Import');
   await openView(page, 'Music Files');
   await openView(page, 'DJ Library');
+  await page.getByRole('button', { name: 'Copy diagnostics' }).click();
+  const diagnostics = JSON.parse(await page.evaluate(() => window.__copiedStartupDiagnostics));
+  expect(diagnostics.assetRevision).toBeTruthy();
+  expect(diagnostics.failures).toEqual(
+    expect.arrayContaining([expect.objectContaining({ resource: expect.stringContaining('/assets/app.js') })]),
+  );
 
   await page.unroute('**/assets/app.js?**');
   await page.getByRole('button', { name: 'Reload app' }).click();
