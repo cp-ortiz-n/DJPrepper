@@ -129,6 +129,20 @@ export function createSetIntentionController({ $, api, providerView, offlineInte
     }
   };
   const interpretAndPlan = async (text) => {
+    try {
+      const prepared = await api.prepareBrief({
+        brief: text,
+        catalogVocabulary: vocabulary(),
+        durationMinutes: durationMinutes(),
+      });
+      return { ...prepared.interpretation, text, journey: prepared.journey, cache: prepared.cache };
+    } catch (error) {
+      if (![404, 503].includes(error.status)) {
+        console.warn('Brief preparation failed; using offline interpretation:', error);
+        return { ...offlineInterpret(text, vocabulary()), text, provider: 'offline' };
+      }
+      console.warn('Combined brief preparation failed; using compatibility workflow:', error);
+    }
     const interpreted = await interpret(text);
     try {
       interpreted.journey = await api.planJourney({

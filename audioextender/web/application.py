@@ -77,6 +77,7 @@ from audioextender.processing.job_workflows import (
     UploadedAudio,
 )
 from audioextender.reporting.feedback import append_web_feedback
+from audioextender.set_builder.brief_preparation import BriefPreparationService
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
@@ -190,6 +191,7 @@ from audioextender.web.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
 )
+from audioextender.web.static_assets import RevalidatingStaticFiles
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,
@@ -328,7 +330,7 @@ def performance_diagnostics_report() -> dict:
 
 @legacy_router.get("/")
 def index() -> FileResponse:
-    return FileResponse(WEB / "index.html")
+    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 WEB_DEFAULTS = {
@@ -1341,11 +1343,12 @@ def _load_processing_report() -> dict:
 
 def _build_set_builder_services() -> dict[str, Any]:
     """Construct the Set Builder service family and publish compatibility names."""
-    global intention_planner, journey_planner, set_preference_service, set_review_service
+    global intention_planner, journey_planner, brief_preparation, set_preference_service, set_review_service
     global candidate_retriever, set_plan_validator, track_planner
 
     intention_planner = IntentionPlanner.from_environment()
     journey_planner = JourneyPlanner(intention_planner)
+    brief_preparation = BriefPreparationService(intention_planner)
     set_preference_service = DJPreferenceService(
         JsonPreferenceStore(SET_BUILDER_CATALOG_CACHE.with_name("set_builder_preferences.json"))
     )
@@ -1361,6 +1364,7 @@ def _build_set_builder_services() -> dict[str, Any]:
     return {
         "intention_planner": intention_planner,
         "journey_planner": journey_planner,
+        "brief_preparation": brief_preparation,
         "set_preference_service": set_preference_service,
         "set_review_service": set_review_service,
         "candidate_retriever": candidate_retriever,
@@ -1437,6 +1441,7 @@ def _register_routers(application: FastAPI) -> None:
                 intention_planner=intention_planner,
                 journey_planner=journey_planner,
                 saved_sets=SavedSetService(repository),
+                brief_preparation=brief_preparation,
             )
         ),
         create_set_planning_router(
@@ -1716,7 +1721,7 @@ def create_app(
     global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service
     global track_metadata_mutations, metadata_batch_service, downloaded_track_mutation_service
     global recording_family_service
-    global _run_integrity_scan, intention_planner, journey_planner, set_preference_service
+    global _run_integrity_scan, intention_planner, journey_planner, brief_preparation, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
     global downloaded_analysis_queue, downloaded_catalog_query_service, downloaded_library_delivery_service
     global preset_service, job_workflow_service, job_review_service, reporting_service
@@ -1783,7 +1788,7 @@ def create_app(
         StaticFiles(directory=PROJECT / "node_modules" / "wavesurfer.js" / "dist", check_dir=False),
         name="wavesurfer",
     )
-    application.mount("/assets", StaticFiles(directory=WEB, check_dir=False), name="assets")
+    application.mount("/assets", RevalidatingStaticFiles(directory=WEB, check_dir=False), name="assets")
     _register_routers(application)
 
     def startup() -> None:

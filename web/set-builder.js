@@ -25,7 +25,7 @@ import {
   inferSetWorkflow,
   passesSetCandidateHardFilters,
   resolveStructuredGenreFilters,
-} from './set-builder-workflow.js?v=20261018-4';
+} from './set-builder-workflow.js?v=20261019-1';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -438,8 +438,7 @@ export function createSetBuilderFeature({
     root.hidden = false;
     root.dataset.journey = JSON.stringify(journey);
     $('#set-journey-summary').textContent = journey.summary || 'Review the planned journey before generating.';
-    $('#set-journey-evidence').textContent =
-      journey.evidence === 'ai-planned' ? `AI planned · ${journey.model || 'local model'}` : 'Offline plan';
+    $('#set-journey-evidence').textContent = journeyEvidenceLabel(journey);
     container.innerHTML = (journey.sections || [])
       .map(
         (section, index) =>
@@ -3439,7 +3438,7 @@ export function createSetBuilderFeature({
   return { loadSetBuilder };
 }
 import { SetPlanningCanceled } from './set-planning-client.js';
-import { createSetBuilderApi } from './set-builder-api.js';
+import { createSetBuilderApi } from './set-builder-api.js?v=20261019-1';
 import { createClassicSetPlanner, optimizePlanOrder } from './set-builder-classic-planner.js?v=20261018-1';
 import { createSetEditCommands } from './set-builder-commands.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './set-builder-state.js';
@@ -3450,6 +3449,7 @@ import {
   fallbackPolicyMarkup,
   intentionProviderView,
   journeyDurationStatus,
+  journeyEvidenceLabel,
   setProposalMarkup,
 } from './set-builder-view-model.js';
 export { SET_PROPOSAL_STRATEGIES, intentionProviderView, journeyDurationStatus } from './set-builder-view-model.js';

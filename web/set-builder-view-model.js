@@ -19,6 +19,12 @@ export const SET_PROPOSAL_STRATEGIES = [
   },
 ];
 
+export function journeyEvidenceLabel(journey) {
+  if (journey.evidence === 'ai-planned') return `AI planned · ${journey.model || 'local model'}`;
+  if (journey.evidence === 'ai-interpreted') return `AI interpreted · ${journey.model || 'local model'}`;
+  return 'Offline plan';
+}
+
 export function journeyDurationStatus(sections, durationMinutes) {
   const values = sections || [];
   const total = values.reduce((sum, section) => sum + Number(section.durationPercent || 0), 0);

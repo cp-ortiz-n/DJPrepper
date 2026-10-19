@@ -58,7 +58,7 @@ import {
 import { createMusicFilesFeature, createMusicFilesUiState } from './music-files.js?v=20261013-1';
 import { createRequestStateController } from './request-state-controller.js';
 import { createReportingFeature } from './reporting.js?v=20261013-1';
-import { createSetBuilderFeature } from './set-builder.js?v=20261018-4';
+import { createSetBuilderFeature } from './set-builder.js?v=20261019-1';
 import { createSettingsFeature, libraryAvailabilityView } from './settings.js?v=20261013-1';
 import { createAuthorizedImportFeature, createImportWorkspaceApi } from './import-workspace.js';
 import { createBackgroundTaskController } from './background-task-controller.js';
@@ -75,7 +75,12 @@ import { createCandidateReviewFeature } from './candidate-review.js';
 import { createSearchableSelectController } from './searchable-selects.js';
 import { createTrackMetadataUi, ELECTRONIC_GENRE_CATEGORIES, LATIN_GENRE_CATEGORIES } from './track-metadata-ui.js';
 import { createProcessingJobDetail } from './processing-job-detail.js';
+import { createNavigationController } from './navigation-controller.js';
 
+const navigation = createNavigationController({
+  loadView: (id) => loadView(id),
+  onError: (error) => notify(error.message || 'This view could not be loaded. Please try again.', 'danger'),
+});
 const api = createApiClient();
 const importWorkspaceApi = createImportWorkspaceApi(api);
 const processingWorkspaceApi = createProcessingWorkspaceApi(api);
@@ -539,32 +544,30 @@ const setBuilderFeature = createSetBuilderFeature({
 const { loadSetBuilder } = setBuilderFeature;
 
 function showView(id) {
+  navigation.show(id);
+}
+async function loadView(id) {
+  window.scrollTo({ top: 0, behavior: 'smooth' });
   if (!compactAudioIsWithin(`#${id}`)) stopCompactAudio();
   document.querySelectorAll('audio').forEach((audio) => {
     if (!audio.closest(`#${id}`) && !audio.paused) audio.pause();
   });
-  document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view.id === id));
-  document
-    .querySelectorAll('.nav-button')
-    .forEach((button) => button.classList.toggle('active', button.dataset.view === id));
-  if (id === 'reports-view') loadReports();
-  if (id === 'review-view') loadReviews();
-  if (id === 'downloads-view' && Date.now() - downloadedLoadedAt > VIEW_CACHE_MS) loadDownloadedLibrary();
-  if (id === 'library-view' && Date.now() - libraryLoadedAt > VIEW_CACHE_MS) loadLibrary();
-  if (id === 'set-builder-view') loadSetBuilder();
-  if (id === 'import-view') loadImportFailures();
+  if (id === 'reports-view') await loadReports();
+  if (id === 'review-view') await loadReviews();
+  if (id === 'downloads-view' && Date.now() - downloadedLoadedAt > VIEW_CACHE_MS) await loadDownloadedLibrary();
+  if (id === 'library-view' && Date.now() - libraryLoadedAt > VIEW_CACHE_MS) await loadLibrary();
+  if (id === 'set-builder-view') await loadSetBuilder();
+  if (id === 'import-view') await loadImportFailures();
   if (id === 'settings-view') {
-    loadPresets();
-    loadLibraryHealth();
-    loadPerformanceDiagnostics();
-    loadStorageManager();
-    loadBackups();
+    await Promise.all([
+      loadPresets(),
+      loadLibraryHealth(),
+      loadPerformanceDiagnostics(),
+      loadStorageManager(),
+      loadBackups(),
+    ]);
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-document
-  .querySelectorAll('[data-view]')
-  .forEach((control) => control.addEventListener('click', () => showView(control.dataset.view)));
 $('#refresh-performance-diagnostics')?.addEventListener('click', loadPerformanceDiagnostics);
 
 // Native media elements do not coordinate playback by themselves. Keep the app

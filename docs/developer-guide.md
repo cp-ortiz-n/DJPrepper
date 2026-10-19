@@ -428,3 +428,21 @@ is tested independently from file I/O, terminal presentation, and expensive
 external stem separation. When adding a feature, place its policy in a small
 helper and inject external dependencies where practical; this keeps the code
 open to new behavior without coupling tests to Demucs, FFmpeg, or real tracks.
+
+Set Builder prepares prompt briefs through `/api/set-builder/prepare-brief`.
+This asks the configured model for interpretation and editable journey sections
+in a single request. Invalid or reordered journeys use the shared deterministic
+journey policy, with evidence shown as AI interpreted. The older
+interpretation and journey endpoints remain available for compatibility.
+Identical brief, vocabulary, duration, and model requests share in-flight work
+and reuse results for 30 minutes (up to 64 entries per application process).
+Restarting the application clears this cache.
+
+Routine library status requests check catalogued tracks without recursively
+walking the library drive. Supporting-file sizes reuse the previous full scan;
+an explicit library verification refreshes the complete filesystem totals.
+
+Primary navigation binds before feature construction, so a failed feature cannot
+prevent tab clicks from switching views. View-loading failures are surfaced as
+notifications. Application HTML and assets use `Cache-Control: no-cache` to
+revalidate dependent modules after updates, including conditional responses.

@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from audioextender.set_builder.brief_preparation import BriefPreparationService
 from audioextender.set_builder.candidate_retriever import SET_BUILDER_CATALOG_VERSION
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
@@ -44,6 +45,10 @@ class SetJourneyRequest(SetIntentionRequest):
     duration_minutes: int = Field(default=60, ge=15, le=480)
 
 
+class SetBriefPreparationRequest(SetIntentionRequest):
+    duration_minutes: int = Field(default=60, ge=15, le=480)
+
+
 class SavedSetRequest(BaseModel):
     record: dict[str, Any]
 
@@ -62,6 +67,7 @@ class SetBuilderRouteDependencies:
     intention_planner: IntentionPlanner
     journey_planner: JourneyPlanner
     saved_sets: SavedSetService
+    brief_preparation: BriefPreparationService | None = None
 
 
 def preflight_paths(request: SetExportPreflightRequest) -> dict:
@@ -184,6 +190,19 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
             return deps.intention_planner.interpret(request.brief, request.catalog_vocabulary)
         except (httpx.HTTPError, ValueError, RuntimeError) as error:
             raise HTTPException(502, f"AI interpretation failed: {error}") from error
+
+    @router.post("/prepare-brief")
+    def prepare_brief(request: SetBriefPreparationRequest) -> dict:
+        if deps.brief_preparation is None:
+            raise HTTPException(503, "Combined brief preparation is unavailable")
+        try:
+            return deps.brief_preparation.prepare(
+                request.brief,
+                request.catalog_vocabulary,
+                request.duration_minutes,
+            )
+        except (httpx.HTTPError, ValueError, RuntimeError, TimeoutError) as error:
+            raise HTTPException(502, f"AI brief preparation failed: {error}") from error
 
     @router.post("/plan-journey")
     def plan_journey(request: SetJourneyRequest) -> dict:

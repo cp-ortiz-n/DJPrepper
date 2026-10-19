@@ -62,6 +62,44 @@ test('persisted settings render after browser refresh', async ({ page }) => {
   await expect(page.locator('#setting-outro-search')).toHaveValue('31');
 });
 
+test('all primary tabs work with native browser media behavior', async ({ browser }) => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('http://127.0.0.1:4173/');
+  const navigation = page.getByRole('navigation', { name: 'Primary navigation' });
+  await expect(navigation).toBeVisible();
+  const names = await navigation.getByRole('button').allTextContents();
+  for (const name of [...names, ...names.slice().reverse()]) await openView(page, name.trim());
+  expect(errors).toEqual([]);
+  await page.close();
+});
+
+test('Import and library tabs still work when Set Builder startup fails', async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.route('**/api/library/catalog?**', (route) =>
+    route.fulfill({ json: { tracks: [], total: 0, facets: {} } }),
+  );
+  const startupFailure = page.waitForEvent('pageerror');
+  await page.addInitScript(() => {
+    const getItem = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      if (key === 'set-builder-compact') throw new Error('Set Builder storage unavailable');
+      return getItem.call(this, key);
+    };
+  });
+  await page.goto('http://127.0.0.1:4173/');
+  expect((await startupFailure).message).toContain('Set Builder storage unavailable');
+  await openView(page, 'Music Files');
+  await expect(page.locator('#downloaded-summary')).toContainText('Browse collection');
+  await openView(page, 'DJ Library');
+  await expect(page.locator('#library-list')).toContainText('No completed tracks yet.');
+  await openView(page, 'Import');
+  await page.locator('#import-failures-panel > summary').click();
+  await expect(page.locator('#import-failures-empty')).toBeVisible();
+  await page.close();
+});
+
 test('saved sets survive browser storage clearing and application reload', async ({ page }) => {
   const saved = await page.evaluate(async () => {
     const record = {
@@ -253,8 +291,8 @@ test('primary workflows remain usable at supported viewports and pass serious ac
   await page.keyboard.press('Tab');
   const focusProbe = page.locator('#keyboard-focus-probe');
   await expect(focusProbe).toBeFocused();
-  expect(await focusProbe.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe('solid');
-  expect(await focusProbe.evaluate((node) => getComputedStyle(node).outlineWidth)).toBe('2px');
+  await expect(focusProbe).toHaveCSS('outline-style', 'solid');
+  await expect(focusProbe).toHaveCSS('outline-width', '2px');
   await focusProbe.evaluate((node) => node.remove());
 
   const results = await new AxeBuilder({ page })

@@ -11,6 +11,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from stat import S_ISREG
 from time import perf_counter
 from typing import Annotated, Any, Literal
 
@@ -142,24 +143,32 @@ class SettingsRouteService:
                 and now < float(deps.library_status_cache["expires_at"])
             ):
                 return dict(cached)
-            identity = root / ".audioextender" / "library.json"
+        identity = root / ".audioextender" / "library.json"
+        try:
+            library_id = str(json.loads(identity.read_text(encoding="utf-8")).get("library_id") or "")
+        except (OSError, ValueError):
+            library_id = ""
+        scan_started = perf_counter()
+        tracks = deps.repository().list_downloaded_tracks()
+        available_paths: set[Path] = set()
+        song_bytes = 0
+        for track in tracks:
+            path = Path(str(track.get("file_path") or ""))
             try:
-                library_id = str(json.loads(identity.read_text(encoding="utf-8")).get("library_id") or "")
-            except (OSError, ValueError):
-                library_id = ""
-            scan_started = perf_counter()
-            tracks = deps.repository().list_downloaded_tracks()
-            available_paths: set[Path] = set()
-            song_bytes = 0
-            for track in tracks:
-                path = Path(str(track.get("file_path") or ""))
-                try:
-                    stat = path.stat()
-                except OSError:
-                    continue
-                if path.is_file():
-                    available_paths.add(path)
-                    song_bytes += stat.st_size
+                stat = path.stat()
+            except OSError:
+                continue
+            if S_ISREG(stat.st_mode):
+                available_paths.add(path)
+                song_bytes += stat.st_size
+        previous_supporting_bytes = (
+            int(cached.get("supporting_bytes") or 0) if cached is not None and cached.get("path") == str(root) else 0
+        )
+        total_bytes = song_bytes + previous_supporting_bytes
+        file_count = len(available_paths)
+        if cached is not None and cached.get("path") == str(root):
+            file_count += max(0, int(cached.get("file_count") or 0) - int(cached.get("available_tracks") or 0))
+        if refresh:
             total_bytes = 0
             file_count = 0
             pending = [root]
@@ -178,30 +187,31 @@ class SettingsRouteService:
                                 continue
                 except OSError:
                     continue
-            try:
-                disk = shutil.disk_usage(root if root.exists() else root.parent)
-                free_bytes, capacity_bytes = disk.free, disk.total
-            except OSError:
-                free_bytes = capacity_bytes = 0
-            payload = {
-                "path": str(root),
-                "online": root.is_dir(),
-                "library_id": library_id,
-                "cataloged_tracks": len(tracks),
-                "available_tracks": len(available_paths),
-                "offline_tracks": len(tracks) - len(available_paths),
-                "song_bytes": song_bytes,
-                "supporting_bytes": max(0, total_bytes - song_bytes),
-                "total_bytes": total_bytes,
-                "file_count": file_count,
-                "free_bytes": free_bytes,
-                "capacity_bytes": capacity_bytes,
-                "audio_quality": deps.repository().audio_quality_summary(),
-                "location_integrity": deps.library_location_summary(),
-                "storage_scan_ms": round((perf_counter() - scan_started) * 1000, 1),
-            }
+        try:
+            disk = shutil.disk_usage(root if root.exists() else root.parent)
+            free_bytes, capacity_bytes = disk.free, disk.total
+        except OSError:
+            free_bytes = capacity_bytes = 0
+        payload = {
+            "path": str(root),
+            "online": root.is_dir(),
+            "library_id": library_id,
+            "cataloged_tracks": len(tracks),
+            "available_tracks": len(available_paths),
+            "offline_tracks": len(tracks) - len(available_paths),
+            "song_bytes": song_bytes,
+            "supporting_bytes": max(0, total_bytes - song_bytes),
+            "total_bytes": total_bytes,
+            "file_count": file_count,
+            "free_bytes": free_bytes,
+            "capacity_bytes": capacity_bytes,
+            "audio_quality": deps.repository().audio_quality_summary(),
+            "location_integrity": deps.library_location_summary(),
+            "storage_scan_ms": round((perf_counter() - scan_started) * 1000, 1),
+        }
+        with deps.library_status_lock:
             deps.library_status_cache.update(payload=payload, expires_at=now + 60.0)
-            return payload
+        return payload
 
     def library_health(self, *, refresh: bool = False) -> dict[str, Any]:
         deps = self.dependencies

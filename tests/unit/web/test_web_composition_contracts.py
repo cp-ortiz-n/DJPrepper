@@ -40,6 +40,8 @@ class WebCompositionContractTests(unittest.TestCase):
 
     def test_public_route_inventory_is_compatible(self) -> None:
         inventory = public_route_inventory()
+        self.assertIn(("POST", "/api/set-builder/prepare-brief"), inventory)
+        inventory.remove(("POST", "/api/set-builder/prepare-brief"))
         encoded = json.dumps(inventory, separators=(",", ":")).encode()
 
         self.assertEqual(len(inventory), 159)
@@ -65,6 +67,14 @@ class WebCompositionContractTests(unittest.TestCase):
             text=True,
         )
         self.assertEqual(json.loads(completed.stdout), {"resolved": False, "repository_bound": False})
+
+    def test_shell_and_changed_modules_require_cache_revalidation(self) -> None:
+        for path in ("/", "/assets/app.js", "/assets/navigation-controller.js"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["cache-control"], "no-cache")
+            conditional = self.client.get(path, headers={"If-None-Match": response.headers["etag"]})
+            self.assertEqual(conditional.headers["cache-control"], "no-cache")
 
     def test_delivery_shell_contract_is_stable(self) -> None:
         shell = web.create_app()

@@ -7,6 +7,16 @@ export function createSetBuilderApi({ api, planningClient = createSetPlanningCli
   return Object.freeze({
     catalog: () => get('/api/set-builder/catalog', 'Set Builder catalog could not be loaded.'),
     providerStatus: () => get('/api/set-builder/intention-provider', 'Provider status unavailable.'),
+    prepareBrief: ({ brief, catalogVocabulary, durationMinutes }) =>
+      post(
+        '/api/set-builder/prepare-brief',
+        {
+          brief,
+          catalog_vocabulary: catalogVocabulary,
+          duration_minutes: durationMinutes,
+        },
+        'Set direction could not be prepared.',
+      ),
     interpretIntention: (brief, catalogVocabulary) =>
       post(
         '/api/set-builder/interpret-intention',

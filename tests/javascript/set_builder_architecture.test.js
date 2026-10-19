@@ -6,11 +6,17 @@ import { createSetBuilderApi } from '../../web/set-builder-api.js';
 import { createClassicSetPlanner, optimizePlanOrder } from '../../web/set-builder-classic-planner.js';
 import { createSetEditCommands } from '../../web/set-builder-commands.js';
 import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from '../../web/set-builder-state.js';
-import { aiObservabilityCards, fallbackPolicyMarkup, setProposalMarkup } from '../../web/set-builder-view-model.js';
+import {
+  aiObservabilityCards,
+  fallbackPolicyMarkup,
+  journeyEvidenceLabel,
+  setProposalMarkup,
+} from '../../web/set-builder-view-model.js';
 import {
   SET_BRIEF_MODES,
   SET_TRACK_PLANNERS,
   allowsCandidateGenre,
+  createSetIntentionController,
   createSetWorkflowController,
   inferSetWorkflow,
   passesSetCandidateHardFilters,
@@ -23,6 +29,41 @@ import {
 const trackId = (track) => track.id;
 const response = (payload, { ok = true, status = 200 } = {}) => ({ ok, status, json: async () => payload });
 const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+test('brief preparation returns both results without requesting a second journey', async () => {
+  let requests = 0;
+  const controller = createSetIntentionController({
+    api: {
+      prepareBrief: async () => {
+        requests += 1;
+        return { interpretation: { preferred: ['groovy'] }, journey: { sections: [] }, cache: { hit: true } };
+      },
+    },
+    vocabulary: () => ['House'],
+    durationMinutes: () => 60,
+  });
+  const result = await controller.interpretAndPlan('Groovy House');
+  assert.equal(requests, 1);
+  assert.deepEqual(result.preferred, ['groovy']);
+  assert.deepEqual(result.journey, { sections: [] });
+  assert.equal(result.cache.hit, true);
+});
+
+test('failed brief preparation does not launch more slow AI requests', async () => {
+  const controller = createSetIntentionController({
+    api: {
+      prepareBrief: async () => {
+        throw Object.assign(new Error('timeout'), { status: 502 });
+      },
+    },
+    vocabulary: () => ['House'],
+    durationMinutes: () => 60,
+    offlineInterpret: () => ({ requestedGenres: ['house'] }),
+  });
+  const result = await controller.interpretAndPlan('House');
+  assert.equal(result.provider, 'offline');
+  assert.deepEqual(result.requestedGenres, ['house']);
+});
 
 test('Set Builder store snapshots and restores plan identity, locks, and transitions', () => {
   const storage = { getItem: () => 'true' };
@@ -224,6 +265,11 @@ test('Set Builder API owns route serialization and exposes planning lifecycle', 
   const planning = { start: () => 'started' };
   const client = createSetBuilderApi({ api, planningClient: planning });
 
+  await client.prepareBrief({
+    brief: 'Latin warm-up',
+    catalogVocabulary: ['latin house'],
+    durationMinutes: 60,
+  });
   await client.interpretIntention('Latin warm-up', ['latin house']);
   await client.planJourney({
     brief: 'Latin warm-up',
@@ -241,6 +287,7 @@ test('Set Builder API owns route serialization and exposes planning lifecycle', 
   assert.deepEqual(
     calls.map((call) => call.url),
     [
+      '/api/set-builder/prepare-brief',
       '/api/set-builder/interpret-intention',
       '/api/set-builder/plan-journey',
       '/api/set-builder/export-preflight',
@@ -250,7 +297,12 @@ test('Set Builder API owns route serialization and exposes planning lifecycle', 
       '/api/set-builder/sets/migrate-v1',
     ],
   );
-  assert.deepEqual(JSON.parse(calls[1].options.body), {
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    brief: 'Latin warm-up',
+    catalog_vocabulary: ['latin house'],
+    duration_minutes: 60,
+  });
+  assert.deepEqual(JSON.parse(calls[2].options.body), {
     brief: 'Latin warm-up',
     interpreted_intention: { opening: 'melodic' },
     catalog_vocabulary: ['latin house'],
@@ -325,6 +377,9 @@ test('final mix optimization improves returned order without moving locked track
 });
 
 test('Set Builder view helpers escape content and expose planning evidence', () => {
+  assert.equal(journeyEvidenceLabel({ evidence: 'ai-interpreted', model: 'qwen' }), 'AI interpreted · qwen');
+  assert.equal(journeyEvidenceLabel({ evidence: 'ai-planned', model: 'qwen' }), 'AI planned · qwen');
+  assert.equal(journeyEvidenceLabel({ evidence: 'deterministic-fallback' }), 'Offline plan');
   assert.equal(
     fallbackPolicyMarkup(['Direct <match>'], escapeHtml),
     '<li><strong>1.</strong> Direct &lt;match&gt;</li>',
