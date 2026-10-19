@@ -25,6 +25,9 @@
     </nav>
     <div class="local-pill"><span></span> Local engine</div>
   </header>
+  <aside id="app-startup-status" class="app-startup-status" role="alert" hidden>
+    The app did not finish loading. <button id="reload-app" class="button secondary" type="button">Reload app</button>
+  </aside>
   <aside id="library-offline-banner" class="library-offline-banner" role="status" hidden><strong>Music library is offline</strong><span>Connect the configured external drive to restore playback and file operations. Your catalog and analysis are still safe.</span><button class="button secondary" data-view="settings-view" type="button">Open storage settings</button></aside>
 
   <main>
@@ -652,6 +655,28 @@
       </section>
     </article>
   </template>
-  <script src="/assets/app.js?v=20261019-2" type="module"></script>
+  <script>
+    // Keep page navigation available if a module request fails during a server restart.
+    document.addEventListener('click', (event) => {
+      if (window.__djAppNavigationReady) return;
+      const control = event.target.closest('[data-view]');
+      if (!control || control.disabled) return;
+      const target = document.getElementById(control.dataset.view);
+      if (!target?.classList.contains('view')) return;
+      event.preventDefault();
+      document.querySelectorAll('.view').forEach((view) => view.classList.toggle('active', view === target));
+      document.querySelectorAll('.nav-button').forEach((button) => {
+        button.classList.toggle('active', button.dataset.view === target.id);
+      });
+    });
+    setTimeout(() => {
+      if (!window.__djAppNavigationReady) document.getElementById('app-startup-status').hidden = false;
+    }, 2500);
+    document.getElementById('reload-app').addEventListener('click', () => location.reload());
+  </script>
+  <script type="importmap">
+    {"imports":{"/assets/set-builder-view-model.js":"/assets/set-builder-view-model.js?v=20261019-1"}}
+  </script>
+  <script src="/assets/app.js?v=20261019-4" type="module"></script>
 </body>
 </html>

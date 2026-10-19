@@ -58,7 +58,7 @@ import {
 import { createMusicFilesFeature, createMusicFilesUiState } from './music-files.js?v=20261013-1';
 import { createRequestStateController } from './request-state-controller.js';
 import { createReportingFeature } from './reporting.js?v=20261013-1';
-import { createSetBuilderFeature } from './set-builder.js?v=20261019-1';
+import { createSetBuilderFeature } from './set-builder.js?v=20261019-2';
 import { createSettingsFeature, libraryAvailabilityView } from './settings.js?v=20261013-1';
 import { createAuthorizedImportFeature, createImportWorkspaceApi } from './import-workspace.js';
 import { createBackgroundTaskController } from './background-task-controller.js';
@@ -81,6 +81,8 @@ const navigation = createNavigationController({
   loadView: (id) => loadView(id),
   onError: (error) => notify(error.message || 'This view could not be loaded. Please try again.', 'danger'),
 });
+window.__djAppNavigationReady = true;
+document.getElementById('app-startup-status').hidden = true;
 const api = createApiClient();
 const importWorkspaceApi = createImportWorkspaceApi(api);
 const processingWorkspaceApi = createProcessingWorkspaceApi(api);
@@ -892,3 +894,5 @@ async function refresh() {
   await loadAnalysis(jobs);
 }
 settingsFeature.initialize(refresh);
+const selectedView = document.querySelector('.view.active')?.id;
+if (selectedView && selectedView !== 'workspace-view') navigation.show(selectedView);

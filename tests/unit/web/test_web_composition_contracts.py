@@ -68,13 +68,13 @@ class WebCompositionContractTests(unittest.TestCase):
         )
         self.assertEqual(json.loads(completed.stdout), {"resolved": False, "repository_bound": False})
 
-    def test_shell_and_changed_modules_require_cache_revalidation(self) -> None:
-        for path in ("/", "/assets/app.js", "/assets/navigation-controller.js"):
+    def test_shell_and_modules_are_not_cached_between_local_restarts(self) -> None:
+        for path in ("/", "/assets/app.js", "/assets/set-builder-view-model.js"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.headers["cache-control"], "no-cache")
+            self.assertEqual(response.headers["cache-control"], "no-store")
             conditional = self.client.get(path, headers={"If-None-Match": response.headers["etag"]})
-            self.assertEqual(conditional.headers["cache-control"], "no-cache")
+            self.assertEqual(conditional.headers["cache-control"], "no-store")
 
     def test_delivery_shell_contract_is_stable(self) -> None:
         shell = web.create_app()

@@ -4,6 +4,7 @@ set -euo pipefail
 
 PROJECT_DIR="${0:A:h}"
 APP_URL="http://127.0.0.1:8765"
+APP_OPEN_URL="$APP_URL/?launch=$(date +%s)-$$"
 OLLAMA_URL="http://127.0.0.1:11434"
 MODEL="qwen3.5:4b"
 
@@ -15,7 +16,7 @@ export OLLAMA_SET_BUILDER_MODEL="$MODEL"
 
 if /usr/bin/curl -fsS "$APP_URL/api/set-builder/intention-provider" >/dev/null 2>&1; then
   echo "AudioExtender is already running. Opening it now."
-  /usr/bin/open "$APP_URL"
+  /usr/bin/open "$APP_OPEN_URL"
   exit 0
 fi
 
@@ -60,7 +61,7 @@ echo "Starting AudioExtender with local AI: $MODEL"
 (
   for attempt in {1..60}; do
     if /usr/bin/curl -fsS "$APP_URL" >/dev/null 2>&1; then
-      /usr/bin/open "$APP_URL"
+      /usr/bin/open "$APP_OPEN_URL"
       exit 0
     fi
     sleep 0.5

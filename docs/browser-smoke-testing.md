@@ -35,6 +35,7 @@ Playwright traces are retained only for failed checks.
 | Only one preview plays | Playwright runs the real playback module with browser media elements; the focused JavaScript suite covers ownership transfer and Quick View cleanup. |
 | Dialog and keyboard behavior | Playwright verifies initial dialog focus, Escape dismissal, and focus restoration. |
 | Supported layouts and accessibility | Playwright checks 1440 px, 720 px, and 390 px layouts for horizontal overflow, verifies visible keyboard focus and reduced-motion behavior, and fails on serious or critical WCAG A/AA axe findings in navigation and Settings. |
+| Startup and stale-module recovery | Playwright aborts the entry module and verifies Import, Music Files, and DJ Library tabs still switch, the reload notice appears, and a reload restores normal navigation. A stale unversioned Set Builder child module must not be requested. Python contracts check `no-store` on HTML and assets. |
 
 The current selector-ownership evidence and the boundary for a future
 behavior-preserving stylesheet split are recorded in

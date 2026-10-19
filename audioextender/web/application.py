@@ -191,7 +191,7 @@ from audioextender.web.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
 )
-from audioextender.web.static_assets import RevalidatingStaticFiles
+from audioextender.web.static_assets import UncachedStaticFiles
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,
@@ -330,7 +330,7 @@ def performance_diagnostics_report() -> dict:
 
 @legacy_router.get("/")
 def index() -> FileResponse:
-    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-cache"})
+    return FileResponse(WEB / "index.html", headers={"Cache-Control": "no-store"})
 
 
 WEB_DEFAULTS = {
@@ -1788,7 +1788,7 @@ def create_app(
         StaticFiles(directory=PROJECT / "node_modules" / "wavesurfer.js" / "dist", check_dir=False),
         name="wavesurfer",
     )
-    application.mount("/assets", RevalidatingStaticFiles(directory=WEB, check_dir=False), name="assets")
+    application.mount("/assets", UncachedStaticFiles(directory=WEB, check_dir=False), name="assets")
     _register_routers(application)
 
     def startup() -> None:

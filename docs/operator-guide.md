@@ -21,6 +21,15 @@ Closing a browser tab does not stop active work. Closing the server process
 does. Persisted jobs are restored safely after restart; an interrupted running
 operation is reported as interrupted or retryable instead of silently applied.
 
+If the page opens but the tabs do nothing after an update or restart, use the
+**Reload app** notice if it appears. If it does not, reload the tab or reopen
+the app with `Start AudioExtender.command`. A browser may still hold an older
+frontend module while the server is serving a newer one. The app preserves
+basic tab switching during failed startup, but those views will not load data
+until the frontend finishes initializing. If a reload does not restore data,
+confirm the server is running at the address above before troubleshooting the
+music library or Ollama.
+
 ## Verify the music library
 
 The configured music-library folder is the authoritative destination for

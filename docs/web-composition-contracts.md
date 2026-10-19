@@ -23,6 +23,13 @@ The application also serves:
 - Swagger UI at `/api/docs`, with ReDoc disabled;
 - gzip responses at 1,024 bytes or larger, compression level 5.
 
+The HTML shell and local `/assets` responses use `Cache-Control: no-store`,
+including conditional responses. This prevents an older browser-cached ES
+module from being linked against a newer entry module after a local restart.
+The shell provides basic view switching and a reload notice until `app.js`
+initializes normal navigation; a failed module load must not leave every tab
+unclickable. Version changed import URLs when module exports change.
+
 ## Response contracts
 
 - `GET /api/config` returns exactly the top-level keys `presets`,

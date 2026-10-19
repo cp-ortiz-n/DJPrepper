@@ -170,10 +170,16 @@ model. The live local-model acceptance suite is opt-in:
 AUDIOEXTENDER_RUN_LOCAL_LLM_TESTS=1 .venv/bin/python -m unittest tests.integration.set_builder.test_local_intention_acceptance
 ```
 
-When moving modules or changing architectural relationships, also run:
+When moving modules or changing architectural relationships, also refresh the
+Graphify map. The CLI `update` command re-extracts code and regenerates the
+interactive web graph. Documentation changes need Graphify's semantic
+`--update` skill workflow (or its headless `extract` command with a configured
+model); the code-only CLI update does not incorporate them:
 
 ```bash
-graphify . --update --code-only --no-viz
+graphify update .
+# If only the web visualization needs refreshing:
+graphify export html
 ```
 
 Downloaded-library metadata batches share one lifecycle in
@@ -444,5 +450,17 @@ an explicit library verification refreshes the complete filesystem totals.
 
 Primary navigation binds before feature construction, so a failed feature cannot
 prevent tab clicks from switching views. View-loading failures are surfaced as
-notifications. Application HTML and assets use `Cache-Control: no-cache` to
-revalidate dependent modules after updates, including conditional responses.
+notifications. Because a cached child ES module with obsolete exports can stop
+`app.js` before any initialization runs, the HTML shell also has a minimal
+pre-module tab switcher and shows a **Reload app** notice if startup does not
+complete. After successful initialization the normal navigation controller takes
+over. Application HTML and `/assets` responses use `Cache-Control: no-store`;
+the entry module and changed dependent modules also need versioned URLs when
+their import contract changes. The macOS launcher adds a fresh query parameter
+when opening the app so relaunching does not reuse a stale entry page.
+
+When changing module exports, test both a fresh browser and an already-open
+browser with stale cached modules. The browser smoke suite covers a failed entry
+module, fallback navigation, reload recovery, and a stale Set Builder child
+module. The Python web-composition contract checks cache headers, including
+conditional responses.

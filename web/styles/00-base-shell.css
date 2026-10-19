@@ -124,6 +124,25 @@ body {
   color: #e6adad;
   background: #261b1b;
 }
+.app-startup-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 18px;
+  color: #e6adad;
+  background: #261b1b;
+  border-bottom: 1px solid #784848;
+}
+.app-startup-status[hidden] {
+  display: none;
+}
+.app-startup-status button {
+  width: auto;
+  height: 29px;
+  margin: 0;
+  padding: 0 10px;
+}
 .library-offline-banner[hidden] {
   display: none;
 }

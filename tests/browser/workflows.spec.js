@@ -75,6 +75,41 @@ test('all primary tabs work with native browser media behavior', async ({ browse
   await page.close();
 });
 
+test('tabs remain usable when the app module fails during startup and recover after reload', async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.route('**/assets/app.js?**', (route) => route.abort());
+  await page.goto('http://127.0.0.1:4173/');
+  await expect(page.locator('#app-startup-status')).toBeVisible();
+  await openView(page, 'Import');
+  await openView(page, 'Music Files');
+  await openView(page, 'DJ Library');
+
+  await page.unroute('**/assets/app.js?**');
+  await page.getByRole('button', { name: 'Reload app' }).click();
+  await expect(page.locator('#app-startup-status')).toBeHidden();
+  await openView(page, 'Import');
+  await page.close();
+});
+
+test('a stale unversioned Set Builder module cannot prevent app startup', async ({ browser }) => {
+  const page = await browser.newPage();
+  const viewModelRequests = [];
+  await page.route(
+    (url) => url.pathname === '/assets/set-builder-view-model.js' && !url.search,
+    (route) => route.fulfill({ contentType: 'text/javascript', body: 'export {};' }),
+  );
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/assets/set-builder-view-model.js')
+      viewModelRequests.push(request.url());
+  });
+  await page.goto('http://127.0.0.1:4173/');
+  await openView(page, 'Music Files');
+  expect(viewModelRequests).toHaveLength(1);
+  expect(new URL(viewModelRequests[0]).searchParams.has('v')).toBe(true);
+  await expect(page.locator('#app-startup-status')).toBeHidden();
+  await page.close();
+});
+
 test('Import and library tabs still work when Set Builder startup fails', async ({ browser }) => {
   const page = await browser.newPage();
   await page.route('**/api/library/catalog?**', (route) =>
