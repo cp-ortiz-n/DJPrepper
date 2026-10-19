@@ -60,6 +60,7 @@ export function createSetIntentionController({ $, api, providerView, offlineInte
     const badge = $('#set-provider-status');
     if (!badge) return;
     const view = providerView(status);
+    Object.assign(badge, { className: view.className, textContent: view.text, title: view.title });
   };
   const refreshProviderStatus = async () => {
     const badge = $('#set-provider-status');
