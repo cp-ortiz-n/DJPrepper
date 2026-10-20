@@ -11,8 +11,8 @@ the complete ownership rationale live in [code-organization.md](code-organizatio
 | `audioextender/audio/` | Audio loading, quality, stems, rendering, and WAV metadata |
 | `audioextender/analysis/` | Musical analysis, candidate selection, scoring, and validation |
 | `audioextender/processing/` | Track pipeline, batch, extended-edit, and job orchestration |
-| `audioextender/library/` | Catalog projections, identities, metadata, exports, backup, and relocation |
-| `audioextender/imports/` | Import services and provider integrations |
+| `audioextender/library/` | Catalog reconciliation/projections, identities, taxonomy, local media, metadata, exports, backup, and relocation |
+| `audioextender/imports/` | Import services, playlist parsing, source metadata lookup, and provider matching |
 | `audioextender/set_builder/` | Brief interpretation, planning, validation, learning, review, and release gates |
 | `audioextender/reporting/` | Processing and feedback projections |
 | `audioextender/infrastructure/` | Cache, operation lifecycle, progress, and background-task primitives |
@@ -47,6 +47,10 @@ audioextender/web/
 ```
 
 Reusable workflows belong in their domain package, not in `routes/`.
+Import routes delegate source matching and playlist parsing to `imports/`.
+Library routes delegate catalog migration, local-media handling, taxonomy, and
+historical job removal to `library/`; these workflows must not return to the
+composition root.
 
 ## Browser application
 

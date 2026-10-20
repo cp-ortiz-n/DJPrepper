@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel
+
+from audioextender.processing.job_workflows import (
+    JobCreationCommand,
+    JobWorkflowError,
+    JobWorkflowService,
+    UploadedAudio,
+)
 
 
 class ReorderRequest(BaseModel):
@@ -73,8 +81,70 @@ class JobQueueService:
         return {"cleared": cleared, "active_preserved": bool(active_ids)}
 
 
-def create_job_router(queue: JobQueueService) -> APIRouter:
+def create_job_router(queue: JobQueueService, workflow: JobWorkflowService | None = None) -> APIRouter:
     router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+
+    if workflow is not None:
+
+        @router.post("", status_code=202)
+        async def create_jobs(
+            files: Annotated[list[UploadFile], File()],
+            preset: Annotated[str, Form()] = "auto",
+            intro_bars: Annotated[str, Form()] = "auto",
+            outro_bars: Annotated[str, Form()] = "auto",
+            use_stems: Annotated[bool, Form()] = False,
+            review_candidates: Annotated[bool, Form()] = False,
+            auto_bars: Annotated[bool | None, Form()] = None,
+            minimum_intro_loop_quality: Annotated[float | None, Form()] = None,
+            minimum_outro_loop_quality: Annotated[float | None, Form()] = None,
+            maximum_repetitions: Annotated[int | None, Form()] = None,
+            crossfade_ms: Annotated[float | None, Form()] = None,
+            pcm_bits: Annotated[int | None, Form()] = None,
+            preview_seconds: Annotated[float | None, Form()] = None,
+            export_cues: Annotated[bool | None, Form()] = None,
+            candidate_count: Annotated[int | None, Form()] = None,
+            intro_search_seconds: Annotated[float | None, Form()] = None,
+            outro_search_seconds: Annotated[float | None, Form()] = None,
+            maximum_vocal_coverage_percent: Annotated[float | None, Form()] = None,
+            maximum_vocal_boundary_risk_percent: Annotated[float | None, Form()] = None,
+            maximum_buildup_risk_percent: Annotated[float | None, Form()] = None,
+            maximum_bass_reset_risk_percent: Annotated[float | None, Form()] = None,
+            minimum_stem_reliability_percent: Annotated[float | None, Form()] = None,
+            analysis_only: Annotated[bool, Form()] = False,
+        ) -> dict:
+            overrides = {
+                "auto_bars": auto_bars,
+                "minimum_intro_loop_quality": minimum_intro_loop_quality,
+                "minimum_outro_loop_quality": minimum_outro_loop_quality,
+                "maximum_repetitions": maximum_repetitions,
+                "crossfade_ms": crossfade_ms,
+                "pcm_bits": pcm_bits,
+                "preview_seconds": preview_seconds,
+                "export_cues": export_cues,
+                "candidate_count": candidate_count,
+                "intro_search_seconds": intro_search_seconds,
+                "outro_search_seconds": outro_search_seconds,
+                "maximum_vocal_coverage_percent": maximum_vocal_coverage_percent,
+                "maximum_vocal_boundary_risk_percent": maximum_vocal_boundary_risk_percent,
+                "maximum_buildup_risk_percent": maximum_buildup_risk_percent,
+                "maximum_bass_reset_risk_percent": maximum_bass_reset_risk_percent,
+                "minimum_stem_reliability_percent": minimum_stem_reliability_percent,
+            }
+            try:
+                return workflow.create(
+                    [UploadedAudio(Path(upload.filename or "").name, upload.file) for upload in files],
+                    JobCreationCommand(
+                        preset=preset,
+                        intro_bars=intro_bars,
+                        outro_bars=outro_bars,
+                        use_stems=use_stems,
+                        review_candidates=review_candidates,
+                        analysis_only=analysis_only,
+                        overrides=overrides,
+                    ),
+                )
+            except JobWorkflowError as error:
+                raise HTTPException(error.status_code, error.detail) from error
 
     @router.get("")
     def jobs(

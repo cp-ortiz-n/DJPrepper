@@ -9,8 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
+from audioextender.library.job_catalog import LibraryJobCatalogService, LibraryTrackRemovalError
 from audioextender.library.musical_profile import musical_profile
 
 
@@ -21,11 +22,22 @@ class LibraryRouteDependencies:
     generalized_genre: Callable[[str], str]
     catalog_cache: dict[str, Any]
     catalog_cache_lock: Any
+    job_catalog: LibraryJobCatalogService | None = None
 
 
 def create_library_router(deps: LibraryRouteDependencies) -> APIRouter:
     """Create catalog routes without coupling them to the application module."""
     router = APIRouter(prefix="/api/library", tags=["library"])
+
+    job_catalog = deps.job_catalog
+    if job_catalog is not None:
+
+        @router.delete("/{source_name}")
+        def remove_library_track(source_name: str) -> dict:
+            try:
+                return job_catalog.remove(source_name)
+            except LibraryTrackRemovalError as error:
+                raise HTTPException(error.status_code, error.detail) from error
 
     @router.get("/catalog")
     def catalog(

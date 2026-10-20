@@ -469,6 +469,14 @@ match the Phase 0 baseline or have an explicitly approved compatibility note.
 
 ## Next work
 
+- [x] **ARCH-017A — finish the application composition boundary.** Moved
+  provider metadata and YouTube matching into `audioextender/imports/`, moved
+  genre taxonomy, local-media I/O, catalog reconciliation, catalog payloads,
+  and historical library-job removal into `audioextender/library/`, and moved
+  the final job/import/library handlers into focused routers. Public endpoints,
+  compatibility exports, stored data, and job payloads remain unchanged;
+  `audioextender/web/application.py` is now limited to composition, middleware,
+  startup, shared runtime policy, and small compatibility adapters.
 - [x] **Extract downloaded-library metadata batch operations.** Move genre
   rescanning, WAV retagging, and artwork synchronization out of
   `audioextender/web/application.py` into focused services and routers. Preserve

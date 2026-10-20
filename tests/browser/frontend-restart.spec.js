@@ -58,9 +58,13 @@ test('a warm browser cache stays coherent across a frontend revision restart', a
     await page.goto(BASE_URL);
     await expect(page.locator('meta[name="djls-asset-revision"]')).toHaveAttribute('content', 'warm-cache-a');
     await expect(page.locator('#app-startup-status')).toBeHidden();
+    expect(pageErrors).toEqual([]);
 
     await stopServer(server);
     server = await startServer('warm-cache-b');
+    // Background polling can observe the deliberate outage. The restart
+    // contract begins once the replacement server is ready for the reload.
+    pageErrors.length = 0;
     const moduleRequests = [];
     page.on('request', (request) => {
       const url = new URL(request.url());

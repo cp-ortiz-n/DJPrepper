@@ -17,6 +17,7 @@ from audioextender.imports.service import (
     ImportService,
     LibraryOfflineError,
 )
+from audioextender.imports.source_matching import SourceMatchError, SourceMatchingService
 
 
 class AuthorizedImportRequest(BaseModel):
@@ -30,16 +31,30 @@ class AuthorizedImportRequest(BaseModel):
     artwork_url: str = Field(default="", max_length=1000)
 
 
+class SourceMatchRequest(BaseModel):
+    url: str = Field(min_length=10, max_length=500)
+
+
 def create_import_router(
     service: ImportService,
     local_service: LocalAudioImportService | None = None,
     playlist_service: PlaylistMatchService | None = None,
     parse_playlist: Callable[[bytes], list[dict]] | None = None,
     safe_playlist_name: Callable[[str], str] | None = None,
+    source_matching: SourceMatchingService | None = None,
 ) -> APIRouter:
     """Create an APIRouter for authorized source imports."""
 
     router = APIRouter(prefix="/api/imports", tags=["imports"])
+
+    if source_matching is not None:
+
+        @router.post("/source-match")
+        def match_single_source(request: SourceMatchRequest) -> dict:
+            try:
+                return source_matching.match(request.url)
+            except SourceMatchError as error:
+                raise HTTPException(error.status_code, error.detail) from error
 
     @router.post("/authorized", status_code=202)
     def create_authorized_import(request: AuthorizedImportRequest) -> dict:

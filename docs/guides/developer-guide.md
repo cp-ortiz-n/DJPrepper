@@ -135,6 +135,13 @@ uses `_register_routers()` as the single delivery composition boundary.
 wrappers where scripts and integration tests still rely on the historical entry
 point.
 
+Provider metadata lookup, conservative YouTube matching, and playlist CSV
+parsing live under `audioextender/imports/`. Genre-folder taxonomy, source
+sidecars, artwork caching, audio probing, downloaded-catalog reconciliation,
+catalog response mapping, and historical library-job removal live under
+`audioextender/library/`. Their HTTP adapters remain in `web/routes/`; do not
+add those workflows back to `application.py`.
+
 `JobRepository` remains the stable persistence facade, but SQL is divided among
 focused mixins under `audioextender/persistence/`. The downloaded-track catalog
 is itself composed by `persistence/catalog/__init__.py` from core CRUD, descriptor, recording

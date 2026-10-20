@@ -134,7 +134,7 @@ database and backup opening whenever this sequence changes.
 | `audioextender/web/routes/downloaded_analysis_routes.py` | Selected and filtered catalog analysis/reanalysis queue delivery                     |
 | `audioextender/web/routes/downloaded_track_mutation_routes.py` | Track deletion, genre/metadata repair, and selected retag orchestration       |
 | `audioextender/web/routes/recording_family_routes.py`    | Duplicate review, family queries, merge, link, unlink, and separation                |
-| `audioextender/web/routes/library_routes.py`             | Paginated DJ Library catalog and facets                                             |
+| `audioextender/web/routes/library_routes.py`             | Paginated catalog/facets and historical library-generation removal                  |
 | `audioextender/web/routes/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs                     |
 | `audioextender/web/routes/metadata_batch_routes.py`      | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches      |
 | `audioextender/web/routes/reporting_routes.py`           | Reports, analytics, track overrides, job details, feedback, and verification         |
@@ -143,8 +143,10 @@ database and backup opening whenever this sequence changes.
 | `audioextender/web/routes/set_preference_routes.py`      | Inspect, record, pause, and reset local Set Builder preference signals              |
 | `audioextender/web/routes/set_review_routes.py`          | Persist set, track, and transition reviews and expose calibration reports           |
 | `audioextender/web/routes/settings_routes.py`            | Settings, storage, backup/restore, relocation, cleanup                              |
-| `audioextender/web/routes/imports.py`             | Authorized source, local-file, and playlist import delivery                         |
+| `audioextender/web/routes/imports.py`             | Source matching plus authorized, local-file, and playlist import delivery            |
 | `audioextender/web/routes/creative_commons.py`    | Creative Commons discovery, imports, failures, and recovery                         |
+| `audioextender/web/routes/diagnostic_routes.py`   | Process-local API performance diagnostics                                           |
+| `audioextender/web/routes/frontend_routes.py`     | Versioned frontend shell delivery                                                    |
 
 Router factories accept explicit dependencies. Wire new dependencies in
 `application.py`; never make a router import `application.py`. Repository
@@ -152,6 +154,9 @@ providers are normally lambdas so tests can replace the active repository.
 The application factory delegates import, library/job/reporting, and Set Builder
 construction to private builders, then registers every router through one
 composition function. These helpers remain wiring code and do not own workflows.
+Provider matching and playlist parsing are owned by `audioextender/imports/`.
+Catalog reconciliation, genre-folder taxonomy, local-media metadata/artwork,
+and historical library-job removal are owned by `audioextender/library/`.
 
 ## Set Builder intention planning
 
