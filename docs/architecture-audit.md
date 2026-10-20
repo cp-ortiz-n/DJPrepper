@@ -212,6 +212,7 @@ Potential dependency inversion is justified only at volatile or costly boundarie
 **Severity:** Medium  
 **Affected files:** `web/app.js`, `web/dj-library.js`, `web/music-files.js`, `web/settings.js`  
 **Evidence:** `app.js` is 1,878 lines and is only 22 lines below its enforced ceiling. It imports nearly all shared/feature exports and passes large callback/object argument lists into feature factories. `dj-library.js` is 595 lines, `music-files.js` 673, and `settings.js` 326; each combines API calls, DOM strings, event binding, state mutation, and orchestration.  
+**Remediation update (2026-10-19):** ARCH-007B reduced `app.js` to durable composition. ARCH-007C moved DJ Library card/sidebar rendering, filters, selection/mutations, and intelligence rendering into focused modules while keeping `dj-library.js` as the catalog coordinator and compatibility facade. Ratcheted ownership ceilings and behavioral tests prevent those responsibilities from returning to the facade.
 **Problem:** Feature modules exist, but their contracts expose too much of the composition root and mix concerns internally.  
 **Impact:** Small UI changes require understanding many callbacks and mutable stores; feature tests rely on source-string assertions because controllers and renderers are not independently callable.  
 **Recommendation:** Introduce a small shared API client/error adapter and per-feature controller objects. Extract pure render/view-model functions when doing so unlocks behavior tests. Keep vanilla JS and avoid file splitting by line count alone.  

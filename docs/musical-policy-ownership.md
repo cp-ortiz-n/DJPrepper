@@ -18,7 +18,7 @@ or fallback.
 | Vocal profile | `audioextender/library/musical_profile.py` | Instrumentalness at or above `0.72` is vocal-safe; below `0.45` is vocal-forward; otherwise mixed. |
 | Timing profile | `audioextender/library/musical_profile.py` | Live/variable labels or tempo drift at or above `0.08` are variable; all else is steady. |
 | Confidence and provenance | `audioextender/library/musical_profile.py` | Every fact group carries bounded confidence and an explicit source so consumers do not infer certainty from the value alone. |
-| DJ Library match score | `compatibility` in `web/dj-library.js` | This is an interactive comparison score: tempo 45, harmonic compatibility 35, energy 10, shared roles 10. It is not a Set Builder ranking or transition score. |
+| DJ Library match score | `compatibility` in `web/dj-library-model.js` | This is an interactive comparison score: tempo 45, harmonic compatibility 35, energy 10, shared roles 10. `web/dj-library.js` re-exports it for compatibility. It is not a Set Builder ranking or transition score. |
 | Set Builder transition cost | `transition_cost` in `audioextender/set_builder/transition_optimizer.py` | Used by deterministic running-order optimization. It is a penalty over BPM distance, weak Camelot movement, vocal collision, and energy movement; lower is better. |
 | Manual splice/insertion score | `audioextender/analysis/transition_scorer.py` | This evaluates an edit point from audio-analysis evidence. It intentionally remains separate from catalog match and set-order policies. |
 

@@ -400,8 +400,12 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `shared-components.js`           | DOM helpers, messages, formatting, pagination                                                                 |
 | `playback.js`                    | Single audio-preview owner                                                                                    |
 | `music-files.js`                 | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector       |
-| `dj-library.js`                  | DJ Library rendering, filtering, and selection actions                                                        |
+| `dj-library.js`                  | DJ Library catalog loading, feature composition, and compatibility exports                                     |
+| `dj-library-filters.js`          | DJ Library filter controls, URL-backed query state, pagination, and reset behavior                             |
+| `dj-library-intelligence.js`     | DJ role groups and interactive compatibility suggestions                                                       |
 | `dj-library-model.js`            | DJ Library query state plus authoritative browser-side key, energy, role, and compatibility projections       |
+| `dj-library-selection.js`        | DJ Library bulk selection, identity, genre, analysis, removal, and ZIP export actions                         |
+| `dj-library-view.js`             | DJ Library card/sidebar rendering, version history, and per-track interactions                                |
 | `set-builder.js`                 | Set Builder feature composition, event binding, and cross-workflow coordination                               |
 | `set-builder-policy.js`          | Pure Set Builder identity, intention, allocation, matching, and energy policy                                 |
 | `set-builder-state.js`           | Mutable Set Builder session state plus plan snapshot and restoration                                          |
@@ -534,7 +538,8 @@ contract unless the change explicitly approves a migration.
 2. Put processing-time analysis in `analysis`, catalog delivery facts in
    `library/musical_profile.py`, and set-construction policy in `set_builder`.
 3. Do not derive a second musical profile in the browser. Compatibility helpers
-   remain confined to `dj-library.js`.
+   remain confined to `dj-library-model.js` and are re-exported by the
+   `dj-library.js` compatibility facade.
 4. Update the shared golden fixture and both Python and JavaScript consumers for
    intentional cross-runtime policy changes.
 

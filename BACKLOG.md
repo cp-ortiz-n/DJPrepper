@@ -221,6 +221,17 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   acceptance, AI cancellation and safety fallback, proposal switching, ranking
   signal loading, and receipt-backed review submission. The coordinator ceiling
   is ratcheted from 1,700 to 1,150 lines.
+- [x] **ARCH-007C — Decompose DJ Library browser orchestration.**
+  Priority: P1. Effort: M. Risk: Medium. Dependencies: ARCH-007B. Acceptance:
+  query/filter binding, bulk selection and mutations, and Library intelligence
+  rendering have focused owners; `dj-library.js` remains the catalog-loading
+  coordinator and compatibility export surface; payloads and musical policy do
+  not change; behavioral and browser gates pass. Completed 2026-10-19:
+  `dj-library-view.js`, `dj-library-filters.js`, `dj-library-selection.js`, and
+  `dj-library-intelligence.js` own those workflows. Focused tests cover empty
+  presentation, filter resets and pagination, selection synchronization, and
+  compatibility rendering. The coordinator ceiling is ratcheted from 1,225 to
+  250 lines.
 - [x] **ARCH-007B — Reduce `app.js` to durable composition and navigation.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: ARCH-007A, ARCH-008A.
   Acceptance: processing/import feature behavior has an explicit owner; `app.js`

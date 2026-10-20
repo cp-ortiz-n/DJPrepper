@@ -56,7 +56,9 @@ from the exception list as soon as its debt is retired. The suite also ratchets
 the size and branch count of `TrackProcessor.process`.
 
 Browser musical-profile compatibility derivation has one guarded owner:
-`web/dj-library.js`. Other browser modules must consume its profile helpers; the
+`web/dj-library-model.js`. The `web/dj-library.js` compatibility facade re-exports
+those helpers for existing consumers. Other browser modules must consume the
+model or facade exports; the
 architecture gate rejects duplicate helper declarations, Camelot maps, and
 direct reads of the serialized `musical_profile`. This preserves the explicit
 legacy-cache fallback without allowing another browser policy authority to grow.
@@ -72,7 +74,7 @@ for making corrected values visible.
 Current musical-policy owners remain intentionally separate: Python `analysis/`
 owns processing-time BPM/key/section and splice policy; `set_builder/` owns
 candidate, journey, transition, validation, and AI acceptance policy; browser
-`dj-library.js` owns the interactive Library match score and compatibility
+`dj-library-model.js` owns the interactive Library match score and compatibility
 fallbacks. `docs/musical-policy-ownership.md` records exact precedence. The
 versioned `tests/fixtures/musical_policy_golden.json` is exercised by Python and
 Node so cross-runtime drift fails the standard quality gate. `ARCH-003A` changes

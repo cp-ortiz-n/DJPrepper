@@ -225,7 +225,11 @@ map reflects the current layout; it does not propose moving code.
 │   ├── candidate-review.js
 │   ├── candidate-waveform-editor.js
 │   ├── dj-library.js
+│   ├── dj-library-filters.js
+│   ├── dj-library-intelligence.js
 │   ├── dj-library-model.js
+│   ├── dj-library-selection.js
+│   ├── dj-library-view.js
 │   ├── import-queue.js
 │   ├── import-issues.js
 │   ├── import-workspace.js
