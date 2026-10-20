@@ -13,7 +13,10 @@ position and must remain stable:
   collection foundations that must retain their position beside processing.
 - `features/library/30-*` and `features/reporting/70-*`: DJ Library analysis and reporting.
 - `features/settings/40-*` and `41-*`: Settings, backup, cleanup, and device preferences.
-- `features/music-files/50-*` through `52-*`: Music Files workflows, rows, filters, and maintenance.
+- `features/music-files/50-*` through `52-*`: Music Files contextual selection,
+  rows, compact browse controls, filter disclosures, and catalog-wide maintenance.
+  Keep selection-only actions in `50-*`; keep browsing/filter/maintenance
+  presentation in `52-*` so their scopes remain visibly distinct.
 - `features/set-builder/60-*` and `61-*`: Set Builder brief, journey, planning, and transitions.
 
 New feature rules belong in the latest fragment owned by that feature. Shared

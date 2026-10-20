@@ -65,7 +65,10 @@ frontend/
 ├── features/
 │   ├── dj-library/
 │   ├── imports/
-│   ├── music-files/
+│   ├── music-files/            # coordinator, browse state, and toolbar presentation
+│   │   ├── index.js            # catalog workflow and track interactions
+│   │   ├── state.js            # pure filter/query/selection projections
+│   │   └── view.js             # filter chips and disclosure presentation
 │   ├── processing/
 │   ├── reporting/
 │   ├── set-builder/

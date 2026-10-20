@@ -39,7 +39,7 @@ frontend/
   features/               # one folder per user-facing workflow
     dj-library/
     imports/
-    music-files/
+    music-files/            # catalog workflow, pure browse state, and view helpers
     processing/
     reporting/
     set-builder/

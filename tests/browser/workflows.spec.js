@@ -266,6 +266,80 @@ test('search fields retain the complete query during overlapping requests', asyn
   await expect(search).toHaveValue('abcdefghijklmnopqrstuvwxyz1234567890');
 });
 
+test('Music Files separates filters, maintenance, and selection actions', async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.route('**/api/downloaded-library?*', (route) =>
+    route.fulfill({
+      json: {
+        tracks: [
+          {
+            id: 701,
+            filename: 'night-drive.wav',
+            title: 'Night Drive',
+            artist: 'Test Artist',
+            genre_category: 'Electronic / House',
+            genre: 'Disco House',
+            playlists: ['Browser Fixture'],
+            available: true,
+            artwork_available: false,
+            analysis_status: 'complete',
+            duration_seconds: 241,
+            recording_code: 'HOU-000701',
+            version_code: 'ORG',
+            descriptors: [],
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 50,
+          filtered_total: 1,
+          catalog_total: 1,
+          total_pages: 1,
+          analyzable_total: 0,
+        },
+        genres: { 'Electronic / House': 1 },
+        detailed_genres: { 'Disco House': 1 },
+        detailed_genres_by_category: { 'Electronic / House': { 'Disco House': 1 } },
+        playlists: { 'Browser Fixture': 1 },
+        review_states: { missing_artwork: 1, needs_attention: 1 },
+      },
+    }),
+  );
+  await page.goto('http://127.0.0.1:4173/');
+  await openView(page, 'Music Files');
+
+  const filters = page.locator('#downloaded-filter-panel');
+  const maintenance = page.locator('#downloaded-maintenance-menu');
+  await expect(filters).not.toHaveAttribute('open', '');
+  await expect(maintenance).not.toHaveAttribute('open', '');
+
+  await filters.locator('summary').click();
+  await expect(filters).toHaveAttribute('open', '');
+  await page.locator('#downloaded-analysis').evaluate((select) => {
+    select.value = 'complete';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(page.locator('#downloaded-filter-badge')).toHaveText('1');
+  await expect(page.locator('.downloaded-filter-chip')).toContainText('Analyzed');
+
+  await maintenance.locator('summary').click();
+  await expect(maintenance).toHaveAttribute('open', '');
+  await expect(filters).not.toHaveAttribute('open', '');
+  await expect(maintenance.getByRole('button', { name: 'Review vocabulary' })).toBeVisible();
+
+  await page.getByLabel('Select Night Drive').check();
+  const selection = page.locator('.downloaded-selection');
+  await expect(selection).toHaveClass(/has-selection/);
+  await expect(selection).toContainText('1 selected · 1 need artwork');
+  await expect(selection.getByRole('button', { name: 'Edit identity' })).toBeVisible();
+  await selection.locator('.downloaded-selection-more > summary').click();
+  await expect(selection.getByRole('button', { name: 'Sync artwork' })).toBeVisible();
+
+  await page.locator('.downloaded-filter-chip').click();
+  await expect(page.locator('#downloaded-filter-badge')).toBeHidden();
+  await page.close();
+});
+
 test('disconnect and reconnect clear the stale offline presentation', async ({ page }) => {
   await openSettings(page);
   const original = await page.locator('#setting-library-path').inputValue();

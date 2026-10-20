@@ -240,6 +240,21 @@ a WAV container's high PCM bitrate as proof that its original download was
 lossless. Music Files shows the stored score on each track, while Settings shows
 coverage, the library average, and the Excellent, Good, Review, and Poor counts.
 
+### Browse and maintain Music Files
+
+Music Files keeps everyday browsing separate from catalog maintenance. Search
+and sort are always available. Open **Filters** for genre, detailed genre,
+playlist, analysis, artwork, and quality constraints; active constraints appear
+as removable chips above the result count. **Library maintenance** contains
+catalog-wide identity inference, file reconciliation, metadata, artwork, genre,
+and reanalysis operations. Those actions may affect every matching track and do
+not depend on the current page selection.
+
+Use **Select page** to choose the visible tracks. A contextual action bar then
+offers analysis, identity, genre, metadata synchronization, artwork, download,
+and removal actions for only that selection. Clearing the selection removes the
+bar. The count beside it calls out selected tracks that still need artwork.
+
 Candidate auditions are opt-in because rendering six contextual audio files for
 every song adds processing time and visual clutter. Enable **Review candidates**
 before adding files, or click **Create review** on a completed track. The new

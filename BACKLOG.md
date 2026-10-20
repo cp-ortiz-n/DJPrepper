@@ -320,6 +320,16 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   cascade order remains explicit, all 17 confirmed unused selector candidates
   were removed, a structural test protects imports and cleanup, and the real
   browser gate protects responsive, focus, motion, and accessibility behavior.
+- [x] **UX-MUSIC-001 — Simplify the Music Files workspace.** Priority: P2.
+  Effort: M. Risk: Medium. Dependencies: ARCH-013B. Acceptance: search and sort
+  remain immediately available; secondary filters use one disclosure with
+  removable active-filter chips; catalog-wide maintenance is separate from
+  selection actions; bulk controls appear only with a selection; responsive and
+  behavioral coverage protects the workflow. Completed 2026-10-20: pure browse
+  state and presentation helpers were extracted, the toolbar was reorganized by
+  action scope, selection-specific artwork synchronization was made explicit,
+  and JavaScript/browser tests cover filter dependencies, reset behavior,
+  selection capabilities, disclosures, chips, and contextual actions.
 
 Phase acceptance: feature behavior is independently testable, `app.js` is a
 composition root, and no storage or UI workflow compatibility is lost.

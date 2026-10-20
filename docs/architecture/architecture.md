@@ -322,6 +322,14 @@ loading state, and namespaced URL/session persistence. Page-specific modules
 still own their filter fields and API query serialization; they must not add a
 second request sequence, debounce timer, or request controller in `frontend/app.js`.
 
+Music Files separates routine browsing from catalog-wide maintenance. Search and
+sort stay visible; secondary filters live in one disclosure with removable active
+filter chips; catalog-wide identity, file, metadata, artwork, and reanalysis jobs
+live in a separate maintenance disclosure. Selection actions are contextual and
+must not inherit catalog-wide scope. `frontend/features/music-files/state.js`
+owns pure query, filter, and selection projections, `view.js` owns disclosure and
+chip presentation, and `index.js` coordinates API workflows and track interactions.
+
 Settings exposes a consolidated library-health read model at
 `/api/settings/library-health`. It combines connection and configured-root
 status, missing/out-of-root tracks, active and failed metadata batches, storage,
@@ -411,7 +419,9 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `core/frontend-services.js`           | Validated immutable feature contract for API, DOM, feedback, and musical-identity editor capabilities         |
 | `shared/shared-components.js`           | DOM helpers, messages, formatting, pagination                                                                 |
 | `playback.js`                    | Single audio-preview owner                                                                                    |
-| `music-files.js`                 | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector       |
+| `features/music-files/index.js`  | Music Files workflow coordination, catalog rendering, metadata inspector, and track interactions              |
+| `features/music-files/state.js`  | Pure Music Files filter defaults, API query serialization, active-filter projection, and selection capability |
+| `features/music-files/view.js`   | Music Files filter-chip rendering and mutually exclusive disclosure presentation                              |
 | `dj-library.js`                  | DJ Library catalog loading, feature composition, and compatibility exports                                     |
 | `dj-library-filters.js`          | DJ Library filter controls, URL-backed query state, pagination, and reset behavior                             |
 | `dj-library-intelligence.js`     | DJ role groups and interactive compatibility suggestions                                                       |
