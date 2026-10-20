@@ -42,7 +42,7 @@ globalThis.document = {
   querySelectorAll(selector) { return selector === 'audio,video' ? [pageNative] : []; },
 };
 
-const playback = await import('../../../web/shared/playback.js');
+const playback = await import('../../../frontend/shared/playback.js');
 
 test('starting another preview transfers the single playback owner', async () => {
   const first = player('/first.wav');

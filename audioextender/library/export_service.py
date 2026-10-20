@@ -10,6 +10,7 @@ from audioextender.analysis.key_detection import TrackAnalysis
 from audioextender.analysis.section_selector import SectionCandidate
 from audioextender.audio.loading import AudioData, export_wav
 from audioextender.core.config import EditConfig
+from audioextender.core.defaults import EXTENDED_OUTPUT_FOLDER_NAME
 from audioextender.core.exceptions import ExportError
 from audioextender.core.interfaces import ProgressReporter
 from audioextender.library.cue_export import CuePoint, build_cue_points, write_cue_sheet
@@ -18,7 +19,6 @@ from audioextender.processing.extended_edit import (
     create_splice_previews,
     optimize_candidate_boundaries,
 )
-from settings import EXTENDED_OUTPUT_FOLDER_NAME
 
 AudioWriter = Callable[[AudioData, Path, int], None]
 CueBuilder = Callable[..., tuple[CuePoint, ...]]

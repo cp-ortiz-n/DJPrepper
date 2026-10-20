@@ -1,30 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createApiClient } from '../../../../web/core/api-client.js';
-import { createSetBuilderApi } from '../../../../web/features/set-builder/api.js';
-import { createClassicSetPlanner, optimizePlanOrder } from '../../../../web/features/set-builder/classic-planner.js';
-import { createSetEditCommands } from '../../../../web/features/set-builder/commands.js';
-import { createSetBuilderFeedback } from '../../../../web/features/set-builder/feedback.js';
-import { createSetPlanView } from '../../../../web/features/set-builder/plan-view.js';
-import { createSetPlanningSession } from '../../../../web/features/set-builder/planning-session.js';
+import { createApiClient } from '../../../../frontend/core/api-client.js';
+import { createSetBuilderApi } from '../../../../frontend/features/set-builder/api.js';
+import { createClassicSetPlanner, optimizePlanOrder } from '../../../../frontend/features/set-builder/classic-planner.js';
+import { createSetEditCommands } from '../../../../frontend/features/set-builder/commands.js';
+import { createSetBuilderFeedback } from '../../../../frontend/features/set-builder/feedback.js';
+import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
+import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
 import {
   buildSetCsv,
   buildSetM3u,
   createSavedSetController,
-} from '../../../../web/features/set-builder/saved-sets.js';
+} from '../../../../frontend/features/set-builder/saved-sets.js';
 import {
   createSetBuilderStore,
   restoreSetPlan,
   snapshotSetPlan,
-} from '../../../../web/features/set-builder/state.js';
-import { createSetTransitionEditor } from '../../../../web/features/set-builder/transition-editor.js';
+} from '../../../../frontend/features/set-builder/state.js';
+import { createSetTransitionEditor } from '../../../../frontend/features/set-builder/transition-editor.js';
 import {
   aiObservabilityCards,
   fallbackPolicyMarkup,
   journeyEvidenceLabel,
   setProposalMarkup,
-} from '../../../../web/features/set-builder/view-model.js';
+} from '../../../../frontend/features/set-builder/view-model.js';
 import {
   SET_BRIEF_MODES,
   SET_TRACK_PLANNERS,
@@ -37,7 +37,7 @@ import {
   resolveStructuredGenreFilters,
   resolveSetPlanningMode,
   setBriefModeMessage,
-} from '../../../../web/features/set-builder/workflow.js';
+} from '../../../../frontend/features/set-builder/workflow.js';
 
 const trackId = (track) => track.id;
 const response = (payload, { ok = true, status = 200 } = {}) => ({ ok, status, json: async () => payload });

@@ -15,7 +15,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: '.venv/bin/python scripts/serve_browser_smoke.py',
+    command: '.venv/bin/python scripts/development/serve_browser_smoke.py',
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: false,
     timeout: 30_000,

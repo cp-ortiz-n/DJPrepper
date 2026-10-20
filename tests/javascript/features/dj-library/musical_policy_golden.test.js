@@ -8,7 +8,7 @@ globalThis.localStorage = {
   },
 };
 
-const policy = await import('../../../../web/features/dj-library/index.js');
+const policy = await import('../../../../frontend/features/dj-library/index.js');
 const fixture = JSON.parse(readFileSync(new URL('../../../fixtures/musical_policy_golden.json', import.meta.url), 'utf8'));
 
 function assertClose(actual, expected, message) {

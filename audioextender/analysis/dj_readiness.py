@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from audioextender.analysis.key_detection import TrackAnalysis
-from settings import (
+from audioextender.core.defaults import (
     DJ_READY_GRID_THRESHOLD,
     DJ_READY_MINIMUM_LOUDNESS,
     DJ_READY_MINIMUM_PERCUSSION,

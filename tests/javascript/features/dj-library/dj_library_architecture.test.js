@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createDjLibraryFilters } from '../../../../web/features/dj-library/filters.js';
-import { createDjLibraryIntelligence } from '../../../../web/features/dj-library/intelligence.js';
-import { createDjLibrarySelection } from '../../../../web/features/dj-library/selection.js';
-import { createDjLibraryView } from '../../../../web/features/dj-library/view.js';
-import { createLibraryUiState } from '../../../../web/features/dj-library/model.js';
-import { createFrontendServices } from '../../../../web/core/frontend-services.js';
+import { createDjLibraryFilters } from '../../../../frontend/features/dj-library/filters.js';
+import { createDjLibraryIntelligence } from '../../../../frontend/features/dj-library/intelligence.js';
+import { createDjLibrarySelection } from '../../../../frontend/features/dj-library/selection.js';
+import { createDjLibraryView } from '../../../../frontend/features/dj-library/view.js';
+import { createLibraryUiState } from '../../../../frontend/features/dj-library/model.js';
+import { createFrontendServices } from '../../../../frontend/core/frontend-services.js';
 
 function classList() {
   const values = new Set();

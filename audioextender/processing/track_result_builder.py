@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from audioextender.audio.redrum import redrum_added_seconds
+from audioextender.core.defaults import DJ_READY_MINIMUM_BARS
 from audioextender.core.models import FileResult
 from audioextender.processing.extended_edit import adaptive_crossfade_ms
 from audioextender.processing.track_processing_stages import (
@@ -15,7 +16,6 @@ from audioextender.processing.track_processing_stages import (
     SelectionStageResult,
     arrangement_sections,
 )
-from settings import DJ_READY_MINIMUM_BARS
 
 
 class TrackResultBuilder:

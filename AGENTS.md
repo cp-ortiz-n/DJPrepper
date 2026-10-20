@@ -5,9 +5,9 @@ These rules apply to every change in this repository.
 ## Architecture
 
 - Preserve the modular monolith, FastAPI, SQLite, and vanilla JavaScript architecture.
-- Follow package ownership and dependency direction in `docs/architecture.md`.
+- Follow package ownership and dependency direction in `docs/architecture/architecture.md`.
 - Keep HTTP handlers focused on delivery; put reusable workflows in application/domain services.
-- Keep SQL inside `audioextender/repositories/` or an approved migration boundary.
+- Keep SQL inside `audioextender/persistence/` or an approved migration boundary.
 - Preserve authoritative musical calculations and existing scoring behavior. Do not duplicate shared musical policy.
 - Add an abstraction only when it reduces real coupling, improves testing, or supports a replaceable implementation.
 
@@ -24,9 +24,9 @@ These rules apply to every change in this repository.
 - Add behavior tests for new behavior and regression tests for bug fixes when practical.
 - Add characterization tests before risky refactoring. Cover important failures, cancellation, and recovery paths.
 - Do not weaken assertions or replace behavior tests with source-string checks.
-- During development, run focused lint/type/test commands. Before completion, run `./scripts/check_quality.sh`.
-- Run `./scripts/check_coverage.sh` for significant refactoring and evaluate meaningful coverage changes.
-- Run `./scripts/run_stability_gate.sh` for high-risk persistence, import, relocation, export, or Set Builder changes.
+- During development, run focused lint/type/test commands. Before completion, run `./scripts/quality/check_quality.sh`.
+- Run `./scripts/quality/check_coverage.sh` for significant refactoring and evaluate meaningful coverage changes.
+- Run `./scripts/quality/run_stability_gate.sh` for high-risk persistence, import, relocation, export, or Set Builder changes.
 - Never claim a check passed unless it was executed.
 
 ## Definition of done

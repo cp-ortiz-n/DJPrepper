@@ -61,19 +61,19 @@ class RenderedFrontendShell:
 class FrontendAssetService:
     """Render a coherent, versioned ES-module graph for the browser."""
 
-    def __init__(self, web_root: Path) -> None:
-        self.web_root = web_root
+    def __init__(self, frontend_root: Path) -> None:
+        self.frontend_root = frontend_root
 
     def render_index(self) -> RenderedFrontendShell:
-        manifest = FrontendAssetManifest.load(self.web_root / "asset-manifest.json")
+        manifest = FrontendAssetManifest.load(self.frontend_root / "asset-manifest.json")
         self._require_asset(manifest.entrypoint)
         self._require_asset(manifest.stylesheet)
-        template = (self.web_root / "index.html").read_text(encoding="utf-8")
+        template = (self.frontend_root / "index.html").read_text(encoding="utf-8")
         imports = {
-            f"/assets/{path.relative_to(self.web_root).as_posix()}": manifest.url(
-                path.relative_to(self.web_root).as_posix()
+            f"/assets/{path.relative_to(self.frontend_root).as_posix()}": manifest.url(
+                path.relative_to(self.frontend_root).as_posix()
             )
-            for path in sorted(self.web_root.rglob("*.js"))
+            for path in sorted(self.frontend_root.rglob("*.js"))
             if path.is_file()
         }
         import_map = json.dumps({"imports": imports}, separators=(",", ":")).replace("<", "\\u003c")
@@ -90,5 +90,5 @@ class FrontendAssetService:
         return RenderedFrontendShell(template, manifest.revision)
 
     def _require_asset(self, relative_path: str) -> None:
-        if not (self.web_root / relative_path).is_file():
+        if not (self.frontend_root / relative_path).is_file():
             raise ValueError(f"Frontend asset does not exist: {relative_path}")

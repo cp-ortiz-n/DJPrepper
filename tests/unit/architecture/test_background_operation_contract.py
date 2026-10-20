@@ -6,7 +6,9 @@ import unittest
 from tests.support.paths import PROJECT_ROOT
 
 ROOT = PROJECT_ROOT
-CONTRACT = json.loads((ROOT / "docs" / "background-operation-lifecycles.json").read_text(encoding="utf-8"))
+CONTRACT = json.loads(
+    (ROOT / "docs" / "operations" / "background-operation-lifecycles.json").read_text(encoding="utf-8")
+)
 EXPECTED_OPERATIONS = {
     "audio-jobs",
     "authorized-import",

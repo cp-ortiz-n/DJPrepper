@@ -9,7 +9,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import web_app as web_module
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 
 
 class EndToEndBehaviorTests(unittest.TestCase):

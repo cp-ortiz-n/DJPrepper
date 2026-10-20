@@ -12,7 +12,7 @@ from audioextender.analysis.key_detection import KeyAnalysis, analyze_key
 from audioextender.analysis.section_selector import select_section
 from audioextender.audio.loading import AudioData
 from audioextender.core.exceptions import AnalysisError, AudioExtenderError
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 from tests.support.factories import candidate, track_analysis
 
 

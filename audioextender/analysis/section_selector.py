@@ -22,7 +22,7 @@ from audioextender.analysis.selection_metrics import (
     _vocal_phrase_metrics,
 )
 from audioextender.analysis.selection_models import SectionCandidate
-from settings import (
+from audioextender.core.defaults import (
     INTRO_IDENTITY_BARS,
     MINIMUM_OPENING_IDENTITY_QUALITY,
     MINIMUM_UNIQUE_STRUCTURE_MATCH,

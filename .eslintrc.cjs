@@ -20,18 +20,18 @@ module.exports = {
   overrides: [
     {
       files: [
-        'web/features/music-files/index.js',
-        'web/features/dj-library/index.js',
-        'web/features/settings/index.js',
-        'web/features/reporting/index.js',
-        'web/features/set-builder/index.js',
+        'frontend/features/music-files/index.js',
+        'frontend/features/dj-library/index.js',
+        'frontend/features/settings/index.js',
+        'frontend/features/reporting/index.js',
+        'frontend/features/set-builder/index.js',
       ],
       rules: {
         'no-restricted-globals': ['error', { name: 'fetch', message: 'Use the injected frontend API service.' }],
       },
     },
     {
-      files: ['tests/javascript/**/*.test.js', 'scripts/*.mjs'],
+      files: ['tests/javascript/**/*.test.js', 'scripts/**/*.mjs'],
       env: { browser: false, node: true },
     },
     {

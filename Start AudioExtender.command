@@ -68,4 +68,4 @@ echo "Starting AudioExtender with local AI: $MODEL"
   done
 ) &
 
-exec "$PYTHON" web_app.py
+exec "$PYTHON" -m audioextender.web

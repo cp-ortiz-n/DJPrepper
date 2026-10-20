@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 from audioextender.web.routes.reporting_routes import ReportingRouteDependencies, create_reporting_router
 
 

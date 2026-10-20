@@ -3,21 +3,21 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { createCandidateWaveformEditor } from '../../../web/features/processing/candidate-waveform-editor.js';
+import { createCandidateWaveformEditor } from '../../../frontend/features/processing/candidate-waveform-editor.js';
 import {
   compatibility,
   createLibraryUiState,
   libraryQuery,
   normalizedKey,
-} from '../../../web/features/dj-library/model.js';
-import { createProcessingJobDetail } from '../../../web/features/processing/processing-job-detail.js';
-import { createSearchableSelectController } from '../../../web/shared/searchable-selects.js';
+} from '../../../frontend/features/dj-library/model.js';
+import { createProcessingJobDetail } from '../../../frontend/features/processing/processing-job-detail.js';
+import { createSearchableSelectController } from '../../../frontend/shared/searchable-selects.js';
 import {
   genreAllocationTargets,
   interpretSetIntention,
   targetSetEnergy,
-} from '../../../web/features/set-builder/policy.js';
-import { createTrackMetadataUi } from '../../../web/shared/track-metadata-ui.js';
+} from '../../../frontend/features/set-builder/policy.js';
+import { createTrackMetadataUi } from '../../../frontend/shared/track-metadata-ui.js';
 
 const escapeHtml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
@@ -39,7 +39,7 @@ test('composition modules stay within explicit ownership ceilings', () => {
     'shared/searchable-selects.js': 200,
   };
   for (const [name, ceiling] of Object.entries(ceilings)) {
-    const path = fileURLToPath(new URL(`../../../web/${name}`, import.meta.url));
+    const path = fileURLToPath(new URL(`../../../frontend/${name}`, import.meta.url));
     const lines = readFileSync(path, 'utf8').split('\n').length;
     assert.ok(lines <= ceiling, `${name} has ${lines} lines; ownership ceiling is ${ceiling}`);
   }

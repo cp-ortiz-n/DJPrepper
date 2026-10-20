@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createRequestStateController} from '../../../web/core/request-state-controller.js';
+import {createRequestStateController} from '../../../frontend/core/request-state-controller.js';
 
 function deferred() {
   let resolve;

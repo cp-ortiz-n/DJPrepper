@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 
 from audioextender.library.backup import LibraryBackupService
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 from audioextender.set_builder.saved_sets import SavedSetService
 
 
@@ -15,7 +15,7 @@ class LibraryBackupServiceTests(unittest.TestCase):
     def make_workspace(self, root: Path) -> tuple[JobRepository, LibraryBackupService]:
         project = root / "project"
         library = root / "library"
-        database = project / "output/reports/audioextender.sqlite3"
+        database = project / "workspace/output/reports/audioextender.sqlite3"
         database.parent.mkdir(parents=True)
         library.mkdir()
         repository = JobRepository(database)

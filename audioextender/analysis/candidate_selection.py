@@ -10,8 +10,8 @@ import numpy as np
 
 from audioextender.analysis.key_detection import TrackAnalysis
 from audioextender.analysis.section_selector import SectionCandidate, rank_sections
+from audioextender.core.defaults import AUTO_BAR_MAXIMUM_QUALITY_LOSS, SUPPORTED_BAR_COUNTS
 from audioextender.core.exceptions import CandidateSelectionError
-from settings import AUTO_BAR_MAXIMUM_QUALITY_LOSS, SUPPORTED_BAR_COUNTS
 
 Position = Literal["intro", "outro"]
 Ranker = Callable[..., list[SectionCandidate]]

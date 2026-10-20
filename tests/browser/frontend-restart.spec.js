@@ -19,7 +19,7 @@ const stopServer = async (server) => {
 };
 
 const startServer = async (revision) => {
-  const server = spawn('.venv/bin/python', ['scripts/serve_browser_smoke.py'], {
+  const server = spawn('.venv/bin/python', ['scripts/development/serve_browser_smoke.py'], {
     cwd: process.cwd(),
     env: {
       ...process.env,

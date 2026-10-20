@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from settings import PRESET_DEFINITIONS, SUPPORTED_BAR_COUNTS
+from audioextender.core.defaults import PRESET_DEFINITIONS, SUPPORTED_BAR_COUNTS
 
 
 @dataclass(frozen=True)

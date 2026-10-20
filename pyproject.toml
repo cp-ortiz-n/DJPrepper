@@ -1,7 +1,7 @@
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-extend-exclude = [".venv", ".venv-intel-backup", "input", "output", "cache"]
+extend-exclude = [".venv", ".venv-intel-backup", "workspace"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "C4"]
@@ -9,7 +9,7 @@ select = ["E", "F", "I", "B", "UP", "C4"]
 [tool.mypy]
 python_version = "3.12"
 files = ["main.py", "web_app.py", "audioextender", "tests"]
-exclude = "(^|/)([.]venv|[.]venv-intel-backup|input|output|cache)/"
+exclude = "(^|/)([.]venv|[.]venv-intel-backup|workspace)/"
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true
@@ -17,7 +17,7 @@ warn_redundant_casts = true
 no_implicit_optional = true
 
 [tool.coverage.run]
-source = ["audioextender", "main", "web_app", "settings", "scripts"]
+source = ["audioextender", "main", "web_app", "scripts"]
 branch = true
 omit = ["tests/*", ".venv/*", ".venv-intel-backup/*", "node_modules/*"]
 

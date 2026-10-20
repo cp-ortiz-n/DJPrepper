@@ -20,7 +20,7 @@ DOMAIN_PACKAGES = {
     "library",
     "processing",
     "reporting",
-    "repositories",
+    "persistence",
     "set_builder",
 }
 SQL = re.compile(
@@ -31,7 +31,7 @@ SQL = re.compile(
 LEGACY_SQL = {
     "audioextender/library/backup.py:SELECT COUNT(*) FROM downloaded_tracks",
 }
-BROWSER_MUSICAL_PROFILE_OWNER = "web/features/dj-library/model.js"
+BROWSER_MUSICAL_PROFILE_OWNER = "frontend/features/dj-library/model.js"
 BROWSER_MUSICAL_PROFILE_FUNCTIONS = {
     "camelotKey",
     "energyBand",
@@ -118,11 +118,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
                         violations.append(f"{path.relative_to(ROOT)} -> {imported}")
         self.assertEqual([], violations)
 
-    def test_sql_stays_inside_repository_boundary(self) -> None:
+    def test_sql_stays_inside_persistence_boundary(self) -> None:
         violations = []
         observed_legacy = set()
         for path in PACKAGE.rglob("*.py"):
-            if "repositories" in path.relative_to(PACKAGE).parts:
+            if "persistence" in path.relative_to(PACKAGE).parts:
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             for node in ast.walk(tree):
@@ -143,7 +143,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             BROWSER_MUSICAL_PROFILE_FUNCTIONS <= browser_function_definitions(owner_source),
             "The declared browser musical-profile owner must retain the compatibility API",
         )
-        for path in (ROOT / "web").rglob("*.js"):
+        for path in (ROOT / "frontend").rglob("*.js"):
             relative = str(path.relative_to(ROOT))
             if relative == BROWSER_MUSICAL_PROFILE_OWNER:
                 continue
@@ -181,22 +181,22 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "audioextender/processing/processing_failure_cleanup.py": 20,
             "audioextender/processing/track_processing_stages.py": 130,
             "audioextender/infrastructure/operation_lifecycle.py": 246,
-            "audioextender/repositories/facade.py": 127,
-            "audioextender/repositories/migrations/schema.py": 248,
-            "audioextender/repositories/catalog/__init__.py": 25,
-            "audioextender/repositories/catalog/descriptors.py": 275,
-            "audioextender/repositories/catalog/core.py": 275,
-            "audioextender/repositories/catalog/recording_families.py": 260,
-            "audioextender/repositories/catalog/projections.py": 275,
-            "audioextender/repositories/catalog/metadata.py": 260,
-            "audioextender/repositories/catalog/analysis.py": 90,
-            "web/app.js": 918,
-            "web/features/set-builder/index.js": 1150,
-            "web/features/set-builder/feedback.js": 275,
-            "web/features/set-builder/planning-session.js": 475,
-            "web/features/set-builder/transition-editor.js": 1100,
-            "web/features/set-builder/plan-view.js": 675,
-            "web/features/set-builder/saved-sets.js": 400,
+            "audioextender/persistence/facade.py": 127,
+            "audioextender/persistence/migrations/schema.py": 248,
+            "audioextender/persistence/catalog/__init__.py": 25,
+            "audioextender/persistence/catalog/descriptors.py": 275,
+            "audioextender/persistence/catalog/core.py": 275,
+            "audioextender/persistence/catalog/recording_families.py": 260,
+            "audioextender/persistence/catalog/projections.py": 275,
+            "audioextender/persistence/catalog/metadata.py": 260,
+            "audioextender/persistence/catalog/analysis.py": 90,
+            "frontend/app.js": 918,
+            "frontend/features/set-builder/index.js": 1150,
+            "frontend/features/set-builder/feedback.js": 275,
+            "frontend/features/set-builder/planning-session.js": 475,
+            "frontend/features/set-builder/transition-editor.js": 1100,
+            "frontend/features/set-builder/plan-view.js": 675,
+            "frontend/features/set-builder/saved-sets.js": 400,
         }
         for relative, maximum in ceilings.items():
             with self.subTest(relative=relative):

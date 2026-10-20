@@ -12,9 +12,10 @@ saved-set data.
 
 ## Decision
 
-`repositories/schema.py` owns ordered, named, idempotent SQLite migration steps.
-Startup applies missing steps in place within the repository boundary. New SQL
-stays in repositories, and changes preserve readable older databases. Backups
+`audioextender/persistence/migrations/schema.py` owns ordered, named,
+idempotent SQLite migration steps. Startup applies missing steps in place within
+the persistence boundary. New SQL stays in `audioextender/persistence`, and
+changes preserve readable older databases. Backups
 remain the rollback boundary for destructive or data-transforming changes.
 
 ## Compatibility guarantees

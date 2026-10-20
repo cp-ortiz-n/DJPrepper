@@ -13,6 +13,8 @@ from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 
+from audioextender.core.defaults import CACHE_FOLDER_NAME, OUTPUT_FOLDER_NAME
+
 BACKUP_FORMAT_VERSION = 1
 
 
@@ -39,9 +41,9 @@ class LibraryBackupService:
     def sources(self, include_cache: bool = False) -> list[tuple[Path, str]]:
         items = [
             (self.project / "track_overrides.json", "state/track_overrides.json"),
-            (self.project / "output/reports/processing_report.json", "state/processing_report.json"),
-            (self.project / "output/reports/web_presets.json", "state/web_presets.json"),
-            (self.project / "output/reports/set_builder_catalog.json", "state/set_builder_catalog.json"),
+            (self.project / OUTPUT_FOLDER_NAME / "reports/processing_report.json", "state/processing_report.json"),
+            (self.project / OUTPUT_FOLDER_NAME / "reports/web_presets.json", "state/web_presets.json"),
+            (self.project / OUTPUT_FOLDER_NAME / "reports/set_builder_catalog.json", "state/set_builder_catalog.json"),
         ]
         for root, prefix in (
             (self.library_root / ".audioextender", "library/.audioextender"),
@@ -54,7 +56,7 @@ class LibraryBackupService:
                     if path.is_file() and path.name != ".DS_Store" and "backups" not in path.parts
                 )
         if include_cache:
-            cache = self.project / "cache"
+            cache = self.project / CACHE_FOLDER_NAME
             if cache.is_dir():
                 items.extend(
                     (path, f"cache/{path.relative_to(cache).as_posix()}") for path in cache.rglob("*") if path.is_file()
@@ -156,9 +158,11 @@ class LibraryBackupService:
                 target_connection.commit()
             mapping = {
                 "state/track_overrides.json": self.project / "track_overrides.json",
-                "state/processing_report.json": self.project / "output/reports/processing_report.json",
-                "state/web_presets.json": self.project / "output/reports/web_presets.json",
-                "state/set_builder_catalog.json": self.project / "output/reports/set_builder_catalog.json",
+                "state/processing_report.json": self.project / OUTPUT_FOLDER_NAME / "reports/processing_report.json",
+                "state/web_presets.json": self.project / OUTPUT_FOLDER_NAME / "reports/web_presets.json",
+                "state/set_builder_catalog.json": (
+                    self.project / OUTPUT_FOLDER_NAME / "reports/set_builder_catalog.json"
+                ),
             }
             for source_name, destination in mapping.items():
                 staged_source = staging / source_name
@@ -167,7 +171,7 @@ class LibraryBackupService:
                     os.replace(staged_source, destination)
             self._restore_tree(staging / "library/.audioextender", self.library_root / ".audioextender")
             self._restore_tree(staging / "library/_Playlist", self.library_root / "_Playlist")
-            self._restore_tree(staging / "cache", self.project / "cache")
+            self._restore_tree(staging / "cache", self.project / CACHE_FOLDER_NAME)
         return {"restored": True, "manifest": manifest, "pre_restore_backup": pre_restore}
 
     @staticmethod

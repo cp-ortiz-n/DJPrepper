@@ -7,7 +7,7 @@ import {
   apiRequest,
   apiResponseJson,
   createApiClient,
-} from '../../../web/core/api-client.js';
+} from '../../../frontend/core/api-client.js';
 
 function response(payload, { ok = true, status = 200 } = {}) {
   return { ok, status, json: async () => payload };

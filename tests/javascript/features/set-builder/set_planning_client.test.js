@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SetPlanningCanceled, createSetPlanningClient } from '../../../../web/features/set-builder/planning-client.js';
+import { SetPlanningCanceled, createSetPlanningClient } from '../../../../frontend/features/set-builder/planning-client.js';
 
 function response(payload, ok = true) {
   return { ok, json: async () => payload };

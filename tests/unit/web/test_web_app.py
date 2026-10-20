@@ -17,8 +17,8 @@ import web_app as web_module
 from audioextender.core.config import EditConfig
 from audioextender.core.exceptions import ConfigurationError
 from audioextender.imports.service import LibraryOfflineError
+from audioextender.persistence.facade import JobRepository
 from audioextender.processing.web_jobs import DatabaseProgress, WebJobService
-from audioextender.repositories.facade import JobRepository
 from web_app import (
     AuthorizedImportRequest,
     BatchDownloadRequest,

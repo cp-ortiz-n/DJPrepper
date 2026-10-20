@@ -11,12 +11,12 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from audioextender.core.defaults import INPUT_FOLDER_NAME, OUTPUT_FOLDER_NAME
 from audioextender.infrastructure.background_tasks import BackgroundTaskRegistry
 from audioextender.infrastructure.batch_operations import BatchOperationRegistry
 from audioextender.library.relocation import LibraryRelocationCoordinator
+from audioextender.persistence.facade import JobRepository
 from audioextender.processing.web_jobs import WebJobService
-from audioextender.repositories.facade import JobRepository
-from settings import INPUT_FOLDER_NAME, OUTPUT_FOLDER_NAME
 
 
 @dataclass(frozen=True)
@@ -26,7 +26,7 @@ class ApplicationPaths:
     project: Path
     input: Path
     output: Path
-    web: Path
+    frontend: Path
     database: Path
     overrides: Path
     presets: Path
@@ -40,7 +40,7 @@ class ApplicationPaths:
         cls,
         project: Path,
         *,
-        web_root: Path | None = None,
+        frontend_root: Path | None = None,
         default_music_library: Path | None = None,
     ) -> ApplicationPaths:
         """Build a complete path set under ``project`` for production or tests."""
@@ -51,7 +51,7 @@ class ApplicationPaths:
             project=project,
             input=project / INPUT_FOLDER_NAME,
             output=output,
-            web=(web_root or project / "web").expanduser().resolve(),
+            frontend=(frontend_root or project / "frontend").expanduser().resolve(),
             database=reports / "audioextender.sqlite3",
             overrides=project / "track_overrides.json",
             presets=reports / "web_presets.json",
@@ -134,7 +134,7 @@ def runtime_bindings(runtime: ApplicationRuntime) -> dict[str, object]:
         "PROJECT": paths.project,
         "INPUT": paths.input,
         "OUTPUT": paths.output,
-        "WEB": paths.web,
+        "FRONTEND": paths.frontend,
         "DATABASE": paths.database,
         "OVERRIDES": paths.overrides,
         "WEB_PRESETS": paths.presets,

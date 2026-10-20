@@ -40,6 +40,29 @@ from audioextender.audio.wav_metadata import (
     sync_wav_metadata,
     write_wav_metadata,
 )
+from audioextender.core.defaults import (
+    CACHE_FOLDER_NAME,
+    DEFAULT_AUTO_BAR_SELECTION,
+    DEFAULT_CANDIDATE_COUNT,
+    DEFAULT_EXPORT_CUES,
+    DEFAULT_INTRO_BARS,
+    DEFAULT_MINIMUM_INTRO_LOOP_QUALITY,
+    DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY,
+    DEFAULT_OUTRO_BARS,
+    DEFAULT_PCM_BITS,
+    DEFAULT_PRESET,
+    DEFAULT_PREVIEW_SECONDS,
+    DEFAULT_USE_STEMS,
+    INTRO_SEARCH_SECONDS,
+    MAXIMUM_BASS_RESET_RISK,
+    MAXIMUM_BUILDUP_RISK,
+    MAXIMUM_VOCAL_BOUNDARY_RISK,
+    MAXIMUM_VOCAL_COVERAGE,
+    MINIMUM_CROSSFADE_MS,
+    MINIMUM_STEM_CONSTRUCTION_RELIABILITY,
+    OUTRO_SEARCH_SECONDS,
+    SUPPORTED_BAR_COUNTS,
+)
 from audioextender.core.presets import PRESETS
 from audioextender.imports.creative_commons import CreativeCommonsImportService
 from audioextender.imports.creative_commons_worker import CreativeCommonsBatchWorker
@@ -193,35 +216,12 @@ from audioextender.web.routes.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
 )
-from settings import (
-    CACHE_FOLDER_NAME,
-    DEFAULT_AUTO_BAR_SELECTION,
-    DEFAULT_CANDIDATE_COUNT,
-    DEFAULT_EXPORT_CUES,
-    DEFAULT_INTRO_BARS,
-    DEFAULT_MINIMUM_INTRO_LOOP_QUALITY,
-    DEFAULT_MINIMUM_OUTRO_LOOP_QUALITY,
-    DEFAULT_OUTRO_BARS,
-    DEFAULT_PCM_BITS,
-    DEFAULT_PRESET,
-    DEFAULT_PREVIEW_SECONDS,
-    DEFAULT_USE_STEMS,
-    INTRO_SEARCH_SECONDS,
-    MAXIMUM_BASS_RESET_RISK,
-    MAXIMUM_BUILDUP_RISK,
-    MAXIMUM_VOCAL_BOUNDARY_RISK,
-    MAXIMUM_VOCAL_COVERAGE,
-    MINIMUM_CROSSFADE_MS,
-    MINIMUM_STEM_CONSTRUCTION_RELIABILITY,
-    OUTRO_SEARCH_SECONDS,
-    SUPPORTED_BAR_COUNTS,
-)
 
 DEFAULT_PATHS = ApplicationPaths.from_project(Path(__file__).resolve().parents[2])
 PROJECT = DEFAULT_PATHS.project
 INPUT = DEFAULT_PATHS.input
 OUTPUT = DEFAULT_PATHS.output
-WEB = DEFAULT_PATHS.web
+FRONTEND = DEFAULT_PATHS.frontend
 DATABASE = DEFAULT_PATHS.database
 OVERRIDES = DEFAULT_PATHS.overrides
 WEB_PRESETS = DEFAULT_PATHS.presets
@@ -1789,7 +1789,7 @@ def create_app(
 
     application = install_error_handlers(FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None))
     application.state.runtime = runtime
-    application.state.frontend_assets = FrontendAssetService(runtime.paths.web)
+    application.state.frontend_assets = FrontendAssetService(runtime.paths.frontend)
     application.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     application.middleware("http")(record_api_performance)
     application.mount(
@@ -1799,7 +1799,7 @@ def create_app(
     )
     application.mount(
         "/assets",
-        UncachedStaticFiles(directory=runtime.paths.web, check_dir=False),
+        UncachedStaticFiles(directory=runtime.paths.frontend, check_dir=False),
         name="assets",
     )
     _register_routers(application)

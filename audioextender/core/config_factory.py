@@ -5,8 +5,7 @@ from __future__ import annotations
 import argparse
 
 from audioextender.core.config import EditConfig
-from audioextender.core.presets import get_preset
-from settings import (
+from audioextender.core.defaults import (
     DEFAULT_CACHE_ENABLED,
     DEFAULT_CANDIDATE_COUNT,
     DEFAULT_INTRO_BARS,
@@ -14,6 +13,7 @@ from settings import (
     DEFAULT_USE_STEMS,
     INTERACTIVE_CANDIDATE_POOL,
 )
+from audioextender.core.presets import get_preset
 
 
 class ConfigFactory:

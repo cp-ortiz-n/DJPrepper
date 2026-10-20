@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {AuthorizedImportQueue} from '../../../../web/features/imports/import-queue.js';
+import {AuthorizedImportQueue} from '../../../../frontend/features/imports/import-queue.js';
 
 function environment(saved = null) {
   const values = new Map();

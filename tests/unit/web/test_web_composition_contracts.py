@@ -16,7 +16,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from starlette.middleware.gzip import GZipMiddleware
 
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 from audioextender.web import application as web
 from audioextender.web.composition import ApplicationPaths, ApplicationRuntime
 from tests.support.paths import PROJECT_ROOT
@@ -73,7 +73,7 @@ class WebCompositionContractTests(unittest.TestCase):
         shell = self.client.get("/")
         self.assertEqual(shell.status_code, 200)
         self.assertEqual(shell.headers["cache-control"], "no-store")
-        manifest = json.loads((web.WEB / "asset-manifest.json").read_text(encoding="utf-8"))
+        manifest = json.loads((web.FRONTEND / "asset-manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(shell.headers["x-djls-asset-revision"], manifest["revision"])
         for path in ("/assets/app.js", "/assets/features/set-builder/view-model.js"):
             response = self.client.get(path)
@@ -93,7 +93,9 @@ class WebCompositionContractTests(unittest.TestCase):
         self.assertIsNotNone(import_map_match)
         imports = json.loads(cast(re.Match[str], import_map_match).group(1))["imports"]
         expected_modules = {
-            f"/assets/{path.relative_to(web.WEB).as_posix()}" for path in web.WEB.rglob("*.js") if path.is_file()
+            f"/assets/{path.relative_to(web.FRONTEND).as_posix()}"
+            for path in web.FRONTEND.rglob("*.js")
+            if path.is_file()
         }
 
         self.assertEqual(set(imports), expected_modules)
@@ -106,8 +108,8 @@ class WebCompositionContractTests(unittest.TestCase):
     def test_javascript_modules_do_not_own_independent_asset_revisions(self) -> None:
         versioned_import = re.compile(r"(?:from\s+|import\s*\(\s*)['\"][^'\"]+[?]v=")
         offenders = [
-            path.relative_to(web.WEB).as_posix()
-            for path in web.WEB.rglob("*.js")
+            path.relative_to(web.FRONTEND).as_posix()
+            for path in web.FRONTEND.rglob("*.js")
             if versioned_import.search(path.read_text(encoding="utf-8"))
         ]
 
@@ -140,7 +142,7 @@ class WebCompositionContractTests(unittest.TestCase):
             root = Path(temporary)
             paths = ApplicationPaths.from_project(
                 root,
-                web_root=PROJECT_ROOT / "web",
+                frontend_root=PROJECT_ROOT / "frontend",
                 default_music_library=root / "External Library",
             )
             try:
@@ -159,7 +161,7 @@ class WebCompositionContractTests(unittest.TestCase):
                         all(
                             str(path).startswith(str(paths.project))
                             for path in paths.__dict__.values()
-                            if isinstance(path, Path) and path != paths.web
+                            if isinstance(path, Path) and path != paths.frontend
                         )
                     )
                     planner = runtime.services["intention_planner"]
@@ -180,10 +182,10 @@ class WebCompositionContractTests(unittest.TestCase):
         project = PROJECT_ROOT
 
         self.assertEqual(web.PROJECT, project)
-        self.assertEqual(web.INPUT, project / "input")
-        self.assertEqual(web.OUTPUT, project / "output")
-        self.assertEqual(web.WEB, project / "web")
-        self.assertEqual(web.DATABASE, project / "output" / "reports" / "audioextender.sqlite3")
+        self.assertEqual(web.INPUT, project / "workspace" / "input")
+        self.assertEqual(web.OUTPUT, project / "workspace" / "output")
+        self.assertEqual(web.FRONTEND, project / "frontend")
+        self.assertEqual(web.DATABASE, project / "workspace" / "output" / "reports" / "audioextender.sqlite3")
         self.assertEqual(web_runtime.repository.path, web.DATABASE)
         self.assertIs(web_runtime.service.repository, web_runtime.repository)
         self.assertEqual(web_runtime.service.project, project)

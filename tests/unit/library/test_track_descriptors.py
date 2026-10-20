@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from audioextender.library.identity_inference import infer_identity_descriptors
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 from audioextender.web.routes.descriptor_routes import DescriptorRouteDependencies, create_descriptor_router
 
 

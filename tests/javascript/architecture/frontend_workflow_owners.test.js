@@ -1,33 +1,33 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createBackgroundTaskController } from '../../../web/core/background-task-controller.js';
-import { createFrontendServices } from '../../../web/core/frontend-services.js';
-import { importFailureKind } from '../../../web/features/imports/import-issues.js';
-import { createLocalAudioImportFeature } from '../../../web/features/imports/local-audio-import.js';
-import { creativeCommonsTracks } from '../../../web/features/imports/playlist-import.js';
+import { createBackgroundTaskController } from '../../../frontend/core/background-task-controller.js';
+import { createFrontendServices } from '../../../frontend/core/frontend-services.js';
+import { importFailureKind } from '../../../frontend/features/imports/import-issues.js';
+import { createLocalAudioImportFeature } from '../../../frontend/features/imports/local-audio-import.js';
+import { creativeCommonsTracks } from '../../../frontend/features/imports/playlist-import.js';
 import {
   createCandidateReviewFeature,
   reviewableProcessingJobs,
-} from '../../../web/features/processing/candidate-review.js';
+} from '../../../frontend/features/processing/candidate-review.js';
 import {
   annotateProcessingJobs,
   categorizeProcessingJobs,
   createProcessingWorkspaceApi,
   createProcessingWorkspaceController,
   sortProcessingJobs,
-} from '../../../web/features/processing/processing-workspace.js';
+} from '../../../frontend/features/processing/processing-workspace.js';
 import {
   createProcessingWorkspaceView,
   processingJobSignature,
   processingJobViewModel,
-} from '../../../web/features/processing/processing-workspace-view.js';
+} from '../../../frontend/features/processing/processing-workspace-view.js';
 import {
   authorizedSourceUrls,
   createAuthorizedImportFeature,
   createImportWorkspaceApi,
   sourceUrlType,
-} from '../../../web/features/imports/import-workspace.js';
+} from '../../../frontend/features/imports/import-workspace.js';
 
 function frontendServicesFor(select) {
   return createFrontendServices({

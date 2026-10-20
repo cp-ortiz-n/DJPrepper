@@ -51,10 +51,10 @@ jobs:
         run: npm ci
 
       - name: Run standard quality gate
-        run: ./scripts/check_quality.sh
+        run: ./scripts/quality/check_quality.sh
 
       - name: Run stability gate
-        run: ./scripts/run_stability_gate.sh
+        run: ./scripts/quality/run_stability_gate.sh
 
       - name: Validate dependency environment
         run: |

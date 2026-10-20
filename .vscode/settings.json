@@ -9,6 +9,29 @@
   "python.testing.pytestEnabled": false,
   "python.testing.unittestEnabled": true,
   "markiscodecoverage.searchCriteria": "coverage/lcov*.info",
+  "files.exclude": {
+    "**/.DS_Store": true,
+    "**/__pycache__": true,
+    ".coverage": true,
+    ".mypy_cache": true,
+    ".ruff_cache": true,
+    ".venv": true,
+    "coverage": true,
+    "graphify-out": true,
+    "node_modules": true,
+    "test-results": true
+  },
+  "search.exclude": {
+    ".mypy_cache": true,
+    ".ruff_cache": true,
+    ".venv": true,
+    "coverage": true,
+    "graphify-out": true,
+    "node_modules": true,
+    "test-results": true,
+    "workspace/cache": true,
+    "workspace/output": true
+  },
   "cSpell.words": [
     "audioextender"
   ]

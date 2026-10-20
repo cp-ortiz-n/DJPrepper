@@ -17,7 +17,7 @@ DOMAIN_PACKAGES = {
     "library",
     "processing",
     "reporting",
-    "repositories",
+    "persistence",
     "set_builder",
     "web",
 }
@@ -92,7 +92,7 @@ class PackageStructureTests(unittest.TestCase):
             self.assertLessEqual(len(lines), maximum, filename)
 
     def test_wide_namespaces_use_owned_subpackages(self) -> None:
-        frontend = PROJECT_ROOT / "web"
+        frontend = PROJECT_ROOT / "frontend"
         self.assertEqual(
             {"app.js"},
             {path.name for path in frontend.glob("*.js")},
@@ -102,21 +102,62 @@ class PackageStructureTests(unittest.TestCase):
         self.assertTrue((frontend / "shared").is_dir())
         self.assertTrue((frontend / "features").is_dir())
 
-        repositories = PACKAGE_ROOT / "repositories"
-        allowed_repository_modules = {"__init__.py", "base.py", "capabilities.py", "facade.py"}
+        persistence = PACKAGE_ROOT / "persistence"
+        allowed_persistence_modules = {"__init__.py", "base.py", "capabilities.py", "facade.py"}
         self.assertEqual(
-            allowed_repository_modules,
-            {path.name for path in repositories.glob("*.py")},
+            allowed_persistence_modules,
+            {path.name for path in persistence.glob("*.py")},
             "Persistence implementations belong to catalog/, jobs/, migrations/, or system/",
         )
 
         delivery = PACKAGE_ROOT / "web"
-        allowed_delivery_modules = {"__init__.py", "application.py", "composition.py"}
+        allowed_delivery_modules = {"__init__.py", "__main__.py", "application.py", "composition.py"}
         self.assertEqual(
             allowed_delivery_modules,
             {path.name for path in delivery.glob("*.py")},
             "HTTP delivery code belongs to routes/, contracts/, or assets/",
         )
+
+    def test_project_support_areas_are_grouped_by_owner(self) -> None:
+        expected_script_owners = {"benchmarks", "development", "maintenance", "quality"}
+        scripts = PROJECT_ROOT / "scripts"
+        self.assertEqual(
+            expected_script_owners,
+            {path.name for path in scripts.iterdir() if path.is_dir() and not path.name.startswith("__")},
+        )
+        self.assertEqual([], sorted(path.name for path in scripts.glob("*.*")))
+
+        expected_document_owners = {"architecture", "audits", "decisions", "guides", "operations"}
+        docs = PROJECT_ROOT / "docs"
+        self.assertEqual(expected_document_owners, {path.name for path in docs.iterdir() if path.is_dir()})
+        self.assertEqual([], sorted(path.name for path in docs.glob("*.*")))
+
+        workspace = PROJECT_ROOT / "workspace"
+        self.assertEqual({"cache", "input", "output"}, {path.name for path in workspace.iterdir() if path.is_dir()})
+        for legacy_root in ("cache", "input", "output", "web"):
+            self.assertFalse((PROJECT_ROOT / legacy_root).exists(), legacy_root)
+
+    def test_package_owned_entrypoints_keep_root_launchers_compatible(self) -> None:
+        cli = PACKAGE_ROOT / "cli.py"
+        web = PACKAGE_ROOT / "web" / "__main__.py"
+        main_shim = (PROJECT_ROOT / "main.py").read_text(encoding="utf-8")
+        web_shim = (PROJECT_ROOT / "web_app.py").read_text(encoding="utf-8")
+
+        self.assertTrue(cli.is_file())
+        self.assertTrue(web.is_file())
+        self.assertFalse((PROJECT_ROOT / "settings.py").exists())
+        self.assertIn("from audioextender.cli import", main_shim)
+        self.assertIn("from audioextender.web import application", web_shim)
+        self.assertLess(len(main_shim.splitlines()), 30)
+        self.assertLess(len(web_shim.splitlines()), 30)
+
+    def test_application_imports_only_the_persistence_namespace(self) -> None:
+        violations: list[str] = []
+        for source in PACKAGE_ROOT.rglob("*.py"):
+            text = source.read_text(encoding="utf-8")
+            if "audioextender.repositories" in text or "from settings import" in text:
+                violations.append(source.relative_to(PROJECT_ROOT).as_posix())
+        self.assertEqual([], violations)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ failure of FastAPI, SQLite, or browser ES modules.
 Keep one local FastAPI modular monolith, one SQLite persistence boundary, and a
 vanilla JavaScript ES-module frontend. Improve explicit composition, focused
 services, immutable state, and feature ownership instead of introducing
-microservices or a frontend framework. `application.py` and `web/app.js` remain
+microservices or a frontend framework. `application.py` and `frontend/app.js` remain
 composition and compatibility roots rather than feature owners.
 
 ## Compatibility guarantees

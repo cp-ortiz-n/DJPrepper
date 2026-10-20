@@ -30,13 +30,13 @@ globalThis.document = {
   },
 };
 
-const musicFiles = await import('../../../web/features/music-files/index.js');
-const setBuilder = await import('../../../web/features/set-builder/index.js');
-const settings = await import('../../../web/features/settings/index.js');
-const shared = await import('../../../web/shared/shared-components.js');
-const requests = await import('../../../web/core/request-state-controller.js');
-const frontendServices = await import('../../../web/core/frontend-services.js');
-const reporting = await import('../../../web/features/reporting/index.js');
+const musicFiles = await import('../../../frontend/features/music-files/index.js');
+const setBuilder = await import('../../../frontend/features/set-builder/index.js');
+const settings = await import('../../../frontend/features/settings/index.js');
+const shared = await import('../../../frontend/shared/shared-components.js');
+const requests = await import('../../../frontend/core/request-state-controller.js');
+const frontendServices = await import('../../../frontend/core/frontend-services.js');
+const reporting = await import('../../../frontend/features/reporting/index.js');
 
 test('feature factories share a validated immutable services contract', () => {
   const noop = () => {};
@@ -64,7 +64,7 @@ test('feature factories share a validated immutable services contract', () => {
 });
 
 test('app.js remains a feature composition root', () => {
-  const path = fileURLToPath(new URL('../../../web/app.js', import.meta.url));
+  const path = fileURLToPath(new URL('../../../frontend/app.js', import.meta.url));
   const source = readFileSync(path, 'utf8');
   assert.ok(source.split('\n').length <= 900, 'app.js exceeded the composition-root size ceiling');
   for (const factory of [
@@ -108,7 +108,7 @@ test('app.js remains a feature composition root', () => {
 });
 
 test('stylesheet entry point preserves explicit owner order without dead audit selectors', () => {
-  const entryPath = fileURLToPath(new URL('../../../web/styles.css', import.meta.url));
+  const entryPath = fileURLToPath(new URL('../../../frontend/styles.css', import.meta.url));
   const entry = readFileSync(entryPath, 'utf8');
   const imports = [...entry.matchAll(/@import url\(['"]\.\/styles\/([^'"]+)['"]\);/g)].map(
     (match) => match[1].split('?')[0],
@@ -135,7 +135,7 @@ test('stylesheet entry point preserves explicit owner order without dead audit s
     'shared/82-shared-action-hierarchy.css',
   ]);
   const source = imports
-    .map((name) => readFileSync(fileURLToPath(new URL(`../../../web/styles/${name}`, import.meta.url)), 'utf8'))
+    .map((name) => readFileSync(fileURLToPath(new URL(`../../../frontend/styles/${name}`, import.meta.url)), 'utf8'))
     .join('\n');
   for (const selector of [
     'downloaded-bulk-identity',

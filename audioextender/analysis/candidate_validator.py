@@ -7,11 +7,11 @@ from dataclasses import dataclass, replace
 from audioextender.analysis.section_selector import SectionCandidate
 from audioextender.audio.loading import AudioData
 from audioextender.core.config import EditConfig
-from audioextender.processing.extended_edit import should_use_instrumental
-from settings import (
+from audioextender.core.defaults import (
     MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO,
     MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH,
 )
+from audioextender.processing.extended_edit import should_use_instrumental
 
 
 @dataclass(frozen=True)

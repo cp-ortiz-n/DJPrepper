@@ -19,10 +19,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from audioextender.core.operation_feedback import operation_receipt
-from audioextender.infrastructure.cache import AnalysisCache
-from audioextender.library.backup import LibraryBackupService
-from settings import (
+from audioextender.core.defaults import (
     DEFAULT_CANDIDATE_COUNT,
     INTRO_SEARCH_SECONDS,
     MAXIMUM_BASS_RESET_RISK,
@@ -33,6 +30,9 @@ from settings import (
     MINIMUM_STEM_CONSTRUCTION_RELIABILITY,
     OUTRO_SEARCH_SECONDS,
 )
+from audioextender.core.operation_feedback import operation_receipt
+from audioextender.infrastructure.cache import AnalysisCache
+from audioextender.library.backup import LibraryBackupService
 
 
 class WebSettings(BaseModel):
