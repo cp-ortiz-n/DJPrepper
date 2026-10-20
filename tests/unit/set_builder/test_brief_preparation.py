@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from audioextender.set_builder.brief_preparation import BRIEF_INSTRUCTIONS, BRIEF_SCHEMA, BriefPreparationService
 from audioextender.set_builder.intention_planner import IntentionPlanner
-from audioextender.web.set_builder_routes import SetBuilderRouteDependencies, create_set_builder_router
+from audioextender.web.routes.set_builder_routes import SetBuilderRouteDependencies, create_set_builder_router
 
 
 class BriefPreparationServiceTests(unittest.TestCase):

@@ -29,8 +29,10 @@ npm run check:browser:install
   `audioextender/`; keep reusable workflows out of FastAPI route handlers.
 - Keep SQL inside `audioextender/repositories/` or an approved migration
   boundary.
-- Put browser behavior in the owning feature module under `web/`; keep
-  `web/app.js` focused on composition and navigation.
+- Put browser behavior in the owning feature under `web/features/`; keep
+  `web/app.js` focused on composition and navigation. Follow
+  [`docs/code-organization.md`](docs/code-organization.md) for backend,
+  frontend, persistence, style, and test placement.
 - Preserve public APIs, persisted data, jobs, saved sets, exports, and backup
   compatibility unless the change explicitly migrates them.
 - Add characterization tests before risky refactors and behavior tests for new
@@ -64,7 +66,7 @@ Run focused tests while developing:
 
 ```sh
 .venv/bin/python -m unittest tests.unit.analysis.test_key_analysis
-node --test tests/javascript/api_client.test.js
+node --test tests/javascript/core/api_client.test.js
 ```
 
 Before submitting a normal change, run `make quality` and `git diff --check`.

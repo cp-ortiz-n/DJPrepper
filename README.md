@@ -131,6 +131,8 @@ are in the [user guide](docs/user-guide.md#optional-local-ai-for-set-builder).
   background operations, health checks, backups, and safe workspace cleanup
 - [Developer guide](docs/developer-guide.md) — repository layout, configuration,
   ownership boundaries, tests, coverage, and generated artifacts
+- [Code organization](docs/code-organization.md) — file placement rules and the
+  backend, frontend, persistence, style, and test directory model
 - [Contributing](CONTRIBUTING.md) — supported toolchain and change workflow
 - [Architecture](docs/architecture.md) — authoritative module ownership and
   dependency rules

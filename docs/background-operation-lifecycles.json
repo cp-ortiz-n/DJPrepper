@@ -94,7 +94,7 @@
     },
     {
       "id": "integrity-scan",
-      "owner": "audioextender/web/library_maintenance_routes.py",
+      "owner": "audioextender/web/routes/library_maintenance_routes.py",
       "routes": ["/api/downloaded-library/integrity-scan", "/api/downloaded-library/integrity-scan/{batch_id}"],
       "states": ["processing", "complete"],
       "persistence": "memory",
@@ -108,7 +108,7 @@
     },
     {
       "id": "audio-quality-scan",
-      "owner": "audioextender/web/audio_quality_routes.py",
+      "owner": "audioextender/web/routes/audio_quality_routes.py",
       "routes": ["/api/downloaded-library/audio-quality", "/api/downloaded-library/audio-quality/{batch_id}", "/api/downloaded-library/audio-quality-latest"],
       "states": ["processing", "complete"],
       "persistence": "memory",

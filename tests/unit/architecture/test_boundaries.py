@@ -31,7 +31,7 @@ SQL = re.compile(
 LEGACY_SQL = {
     "audioextender/library/backup.py:SELECT COUNT(*) FROM downloaded_tracks",
 }
-BROWSER_MUSICAL_PROFILE_OWNER = "web/dj-library-model.js"
+BROWSER_MUSICAL_PROFILE_OWNER = "web/features/dj-library/model.js"
 BROWSER_MUSICAL_PROFILE_FUNCTIONS = {
     "camelotKey",
     "energyBand",
@@ -164,11 +164,11 @@ class ArchitectureBoundaryTests(unittest.TestCase):
     def test_known_architecture_hotspots_do_not_grow(self) -> None:
         ceilings = {
             "audioextender/web/application.py": 1840,
-            "audioextender/web/reporting_routes.py": 320,
-            "audioextender/web/downloaded_analysis_routes.py": 100,
-            "audioextender/web/job_review_routes.py": 190,
-            "audioextender/web/downloaded_track_mutation_routes.py": 230,
-            "audioextender/web/recording_family_routes.py": 125,
+            "audioextender/web/routes/reporting_routes.py": 320,
+            "audioextender/web/routes/downloaded_analysis_routes.py": 100,
+            "audioextender/web/routes/job_review_routes.py": 190,
+            "audioextender/web/routes/downloaded_track_mutation_routes.py": 230,
+            "audioextender/web/routes/recording_family_routes.py": 125,
             "audioextender/imports/creative_commons_worker.py": 350,
             "audioextender/library/analysis_queue.py": 80,
             "audioextender/library/artwork_thumbnails.py": 100,
@@ -182,21 +182,21 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "audioextender/processing/track_processing_stages.py": 130,
             "audioextender/infrastructure/operation_lifecycle.py": 246,
             "audioextender/repositories/facade.py": 127,
-            "audioextender/repositories/schema.py": 248,
-            "audioextender/repositories/track_catalog.py": 25,
-            "audioextender/repositories/track_descriptors.py": 275,
-            "audioextender/repositories/track_core.py": 275,
-            "audioextender/repositories/recording_families.py": 260,
-            "audioextender/repositories/track_projections.py": 275,
-            "audioextender/repositories/track_metadata_state.py": 260,
-            "audioextender/repositories/track_analysis_state.py": 90,
+            "audioextender/repositories/migrations/schema.py": 248,
+            "audioextender/repositories/catalog/__init__.py": 25,
+            "audioextender/repositories/catalog/descriptors.py": 275,
+            "audioextender/repositories/catalog/core.py": 275,
+            "audioextender/repositories/catalog/recording_families.py": 260,
+            "audioextender/repositories/catalog/projections.py": 275,
+            "audioextender/repositories/catalog/metadata.py": 260,
+            "audioextender/repositories/catalog/analysis.py": 90,
             "web/app.js": 918,
-            "web/set-builder.js": 1150,
-            "web/set-builder-feedback.js": 275,
-            "web/set-builder-planning-session.js": 475,
-            "web/set-builder-transition-editor.js": 1100,
-            "web/set-builder-plan-view.js": 675,
-            "web/set-builder-saved-sets.js": 400,
+            "web/features/set-builder/index.js": 1150,
+            "web/features/set-builder/feedback.js": 275,
+            "web/features/set-builder/planning-session.js": 475,
+            "web/features/set-builder/transition-editor.js": 1100,
+            "web/features/set-builder/plan-view.js": 675,
+            "web/features/set-builder/saved-sets.js": 400,
         }
         for relative, maximum in ceilings.items():
             with self.subTest(relative=relative):

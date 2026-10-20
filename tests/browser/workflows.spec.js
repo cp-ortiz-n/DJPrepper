@@ -112,11 +112,11 @@ test('a stale unversioned Set Builder module cannot prevent app startup', async 
   const page = await browser.newPage();
   const viewModelRequests = [];
   await page.route(
-    (url) => url.pathname === '/assets/set-builder-view-model.js' && !url.search,
+    (url) => url.pathname === '/assets/features/set-builder/view-model.js' && !url.search,
     (route) => route.fulfill({ contentType: 'text/javascript', body: 'export {};' }),
   );
   page.on('request', (request) => {
-    if (new URL(request.url()).pathname === '/assets/set-builder-view-model.js')
+    if (new URL(request.url()).pathname === '/assets/features/set-builder/view-model.js')
       viewModelRequests.push(request.url());
   });
   await page.goto('http://127.0.0.1:4173/');
@@ -283,7 +283,7 @@ test('disconnect and reconnect clear the stale offline presentation', async ({ p
 
 test('dialogs trap initial focus, close by keyboard, and restore focus', async ({ page }) => {
   await page.evaluate(async () => {
-    const { confirmAction } = await import('/assets/shared-components.js');
+    const { confirmAction } = await import('/assets/shared/shared-components.js');
     document.querySelector('[data-view="settings-view"]').id = 'dialog-launcher';
     document.querySelector('#dialog-launcher').focus();
     window.__dialogResult = confirmAction('Confirm keyboard behavior', { title: 'Keyboard test' });
@@ -298,7 +298,7 @@ test('dialogs trap initial focus, close by keyboard, and restore focus', async (
 
 test('starting a preview transfers the single playback owner', async ({ page }) => {
   await page.evaluate(async () => {
-    const playback = await import('/assets/playback.js');
+    const playback = await import('/assets/shared/playback.js');
     const host = document.createElement('section');
     host.id = 'playback-smoke';
     host.innerHTML = playback.compactAudioMarkup('/first.wav', 120) + playback.compactAudioMarkup('/second.wav', 180);

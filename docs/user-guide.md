@@ -42,16 +42,16 @@ inside the five feature modules, while overlapping search requests continue to
 use the shared cancellation and stale-response controller. See
 [`architecture.md`](architecture.md) before making frontend changes.
 Authorized source inspection, queue controls, progress polling, and completion
-feedback are owned by `web/import-workspace.js`, not the composition entry point.
-Local-file imports are owned by `web/local-audio-import.js`; playlist matching,
+feedback are owned by `web/features/imports/import-workspace.js`, not the composition entry point.
+Local-file imports are owned by `web/features/imports/local-audio-import.js`; playlist matching,
 permissions, and Creative Commons verification are owned by
-`web/playlist-import.js`. Processing queue polling, request serialization,
+`web/features/imports/playlist-import.js`. Processing queue polling, request serialization,
 generation/ETA derivation, filtering, and candidate-review routes are owned by
-`web/processing-workspace.js`, keeping those lifecycle rules independently
+`web/features/processing/processing-workspace.js`, keeping those lifecycle rules independently
 testable from page composition. Processing-card presentation and DOM action
-binding are owned by `web/processing-workspace-view.js`. Candidate decisions,
+binding are owned by `web/features/processing/processing-workspace-view.js`. Candidate decisions,
 custom waveform regions, insertion previews, transition scoring, and review
-reprocessing are owned by `web/candidate-review.js`.
+reprocessing are owned by `web/features/processing/candidate-review.js`.
 
 ### Optional local AI for Set Builder
 

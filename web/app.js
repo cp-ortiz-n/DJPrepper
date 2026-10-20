@@ -2,8 +2,8 @@ import WaveSurfer from '/vendor/wavesurfer/wavesurfer.esm.js';
 import RegionsPlugin from '/vendor/wavesurfer/plugins/regions.esm.js';
 import TimelinePlugin from '/vendor/wavesurfer/plugins/timeline.esm.js';
 import HoverPlugin from '/vendor/wavesurfer/plugins/hover.esm.js';
-import { AuthorizedImportQueue } from '/assets/import-queue.js';
-import { createApiClient } from './api-client.js';
+import { AuthorizedImportQueue } from '/assets/features/imports/import-queue.js';
+import { createApiClient } from './core/api-client.js';
 import {
   $,
   $$,
@@ -27,7 +27,7 @@ import {
   saveDescriptorEditor,
   startKeyAnalysis,
   syncControlUnlessEditing,
-} from './shared-components.js';
+} from './shared/shared-components.js';
 import {
   bindCompactAudio,
   bindLazyAudio,
@@ -36,7 +36,7 @@ import {
   compactAudioMarkup,
   stopCompactAudio,
   stopNativeAudio,
-} from './playback.js';
+} from './shared/playback.js';
 import {
   LIBRARY_ROLE_INFO,
   camelotKey,
@@ -54,28 +54,28 @@ import {
   songEnergy,
   timingProfile,
   vocalProfile,
-} from './dj-library.js';
-import { createMusicFilesFeature, createMusicFilesUiState } from './music-files.js';
-import { createRequestStateController } from './request-state-controller.js';
-import { createReportingFeature } from './reporting.js';
-import { createSetBuilderFeature } from './set-builder.js';
-import { createSettingsFeature, libraryAvailabilityView } from './settings.js';
-import { createAuthorizedImportFeature, createImportWorkspaceApi } from './import-workspace.js';
-import { createBackgroundTaskController } from './background-task-controller.js';
-import { createImportIssuesFeature } from './import-issues.js';
-import { createLocalAudioImportFeature } from './local-audio-import.js';
-import { createPlaylistImportFeature } from './playlist-import.js';
+} from './features/dj-library/index.js';
+import { createMusicFilesFeature, createMusicFilesUiState } from './features/music-files/index.js';
+import { createRequestStateController } from './core/request-state-controller.js';
+import { createReportingFeature } from './features/reporting/index.js';
+import { createSetBuilderFeature } from './features/set-builder/index.js';
+import { createSettingsFeature, libraryAvailabilityView } from './features/settings/index.js';
+import { createAuthorizedImportFeature, createImportWorkspaceApi } from './features/imports/import-workspace.js';
+import { createBackgroundTaskController } from './core/background-task-controller.js';
+import { createImportIssuesFeature } from './features/imports/import-issues.js';
+import { createLocalAudioImportFeature } from './features/imports/local-audio-import.js';
+import { createPlaylistImportFeature } from './features/imports/playlist-import.js';
 import {
   annotateProcessingJobs,
   createProcessingWorkspaceApi,
   createProcessingWorkspaceController,
-} from './processing-workspace.js';
-import { createProcessingWorkspaceView } from './processing-workspace-view.js';
-import { createCandidateReviewFeature } from './candidate-review.js';
-import { createSearchableSelectController } from './searchable-selects.js';
-import { createTrackMetadataUi, ELECTRONIC_GENRE_CATEGORIES, LATIN_GENRE_CATEGORIES } from './track-metadata-ui.js';
-import { createProcessingJobDetail } from './processing-job-detail.js';
-import { createNavigationController } from './navigation-controller.js';
+} from './features/processing/processing-workspace.js';
+import { createProcessingWorkspaceView } from './features/processing/processing-workspace-view.js';
+import { createCandidateReviewFeature } from './features/processing/candidate-review.js';
+import { createSearchableSelectController } from './shared/searchable-selects.js';
+import { createTrackMetadataUi, ELECTRONIC_GENRE_CATEGORIES, LATIN_GENRE_CATEGORIES } from './shared/track-metadata-ui.js';
+import { createProcessingJobDetail } from './features/processing/processing-job-detail.js';
+import { createNavigationController } from './core/navigation-controller.js';
 
 const navigation = createNavigationController({
   loadView: (id) => loadView(id),

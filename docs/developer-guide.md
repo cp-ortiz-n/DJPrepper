@@ -12,25 +12,20 @@ AudioExtender/
 │   ├── analysis/        # Key analysis, selection, validation, and scoring
 │   ├── audio/           # Loading, quality, WAV metadata, and stems
 │   ├── core/            # Configuration, models, interfaces, and presets
-│   ├── imports/         # Source import workflows and route handlers
+│   ├── imports/         # Source import workflows and provider integrations
 │   ├── infrastructure/  # Background tasks, caching, and progress
 │   ├── library/         # Library identity, metadata mutations, relocation, backup, and export
 │   ├── processing/      # Track, batch, and web-job orchestration
 │   ├── reporting/       # Feedback and processing reports
-│   ├── repositories/    # Jobs, catalog, analysis, feedback, and system-state persistence
+│   ├── repositories/    # SQLite facade plus catalog/jobs/migrations/system owners
 │   ├── set_builder/     # Natural-language intention planning and provider fallback
 │   └── web/
-│       ├── application.py               # FastAPI factory, wiring, and legacy routes
+│       ├── application.py               # FastAPI factory and dependency wiring
 │       ├── composition.py               # Explicit paths and owned runtime dependencies
-│       ├── job_routes.py                 # Queue lifecycle
-│       ├── job_media_routes.py           # Audio, waveform, cues, and downloads
-│       ├── library_routes.py             # Paginated DJ Library catalog
-│       ├── library_maintenance_routes.py # Integrity and reconciliation
-│       ├── metadata_batch_routes.py       # Genre, tags, artwork, propagation batches
-│       ├── reporting_routes.py           # Feedback and key verification
-│       ├── set_builder_routes.py          # Set catalog and playlist exports
-│       └── settings_routes.py             # Settings, storage, backup, relocation
-├── web/                  # Browser shell, feature modules, shared UI, and styles
+│       ├── routes/                       # Feature routers and HTTP translation
+│       ├── contracts/                    # Shared request/response/error models
+│       └── assets/                       # Frontend shell and static delivery
+├── web/                  # app.js plus core/shared/features/styles ownership
 ├── tests/               # Unit/contract tests, fixtures, and isolated browser smoke workflows
 ├── scripts/             # Quality, coverage, stability, browser-smoke, and evaluation commands
 ├── docs/                # Architecture, ownership contracts, audits, and operating guides
@@ -56,6 +51,8 @@ rationale and revisit conditions are indexed in
 [`decisions/`](decisions/README.md).
 Contributor setup, placement rules, and the supported verification commands are
 summarized in [`CONTRIBUTING.md`](../CONTRIBUTING.md).
+The authoritative placement rules and expanded tree are in
+[`code-organization.md`](code-organization.md).
 
 ## Maintainer quick guide
 
@@ -68,50 +65,50 @@ Use this table before searching through the larger composition files:
 | Candidate selection or safety                                                               | `analysis/selection_coordinator.py`, `candidate_selection.py`, `candidate_validator.py`                                                                                                |
 | Crossfades and audible splice behavior                                                      | `analysis/splice_policy.py`, `processing/extended_edit.py`                                                                                                                             |
 | WAV metadata, artwork embedding, or audio quality                                           | `audio/wav_metadata.py`, `audio/quality.py`                                                                                                                                            |
-| Recording IDs, versions, duplicates, or track paths                                         | `library/recording_identity.py`, `repositories/track_catalog.py`                                                                                                                       |
-| Processing queue behavior                                                                   | `processing/web_jobs.py`, `web/job_routes.py`, `repositories/jobs.py`                                                                                                                  |
-| Audio delivery, waveform, cues, or batch downloads                                          | `web/job_media_routes.py`                                                                                                                                                              |
-| DJ Library API filters                                                                      | `web/library_routes.py`                                                                                                                                                                |
-| Integrity scan, catalog reconciliation, or repair                                           | `web/library_maintenance_routes.py`                                                                                                                                                    |
-| Bulk genre, WAV-tag, artwork, or catalog propagation                                        | `web/metadata_batch_routes.py`, `library/metadata_mutations.py`                                                                                                                        |
-| Settings, storage, backup, or relocation                                                    | `web/settings_routes.py` and `audioextender/library/`                                                                                                                                  |
-| Library health and post-reconnect verification                                              | `web/settings_routes.py` (`/api/settings/library-health`)                                                                                                                              |
+| Recording IDs, versions, duplicates, or track paths                                         | `library/recording_identity.py`, `repositories/catalog/__init__.py`                                                                                                                       |
+| Processing queue behavior                                                                   | `processing/web_jobs.py`, `web/routes/job_routes.py`, `repositories/jobs/queue.py`                                                                                                                  |
+| Audio delivery, waveform, cues, or batch downloads                                          | `web/routes/job_media_routes.py`                                                                                                                                                              |
+| DJ Library API filters                                                                      | `web/routes/library_routes.py`                                                                                                                                                                |
+| Integrity scan, catalog reconciliation, or repair                                           | `web/routes/library_maintenance_routes.py`                                                                                                                                                    |
+| Bulk genre, WAV-tag, artwork, or catalog propagation                                        | `web/routes/metadata_batch_routes.py`, `library/metadata_mutations.py`                                                                                                                        |
+| Settings, storage, backup, or relocation                                                    | `web/routes/settings_routes.py` and `audioextender/library/`                                                                                                                                  |
+| Library health and post-reconnect verification                                              | `web/routes/settings_routes.py` (`/api/settings/library-health`)                                                                                                                              |
 | YouTube, SoundCloud, local, or playlist imports                                             | `audioextender/imports/`                                                                                                                                                               |
-| Import failure review and retries                                                           | `web/import-issues.js`                                                                                                                                                                 |
-| Authorized/local import browser state, queue coordination, and API routes                   | `web/import-workspace.js`                                                                                                                                                              |
-| Local-audio staging, progress, and workspace import lifecycle                               | `web/local-audio-import.js`                                                                                                                                                            |
-| Playlist matching, permissions, and Creative Commons verification                           | `web/playlist-import.js`                                                                                                                                                               |
-| Cancellable browser polling                                                                 | `web/background-task-controller.js`                                                                                                                                                    |
-| Music Files UI                                                                              | `web/music-files.js` and `web/styles.css`                                                                                                                                              |
-| DJ Library catalog coordination and card/sidebar presentation                              | `web/dj-library.js`, `web/dj-library-view.js`, and `web/styles.css`                                                                                                                   |
-| DJ Library filters, bulk actions, intelligence, and musical projection                     | `web/dj-library-filters.js`, `web/dj-library-selection.js`, `web/dj-library-intelligence.js`, and `web/dj-library-model.js`                                                           |
-| Set Builder UI composition and workflow coordination                                        | `web/set-builder.js`, `web/set-builder-policy.js`, and `web/styles.css`                                                                                                                |
-| Set Builder planning jobs, proposal switching, fallback, observability, and receipts         | `web/set-builder-planning-session.js`                                                                                                                                                  |
-| Set Builder learned preferences, calibration, personalization, and review submission         | `web/set-builder-feedback.js`                                                                                                                                                          |
-| Set Builder transition scoring, previews, and editor lifecycle                               | `web/set-builder-transition-editor.js`                                                                                                                                                  |
-| Set Builder generated-plan rendering and track editing                                       | `web/set-builder-plan-view.js`                                                                                                                                                          |
-| Set Builder saved plans, recovery, persistence, and exports                                  | `web/set-builder-saved-sets.js`                                                                                                                                                         |
-| Candidate review waveforms                                                                  | `web/candidate-review.js` and `web/candidate-waveform-editor.js`                                                                                                                       |
-| Processing detail waveforms                                                                 | `web/processing-job-detail.js`                                                                                                                                                         |
-| Shared genre and metadata UI                                                                | `web/track-metadata-ui.js`                                                                                                                                                             |
-| Set Builder state and edit history                                                          | `web/set-builder-state.js`, `web/set-builder-commands.js`                                                                                                                              |
-| Set Builder browser API and planning lifecycle                                              | `web/set-builder-api.js`, `web/set-planning-client.js`                                                                                                                                 |
-| Deterministic proposal/fallback policy                                                      | `web/set-builder-classic-planner.js`                                                                                                                                                   |
-| Set Builder presentation helpers                                                            | `web/set-builder-view-model.js`                                                                                                                                                        |
+| Import failure review and retries                                                           | `web/features/imports/import-issues.js`                                                                                                                                                                 |
+| Authorized/local import browser state, queue coordination, and API routes                   | `web/features/imports/import-workspace.js`                                                                                                                                                              |
+| Local-audio staging, progress, and workspace import lifecycle                               | `web/features/imports/local-audio-import.js`                                                                                                                                                            |
+| Playlist matching, permissions, and Creative Commons verification                           | `web/features/imports/playlist-import.js`                                                                                                                                                               |
+| Cancellable browser polling                                                                 | `web/core/background-task-controller.js`                                                                                                                                                    |
+| Music Files UI                                                                              | `web/features/music-files/index.js` and `web/styles.css`                                                                                                                                              |
+| DJ Library catalog coordination and card/sidebar presentation                              | `web/features/dj-library/index.js`, `web/features/dj-library/view.js`, and `web/styles.css`                                                                                                                   |
+| DJ Library filters, bulk actions, intelligence, and musical projection                     | `web/features/dj-library/filters.js`, `web/features/dj-library/selection.js`, `web/features/dj-library/intelligence.js`, and `web/features/dj-library/model.js`                                                           |
+| Set Builder UI composition and workflow coordination                                        | `web/features/set-builder/index.js`, `web/features/set-builder/policy.js`, and `web/styles.css`                                                                                                                |
+| Set Builder planning jobs, proposal switching, fallback, observability, and receipts         | `web/features/set-builder/planning-session.js`                                                                                                                                                  |
+| Set Builder learned preferences, calibration, personalization, and review submission         | `web/features/set-builder/feedback.js`                                                                                                                                                          |
+| Set Builder transition scoring, previews, and editor lifecycle                               | `web/features/set-builder/transition-editor.js`                                                                                                                                                  |
+| Set Builder generated-plan rendering and track editing                                       | `web/features/set-builder/plan-view.js`                                                                                                                                                          |
+| Set Builder saved plans, recovery, persistence, and exports                                  | `web/features/set-builder/saved-sets.js`                                                                                                                                                         |
+| Candidate review waveforms                                                                  | `web/features/processing/candidate-review.js` and `web/features/processing/candidate-waveform-editor.js`                                                                                                                       |
+| Processing detail waveforms                                                                 | `web/features/processing/processing-job-detail.js`                                                                                                                                                         |
+| Shared genre and metadata UI                                                                | `web/shared/track-metadata-ui.js`                                                                                                                                                             |
+| Set Builder state and edit history                                                          | `web/features/set-builder/state.js`, `web/features/set-builder/commands.js`                                                                                                                              |
+| Set Builder browser API and planning lifecycle                                              | `web/features/set-builder/api.js`, `web/features/set-builder/planning-client.js`                                                                                                                                 |
+| Deterministic proposal/fallback policy                                                      | `web/features/set-builder/classic-planner.js`                                                                                                                                                   |
+| Set Builder presentation helpers                                                            | `web/features/set-builder/view-model.js`                                                                                                                                                        |
 | Set Builder brief interpretation or AI providers                                            | `audioextender/set_builder/intention_planner.py`                                                                                                                                       |
 | Set Builder candidate shortlists or plan validation                                         | `audioextender/set_builder/candidate_retriever.py`, `audioextender/set_builder/plan_validator.py`                                                                                      |
-| AI track ordering, comparison, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_comparator.py`, `proposal_repairer.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/set-planning-client.js` |
-| Shared dropdowns, notices, formatting, or pagination                                        | `web/shared-components.js`                                                                                                                                                             |
-| Catalog cancellation, debounce, stale-response protection, or filter persistence            | `web/request-state-controller.js`                                                                                                                                                      |
-| Preview playback behavior                                                                   | `web/playback.js`                                                                                                                                                                      |
-| Shared frontend API, DOM, feedback, or descriptor capabilities                              | `web/frontend-services.js`, `web/api-client.js`                                                                                                                                        |
+| AI track ordering, comparison, repairs, fallback, evaluation, persistence, or job lifecycle | `audioextender/set_builder/track_planner.py`, `plan_comparator.py`, `proposal_repairer.py`, `plan_evaluator.py`, `planning_jobs.py`, `planning_store.py`, `web/features/set-builder/planning-client.js` |
+| Shared dropdowns, notices, formatting, or pagination                                        | `web/shared/shared-components.js`                                                                                                                                                             |
+| Catalog cancellation, debounce, stale-response protection, or filter persistence            | `web/core/request-state-controller.js`                                                                                                                                                      |
+| Preview playback behavior                                                                   | `web/shared/playback.js`                                                                                                                                                                      |
+| Shared frontend API, DOM, feedback, or descriptor capabilities                              | `web/core/frontend-services.js`, `web/core/api-client.js`                                                                                                                                        |
 | Browser workflow, focus, responsive, accessibility, or warm-cache restart regression        | `tests/browser/workflows.spec.js`, `tests/browser/frontend-restart.spec.js`, `docs/browser-smoke-testing.md`                                                                           |
 | Architecture dependency or placement rule                                                   | `docs/architecture.md`, `docs/decisions/`, `tests/unit/architecture/test_boundaries.py`                                                                                                |
 
 `web_app.py` is only a compatibility launcher. The server is composed in
 `audioextender/web/application.py`, which constructs services and injects them
 into router factories. New HTTP functionality should normally live in a
-focused `*_routes.py` module with a dependency dataclass, rather than adding
+focused module under `audioextender/web/routes/` with a dependency dataclass, rather than adding
 another feature directly to `application.py`.
 
 Long-running work is likewise owned outside the composition root. Creative
@@ -119,19 +116,19 @@ Commons download/retry execution, artwork thumbnail generation, downloaded-track
 analysis queuing, audio-quality scanning, and catalog projection construction
 live in their import, library, or focused web service modules. Creative Commons
 delivery and import-issue report recovery are owned by
-`imports/creative_commons_routes.py`. Preset persistence and downloaded-library
-read/media delivery are owned by `web/preset_routes.py` and
-`web/downloaded_library_routes.py`. Recording-family operations live in
-`web/recording_family_routes.py`; downloaded-track deletion and metadata
-workflows live in `web/downloaded_track_mutation_routes.py` and delegate atomic
+`web/routes/creative_commons.py`. Preset persistence and downloaded-library
+read/media delivery are owned by `web/routes/preset_routes.py` and
+`web/routes/downloaded_library_routes.py`. Recording-family operations live in
+`web/routes/recording_family_routes.py`; downloaded-track deletion and metadata
+workflows live in `web/routes/downloaded_track_mutation_routes.py` and delegate atomic
 file/tag/sidecar/catalog changes to `library/metadata_mutations.py`.
-Downloaded analysis selection lives in `web/downloaded_analysis_routes.py` and
+Downloaded analysis selection lives in `web/routes/downloaded_analysis_routes.py` and
 delegates job creation to `library/analysis_queue.py`. Job reprocessing,
 candidate auditions, review rejection, and candidate feedback live in
-`web/job_review_routes.py`; queue controls and rendered media remain in their
+`web/routes/job_review_routes.py`; queue controls and rendered media remain in their
 existing focused job routers.
 Reporting projections, analytics, track overrides, report audio availability,
-and completed-library job details are owned by `web/reporting_routes.py`.
+and completed-library job details are owned by `web/routes/reporting_routes.py`.
 `create_app()` delegates service-family construction to private builders and
 uses `_register_routers()` as the single delivery composition boundary.
 `application.py` wires those owners and retains only small compatibility
@@ -140,10 +137,10 @@ point.
 
 `JobRepository` remains the stable persistence facade, but SQL is divided among
 focused mixins under `audioextender/repositories/`. The downloaded-track catalog
-is itself composed by `track_catalog.py` from core CRUD, descriptor, recording
+is itself composed by `repositories/catalog/__init__.py` from core CRUD, descriptor, recording
 family, projection, metadata-state, and analysis-state mixins. Add a database
 method to the narrow mixin that owns the data instead of expanding either
-`track_catalog.py` or `repositories/facade.py`.
+`repositories/catalog/__init__.py` or `repositories/facade.py`.
 
 The music-library path saved in Settings is durable SQLite state. Import code
 must obtain it through the injected library-root callback, reject an offline
@@ -209,7 +206,7 @@ success strings that can drift from the actual result.
 `repositories/facade.py::JobRepository` remains the backwards-compatible
 repository entry point. New services should accept a narrow protocol from
 `repositories/capabilities.py`. Database creation and compatibility migrations
-belong to the named, ordered steps in `repositories/schema.py`; do not add new
+belong to the named, ordered steps in `repositories/migrations/schema.py`; do not add new
 table setup to the facade constructor.
 
 ### Architecture boundaries

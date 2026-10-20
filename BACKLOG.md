@@ -258,6 +258,18 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   and reprocessing. The processing API owns every associated route. Behavioral
   and structural tests protect the boundary, and the `app.js` ceiling is
   ratcheted from 1,878 to 918 lines.
+- [x] **ARCH-016A — Organize wide namespaces by owner.** Priority: P1.
+  Effort: L. Risk: High. Dependencies: ARCH-005A, ARCH-007B, ARCH-007C,
+  ARCH-008D. Acceptance: browser modules are grouped under core/shared/feature
+  boundaries; FastAPI delivery is grouped into routes/contracts/assets; SQLite
+  implementations are grouped by persisted aggregate while `JobRepository`
+  remains the compatibility facade; styles and JavaScript tests mirror feature
+  ownership; recursive tooling discovers new modules automatically; public
+  routes, payloads, persistence, and behavior remain unchanged. Completed
+  2026-10-19: the repository now follows the documented domain-first layout,
+  architecture safeguards reject new flat dumping-ground modules, and the
+  quality, coverage, stability, browser, and Graphify gates validate the move.
+  See [`docs/code-organization.md`](docs/code-organization.md).
 - [x] **ARCH-009A — Decide and implement saved-set durability.** Priority: P2.
   Effort: L. Risk: High. Dependencies: ARCH-001B, ARCH-008A, product decision.
   Acceptance: editable set ownership and backup scope are explicit; version-1

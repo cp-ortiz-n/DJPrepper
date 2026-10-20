@@ -78,7 +78,7 @@ class PackageStructureTests(unittest.TestCase):
             self.assertNotIn(route, application)
 
     def test_web_feature_modules_remain_bounded(self) -> None:
-        web = PACKAGE_ROOT / "web"
+        routes = PACKAGE_ROOT / "web" / "routes"
         limits = {
             "job_routes.py": 240,
             "job_media_routes.py": 400,
@@ -88,8 +88,35 @@ class PackageStructureTests(unittest.TestCase):
             "set_builder_routes.py": 220,
         }
         for filename, maximum in limits.items():
-            lines = (web / filename).read_text(encoding="utf-8").splitlines()
+            lines = (routes / filename).read_text(encoding="utf-8").splitlines()
             self.assertLessEqual(len(lines), maximum, filename)
+
+    def test_wide_namespaces_use_owned_subpackages(self) -> None:
+        frontend = PROJECT_ROOT / "web"
+        self.assertEqual(
+            {"app.js"},
+            {path.name for path in frontend.glob("*.js")},
+            "Browser feature modules belong under core/, shared/, or features/",
+        )
+        self.assertTrue((frontend / "core").is_dir())
+        self.assertTrue((frontend / "shared").is_dir())
+        self.assertTrue((frontend / "features").is_dir())
+
+        repositories = PACKAGE_ROOT / "repositories"
+        allowed_repository_modules = {"__init__.py", "base.py", "capabilities.py", "facade.py"}
+        self.assertEqual(
+            allowed_repository_modules,
+            {path.name for path in repositories.glob("*.py")},
+            "Persistence implementations belong to catalog/, jobs/, migrations/, or system/",
+        )
+
+        delivery = PACKAGE_ROOT / "web"
+        allowed_delivery_modules = {"__init__.py", "application.py", "composition.py"}
+        self.assertEqual(
+            allowed_delivery_modules,
+            {path.name for path in delivery.glob("*.py")},
+            "HTTP delivery code belongs to routes/, contracts/, or assets/",
+        )
 
 
 if __name__ == "__main__":

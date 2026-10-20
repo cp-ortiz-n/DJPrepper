@@ -14,17 +14,11 @@
     "tests/unit/set_builder/test_transition_optimizer.py"
   ],
   "frontend": [
-    "web/import-queue.js",
     "web/index.html",
-    "web/music-files.js",
-    "web/playback.js",
-    "web/reporting.js",
-    "web/request-state-controller.js",
-    "web/set-planning-client.js",
-    "web/settings.js",
-    "web/shared-components.js",
-    "tests/javascript/import_queue.test.js",
-    "tests/javascript/playback_behavior.test.js",
-    "tests/javascript/request_state_controller.test.js"
+    "web/shared/playback.js",
+    "web/core/request-state-controller.js",
+    "web/shared/shared-components.js",
+    "tests/javascript/shared/playback_behavior.test.js",
+    "tests/javascript/core/request_state_controller.test.js"
   ]
 }

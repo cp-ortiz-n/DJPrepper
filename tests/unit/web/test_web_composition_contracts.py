@@ -75,7 +75,7 @@ class WebCompositionContractTests(unittest.TestCase):
         self.assertEqual(shell.headers["cache-control"], "no-store")
         manifest = json.loads((web.WEB / "asset-manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(shell.headers["x-djls-asset-revision"], manifest["revision"])
-        for path in ("/assets/app.js", "/assets/set-builder-view-model.js"):
+        for path in ("/assets/app.js", "/assets/features/set-builder/view-model.js"):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers["cache-control"], "no-store")

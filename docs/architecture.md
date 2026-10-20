@@ -14,19 +14,23 @@ migration, or the application's deployment/frontend shape.
 | ---------------------------------- | ------------------------------------------------------------------------------------- |
 | `main.py`                          | CLI parsing and batch execution                                                       |
 | `web_app.py`                       | Small compatibility launcher; never add feature logic here                            |
-| `audioextender/web/application.py` | FastAPI factory, dependency wiring, compatibility facade, and remaining legacy routes |
-| `audioextender/web/audio_quality_routes.py` | Downloaded-library audio-quality scan lifecycle and HTTP routes |
-| `audioextender/imports/creative_commons_routes.py` | Creative Commons delivery routes, import-issue workflows, and report recovery |
+| `audioextender/web/application.py` | FastAPI factory, dependency wiring, middleware, and compatibility facade |
+| `audioextender/web/routes/audio_quality_routes.py` | Downloaded-library audio-quality scan lifecycle and HTTP routes |
+| `audioextender/web/routes/creative_commons.py` | Creative Commons delivery routes, import-issue workflows, and report recovery |
 | `audioextender/imports/creative_commons_worker.py` | Creative Commons download and failed-source retry execution |
 | `audioextender/library/analysis_queue.py` | Catalog-track analysis and reanalysis job creation |
 | `audioextender/library/artwork_thumbnails.py` | Serialized artwork-thumbnail generation and cache ownership |
 | `audioextender/library/catalog_projection_builder.py` | Library search and Set Builder projection construction |
 | `audioextender/web/composition.py` | Explicit application paths, owned services, registries, locks, queues, and caches     |
-| `audioextender/web/frontend_assets.py` | Validated frontend manifest loading and atomic HTML/import-map rendering           |
+| `audioextender/web/assets/frontend.py` | Validated frontend manifest loading and atomic HTML/import-map rendering           |
 | `web/index.html`                   | Browser shell and workspace markup                                                    |
 | `web/app.js`                       | Browser composition, global navigation, and feature registration only                 |
 
 Run the app with `python3 web_app.py`.
+
+The directory model and file-placement rules are defined in
+[`code-organization.md`](code-organization.md). Domain-first ownership is the
+default; technical-role subpackages are used only inside wide namespaces.
 
 `create_app()` accepts an explicit `ApplicationRuntime` or `ApplicationPaths`.
 The default `app` is a lazy compatibility proxy; importing the module performs
@@ -110,7 +114,7 @@ protocol in `repositories/capabilities.py` that covers their work. The web audio
 scheduler, for example, receives only job lookup, listing, update, and catalog
 path lookup instead of settings, feedback, and the full catalog API.
 
-`repositories/schema.py` owns the ordered idempotent schema bootstrap. Its seven
+`repositories/migrations/schema.py` owns the ordered idempotent schema bootstrap. Its seven
 named steps run jobs before feedback foreign keys, catalog core before recording
 identity migration and relations, then search and system state. Keep migrations
 inside the owning step, preserve old columns and rows, and test both legacy
@@ -120,24 +124,25 @@ database and backup opening whenever this sequence changes.
 
 | Module                              | Routes and behavior                                                                 |
 | ----------------------------------- | ----------------------------------------------------------------------------------- |
-| `web/job_routes.py`                 | Job listing, ordering, clearing, cancel, pause, resume, removal                     |
-| `web/job_media_routes.py`           | Audio delivery, ZIP exports, waveforms, transition scoring, cue editing             |
-| `web/job_review_routes.py`          | Reprocessing, review rejection, candidate auditions, and candidate feedback         |
-| `web/preset_routes.py`              | Persistent custom preset state, effective preset projection, and preset routes      |
-| `web/downloaded_library_routes.py`  | Downloaded catalog reads, media delivery, reveal, and transient ZIP exports          |
-| `web/downloaded_analysis_routes.py` | Selected and filtered catalog analysis/reanalysis queue delivery                     |
-| `web/downloaded_track_mutation_routes.py` | Track deletion, genre/metadata repair, and selected retag orchestration       |
-| `web/recording_family_routes.py`    | Duplicate review, family queries, merge, link, unlink, and separation                |
-| `web/library_routes.py`             | Paginated DJ Library catalog and facets                                             |
-| `web/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs                     |
-| `web/metadata_batch_routes.py`      | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches      |
-| `web/reporting_routes.py`           | Reports, analytics, track overrides, job details, feedback, and verification         |
-| `web/set_builder_routes.py`         | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
-| `web/set_planning_routes.py`        | Candidate retrieval, validation, and asynchronous AI track-planning jobs            |
-| `web/set_preference_routes.py`      | Inspect, record, pause, and reset local Set Builder preference signals              |
-| `web/set_review_routes.py`          | Persist set, track, and transition reviews and expose calibration reports           |
-| `web/settings_routes.py`            | Settings, storage, backup/restore, relocation, cleanup                              |
-| `imports/routes.py`                 | Authorized source, local-file, and playlist import delivery                         |
+| `web/routes/job_routes.py`                 | Job listing, ordering, clearing, cancel, pause, resume, removal                     |
+| `web/routes/job_media_routes.py`           | Audio delivery, ZIP exports, waveforms, transition scoring, cue editing             |
+| `web/routes/job_review_routes.py`          | Reprocessing, review rejection, candidate auditions, and candidate feedback         |
+| `web/routes/preset_routes.py`              | Persistent custom preset state, effective preset projection, and preset routes      |
+| `web/routes/downloaded_library_routes.py`  | Downloaded catalog reads, media delivery, reveal, and transient ZIP exports          |
+| `web/routes/downloaded_analysis_routes.py` | Selected and filtered catalog analysis/reanalysis queue delivery                     |
+| `web/routes/downloaded_track_mutation_routes.py` | Track deletion, genre/metadata repair, and selected retag orchestration       |
+| `web/routes/recording_family_routes.py`    | Duplicate review, family queries, merge, link, unlink, and separation                |
+| `web/routes/library_routes.py`             | Paginated DJ Library catalog and facets                                             |
+| `web/routes/library_maintenance_routes.py` | Catalog reconciliation, integrity scans, progress, safe repairs                     |
+| `web/routes/metadata_batch_routes.py`      | Cancellable/retryable genre, WAV-tag, artwork, and catalog-propagation batches      |
+| `web/routes/reporting_routes.py`           | Reports, analytics, track overrides, job details, feedback, and verification         |
+| `web/routes/set_builder_routes.py`         | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
+| `web/routes/set_planning_routes.py`        | Candidate retrieval, validation, and asynchronous AI track-planning jobs            |
+| `web/routes/set_preference_routes.py`      | Inspect, record, pause, and reset local Set Builder preference signals              |
+| `web/routes/set_review_routes.py`          | Persist set, track, and transition reviews and expose calibration reports           |
+| `web/routes/settings_routes.py`            | Settings, storage, backup/restore, relocation, cleanup                              |
+| `web/routes/imports.py`             | Authorized source, local-file, and playlist import delivery                         |
+| `web/routes/creative_commons.py`    | Creative Commons discovery, imports, failures, and recovery                         |
 
 Router factories accept explicit dependencies. Wire new dependencies in
 `application.py`; never make a router import `application.py`. Repository
@@ -303,7 +308,7 @@ the avoidable BPM discontinuities found during the first connected-drive run.
 
 ## Browser request state
 
-Music Files and DJ Library use `web/request-state-controller.js` for catalog
+Music Files and DJ Library use `web/core/request-state-controller.js` for catalog
 request ownership. The controller provides debouncing, `AbortController`
 cancellation, sequence-based stale-response rejection, pagination resets,
 loading state, and namespaced URL/session persistence. Page-specific modules
@@ -319,7 +324,7 @@ read-only reconnect verification and invalidates stale catalog/storage status.
 ### Metadata mutation and batch boundary
 
 `library/metadata_mutations.py` owns atomic propagation across WAV paths, tags,
-source sidecars, and catalog records. `web/metadata_batch_routes.py` owns the
+source sidecars, and catalog records. `web/routes/metadata_batch_routes.py` owns the
 HTTP workflows for genre rescans, WAV tag synchronization, artwork updates, and
 catalog propagation. Every background metadata operation publishes the shared
 state model from `infrastructure/batch_operations.py`: progress, cancellation,
@@ -386,7 +391,7 @@ musical scoring in routes, CLI prompts, or rendering code.
 - `imports/local.py`: local-audio ingestion.
 - `imports/playlist_match.py`: playlist-to-source matching.
 - `imports/creative_commons.py`: Creative Commons batch state.
-- `imports/routes.py`: HTTP translation.
+- `web/routes/imports.py` and `web/routes/creative_commons.py`: HTTP translation.
 
 Imports must use the configured library path and fail clearly if an external
 library is offline. Never silently fall back to `~/Music` or a temporary folder.
@@ -395,9 +400,9 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 
 | Module                           | Ownership                                                                                                     |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `api-client.js`                  | Browser transport, normalized response parsing, typed request failures, and compatibility raw responses       |
-| `frontend-services.js`           | Validated immutable feature contract for API, DOM, feedback, and musical-identity editor capabilities         |
-| `shared-components.js`           | DOM helpers, messages, formatting, pagination                                                                 |
+| `core/api-client.js`                  | Browser transport, normalized response parsing, typed request failures, and compatibility raw responses       |
+| `core/frontend-services.js`           | Validated immutable feature contract for API, DOM, feedback, and musical-identity editor capabilities         |
+| `shared/shared-components.js`           | DOM helpers, messages, formatting, pagination                                                                 |
 | `playback.js`                    | Single audio-preview owner                                                                                    |
 | `music-files.js`                 | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector       |
 | `dj-library.js`                  | DJ Library catalog loading, feature composition, and compatibility exports                                     |
@@ -432,15 +437,15 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `candidate-waveform-editor.js`   | Candidate region editing, insertion visualization, previews, and transition preflight scoring                 |
 | `processing-job-detail.js`       | Completed-job waveform hydration, arrangement lanes, cues, and boundary overrides                             |
 | `track-metadata-ui.js`           | Shared genre hierarchy, metadata forms, normalization, and genre persistence UI                               |
-| `searchable-selects.js`          | Accessible searchable-select enhancement and lifecycle                                                        |
-| `background-task-controller.js`  | Keyed cancellable polling with stale-task replacement and terminal callbacks                                  |
+| `shared/searchable-selects.js`          | Accessible searchable-select enhancement and lifecycle                                                        |
+| `core/background-task-controller.js`  | Keyed cancellable polling with stale-task replacement and terminal callbacks                                  |
 | `styles.css`                     | Shared visual system and responsive behavior                                                                  |
 
 Do not create a second audio player, dropdown implementation, notification
 system, or pagination helper inside a feature. Extend the shared module first.
 `app.js` composes these features and owns global navigation; page-specific
 rendering, filters, inspectors, and maintenance actions belong in their feature
-module. `tests/javascript/frontend_modules.test.js` enforces this boundary and a size ceiling.
+module. `tests/javascript/architecture/frontend_modules.test.js` enforces this boundary and a size ceiling.
 
 The HTML shell is deliberately independent of the ES-module graph until
 `app.js` signals that normal navigation is ready. Its small fallback switches
@@ -449,10 +454,10 @@ or startup fails;
 it does not initialize features or fetch data. This preserves a usable recovery
 path when an older browser-cached child module no longer exports what a newer
 parent imports. `web/asset-manifest.json` is the single frontend revision
-authority. `audioextender/web/frontend_assets.py` validates it and renders the
+authority. `audioextender/web/assets/frontend.py` validates it and renders the
 HTML shell with one import map that versions the entrypoint, stylesheet, and
 every JavaScript module in the graph atomically. Feature modules must not own
-independent `?v=` strings. `audioextender/web/static_assets.py` serves local
+independent `?v=` strings. `audioextender/web/assets/static.py` serves local
 `/assets` without browser storage, and the application index response uses the
 same `no-store` policy. Navigation and feature ownership remain in `app.js` and
 their feature modules after startup succeeds.
@@ -475,16 +480,16 @@ Request cancellation and stale-response ownership remain in
 | Intro/outro selection                               | `selection_coordinator.py`, `candidate_selection.py`, `candidate_validator.py`                    |
 | Splice sound/crossfades                             | `splice_policy.py`, then `processing/extended_edit.py`                                            |
 | WAV tags/artwork/audio quality                      | `audio/wav_metadata.py`, `audio/quality.py`                                                       |
-| Track IDs/related versions                          | `library/recording_identity.py`, `repositories/track_catalog.py`                                  |
+| Track IDs/related versions                          | `library/recording_identity.py`, `repositories/catalog/__init__.py`                                  |
 | Import destination/source behavior                  | `imports/` and its injected library-root dependency                                               |
-| Relocation/backup                                   | `library/relocation.py`, `library/backup.py`, `web/settings_routes.py`                            |
-| Queue behavior                                      | `processing/web_jobs.py`, `web/job_routes.py`, `repositories/jobs.py`                             |
-| DJ Library filtering                                | `web/library_routes.py`, `repositories/library_analysis.py`                                       |
+| Relocation/backup                                   | `library/relocation.py`, `library/backup.py`, `web/routes/settings_routes.py`                            |
+| Queue behavior                                      | `processing/web_jobs.py`, `web/routes/job_routes.py`, `repositories/jobs/queue.py`                             |
+| DJ Library filtering                                | `web/routes/library_routes.py`, `repositories/jobs/library_analysis.py`                                       |
 | Musical profile ownership or scoring                | `docs/musical-policy-ownership.md`, then the named authority                                      |
-| Integrity scan/repair                               | `web/library_maintenance_routes.py`                                                               |
+| Integrity scan/repair                               | `web/routes/library_maintenance_routes.py`                                                               |
 | Browser cards/filters                               | Corresponding `web/*.js` module plus `web/styles.css`                                             |
-| Set Builder language interpretation/provider policy | `set_builder/intention_planner.py`, `web/set_builder_routes.py`                                   |
-| Persistent setting                                  | `web/settings_routes.py`, `repositories/system_state.py`; `settings.py` only for shipped defaults |
+| Set Builder language interpretation/provider policy | `set_builder/intention_planner.py`, `web/routes/set_builder_routes.py`                                   |
+| Persistent setting                                  | `web/routes/settings_routes.py`, `repositories/system/state.py`; `settings.py` only for shipped defaults |
 
 ## Contribution recipes
 
@@ -512,7 +517,7 @@ contract unless the change explicitly approves a migration.
 1. Place SQL in the repository mixin that owns the data; do not add SQL to a
    route, service, or `repositories/facade.py`.
 2. Expose only the capability required by new callers.
-3. Add an ordered, idempotent step in `repositories/schema.py` when the schema
+3. Add an ordered, idempotent step in `repositories/migrations/schema.py` when the schema
    changes. Preserve legacy rows and opening behavior.
 4. Test a new database, a representative old database, restart behavior, and
    backup/restore when the data belongs in backups.
@@ -521,10 +526,10 @@ contract unless the change explicitly approves a migration.
 
 1. Put feature state, rendering, and page events in the owning `web/*.js`
    feature module. Keep `app.js` limited to composition and navigation.
-2. Consume `frontend-services.js` for API, DOM, feedback, and descriptor-editor
+2. Consume `core/frontend-services.js` for API, DOM, feedback, and descriptor-editor
    capabilities. Extend a shared capability instead of adding loose callbacks.
 3. Use `request-state-controller.js` for catalog request cancellation and stale
-   response rejection, `background-task-controller.js` for keyed polling, and
+   response rejection, `core/background-task-controller.js` for keyed polling, and
    `playback.js` for previews.
 4. Add pure or injected behavioral coverage in `tests/javascript/*.test.js`. Add a
    Playwright scenario only when browser integration, focus, layout, or actual
@@ -611,9 +616,9 @@ model. `tests/integration/set_builder/test_local_intention_acceptance.py` is an 
 chill Latin kickbacks, Latin Techno/House with optional Schranz, Afro House
 lounge warmups, and peak-time Techno journeys.
 
-HTTP failure normalization is owned by `audioextender/web/error_contracts.py`.
+HTTP failure normalization is owned by `audioextender/web/contracts/errors.py`.
 It preserves legacy FastAPI `detail` values while adding machine-readable error
-metadata. Browser parsing is owned by `web/api-client.js`; feature modules do
+metadata. Browser parsing is owned by `web/core/api-client.js`; feature modules do
 not need to interpret validation lists or object-valued details independently.
 See `docs/error-contracts.md` for mappings and exception-boundary rules.
 

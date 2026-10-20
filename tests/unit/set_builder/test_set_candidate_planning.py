@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from audioextender.set_builder.candidate_retriever import SetCandidateRetriever
 from audioextender.set_builder.plan_validator import SetPlanValidator
 from audioextender.set_builder.track_planner import AITrackPlanner
-from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
+from audioextender.web.routes.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
 
 
 def catalog_track(

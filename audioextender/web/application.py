@@ -42,20 +42,9 @@ from audioextender.audio.wav_metadata import (
 )
 from audioextender.core.presets import PRESETS
 from audioextender.imports.creative_commons import CreativeCommonsImportService
-from audioextender.imports.creative_commons_routes import (
-    CreativeCommonsArchiveDependencies,
-    CreativeCommonsArchiveService,
-    CreativeCommonsBatchRequest,  # noqa: F401 - compatibility re-export
-    CreativeCommonsMatch,
-    ImportFailureRetryRequest,  # noqa: F401 - compatibility re-export
-    ImportIssueDependencies,
-    ImportIssueService,
-    create_creative_commons_router,
-)
 from audioextender.imports.creative_commons_worker import CreativeCommonsBatchWorker
 from audioextender.imports.local import LocalAudioImportService
 from audioextender.imports.playlist_match import PlaylistMatchService
-from audioextender.imports.routes import AuthorizedImportRequest, create_import_router  # noqa: F401
 from audioextender.imports.service import (
     ImportService,
     authorized_source_provider,
@@ -90,93 +79,105 @@ from audioextender.set_builder.preference_learning import (
 from audioextender.set_builder.review_service import SetReviewService
 from audioextender.set_builder.saved_sets import SavedSetService
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
-from audioextender.web.audio_quality_routes import (
-    AudioQualityRouteDependencies,
-    AudioQualityScanService,
-    create_audio_quality_router,
-)
+from audioextender.web.assets.frontend import FrontendAssetService
+from audioextender.web.assets.static import UncachedStaticFiles
 from audioextender.web.composition import (
     ApplicationPaths,
     ApplicationRuntime,
     LazyApplication,
     runtime_bindings,
 )
-from audioextender.web.descriptor_routes import (
-    DescriptorRouteDependencies,
-    create_descriptor_router,
-)
-from audioextender.web.downloaded_analysis_routes import (
-    DownloadedAnalysisFilterRequest,  # noqa: F401 - compatibility re-export
-    DownloadedAnalysisRouteService,
-    create_downloaded_analysis_router,
-)
-from audioextender.web.downloaded_library_models import (
+from audioextender.web.contracts.downloaded_library import (
     DownloadedGenreRequest,  # noqa: F401 - compatibility re-export
     DownloadedMetadataRequest,  # noqa: F401 - compatibility re-export
     DownloadedTracksRequest,  # noqa: F401 - compatibility re-export
 )
-from audioextender.web.downloaded_library_routes import (
+from audioextender.web.contracts.errors import install_error_handlers
+from audioextender.web.routes.audio_quality_routes import (
+    AudioQualityRouteDependencies,
+    AudioQualityScanService,
+    create_audio_quality_router,
+)
+from audioextender.web.routes.creative_commons import (
+    CreativeCommonsArchiveDependencies,
+    CreativeCommonsArchiveService,
+    CreativeCommonsBatchRequest,  # noqa: F401 - compatibility re-export
+    CreativeCommonsMatch,
+    ImportFailureRetryRequest,  # noqa: F401 - compatibility re-export
+    ImportIssueDependencies,
+    ImportIssueService,
+    create_creative_commons_router,
+)
+from audioextender.web.routes.descriptor_routes import (
+    DescriptorRouteDependencies,
+    create_descriptor_router,
+)
+from audioextender.web.routes.downloaded_analysis_routes import (
+    DownloadedAnalysisFilterRequest,  # noqa: F401 - compatibility re-export
+    DownloadedAnalysisRouteService,
+    create_downloaded_analysis_router,
+)
+from audioextender.web.routes.downloaded_library_routes import (
     DownloadedLibraryDeliveryService,
     DownloadedLibraryRouteDependencies,
     create_downloaded_library_router,
 )
-from audioextender.web.downloaded_track_mutation_routes import (
+from audioextender.web.routes.downloaded_track_mutation_routes import (
     DownloadedTrackMutationDependencies,
     DownloadedTrackMutationService,
     create_downloaded_track_mutation_router,
 )
-from audioextender.web.error_contracts import install_error_handlers
-from audioextender.web.frontend_assets import FrontendAssetService
-from audioextender.web.job_media_routes import (
+from audioextender.web.routes.imports import AuthorizedImportRequest, create_import_router  # noqa: F401
+from audioextender.web.routes.job_media_routes import (
     BatchDownloadRequest,  # noqa: F401 - compatibility re-export
     JobMediaRouteDependencies,
     create_job_media_router,
 )
-from audioextender.web.job_review_routes import (
+from audioextender.web.routes.job_review_routes import (
     FeedbackRequest,  # noqa: F401 - compatibility re-export
     JobReviewRouteDependencies,
     JobReviewService,
     ReprocessRequest,  # noqa: F401 - compatibility re-export
     create_job_review_router,
 )
-from audioextender.web.job_routes import (
+from audioextender.web.routes.job_routes import (
     JobQueueService,
     create_job_router,
 )
-from audioextender.web.library_maintenance_routes import (
+from audioextender.web.routes.library_maintenance_routes import (
     LibraryMaintenanceDependencies,
     LibraryMaintenanceService,
     create_library_maintenance_router,
 )
-from audioextender.web.library_routes import (
+from audioextender.web.routes.library_routes import (
     LibraryRouteDependencies,
     create_library_router,
 )
-from audioextender.web.metadata_batch_routes import (
+from audioextender.web.routes.metadata_batch_routes import (
     MetadataBatchDependencies,
     MetadataBatchService,
     create_metadata_batch_router,
 )
-from audioextender.web.preset_routes import (
+from audioextender.web.routes.preset_routes import (
     PresetRequest,  # noqa: F401 - compatibility re-export
     PresetRouteDependencies,
     PresetService,
     create_preset_router,
 )
-from audioextender.web.recording_family_routes import (
+from audioextender.web.routes.recording_family_routes import (
     DuplicateMergeRequest,  # noqa: F401 - compatibility re-export
     RecordingFamilyRouteDependencies,
     RecordingFamilyService,
     TrackFamilyLinkRequest,  # noqa: F401 - compatibility re-export
     create_recording_family_router,
 )
-from audioextender.web.reporting_routes import (
+from audioextender.web.routes.reporting_routes import (
     OverrideRequest,  # noqa: F401 - compatibility re-export
     ReportingRouteDependencies,
     ReportingService,
     create_reporting_router,
 )
-from audioextender.web.set_builder_routes import (
+from audioextender.web.routes.set_builder_routes import (
     SetBuilderRouteDependencies,
     SetExportPreflightRequest,  # noqa: F401 - compatibility re-export
     SetPlaylistSaveRequest,  # noqa: F401 - compatibility re-export
@@ -185,14 +186,13 @@ from audioextender.web.set_builder_routes import (
     preflight_paths,
     save_playlist_file,
 )
-from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
-from audioextender.web.set_preference_routes import create_set_preference_router
-from audioextender.web.set_review_routes import create_set_review_router
-from audioextender.web.settings_routes import (
+from audioextender.web.routes.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
+from audioextender.web.routes.set_preference_routes import create_set_preference_router
+from audioextender.web.routes.set_review_routes import create_set_review_router
+from audioextender.web.routes.settings_routes import (
     SettingsRouteDependencies,
     create_settings_router,
 )
-from audioextender.web.static_assets import UncachedStaticFiles
 from settings import (
     CACHE_FOLDER_NAME,
     DEFAULT_AUTO_BAR_SELECTION,

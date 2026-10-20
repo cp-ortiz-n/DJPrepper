@@ -39,8 +39,8 @@ The reports were regenerated from this checkout, not inferred from older HTML. P
 The combined Python line-and-branch score reported by coverage.py is 62.6%.
 Representative modules: `set_builder/candidate_retriever.py` 91%,
 `set_builder/plan_validator.py` 98%, `set_builder/track_planner.py` 86%,
-`repositories/track_catalog.py` 79%, `analysis/key_detection.py` 79%,
-`analysis/section_selector.py` 73%, `web/settings_routes.py` 57%,
+`repositories/catalog/__init__.py` 79%, `analysis/key_detection.py` 79%,
+`analysis/section_selector.py` 73%, `web/routes/settings_routes.py` 57%,
 `processing/track_processor.py` 49%, `web/application.py` 33%, and
 `audio/stems.py` 14%.
 
@@ -56,7 +56,7 @@ from the exception list as soon as its debt is retired. The suite also ratchets
 the size and branch count of `TrackProcessor.process`.
 
 Browser musical-profile compatibility derivation has one guarded owner:
-`web/dj-library-model.js`. The `web/dj-library.js` compatibility facade re-exports
+`web/features/dj-library/model.js`. The `web/features/dj-library/index.js` compatibility facade re-exports
 those helpers for existing consumers. Other browser modules must consume the
 model or facade exports; the
 architecture gate rejects duplicate helper declarations, Camelot maps, and

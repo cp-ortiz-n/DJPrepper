@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from audioextender.set_builder.preference_learning import DJPreferenceService, JsonPreferenceStore
 from audioextender.set_builder.review_service import SetReviewService
-from audioextender.web.set_review_routes import create_set_review_router
+from audioextender.web.routes.set_review_routes import create_set_review_router
 
 
 def track(track_id: str, decision: str, adjustment: float = 0, rank_delta: int = 0) -> dict:

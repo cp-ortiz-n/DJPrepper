@@ -6,7 +6,7 @@ const targets = [
   'web/**/*.js',
   'web/**/*.html',
   'web/**/*.css',
-  'tests/javascript/*.test.js',
+  'tests/javascript/**/*.test.js',
   'scripts/*.mjs',
   '.eslintrc.cjs',
 ];

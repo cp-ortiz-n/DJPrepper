@@ -15,12 +15,12 @@ from audioextender.library.recording_identity import (
     next_version_code,
     version_kind,
 )
-from audioextender.repositories.feedback import FeedbackRepositoryMixin
-from audioextender.repositories.jobs import JobQueueRepositoryMixin
-from audioextender.repositories.library_analysis import LibraryAnalysisRepositoryMixin
-from audioextender.repositories.schema import RepositorySchemaInitializer
-from audioextender.repositories.system_state import SystemStateRepositoryMixin
-from audioextender.repositories.track_catalog import TrackCatalogRepositoryMixin
+from audioextender.repositories.catalog import TrackCatalogRepositoryMixin
+from audioextender.repositories.jobs.feedback import FeedbackRepositoryMixin
+from audioextender.repositories.jobs.library_analysis import LibraryAnalysisRepositoryMixin
+from audioextender.repositories.jobs.queue import JobQueueRepositoryMixin
+from audioextender.repositories.migrations.schema import RepositorySchemaInitializer
+from audioextender.repositories.system.state import SystemStateRepositoryMixin
 
 
 def _now() -> str:

@@ -461,6 +461,14 @@ Coverage percentage alone should not become the goal. Protect risky behavior and
 
 ## 14. Recommended Target Architecture
 
+Status update (2026-10-19): the wide namespace portion of this target is now
+implemented. Browser code uses `web/core`, `web/shared`, and feature folders;
+FastAPI delivery uses `web/routes`, `web/contracts`, and `web/assets`; SQLite
+implementations use catalog, jobs, migrations, and system subpackages. See
+[`code-organization.md`](code-organization.md) for the authoritative current
+tree and placement rules. The original recommendation remains below as audit
+history.
+
 Retain a modular monolith with explicit feature composition:
 
 ```text

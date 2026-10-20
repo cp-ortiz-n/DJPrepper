@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JOURNEY_SCHEMA, JourneyPlanner, offline_journey, sanitize_journey
 from audioextender.set_builder.saved_sets import SavedSetService
-from audioextender.web.set_builder_routes import SetBuilderRouteDependencies, create_set_builder_router
+from audioextender.web.routes.set_builder_routes import SetBuilderRouteDependencies, create_set_builder_router
 
 
 class JourneyPlannerTests(unittest.TestCase):
