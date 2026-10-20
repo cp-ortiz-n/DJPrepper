@@ -12,11 +12,15 @@
   margin-bottom: 6px;
 }
 .downloaded-primary-toolbar {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(260px, 1fr) auto minmax(170px, 210px) auto;
   gap: 12px;
   align-items: end;
   padding: 16px;
+}
+.downloaded-primary-toolbar:has(.downloaded-filter-panel[open]) {
+  padding-bottom: 218px;
 }
 .downloaded-primary-toolbar label {
   min-width: 0;
@@ -39,7 +43,9 @@
   font-size: 13px;
   font-weight: 650;
 }
-.downloaded-filter-panel,
+.downloaded-filter-panel {
+  position: static;
+}
 .downloaded-maintenance-menu,
 .downloaded-selection-more {
   position: relative;
@@ -107,12 +113,15 @@
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.54);
 }
 .downloaded-filters {
-  right: 0;
-  width: min(720px, calc(100vw - 64px));
+  top: 78px;
+  right: 16px;
+  left: 16px;
+  width: auto;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
   padding: 18px;
+  box-shadow: none;
 }
 .downloaded-filters > label {
   min-width: 0;
@@ -303,11 +312,20 @@
   .downloaded-maintenance-menu-content {
     width: min(650px, calc(100vw - 48px));
   }
+  .downloaded-primary-toolbar:has(.downloaded-filter-panel[open]) {
+    padding-bottom: 218px;
+  }
+  .downloaded-filters {
+    top: 132px;
+  }
 }
 @media (max-width: 760px) {
   .downloaded-primary-toolbar {
     grid-template-columns: 1fr auto;
     padding: 14px;
+  }
+  .downloaded-primary-toolbar:has(.downloaded-filter-panel[open]) {
+    padding-bottom: 14px;
   }
   .downloaded-search-field,
   .downloaded-sort-field {

@@ -315,6 +315,17 @@ test('Music Files separates filters, maintenance, and selection actions', async 
 
   await filters.locator('summary').click();
   await expect(filters).toHaveAttribute('open', '');
+  const filterLayout = await page.evaluate(() => {
+    const toolbar = document.querySelector('.downloaded-toolbar').getBoundingClientRect();
+    const drawer = document.querySelector('.downloaded-filters').getBoundingClientRect();
+    const summary = document.querySelector('.downloaded-filter-summary').getBoundingClientRect();
+    return {
+      alignedLeft: drawer.left >= toolbar.left - 1,
+      alignedRight: drawer.right <= toolbar.right + 1,
+      clearsSummary: drawer.bottom <= summary.top + 1,
+    };
+  });
+  expect(filterLayout).toEqual({ alignedLeft: true, alignedRight: true, clearsSummary: true });
   await page.locator('#downloaded-analysis').evaluate((select) => {
     select.value = 'complete';
     select.dispatchEvent(new Event('change', { bubbles: true }));
