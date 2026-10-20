@@ -17,6 +17,12 @@ On macOS, `Start AudioExtender.command` performs the same application startup
 and can also prepare the configured local Ollama model. Open
 [http://localhost:8765](http://localhost:8765) after startup.
 
+The launcher verifies the rendered homepage, not only a background API. If an
+older AudioExtender process still owns port 8765 but cannot render the current
+frontend, the launcher replaces that stale process before starting the current
+package entry point. It never terminates an unrelated application using the
+same port.
+
 Closing a browser tab does not stop active work. Closing the server process
 does. Persisted jobs are restored safely after restart; an interrupted running
 operation is reported as interrupted or retryable instead of silently applied.
