@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from audioextender.library.recording_identity import base_title, genre_family_code, version_kind
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 
 
 class RecordingIdentityTests(unittest.TestCase):

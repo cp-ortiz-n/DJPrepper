@@ -152,13 +152,15 @@ class IntentionPlanner:
                 "model": self.ollama_model if local_available else self.model if self.api_key else None,
                 "local_runtime": local_available, "installed_local_models": local_models}
 
-    def interpret(self, brief: str, catalog_vocabulary: list[str]) -> dict[str, Any]:
+    def interpret(self, brief: str, catalog_vocabulary: list[str], *,
+                  schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
         vocabulary = sorted({str(value).strip() for value in catalog_vocabulary if str(value).strip()})[:800]
         errors: list[str] = []
         started = perf_counter()
         if self.provider in {"auto", "ollama"}:
             try:
-                result = self._interpret_ollama(brief, vocabulary)
+                result = (self._interpret_ollama(brief, vocabulary, schema=schema, instructions=instructions)
+                          if schema is not None else self._interpret_ollama(brief, vocabulary))
                 logger.info(
                     "Set Builder AI response: provider=ollama model=%s elapsed_ms=%d vocabulary_terms=%d",
                     self.ollama_model,
@@ -177,7 +179,8 @@ class IntentionPlanner:
                     raise RuntimeError(errors[-1]) from error
         if self.provider in {"auto", "openai"} and self.api_key:
             try:
-                result = self._interpret_openai(brief, vocabulary)
+                result = (self._interpret_openai(brief, vocabulary, schema=schema, instructions=instructions)
+                          if schema is not None else self._interpret_openai(brief, vocabulary))
                 logger.info(
                     "Set Builder AI response: provider=openai model=%s elapsed_ms=%d vocabulary_terms=%d",
                     self.model,
@@ -190,12 +193,13 @@ class IntentionPlanner:
                 logger.warning("Set Builder AI provider failed: provider=openai model=%s error=%s", self.model, error)
         raise RuntimeError("; ".join(errors) or "No local or cloud AI provider is configured")
 
-    def _interpret_ollama(self, brief: str, vocabulary: list[str]) -> dict[str, Any]:
+    def _interpret_ollama(self, brief: str, vocabulary: list[str], *,
+                          schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
         response = httpx.post(
             f"{self.ollama_endpoint}/api/chat",
-            json={"model": self.ollama_model, "stream": False, "think": False, "format": INTENTION_SCHEMA,
-                  "keep_alive": "10m", "options": {"temperature": 0, "num_predict": 800},
-                  "messages": [{"role": "system", "content": PLANNER_INSTRUCTIONS},
+            json={"model": self.ollama_model, "stream": False, "think": False, "format": schema or INTENTION_SCHEMA,
+                  "keep_alive": "10m", "options": {"temperature": 0, "num_predict": 1600 if schema else 800},
+                  "messages": [{"role": "system", "content": instructions or PLANNER_INSTRUCTIONS},
                                {"role": "user", "content": json.dumps({"brief": brief,
                                                                          "catalog_vocabulary": vocabulary})}]},
             timeout=90,
@@ -208,14 +212,15 @@ class IntentionPlanner:
         result.update(provider="ollama", model=self.ollama_model)
         return result
 
-    def _interpret_openai(self, brief: str, vocabulary: list[str]) -> dict[str, Any]:
+    def _interpret_openai(self, brief: str, vocabulary: list[str], *,
+                          schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
         response = httpx.post(
             self.endpoint,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            json={"model": self.model, "store": False, "instructions": PLANNER_INSTRUCTIONS,
+            json={"model": self.model, "store": False, "instructions": instructions or PLANNER_INSTRUCTIONS,
                   "input": json.dumps({"brief": brief, "catalog_vocabulary": vocabulary}, ensure_ascii=False),
                   "text": {"format": {"type": "json_schema", "name": "dj_set_intention", "strict": True,
-                                      "schema": INTENTION_SCHEMA}}},
+                                      "schema": schema or INTENTION_SCHEMA}}},
             timeout=25,
         )
         response.raise_for_status()

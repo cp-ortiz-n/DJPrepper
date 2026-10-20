@@ -9,7 +9,7 @@ from scipy.signal import butter, sosfiltfilt
 from audioextender.analysis.key_detection import TrackAnalysis
 from audioextender.analysis.section_selector import SectionCandidate
 from audioextender.audio.loading import AudioData
-from settings import (
+from audioextender.core.defaults import (
     REDRUM_BASS_CUTOFF_HZ,
     REDRUM_BASS_GAIN,
     REDRUM_DRUM_GAIN,

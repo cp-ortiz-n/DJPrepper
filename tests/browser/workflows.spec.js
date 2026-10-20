@@ -62,6 +62,96 @@ test('persisted settings render after browser refresh', async ({ page }) => {
   await expect(page.locator('#setting-outro-search')).toHaveValue('31');
 });
 
+test('all primary tabs work with native browser media behavior', async ({ browser }) => {
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.goto('http://127.0.0.1:4173/');
+  const navigation = page.getByRole('navigation', { name: 'Primary navigation' });
+  await expect(navigation).toBeVisible();
+  const names = await navigation.getByRole('button').allTextContents();
+  for (const name of [...names, ...names.slice().reverse()]) await openView(page, name.trim());
+  expect(errors).toEqual([]);
+  await page.close();
+});
+
+test('tabs remain usable when the app module fails during startup and recover after reload', async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          window.__copiedStartupDiagnostics = value;
+        },
+      },
+    });
+  });
+  await page.route('**/assets/app.js?**', (route) => route.abort());
+  await page.goto('http://127.0.0.1:4173/');
+  await expect(page.locator('#app-startup-status')).toBeVisible();
+  await expect(page.locator('#app-startup-detail')).toContainText('app.js');
+  await openView(page, 'Import');
+  await openView(page, 'Music Files');
+  await openView(page, 'DJ Library');
+  await page.getByRole('button', { name: 'Copy diagnostics' }).click();
+  const diagnostics = JSON.parse(await page.evaluate(() => window.__copiedStartupDiagnostics));
+  expect(diagnostics.assetRevision).toBeTruthy();
+  expect(diagnostics.failures).toEqual(
+    expect.arrayContaining([expect.objectContaining({ resource: expect.stringContaining('/assets/app.js') })]),
+  );
+
+  await page.unroute('**/assets/app.js?**');
+  await page.getByRole('button', { name: 'Reload app' }).click();
+  await expect(page.locator('#app-startup-status')).toBeHidden();
+  await openView(page, 'Import');
+  await page.close();
+});
+
+test('a stale unversioned Set Builder module cannot prevent app startup', async ({ browser }) => {
+  const page = await browser.newPage();
+  const viewModelRequests = [];
+  await page.route(
+    (url) => url.pathname === '/assets/features/set-builder/view-model.js' && !url.search,
+    (route) => route.fulfill({ contentType: 'text/javascript', body: 'export {};' }),
+  );
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/assets/features/set-builder/view-model.js')
+      viewModelRequests.push(request.url());
+  });
+  await page.goto('http://127.0.0.1:4173/');
+  await openView(page, 'Music Files');
+  expect(viewModelRequests).toHaveLength(1);
+  expect(new URL(viewModelRequests[0]).searchParams.has('v')).toBe(true);
+  await expect(page.locator('#app-startup-status')).toBeHidden();
+  await page.close();
+});
+
+test('Import and library tabs still work when Set Builder startup fails', async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.route('**/api/library/catalog?**', (route) =>
+    route.fulfill({ json: { tracks: [], total: 0, facets: {} } }),
+  );
+  const startupFailure = page.waitForEvent('pageerror');
+  await page.addInitScript(() => {
+    const getItem = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (key) {
+      if (key === 'set-builder-compact') throw new Error('Set Builder storage unavailable');
+      return getItem.call(this, key);
+    };
+  });
+  await page.goto('http://127.0.0.1:4173/');
+  expect((await startupFailure).message).toContain('Set Builder storage unavailable');
+  await openView(page, 'Music Files');
+  await expect(page.locator('#downloaded-summary')).toContainText('Browse collection');
+  await openView(page, 'DJ Library');
+  await expect(page.locator('#library-list')).toContainText('No completed tracks yet.');
+  await openView(page, 'Import');
+  await page.locator('#import-failures-panel > summary').click();
+  await expect(page.locator('#import-failures-empty')).toBeVisible();
+  await page.close();
+});
+
 test('saved sets survive browser storage clearing and application reload', async ({ page }) => {
   const saved = await page.evaluate(async () => {
     const record = {
@@ -127,6 +217,40 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
   await expect(page.locator('#set-ai-brief')).toBeVisible();
   await expect(intention).toHaveValue('A melodic Latin warm-up that grows into techno.');
   await expect(page.locator('#set-planning-mode')).toHaveValue('interpreted');
+
+  await page.evaluate(() => {
+    const sections = document.createElement('div');
+    sections.id = 'journey-layout-probe';
+    sections.className = 'set-journey-sections';
+    sections.style.width = '1000px';
+    sections.innerHTML = `<article class="set-journey-section">
+      <span class="journey-step">1</span>
+      <div class="journey-primary">
+        <label>Section<input value="Warm-up"></label>
+        <label class="journey-duration-label">Duration<input type="number" value="15"><span>%</span></label>
+        <label class="journey-energy">Energy <span class="journey-energy-value">4 → 6</span>
+          <span class="journey-energy-inputs"><input type="number" value="4"><i>to</i><input type="number" value="6"></span>
+        </label>
+      </div>
+      <div class="journey-details">
+        <label class="journey-genres">Genres<input value="disco &amp; funk, latin house"></label>
+        <label>Character<input class="journey-characteristics" value="groovy, melodic"></label>
+        <label class="journey-purpose">Purpose<input value="Build energy gradually"></label>
+      </div>
+    </article>`;
+    document.querySelector('#set-builder-view').append(sections);
+  });
+  const journeyProbe = page.locator('#journey-layout-probe .set-journey-section');
+  await expect(journeyProbe).toBeVisible();
+  const journeyFieldsOverlap = await journeyProbe.evaluateAll((sections) =>
+    sections.some((section) => {
+      const energy = section.querySelector('.journey-energy-inputs')?.getBoundingClientRect();
+      const character = section.querySelector('.journey-characteristics')?.getBoundingClientRect();
+      return energy && character && energy.right > character.left + 1;
+    }),
+  );
+  expect(journeyFieldsOverlap).toBe(false);
+  await page.locator('#journey-layout-probe').evaluate((node) => node.remove());
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
@@ -159,7 +283,7 @@ test('disconnect and reconnect clear the stale offline presentation', async ({ p
 
 test('dialogs trap initial focus, close by keyboard, and restore focus', async ({ page }) => {
   await page.evaluate(async () => {
-    const { confirmAction } = await import('/assets/shared-components.js');
+    const { confirmAction } = await import('/assets/shared/shared-components.js');
     document.querySelector('[data-view="settings-view"]').id = 'dialog-launcher';
     document.querySelector('#dialog-launcher').focus();
     window.__dialogResult = confirmAction('Confirm keyboard behavior', { title: 'Keyboard test' });
@@ -174,7 +298,7 @@ test('dialogs trap initial focus, close by keyboard, and restore focus', async (
 
 test('starting a preview transfers the single playback owner', async ({ page }) => {
   await page.evaluate(async () => {
-    const playback = await import('/assets/playback.js');
+    const playback = await import('/assets/shared/playback.js');
     const host = document.createElement('section');
     host.id = 'playback-smoke';
     host.innerHTML = playback.compactAudioMarkup('/first.wav', 120) + playback.compactAudioMarkup('/second.wav', 180);
@@ -219,8 +343,8 @@ test('primary workflows remain usable at supported viewports and pass serious ac
   await page.keyboard.press('Tab');
   const focusProbe = page.locator('#keyboard-focus-probe');
   await expect(focusProbe).toBeFocused();
-  expect(await focusProbe.evaluate((node) => getComputedStyle(node).outlineStyle)).toBe('solid');
-  expect(await focusProbe.evaluate((node) => getComputedStyle(node).outlineWidth)).toBe('2px');
+  await expect(focusProbe).toHaveCSS('outline-style', 'solid');
+  await expect(focusProbe).toHaveCSS('outline-width', '2px');
   await focusProbe.evaluate((node) => node.remove());
 
   const results = await new AxeBuilder({ page })

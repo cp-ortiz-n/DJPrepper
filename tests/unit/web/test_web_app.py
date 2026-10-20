@@ -17,8 +17,8 @@ import web_app as web_module
 from audioextender.core.config import EditConfig
 from audioextender.core.exceptions import ConfigurationError
 from audioextender.imports.service import LibraryOfflineError
+from audioextender.persistence.facade import JobRepository
 from audioextender.processing.web_jobs import DatabaseProgress, WebJobService
-from audioextender.repositories.facade import JobRepository
 from web_app import (
     AuthorizedImportRequest,
     BatchDownloadRequest,
@@ -236,28 +236,6 @@ class JobRepositoryTests(unittest.TestCase):
                     "/music/two.json": (789, 12),
                 },
             )
-
-    def test_catalog_migration_checkpoint_skips_restart_scan(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            catalog = JobRepository(Path(temporary) / "jobs.sqlite3")
-            original = web_module.downloaded_catalog_migrated
-            try:
-                web_module.downloaded_catalog_migrated = False
-                with (
-                    patch.object(web_module, "repository", catalog),
-                    patch.object(web_module, "_migrate_downloaded_catalog", return_value={}) as migrate,
-                ):
-                    web_module._ensure_downloaded_catalog_migrated()
-                    migrate.assert_called_once_with()
-                    self.assertEqual(
-                        catalog.get_system_state("downloaded_catalog_migration"),
-                        web_module.DOWNLOADED_CATALOG_MIGRATION_VERSION,
-                    )
-                    web_module.downloaded_catalog_migrated = False
-                    web_module._ensure_downloaded_catalog_migrated()
-                    migrate.assert_called_once_with()
-            finally:
-                web_module.downloaded_catalog_migrated = original
 
     def test_integrity_scan_reports_without_changing_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

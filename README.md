@@ -52,7 +52,7 @@ npm ci
 From the repository root:
 
 ```sh
-.venv/bin/python web_app.py
+.venv/bin/python -m audioextender.web
 ```
 
 Then open [http://localhost:8765](http://localhost:8765).
@@ -102,10 +102,10 @@ validated deterministic plan.
 The command-line workflow remains available for direct processing:
 
 ```sh
-.venv/bin/python main.py input/song.mp3
+.venv/bin/python -m audioextender workspace/input/song.mp3
 ```
 
-Run `.venv/bin/python main.py --help` for profiles, track overrides, candidate
+Run `.venv/bin/python -m audioextender --help` for profiles, track overrides, candidate
 review, cue export, and output options.
 
 ## Optional local AI
@@ -121,20 +121,22 @@ ollama pull qwen3.5:4b
 Set Builder remains usable when Ollama is stopped. Its planning receipt records
 which provider and model ran, validation and repair results, quality comparison,
 and any deterministic fallback. Full provider configuration and privacy details
-are in the [user guide](docs/user-guide.md#optional-local-ai-for-set-builder).
+are in the [user guide](docs/guides/user-guide.md#optional-local-ai-for-set-builder).
 
 ## Documentation
 
-- [User guide](docs/user-guide.md) — application features, detailed workflows,
+- [User guide](docs/guides/user-guide.md) — application features, detailed workflows,
   CLI commands, profiles, reports, cues, Demucs, and troubleshooting context
-- [Operator guide](docs/operator-guide.md) — startup, external-drive recovery,
+- [Operator guide](docs/guides/operator-guide.md) — startup, external-drive recovery,
   background operations, health checks, backups, and safe workspace cleanup
-- [Developer guide](docs/developer-guide.md) — repository layout, configuration,
+- [Developer guide](docs/guides/developer-guide.md) — repository layout, configuration,
   ownership boundaries, tests, coverage, and generated artifacts
+- [Code organization](docs/architecture/code-organization.md) — file placement rules and the
+  backend, frontend, persistence, style, and test directory model
 - [Contributing](CONTRIBUTING.md) — supported toolchain and change workflow
-- [Architecture](docs/architecture.md) — authoritative module ownership and
+- [Architecture](docs/architecture/architecture.md) — authoritative module ownership and
   dependency rules
-- [Repository map](docs/repository-map.md) — source and test navigation
+- [Repository map](docs/architecture/repository-map.md) — source and test navigation
 - [Architecture decisions](docs/decisions/README.md) — compatibility-sensitive
   decisions and their rationale
 - [Backlog](BACKLOG.md) — planned work
@@ -150,7 +152,7 @@ make browser
 make coverage
 ```
 
-See the [developer guide](docs/developer-guide.md#automated-tests) for focused
+See the [developer guide](docs/guides/developer-guide.md#automated-tests) for focused
 commands and gate responsibilities.
 
 ## License

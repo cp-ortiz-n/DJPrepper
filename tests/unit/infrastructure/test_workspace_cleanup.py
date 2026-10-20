@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.clean_workspace import discover_cleanup_targets, remove_cleanup_targets, validate_project_root
+from scripts.maintenance.clean_workspace import discover_cleanup_targets, remove_cleanup_targets, validate_project_root
 
 
 class WorkspaceCleanupTests(unittest.TestCase):
@@ -45,8 +45,8 @@ class WorkspaceCleanupTests(unittest.TestCase):
             preserved = [
                 root / ".venv" / "lib" / "__pycache__" / "dependency.pyc",
                 root / "node_modules" / "package" / ".DS_Store",
-                root / "input" / ".DS_Store",
-                root / "output" / "render.pyc",
+                root / "workspace" / "input" / ".DS_Store",
+                root / "workspace" / "output" / "render.pyc",
                 root / "audioextender" / "module.py",
             ]
             for path in preserved:
@@ -63,8 +63,8 @@ class WorkspaceCleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory).resolve()
             self.make_repository(root)
-            cache_root = root / "cache"
-            cache_root.mkdir()
+            cache_root = root / "workspace" / "cache"
+            cache_root.mkdir(parents=True)
             gitkeep = cache_root / ".gitkeep"
             payload = cache_root / "analysis.json"
             nested = cache_root / "waveforms"

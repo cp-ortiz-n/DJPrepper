@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 from audioextender.analysis.section_selector import SectionCandidate
-from settings import (
+from audioextender.core.defaults import (
     BASS_PRESERVING_RISK_THRESHOLD,
     HARMONIC_TAIL_COMPATIBILITY_THRESHOLD,
     LOW_GRID_BOUNDARY_THRESHOLD,

@@ -11,8 +11,8 @@ from audioextender.library.metadata_mutations import (
     TrackMetadataMutationService,
     TrackMetadataUpdate,
 )
-from audioextender.repositories.facade import JobRepository
-from audioextender.web.metadata_batch_routes import MetadataBatchDependencies, MetadataBatchService
+from audioextender.persistence.facade import JobRepository
+from audioextender.web.routes.metadata_batch_routes import MetadataBatchDependencies, MetadataBatchService
 
 
 class TrackMetadataMutationTests(unittest.TestCase):

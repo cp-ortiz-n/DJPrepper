@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import web_app as web_module
 from audioextender.library.relocation import LibraryRelocationCoordinator
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 from web_app import SetExportPreflightRequest, SetPlaylistSaveRequest, SetPlaylistTrack
 
 

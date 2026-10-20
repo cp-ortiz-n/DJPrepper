@@ -16,12 +16,12 @@ from audioextender.analysis.candidate_selection import (
 from audioextender.analysis.key_detection import TrackAnalysis
 from audioextender.analysis.section_selector import SectionCandidate
 from audioextender.core.config import EditConfig
-from audioextender.core.interfaces import ProgressReporter
-from settings import (
+from audioextender.core.defaults import (
     MINIMUM_FULL_MIX_INTRO_PERCUSSIVE_RATIO,
     MINIMUM_FULL_MIX_INTRO_RHYTHMIC_STRENGTH,
     SUPPORTED_BAR_COUNTS,
 )
+from audioextender.core.interfaces import ProgressReporter
 
 CandidateChooser = Callable[
     [list[SectionCandidate], Position, int],

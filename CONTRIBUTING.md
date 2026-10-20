@@ -2,8 +2,8 @@
 
 DJ Library Studio is a modular monolith with a Python/FastAPI backend and a
 vanilla JavaScript frontend. Keep changes within the ownership boundaries in
-[`docs/architecture.md`](docs/architecture.md); use
-[`docs/repository-map.md`](docs/repository-map.md) to find the owning module and
+[`docs/architecture/architecture.md`](docs/architecture/architecture.md); use
+[`docs/architecture/repository-map.md`](docs/architecture/repository-map.md) to find the owning module and
 its tests.
 
 ## Set up the development environment
@@ -27,10 +27,12 @@ npm run check:browser:install
 
 - Put Python behavior in the domain package that owns it under
   `audioextender/`; keep reusable workflows out of FastAPI route handlers.
-- Keep SQL inside `audioextender/repositories/` or an approved migration
+- Keep SQL inside `audioextender/persistence/` or an approved migration
   boundary.
-- Put browser behavior in the owning feature module under `web/`; keep
-  `web/app.js` focused on composition and navigation.
+- Put browser behavior in the owning feature under `frontend/features/`; keep
+  `frontend/app.js` focused on composition and navigation. Follow
+  [`docs/architecture/code-organization.md`](docs/architecture/code-organization.md) for backend,
+  frontend, persistence, style, and test placement.
 - Preserve public APIs, persisted data, jobs, saved sets, exports, and backup
   compatibility unless the change explicitly migrates them.
 - Add characterization tests before risky refactors and behavior tests for new
@@ -64,7 +66,7 @@ Run focused tests while developing:
 
 ```sh
 .venv/bin/python -m unittest tests.unit.analysis.test_key_analysis
-node --test tests/javascript/api_client.test.js
+node --test tests/javascript/core/api_client.test.js
 ```
 
 Before submitting a normal change, run `make quality` and `git diff --check`.

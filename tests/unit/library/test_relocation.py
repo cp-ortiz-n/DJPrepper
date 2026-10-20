@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from audioextender.library.relocation import LibraryRelocationCoordinator
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 
 
 class LibraryRelocationTests(unittest.TestCase):

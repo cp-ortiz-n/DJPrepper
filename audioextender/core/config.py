@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from audioextender.core.exceptions import ConfigurationError
-from settings import (
+from audioextender.core.defaults import (
     ANALYSIS_HOP_LENGTH,
     BEATS_PER_BAR,
     DEFAULT_AUTO_BAR_SELECTION,
@@ -31,6 +30,7 @@ from settings import (
     SUPPORTED_BAR_COUNTS,
     SUPPORTED_PCM_BITS,
 )
+from audioextender.core.exceptions import ConfigurationError
 
 
 @dataclass(frozen=True)

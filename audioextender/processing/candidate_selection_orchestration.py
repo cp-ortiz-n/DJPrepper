@@ -13,12 +13,12 @@ from audioextender.analysis.section_selector import SectionCandidate
 from audioextender.analysis.selection_coordinator import SelectionCoordinator, SideSelectionRequest
 from audioextender.audio.redrum import select_redrum_candidate
 from audioextender.audio.stem_provider import StemProvider
+from audioextender.core.defaults import DEFAULT_CANDIDATE_COUNT, DJ_READY_MINIMUM_BARS, MINIMUM_REDRUM_STEM_RELIABILITY
 from audioextender.core.exceptions import StemSeparationError
 from audioextender.core.interfaces import ProgressReporter
 from audioextender.library.export_service import ExportService
 from audioextender.processing.extended_edit import optimize_candidate_boundaries
 from audioextender.processing.track_processing_stages import AnalysisStageResult, SelectionStageResult
-from settings import DEFAULT_CANDIDATE_COUNT, DJ_READY_MINIMUM_BARS, MINIMUM_REDRUM_STEM_RELIABILITY
 
 
 def format_time(seconds: float) -> str:

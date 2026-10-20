@@ -22,13 +22,13 @@ install:
 	npm ci
 
 quality:
-	./scripts/check_quality.sh
+	./scripts/quality/check_quality.sh
 
 coverage:
-	./scripts/check_coverage.sh
+	./scripts/quality/check_coverage.sh
 
 stability:
-	./scripts/run_stability_gate.sh
+	./scripts/quality/run_stability_gate.sh
 
 browser:
 	npm run check:browser
@@ -47,18 +47,18 @@ lint:
 	npm run lint
 
 format-check:
-	.venv/bin/python scripts/check_python_format.py
+	.venv/bin/python scripts/quality/check_python_format.py
 	npm run format:check
 
 type-check:
 	.venv/bin/mypy
 
 clean:
-	.venv/bin/python scripts/clean_workspace.py
+	.venv/bin/python scripts/maintenance/clean_workspace.py
 
 clean-apply:
-	.venv/bin/python scripts/clean_workspace.py --apply
+	.venv/bin/python scripts/maintenance/clean_workspace.py --apply
 
 clean-analysis-cache:
-	.venv/bin/python scripts/clean_workspace.py --apply --include-analysis-cache
+	.venv/bin/python scripts/maintenance/clean_workspace.py --apply --include-analysis-cache
 

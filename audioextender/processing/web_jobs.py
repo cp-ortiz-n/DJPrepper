@@ -17,22 +17,22 @@ from audioextender.analysis.candidate_selection import Position
 from audioextender.analysis.resource_planner import choose_worker_count
 from audioextender.audio.wav_metadata import split_artist_title, write_wav_metadata
 from audioextender.core.config import EditConfig
-from audioextender.core.interfaces import ProgressReporter
-from audioextender.core.presets import EditPreset, get_preset
-from audioextender.infrastructure.operation_lifecycle import AUDIO_JOBS, LifecycleProjection
-from audioextender.library.cue_export import write_rekordbox_xml
-from audioextender.library.track_overrides import load_track_overrides
-from audioextender.processing.track_processor import process_file
-from audioextender.reporting.feedback import append_candidate_feedback
-from audioextender.reporting.processing import update_processing_report
-from audioextender.repositories.capabilities import JobQueueRepository
-from settings import (
+from audioextender.core.defaults import (
     CACHE_FOLDER_NAME,
     EXTENDED_OUTPUT_FOLDER_NAME,
     MINIMUM_CROSSFADE_MS,
     OUTPUT_FOLDER_NAME,
     WAV_OUTPUT_FOLDER_NAME,
 )
+from audioextender.core.interfaces import ProgressReporter
+from audioextender.core.presets import EditPreset, get_preset
+from audioextender.infrastructure.operation_lifecycle import AUDIO_JOBS, LifecycleProjection
+from audioextender.library.cue_export import write_rekordbox_xml
+from audioextender.library.track_overrides import load_track_overrides
+from audioextender.persistence.capabilities import JobQueueRepository
+from audioextender.processing.track_processor import process_file
+from audioextender.reporting.feedback import append_candidate_feedback
+from audioextender.reporting.processing import update_processing_report
 
 
 class QueueSnapshot(TypedDict):

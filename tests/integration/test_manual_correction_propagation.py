@@ -8,12 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from audioextender.library.catalog_projection import CatalogProjectionPublisher
-from audioextender.repositories.facade import JobRepository
+from audioextender.persistence.facade import JobRepository
 from audioextender.web import application
 from tests.support.paths import PROJECT_ROOT
 
 ROOT = PROJECT_ROOT
-MATRIX_PATH = ROOT / "docs" / "manual-correction-propagation.json"
+MATRIX_PATH = ROOT / "docs" / "operations" / "manual-correction-propagation.json"
 
 
 class ManualCorrectionPropagationTests(unittest.TestCase):

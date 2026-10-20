@@ -6,6 +6,7 @@ from pathlib import Path
 
 from audioextender.audio.loading import AudioData
 from audioextender.audio.redrum import create_redrum_intro
+from audioextender.core.defaults import WAV_OUTPUT_FOLDER_NAME
 from audioextender.core.interfaces import ProgressReporter
 from audioextender.library.export_service import ExportRequest, ExportService
 from audioextender.processing.candidate_selection_orchestration import format_time
@@ -16,7 +17,6 @@ from audioextender.processing.track_processing_stages import (
     RenderStageResult,
     SelectionStageResult,
 )
-from settings import WAV_OUTPUT_FOLDER_NAME
 
 
 class RenderExportTransaction:

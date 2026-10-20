@@ -13,7 +13,7 @@ from audioextender.set_builder.preference_learning import (
     JsonPreferenceStore,
     PersonalizedCandidateRanker,
 )
-from audioextender.web.set_preference_routes import create_set_preference_router
+from audioextender.web.routes.set_preference_routes import create_set_preference_router
 
 
 def event(track_id: str, action: str = "save", context: str = "warm-up") -> dict:

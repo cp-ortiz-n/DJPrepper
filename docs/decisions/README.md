@@ -1,7 +1,7 @@
 # Architecture decision records
 
 These records capture decisions that constrain compatibility or the placement
-of future work. They complement [`../architecture.md`](../architecture.md): the
+of future work. They complement [`../architecture/architecture.md`](../architecture/architecture.md): the
 architecture guide explains where code belongs, while these records explain why
 the boundary exists and what must remain compatible.
 

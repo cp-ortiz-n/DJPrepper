@@ -23,7 +23,7 @@ from audioextender.set_builder.track_planner import (
     deterministic_track_plan,
     flatten_candidates,
 )
-from audioextender.web.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
+from audioextender.web.routes.set_planning_routes import SetPlanningRouteDependencies, create_set_planning_router
 from tests.unit.set_builder.test_set_candidate_planning import catalog_track, journey
 
 
