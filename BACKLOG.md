@@ -886,7 +886,12 @@ without replacing the technical safety score.
     draft; saved-plan loading is repaired; draft and plan-revision identities
     persist; provider labels no longer expose missing model metadata; focused,
     browser, quality, coverage, and stability gates pass.
-  - [ ] Next: Slice B — compact workspace shell and presentation.
+  - [x] Slice B completed 2026-10-21: the generated plan now uses a sticky
+    revision header, compact selectable rows, a focused track inspector, and a
+    persistent workspace action bar. Desktop, narrow-screen, keyboard, focus,
+    reduced-motion, warm-cache, and full browser workflows pass without
+    changing musical policy or planning payloads.
+  - [ ] Next: Slice C — regenerate with locks.
 
 ## Rekordbox track-rating synchronization
 

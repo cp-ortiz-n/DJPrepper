@@ -254,10 +254,27 @@ and candidate-selection policy were not changed.
 
 ### Slice B — workspace shell and compact presentation
 
-- Add the sticky workspace header, compact rows, selected-track inspector, and
-  persistent action bar.
-- Preserve the existing three-direction and compact mix-health views.
-- Verify desktop, narrow viewport, keyboard, focus, and reduced-motion behavior.
+- **Status: complete (2026-10-21).**
+- [x] Add the sticky workspace header, compact rows, selected-track inspector,
+  and persistent action bar.
+- [x] Keep plan identity truthful with Draft/Saved and revision labels derived
+  from explicit workspace state.
+- [x] Preserve the existing three-direction selector, mix-health summary,
+  planning evidence, journey curves, and all existing track mutations.
+- [x] Keep selected-track presentation in a focused workspace-shell owner
+  while `plan-view.js` remains responsible for running-order rendering and
+  delegates existing commands without changing their payloads.
+- [x] Verify desktop, narrow viewport, keyboard row navigation, inspector focus
+  restoration, reduced motion, and warm-cache application startup.
+
+Verification completed for this slice: the full repository quality gate, 451
+Python tests, 115 JavaScript tests, the catalog stability workflow, refreshed
+coverage artifacts, and all 18 browser workflows pass. The browser gate covers
+a loaded three-track saved revision at desktop and 390-pixel widths, inspector
+selection and Escape handling, arrow-key navigation, horizontal overflow,
+WCAG 2A/2AA serious-issue checks, reduced motion, warm-cache restart, and every
+existing primary application workflow. Musical scoring, candidate retrieval,
+and planning payloads were not changed.
 
 ### Slice C — regenerate with locks
 

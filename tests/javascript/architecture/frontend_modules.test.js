@@ -127,6 +127,7 @@ test('stylesheet entry point preserves explicit owner order without dead audit s
     'features/set-builder/60-set-builder-brief.css',
     'features/reporting/70-reporting-analysis.css',
     'features/set-builder/61-set-builder-workspace.css',
+    'features/set-builder/62-set-builder-shell.css',
     'features/settings/41-settings-secondary.css',
     'features/music-files/51-music-files-rows.css',
     'features/music-files/52-music-files-filters.css',

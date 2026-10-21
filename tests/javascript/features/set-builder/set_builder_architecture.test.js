@@ -41,6 +41,11 @@ import {
 } from '../../../../frontend/features/set-builder/state.js';
 import { createSetTransitionEditor } from '../../../../frontend/features/set-builder/transition-editor.js';
 import {
+  compactTrackSummaryMarkup,
+  trackStateChips,
+  workspaceIdentity,
+} from '../../../../frontend/features/set-builder/workspace-shell.js';
+import {
   aiObservabilityCards,
   fallbackPolicyMarkup,
   intentionProviderView,
@@ -381,6 +386,38 @@ test('Set Builder keeps stable draft and plan revision identities until an expli
   assert.equal(store.planRevision, null);
   assert.equal(store.plan.length, 0);
   assert.equal(store.activeSavedSetId, '');
+  assert.equal(store.selectedTrackId, '');
+});
+
+test('compact workspace presentation exposes plan identity and concise track states', () => {
+  assert.deepEqual(workspaceIdentity({ activeSavedSetId: '', planRevision: null }), {
+    stateLabel: 'Draft plan',
+    revisionLabel: 'Unversioned draft',
+  });
+  assert.deepEqual(workspaceIdentity({ activeSavedSetId: 'saved-1', planRevision: { number: 3 } }), {
+    stateLabel: 'Saved plan',
+    revisionLabel: 'Revision 3',
+  });
+  assert.deepEqual(trackStateChips({ locked: true, decision: 'reject', changed: true }), [
+    { kind: 'locked', label: 'Locked' },
+    { kind: 'rejected', label: 'Rejected' },
+    { kind: 'changed', label: 'Changed' },
+  ]);
+  const markup = compactTrackSummaryMarkup({
+    track: { _genre: 'House', bpm: 124, key: 'Am' },
+    transition: { score: 58 },
+    locked: false,
+    review: { decision: 'accept' },
+    formatKey: () => '8A',
+    energyLabel: 'high',
+    healthThreshold: 65,
+    escapeHtml,
+  });
+  assert.match(markup, /House/);
+  assert.match(markup, /124\.0 BPM/);
+  assert.match(markup, /58% match/);
+  assert.match(markup, /class="warning"/);
+  assert.match(markup, /Kept/);
 });
 
 test('provider labels never expose a missing model as undefined', () => {

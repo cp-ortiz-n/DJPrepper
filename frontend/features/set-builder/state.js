@@ -10,6 +10,7 @@ export function createSetBuilderStore({ storage = globalThis.localStorage, creat
     draftId: createId('draft'),
     activeSavedSetId: '',
     planRevision: null,
+    selectedTrackId: '',
     requiredIds: new Set(),
     excludedIds: new Set(),
     lockedIds: new Set(),
@@ -64,6 +65,7 @@ export function resetSetBuilderWorkspace(store, { createId = createSetBuilderId 
   store.draftId = createId('draft');
   store.activeSavedSetId = '';
   store.planRevision = null;
+  store.selectedTrackId = '';
   store.requiredIds.clear();
   store.excludedIds.clear();
   store.lockedIds.clear();

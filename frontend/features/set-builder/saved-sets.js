@@ -178,6 +178,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
       void recordPreference('save', state.plan);
       state.activeSavedSetId = id;
       $('#saved-set-select').value = id;
+      renderSetPlan();
       const entries = setM3uEntries();
       try {
         const result = await setBuilderApi.savePlaylist({
