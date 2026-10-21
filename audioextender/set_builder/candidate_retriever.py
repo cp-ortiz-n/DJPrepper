@@ -49,7 +49,6 @@ def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
     recording_code = str(item.get("recording_code") or (item.get("downloaded") or {}).get("recording_code") or "")
     return {
         "id": _track_id(item),
-        "title": str(
         "title": title,
         "artist": artist,
         "recordingCode": recording_code,
