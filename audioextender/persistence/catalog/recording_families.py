@@ -30,7 +30,7 @@ class RecordingFamilyRepositoryMixin(RepositoryMixinBase):
             connection.execute(
                 """UPDATE downloaded_tracks SET recording_code=?, version_code=?,
                     identity_confidence='manual', identity_reason='Kept separate by user',
-                    updated_at=? WHERE id=?""",
+                    identity_inference_locked=1, updated_at=? WHERE id=?""",
                 (recording_code, version_code, _now(), track_id),
             )
         return self.get_downloaded_track(track_id) or {}
@@ -96,7 +96,8 @@ class RecordingFamilyRepositoryMixin(RepositoryMixinBase):
             target_id = f"{recording_code}-{target['version_code'] or 'ORG'}"
             connection.execute(
                 """UPDATE downloaded_tracks SET recording_code=?, version_code=?,
-                    identity_confidence='manual', identity_reason=?, updated_at=? WHERE id=?""",
+                    identity_confidence='manual', identity_reason=?,
+                    identity_inference_locked=1, updated_at=? WHERE id=?""",
                 (
                     recording_code,
                     version_code,

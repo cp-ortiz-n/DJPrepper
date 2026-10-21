@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
-from audioextender.library.recording_identity import base_title, genre_family_code, version_kind
+from audioextender.library.recording_identity import (
+    base_title,
+    canonical_title_key,
+    genre_family_code,
+    identity_key,
+    version_kind,
+)
 from audioextender.persistence.facade import JobRepository
 
 
@@ -142,6 +150,98 @@ class RecordingIdentityTests(unittest.TestCase):
         self.assertEqual(base_title("Song (Extended Mix)"), "song")
         self.assertEqual(version_kind("Song (Live at Home)"), "LIVE")
         self.assertEqual(version_kind("Song - Radio Edit"), "RADIO")
+
+    def test_canonical_title_key_handles_spacing_and_trailing_artist_version_credit(self) -> None:
+        self.assertEqual(canonical_title_key("Funkytown", "Lipps Inc"), "funkytown")
+        self.assertEqual(canonical_title_key("Funky Town", "Lipps Inc"), "funkytown")
+        self.assertEqual(canonical_title_key("Rasputin - Majestic Club", "Majestic"), "rasputin")
+        self.assertEqual(identity_key("Lipps Inc", "Funkytown"), identity_key("Lipps Inc", "Funky Town"))
+
+    def test_spacing_variants_receive_the_same_persisted_recording_family(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = JobRepository(root / "catalog.sqlite3")
+            first = root / "Funkytown.wav"
+            second = root / "Funky Town.wav"
+            first.write_bytes(b"RIFF-first")
+            second.write_bytes(b"RIFF-second")
+            first_id = repository.upsert_downloaded_track(title="Funkytown", artist="Lipps Inc", file_path=first)
+            second_id = repository.upsert_downloaded_track(title="Funky Town", artist="Lipps Inc", file_path=second)
+            first_track = repository.get_downloaded_track(first_id)
+            second_track = repository.get_downloaded_track(second_id)
+            assert first_track is not None and second_track is not None
+            self.assertEqual(first_track["recording_code"], second_track["recording_code"])
+            self.assertNotEqual(first_track["version_code"], second_track["version_code"])
+
+    def test_rescan_relinks_corrected_metadata_to_an_existing_family(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = JobRepository(root / "catalog.sqlite3")
+            original = root / "original.wav"
+            corrected = root / "corrected.wav"
+            original.write_bytes(b"RIFF-original")
+            corrected.write_bytes(b"RIFF-corrected")
+            original_id = repository.upsert_downloaded_track(title="Funkytown", artist="Lipps Inc", file_path=original)
+            corrected_id = repository.upsert_downloaded_track(
+                title="Unknown upload", artist="Lipps Inc", file_path=corrected
+            )
+            repository.upsert_downloaded_track(title="Funky Town", artist="Lipps Inc", file_path=corrected)
+            original_track = repository.get_downloaded_track(original_id)
+            corrected_track = repository.get_downloaded_track(corrected_id)
+            assert original_track is not None and corrected_track is not None
+            self.assertEqual(original_track["recording_code"], corrected_track["recording_code"])
+            self.assertEqual(corrected_track["identity_reason"], "Matched normalized artist and title")
+
+    def test_existing_catalog_migration_converges_safe_legacy_title_variants(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "catalog.sqlite3"
+            repository = JobRepository(database)
+            first = root / "Funkytown.wav"
+            second = root / "Funky Town.wav"
+            first.write_bytes(b"RIFF-first")
+            second.write_bytes(b"RIFF-second")
+            first_id = repository.upsert_downloaded_track(title="Funkytown", artist="Lipps Inc", file_path=first)
+            second_id = repository.upsert_downloaded_track(title="Funky Town", artist="Lipps Inc", file_path=second)
+            with closing(sqlite3.connect(database)) as connection, connection:
+                connection.execute(
+                    """UPDATE downloaded_tracks SET recording_code='DSC-999999', version_code='ORG',
+                    identity_key='lipps inc|funky town', identity_confidence='migrated',
+                    identity_reason='Legacy title normalization' WHERE id=?""",
+                    (second_id,),
+                )
+                connection.execute("DELETE FROM system_state WHERE key='canonical_recording_identity_keys'")
+
+            migrated = JobRepository(database)
+            first_track = migrated.get_downloaded_track(first_id)
+            second_track = migrated.get_downloaded_track(second_id)
+            assert first_track is not None and second_track is not None
+            self.assertEqual(first_track["recording_code"], second_track["recording_code"])
+            self.assertEqual(first_track["identity_key"], second_track["identity_key"])
+            self.assertNotEqual(first_track["version_code"], second_track["version_code"])
+
+    def test_existing_catalog_migration_preserves_manual_keep_separate_choice(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "catalog.sqlite3"
+            repository = JobRepository(database)
+            first = root / "Funkytown.wav"
+            second = root / "Funky Town.wav"
+            first.write_bytes(b"RIFF-first")
+            second.write_bytes(b"RIFF-second")
+            first_id = repository.upsert_downloaded_track(title="Funkytown", artist="Lipps Inc", file_path=first)
+            second_id = repository.upsert_downloaded_track(title="Funky Town", artist="Lipps Inc", file_path=second)
+            separated = repository.separate_recording(second_id)
+            with closing(sqlite3.connect(database)) as connection, connection:
+                connection.execute("DELETE FROM system_state WHERE key='canonical_recording_identity_keys'")
+
+            migrated = JobRepository(database)
+            first_track = migrated.get_downloaded_track(first_id)
+            second_track = migrated.get_downloaded_track(second_id)
+            assert first_track is not None and second_track is not None
+            self.assertNotEqual(first_track["recording_code"], second_track["recording_code"])
+            self.assertEqual(second_track["recording_code"], separated["recording_code"])
+            self.assertTrue(second_track["identity_inference_locked"])
 
     def test_parent_genres_receive_readable_three_letter_codes(self) -> None:
         self.assertEqual(genre_family_code("Electronic / House / Afro House"), "HOU")

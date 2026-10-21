@@ -185,7 +185,8 @@ purpose, and start/end energy
         ↓
 POST /api/set-builder/candidate-pool → SetCandidateRetriever
    ├── bounded, diverse candidates per journey section
-   ├── stable catalog IDs and local file availability
+   ├── stable catalog IDs, canonical recording-family keys, and local file availability
+   ├── one representative per recording family before model context is built
    ├── direct, identity, bridge, and fallback scarcity tiers
    └── optional bounded adjustments from DJPreferenceService
         ↓
@@ -197,7 +198,7 @@ POST /api/set-builder/plan-tracks → SetPlanningJobService
    └── phase timings and persisted outcome telemetry
         ↓
 SetPlanValidator
-   ├── IDs, exclusions, required/locked tracks, duplicates, and files
+   ├── IDs, exclusions, required/locked tracks, duplicate IDs/families, and files
    ├── duration, track count, and journey-section coverage
    └── BPM, Camelot-key, and vocal-transition warnings
         ↓
@@ -216,6 +217,15 @@ DeterministicTransitionOptimizer (fallback plans)
    ├── bounded beam search across BPM, Camelot key, vocals, and energy
    └── recognizes half/double-time BPM compatibility
 ```
+
+Catalog row IDs identify files and remain immutable. `recording_code` identifies
+the underlying song across related catalog rows, while `version_code` identifies
+the original, remix, edit, live, or other version. Import/rescan uses conservative
+canonical artist/title matching to assign the family; explicit **Keep separate**
+and manual family links are inference-locked. The Set Builder catalog projection
+serializes both codes, and `recordingKey` is the hard uniqueness key shared by
+candidate retrieval, proposal repair, deterministic fallback, validation, saved
+set recovery, and browser track editing.
 
 The route surface is:
 

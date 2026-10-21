@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from audioextender.library.musical_profile import MUSICAL_PROFILE_VERSION
+from audioextender.library.recording_identity import recording_dedupe_key
 from audioextender.set_builder.preference_learning import PersonalizedCandidateRanker
 
-SET_BUILDER_CATALOG_VERSION = 5
+SET_BUILDER_CATALOG_VERSION = 6
 
 
 def _terms(value: Any) -> list[str]:
@@ -43,12 +44,17 @@ def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
     job = item.get("job") or {}
     descriptors = _descriptors(item)
     path = _selected_path(item)
+    title = str(analysis.get("title") or Path(str(analysis.get("source_name") or job.get("source_name") or "")).stem)
+    artist = str(analysis.get("artist") or "")
+    recording_code = str(item.get("recording_code") or (item.get("downloaded") or {}).get("recording_code") or "")
     return {
         "id": _track_id(item),
         "title": str(
-            analysis.get("title") or Path(str(analysis.get("source_name") or job.get("source_name") or "")).stem
-        ),
-        "artist": str(analysis.get("artist") or ""),
+        "title": title,
+        "artist": artist,
+        "recordingCode": recording_code,
+        "versionCode": str(item.get("version_code") or (item.get("downloaded") or {}).get("version_code") or ""),
+        "recordingKey": recording_dedupe_key(artist, title, recording_code=recording_code),
         "genre": str(item.get("genre") or "Other"),
         "detailedGenres": _terms(item.get("detailed_genre")),
         "descriptors": [
@@ -153,6 +159,7 @@ class SetCandidateRetriever:
             and track["id"] not in excluded
             and (track["id"] in required | locked or _matches_constraints(track, constraints or {}))
         ]
+        compact, collapsed_ids = _deduplicate_recordings(compact, required | locked)
         known_ids = {track["id"] for track in compact}
         sections: list[dict[str, Any]] = []
         emitted: set[str] = set()
@@ -233,7 +240,34 @@ class SetCandidateRetriever:
             "version": 1,
             "sections": sections,
             "candidateCount": len(emitted),
+            "duplicateRecordingsCollapsed": len(collapsed_ids),
+            "collapsedTrackIds": sorted(collapsed_ids),
             "missingRequiredIds": sorted(required - known_ids),
             "unavailableRequiredIds": sorted((required & known_ids) - available_ids),
             "limits": {"perSection": limit, "total": total_cap},
         }
+
+
+def _deduplicate_recordings(
+    tracks: list[dict[str, Any]], protected_ids: set[str]
+) -> tuple[list[dict[str, Any]], set[str]]:
+    """Keep one deterministic representative per recording family."""
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for track in tracks:
+        groups.setdefault(str(track.get("recordingKey") or track["id"]), []).append(track)
+    selected: list[dict[str, Any]] = []
+    collapsed: set[str] = set()
+    for matches in groups.values():
+        matches.sort(
+            key=lambda track: (
+                track["id"] not in protected_ids,
+                not bool(track.get("available")),
+                str(track.get("versionCode") or "ORG") != "ORG",
+                not bool(track.get("bpm")),
+                not bool(track.get("key")),
+                str(track["id"]),
+            )
+        )
+        selected.append(matches[0])
+        collapsed.update(str(track["id"]) for track in matches[1:])
+    return selected, collapsed

@@ -48,8 +48,45 @@ def base_title(title: str) -> str:
     return normalize_identity_text(value)
 
 
+def canonical_title_key(title: str, artist: str = "") -> str:
+    """Return a conservative comparison key for the same underlying song.
+
+    Word spacing is not meaningful for recording identity (``Funkytown`` and
+    ``Funky Town``), but arbitrary fuzzy title similarity is intentionally not
+    used.  A trailing artist/version credit is removed only when it starts with
+    the catalog artist and the remaining words are an unambiguous version label.
+    """
+    value = title
+    parts = re.split(r"\s+[-–—]\s+", title)
+    if len(parts) > 1:
+        suffix = normalize_identity_text(parts[-1])
+        artist_text = normalize_identity_text(artist)
+        remainder = suffix
+        if artist_text and (suffix == artist_text or suffix.startswith(f"{artist_text} ")):
+            remainder = suffix[len(artist_text) :].strip()
+        version_words = {"club", "mix", "edit", "version", "extended", "radio", "original"}
+        if remainder and set(remainder.split()).issubset(version_words):
+            value = " - ".join(parts[:-1])
+    return base_title(value).replace(" ", "")
+
+
 def identity_key(artist: str, title: str) -> str:
-    return f"{normalize_identity_text(artist)}|{base_title(title)}"
+    return f"{normalize_identity_text(artist)}|{canonical_title_key(title, artist)}"
+
+
+def recording_dedupe_key(
+    artist: str,
+    title: str,
+    *,
+    recording_code: str = "",
+) -> str:
+    """Return the Set Builder identity for one underlying recording.
+
+    A persisted family is authoritative.  The normalized metadata key is a
+    safe fallback for analyzed jobs that have not entered the catalog yet.
+    """
+    code = str(recording_code or "").strip().upper()
+    return f"recording:{code}" if code else f"metadata:{identity_key(artist, title)}"
 
 
 def genre_family_code(genre_category: str) -> str:

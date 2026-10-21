@@ -28,15 +28,20 @@ def catalog_track(
     key: str = "8A",
     vocals: str = "mixed",
     descriptors: list[dict] | None = None,
+    title: str | None = None,
+    recording_code: str = "",
+    version_code: str = "ORG",
 ) -> dict:
     return {
         "downloaded_id": track_id,
         "genre": genre,
         "detailed_genre": detail,
         "descriptors": descriptors or [],
+        "recording_code": recording_code,
+        "version_code": version_code,
         "analysis": {
             "source_name": f"Track {track_id}.wav",
-            "title": f"Track {track_id}",
+            "title": title or f"Track {track_id}",
             "artist": artist,
             "bpm": bpm,
             "key": key,
@@ -144,6 +149,30 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         result = SetCandidateRetriever().retrieve(tracks, journey("Reggaeton", "Salsa"), section_limit=2)
         self.assertEqual(result["candidateCount"], 2)
         self.assertEqual([len(section["candidates"]) for section in result["sections"]], [2, 2])
+
+    def test_collapses_persisted_recording_family_to_one_candidate(self) -> None:
+        tracks = [
+            catalog_track(1, Path("/missing/original.wav"), recording_code="DSC-000001", version_code="ORG"),
+            catalog_track(2, Path("/missing/remix.wav"), recording_code="DSC-000001", version_code="RMX01"),
+        ]
+        result = SetCandidateRetriever().retrieve(tracks, journey("Reggaeton"), section_limit=4)
+        candidates = result["sections"][0]["candidates"]
+        self.assertEqual([candidate["id"] for candidate in candidates], ["downloaded:1"])
+        self.assertEqual(candidates[0]["recordingKey"], "recording:DSC-000001")
+        self.assertEqual(result["duplicateRecordingsCollapsed"], 1)
+        self.assertEqual(result["collapsedTrackIds"], ["downloaded:2"])
+
+    def test_collapses_safe_metadata_variants_without_persisted_family(self) -> None:
+        tracks = [
+            catalog_track(1, Path("/missing/one.wav"), artist="Lipps Inc", title="Funkytown"),
+            catalog_track(2, Path("/missing/two.wav"), artist="Lipps Inc", title="Funky Town"),
+            catalog_track(3, Path("/missing/three.wav"), artist="Majestic", title="Rasputin"),
+            catalog_track(4, Path("/missing/four.wav"), artist="Majestic", title="Rasputin - Majestic Club"),
+        ]
+        result = SetCandidateRetriever().retrieve(tracks, journey("Reggaeton"), section_limit=10)
+        ids = {candidate["id"] for candidate in result["sections"][0]["candidates"]}
+        self.assertEqual(ids, {"downloaded:1", "downloaded:3"})
+        self.assertEqual(result["duplicateRecordingsCollapsed"], 2)
 
     def test_large_catalog_retrieval_stays_bounded_and_responsive(self) -> None:
         for size, budget in ((100, 1), (1000, 2.5), (3000, 5)):
@@ -292,6 +321,23 @@ class SetPlanValidatorTests(unittest.TestCase):
         )
         self.assertIn("unavailable-file", {error["code"] for error in result["errors"]})
 
+    def test_rejects_two_catalog_entries_from_the_same_recording_family(self) -> None:
+        candidates = [
+            {"id": "downloaded:1", "recordingKey": "recording:DSC-1", "available": True},
+            {"id": "downloaded:2", "recordingKey": "recording:DSC-1", "available": True},
+        ]
+        result = SetPlanValidator(duration_tolerance=1).validate(
+            [
+                {"trackId": "downloaded:1", "sectionId": "section-1"},
+                {"trackId": "downloaded:2", "sectionId": "section-1"},
+            ],
+            candidates,
+            journey("Reggaeton"),
+            target_track_count=2,
+        )
+        duplicate = next(error for error in result["errors"] if error["code"] == "duplicate-recording")
+        self.assertEqual(duplicate["firstTrackId"], "downloaded:1")
+
 
 class SetCandidatePlanningRouteTests(unittest.TestCase):
     def test_candidate_and_validation_routes_use_bounded_server_catalog(self) -> None:
@@ -300,7 +346,7 @@ class SetCandidatePlanningRouteTests(unittest.TestCase):
             audio = root / "track.wav"
             audio.touch()
             cache = root / "catalog.json"
-            cache.write_text(json.dumps({"version": 5, "tracks": [catalog_track(1, audio)]}), encoding="utf-8")
+            cache.write_text(json.dumps({"version": 6, "tracks": [catalog_track(1, audio)]}), encoding="utf-8")
             app = FastAPI()
             app.include_router(
                 create_set_planning_router(

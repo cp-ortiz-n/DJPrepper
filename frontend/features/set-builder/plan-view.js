@@ -14,6 +14,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     music;
   const {
     SET_IDENTITY_STORAGE_KEY,
+    deduplicateSetRecordings,
     eligibleSetTracks,
     genreAllocationTargets,
     identityStore,
@@ -23,6 +24,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     saveManualTrackIdentity,
     setCatalogTrackId,
     setCandidateScore,
+    setRecordingKey,
     setTrackId,
     setVocalProfile,
     targetSetEnergy,
@@ -498,12 +500,12 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
   }
   function addSetTrack(insertIndex = state.plan.length, anchor = null) {
     document.querySelectorAll('.set-add-track-panel').forEach((item) => item.remove());
-    const used = new Set(state.plan.map(setTrackId));
+    const used = new Set(state.plan.map(setRecordingKey));
     const brief = setBrief();
     const previous = state.plan[insertIndex - 1];
     const next = state.plan[insertIndex];
-    const available = state.library
-      .filter((track) => !used.has(setTrackId(track)))
+    const available = deduplicateSetRecordings(state.library)
+      .filter((track) => !used.has(setRecordingKey(track)))
       .map((track) => ({
         track,
         score:
@@ -561,7 +563,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     panel.querySelector('.alternative-search').focus();
   }
   function replaceSetTrack(index) {
-    const used = new Set(state.plan.map(setTrackId));
+    const used = new Set(state.plan.filter((_, position) => position !== index).map(setRecordingKey));
     const brief = setBrief();
     const previous = state.plan[index - 1];
     const next = state.plan[index + 1];
@@ -571,8 +573,8 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         setCandidateScore(track, previous, index, state.plan.length, brief) +
         (next ? compatibility(track, next).score * 0.3 : 0),
     });
-    const available = state.library
-      .filter((track) => !used.has(setTrackId(track)))
+    const available = deduplicateSetRecordings(state.library)
+      .filter((track) => !used.has(setRecordingKey(track)))
       .map(rankTrack)
       .sort((a, b) => b.score - a.score);
     const recommendedIds = new Set(

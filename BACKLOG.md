@@ -622,6 +622,12 @@ Status definitions:
   keep-separate decision. Confirmed merges preserve playlists, jobs, feedback,
   verified keys, artwork, and the unused physical WAV. Perceptual fingerprinting
   and automatic prevention before every external download remain planned.
+- [x] **Set Builder same-recording uniqueness.** Completed 2026-10-21. Safe
+  normalized artist/title variants converge on one persistent recording family;
+  the compact catalog now carries family/version IDs; and candidate retrieval,
+  AI repair, deterministic fallback, validation, saved-set recovery, and manual
+  plan edits prevent a second member of the same recording family from entering
+  a set. Explicit keep-separate and manual-link decisions remain authoritative.
 - [~] **Durable background jobs.** Processing jobs persist, interrupted active
   work is recovered to a truthful failure state, and the UI supports pause,
   resume, cancel, retry/reprocess, reordering, review states, and queue cleanup.

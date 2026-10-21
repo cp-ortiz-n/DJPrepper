@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import re
 from contextlib import closing
 from pathlib import Path
 from typing import Any
 
-from audioextender.library.recording_identity import (
-    identity_key,
-    next_version_code,
-    version_kind,
-)
 from audioextender.persistence.base import RepositoryMixinBase
+from audioextender.persistence.catalog.identity_assignment import assignment_for_metadata_update
 from audioextender.persistence.catalog.shared import catalog_now as _now
 
 
@@ -156,27 +151,18 @@ class TrackMetadataStateRepositoryMixin(RepositoryMixinBase):
         new_value = str(new_path.resolve())
         with self._lock, closing(self._connect()) as connection, connection:
             current = connection.execute(
-                "SELECT recording_code,version_code FROM downloaded_tracks WHERE id=?",
+                "SELECT recording_code,version_code,identity_inference_locked FROM downloaded_tracks WHERE id=?",
                 (track_id,),
             ).fetchone()
             if current is None:
                 raise KeyError(track_id)
-            wanted_kind = version_kind(title)
-            current_kind = re.sub(r"\d+$", "", str(current["version_code"] or "ORG"))
-            version_code = str(current["version_code"] or "ORG")
-            if wanted_kind != current_kind:
-                existing_versions = {
-                    str(row[0])
-                    for row in connection.execute(
-                        "SELECT version_code FROM downloaded_tracks WHERE recording_code=? AND id!=?",
-                        (current["recording_code"], track_id),
-                    )
-                }
-                version_code = next_version_code(wanted_kind, existing_versions)
+            assignment = assignment_for_metadata_update(
+                connection, current=current, track_id=track_id, title=title, artist=artist
+            )
             cursor = connection.execute(
                 """UPDATE downloaded_tracks SET title=?, artist=?, file_path=?, filename=?,
-                    genre=?, genre_category=?, identity_key=?, version_code=?,
-                    identity_confidence='manual', identity_reason='Metadata confirmed by user',
+                    genre=?, genre_category=?, identity_key=?, recording_code=?, version_code=?,
+                    identity_confidence='manual', identity_reason=?,
                     updated_at=? WHERE id=?""",
                 (
                     title,
@@ -185,8 +171,10 @@ class TrackMetadataStateRepositoryMixin(RepositoryMixinBase):
                     new_path.name,
                     genre,
                     genre_category,
-                    identity_key(artist, title),
-                    version_code,
+                    assignment.key,
+                    assignment.recording_code,
+                    assignment.version_code,
+                    assignment.reason,
                     now,
                     track_id,
                 ),

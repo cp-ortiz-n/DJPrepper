@@ -84,7 +84,11 @@ retryable instead of losing or silently applying it.
 Phase 2D compares every validated AI proposal with an independently generated
 deterministic baseline. AI wins only when it improves the deterministic quality
 score, preserves requested-genre coverage, and still passes every hard
-validator. Exact-count schemas restrict model output to real candidate and
+validator. Track uniqueness is enforced by permanent recording family, not by
+filename: an original, remix, alternate import, or spelling/spacing variant of
+the same song can contribute at most one track to a set. This rule applies to
+AI planning, deterministic planning, saved-set recovery, and manual add or
+replace actions. Exact-count schemas restrict model output to real candidate and
 section IDs. A narrow structural repair boundary removes duplicates and fills
 missing section slots from eligible candidates while preserving valid unique AI
 choices; every repair is disclosed. The generated-set receipt shows both
@@ -281,6 +285,11 @@ and library relocation. **Collection integrity** presents conservative duplicate
 matches for review; merging combines catalog references while deliberately
 leaving the unused WAV on disk, and **Keep as separate recording** assigns a new
 family when two similar tracks are genuinely different.
+Exact normalized artist/title matches also converge automatically when a track
+is imported, rescanned, or saved with corrected metadata. Harmless title
+spacing differences such as `Funkytown` and `Funky Town` share one recording
+family. Permanent catalog row IDs are never rewritten; the shared family ID is
+the identity used to prevent the same song from appearing twice in Set Builder.
 The Review page presents one **Accept option** button per candidate and permits
 one selected intro plus one selected outro; choosing another option replaces the
 earlier selection for that side. After both

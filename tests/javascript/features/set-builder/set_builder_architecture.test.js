@@ -12,6 +12,10 @@ import { createSetBuilderFeedback } from '../../../../frontend/features/set-buil
 import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
 import {
+  deduplicateSetRecordings,
+  setRecordingKey,
+} from '../../../../frontend/features/set-builder/policy.js';
+import {
   formatProgressElapsed,
   normalizeProgressPercent,
   progressMarkup,
@@ -213,6 +217,28 @@ test('brief preparation returns both results without requesting a second journey
   assert.deepEqual(result.preferred, ['groovy']);
   assert.deepEqual(result.journey, { sections: [] });
   assert.equal(result.cache.hit, true);
+});
+
+test('recording identity collapses family members and safe title-spacing variants', () => {
+  const original = { source_name: 'Funkytown.wav', artist: 'Lipps Inc', _recordingCode: 'DSC-000001' };
+  const remix = { source_name: 'Funky Town (Remix).wav', artist: 'Lipps Inc', _recordingCode: 'DSC-000001' };
+  const other = { source_name: 'Born to Be Alive.wav', artist: 'Patrick', _recordingCode: 'DSC-000002' };
+  assert.equal(setRecordingKey(original), 'recording:DSC-000001');
+  assert.deepEqual(deduplicateSetRecordings([original, remix, other]), [original, other]);
+  assert.equal(
+    setRecordingKey({ source_name: 'Funky Town.wav', artist: 'Lipps Inc' }),
+    setRecordingKey({ source_name: 'Funkytown.wav', artist: 'Lipps Inc' }),
+  );
+  assert.equal(
+    setRecordingKey({ source_name: 'Rasputin.wav', artist: 'Majestic' }),
+    setRecordingKey({ source_name: 'Rasputin - Majestic Club.wav', artist: 'Majestic' }),
+  );
+});
+
+test('recording deduplication honors an explicitly preferred catalog entry', () => {
+  const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
+  const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
+  assert.deepEqual(deduplicateSetRecordings([original, remix], new Set(['funkytown remix.wav'])), [remix]);
 });
 
 test('failed brief preparation does not launch more slow AI requests', async () => {

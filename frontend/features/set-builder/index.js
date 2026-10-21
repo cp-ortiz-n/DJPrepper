@@ -3,12 +3,14 @@ import {
   SET_IDENTITY_STORAGE_KEY,
   SET_STORAGE_KEY,
   SET_STORAGE_MIGRATION_KEY,
+  deduplicateSetRecordings,
   genreAllocationTargets,
   inferredTrackIdentity,
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
   setCatalogTrackId,
+  setRecordingKey,
   setTrackDetailedGenres,
   setTrackId,
   targetSetEnergy,
@@ -33,12 +35,14 @@ export {
   SET_IDENTITY_STORAGE_KEY,
   SET_STORAGE_KEY,
   SET_STORAGE_MIGRATION_KEY,
+  deduplicateSetRecordings,
   genreAllocationTargets,
   inferredTrackIdentity,
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
   setCatalogTrackId,
+  setRecordingKey,
   setTrackDetailedGenres,
   setTrackId,
   targetSetEnergy,
@@ -513,7 +517,7 @@ export function createSetBuilderFeature({
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
   }
   function eligibleSetTracks(brief) {
-    return state.library.filter((track) => {
+    const eligible = state.library.filter((track) => {
       const bpm = Number(track.bpm || 0);
       const id = setTrackId(track);
       const intention = intentionEvaluation(track, brief);
@@ -546,6 +550,7 @@ export function createSetBuilderFeature({
         timingEligible: brief.timing === 'all' || timingProfile(track) === brief.timing,
       });
     });
+    return deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds]));
   }
   function setPlanSnapshot() {
     return snapshotSetPlan(state, setTrackId);
@@ -581,6 +586,7 @@ export function createSetBuilderFeature({
       setTrackDetailedGenres,
       setTrackId,
       setCatalogTrackId,
+      setRecordingKey,
       setVocalProfile,
       songEnergy,
     },
@@ -708,7 +714,9 @@ export function createSetBuilderFeature({
       saveManualTrackIdentity,
       setCatalogTrackId,
       setCandidateScore,
+      deduplicateSetRecordings,
       setTrackId,
+      setRecordingKey,
       setVocalProfile,
       targetSetEnergy,
       trackIdentity,
@@ -746,6 +754,7 @@ export function createSetBuilderFeature({
     },
     plan: {
       setBrief,
+      setRecordingKey,
       setTrackId,
       getPlanningReceipt: () => planningSession.receipt(),
       setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt),
@@ -797,6 +806,8 @@ export function createSetBuilderFeature({
         _libraryPath: libraryPath,
         _selectedPath: preferred === 'original' ? libraryPath : hasExtended ? job.extended_path : libraryPath,
         _downloadedId: item.downloaded_id || null,
+        _recordingCode: item.recording_code || '',
+        _versionCode: item.version_code || '',
         _descriptors: item.descriptors || [],
       };
       track._manualIdentity = [
