@@ -33,7 +33,9 @@ import {
   createSavedSetController,
 } from '../../../../frontend/features/set-builder/saved-sets.js';
 import {
+  advanceSetPlanRevision,
   createSetBuilderStore,
+  resetSetBuilderWorkspace,
   restoreSetPlan,
   snapshotSetPlan,
 } from '../../../../frontend/features/set-builder/state.js';
@@ -41,6 +43,7 @@ import { createSetTransitionEditor } from '../../../../frontend/features/set-bui
 import {
   aiObservabilityCards,
   fallbackPolicyMarkup,
+  intentionProviderView,
   journeyEnergyRange,
   journeyEvidenceLabel,
   setProposalMarkup,
@@ -346,6 +349,48 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
   assert.deepEqual(store.plan, library);
   assert.deepEqual([...store.lockedIds], ['a']);
   assert.deepEqual(store.transitionSettings, { 'a→b': { bars: 16 } });
+});
+
+test('Set Builder keeps stable draft and plan revision identities until an explicit reset', () => {
+  let sequence = 0;
+  const createId = (prefix) => `${prefix}-${++sequence}`;
+  const store = createSetBuilderStore({ storage: { getItem: () => null }, createId });
+  const library = [{ id: 'a' }];
+  store.plan = [...library];
+
+  assert.equal(store.draftId, 'draft-1');
+  const first = advanceSetPlanRevision(store, { createId, now: () => '2026-10-21T12:00:00Z' });
+  const snapshot = snapshotSetPlan(store, trackId);
+  const second = advanceSetPlanRevision(store, { createId, now: () => '2026-10-21T12:01:00Z' });
+
+  assert.deepEqual(first, {
+    id: 'revision-2',
+    number: 1,
+    parentId: null,
+    createdAt: '2026-10-21T12:00:00Z',
+  });
+  assert.equal(second.parentId, first.id);
+  assert.equal(second.number, 2);
+
+  restoreSetPlan(store, snapshot, library, trackId);
+  assert.deepEqual(store.planRevision, first);
+  assert.equal(store.draftId, 'draft-1');
+
+  resetSetBuilderWorkspace(store, { createId });
+  assert.equal(store.draftId, 'draft-4');
+  assert.equal(store.planRevision, null);
+  assert.equal(store.plan.length, 0);
+  assert.equal(store.activeSavedSetId, '');
+});
+
+test('provider labels never expose a missing model as undefined', () => {
+  assert.deepEqual(intentionProviderView({ available: true, provider: 'ollama' }), {
+    className: 'set-provider-status ready',
+    text: 'Local AI ready',
+    title: 'Ollama is available for local language interpretation.',
+  });
+  assert.equal(intentionProviderView({ available: true, provider: 'openai' }).text, 'Cloud AI ready');
+  assert.equal(intentionProviderView({ available: true, provider: 'ollama', model: 'qwen' }).text, 'Local AI ready · qwen');
 });
 
 test('brief authoring and track planning remain independent choices', () => {
@@ -677,13 +722,27 @@ test('planning session builds and receipts an accepted deterministic proposal', 
       return { accepted: [proposal], proposals: [proposal], preferred: proposal, best: proposal };
     },
   };
-  const { session } = planningSessionFor({ state, elements, planningClient: {}, classicPlanner });
+  const { session } = planningSessionFor({
+    state,
+    elements,
+    planningClient: {},
+    classicPlanner,
+    overrides: {
+      lifecycle: {
+        advancePlanRevision() {
+          state.planRevision = { id: 'revision-1', number: 1 };
+          return state.planRevision;
+        },
+      },
+    },
+  });
 
   await session.generateDeterministicSetPlan();
 
   assert.equal(state.plan.length, 3);
   assert.equal(state.activeProposal, 'balanced');
   assert.equal(session.receipt().mode, 'classic');
+  assert.deepEqual(session.receipt().planRevision, { id: 'revision-1', number: 1 });
   assert.match(elements.get('#set-builder-message').textContent, /Balanced applied at 82\/100/);
   assert.equal(Object.isFrozen(session), true);
 });
@@ -869,7 +928,7 @@ test('feedback controller loads ranking signals and submits review evidence with
   };
   const report = { tracks: { reviewed: 2, accepted: 2 }, transitionProfile: { activeSignals: [] } };
   const feedback = createSetBuilderFeedback({
-    state: { plan },
+    state: { plan, draftId: 'draft-stable', activeSavedSetId: '' },
     dom: { $: (selector) => elements.get(selector), $$: () => [], escapeHtml },
     api: {
       preferenceProfile: async () => profile,
@@ -901,6 +960,7 @@ test('feedback controller loads ranking signals and submits review evidence with
   assert.equal(toggle.checked, true);
   assert.equal(feedback.preferenceAdjustment(plan[0]), 3);
   assert.equal(submitted.overallDecision, 'accept');
+  assert.equal(submitted.setId, 'draft-stable');
   assert.deepEqual(submitted.evaluation, { score: 82 });
   assert.equal(submitted.transitions[0].features.technique, 'crossfade');
   assert.match(reviewStatus.textContent, /Review saved locally/);
@@ -1060,6 +1120,83 @@ test('saved-set controller loads durable records and falls back to the browser r
   }
 });
 
+test('saved-set deletion reports whether the deleted record owns the active workspace', async () => {
+  const storage = new Map();
+  const originalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+  const selected = { value: 'set-1', replaceChildren() {} };
+  const elements = new Map([['#saved-set-select', selected]]);
+  const state = { plan: [], library: [], activeSavedSetId: 'set-1' };
+  const deleted = [];
+  const controller = savedSetControllerFor({
+    state,
+    elements,
+    api: {
+      savedSets: async () => ({ sets: [{ id: 'set-1', name: 'Current', tracks: [] }] }),
+      deleteSet: async (id) => {
+        deleted.push(id);
+        return { deleted: true, id };
+      },
+    },
+  });
+
+  try {
+    await controller.loadSavedSets();
+    const result = await controller.deleteSavedSet('set-1');
+
+    assert.deepEqual(deleted, ['set-1']);
+    assert.equal(result.wasActive, true);
+    assert.equal(controller.savedSets().length, 0);
+    assert.equal(JSON.parse(storage.get('sets')).length, 0);
+  } finally {
+    globalThis.localStorage = originalStorage;
+  }
+});
+
+test('saved-set duplication creates an independent draft and revision lineage', async () => {
+  const storage = new Map();
+  const originalStorage = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value),
+  };
+  const original = {
+    id: 'set-1',
+    name: 'Current',
+    brief: { name: 'Current' },
+    tracks: [],
+    planRevision: { id: 'revision-set-1', number: 4, parentId: 'revision-set-0' },
+  };
+  const saved = [];
+  const controller = savedSetControllerFor({
+    state: { plan: [], library: [], activeSavedSetId: 'set-1' },
+    elements: new Map([['#saved-set-select', { value: 'set-1', replaceChildren() {} }]]),
+    api: {
+      savedSets: async () => ({ sets: [original] }),
+      saveSet: async (record) => saved.push(record),
+    },
+  });
+
+  try {
+    await controller.loadSavedSets();
+    const copy = await controller.duplicateSavedSet(original);
+
+    assert.equal(saved.length, 1);
+    assert.equal(copy.name, 'Current Copy');
+    assert.equal(copy.brief.name, 'Current Copy');
+    assert.notEqual(copy.id, original.id);
+    assert.match(copy.draftId, /^draft-/);
+    assert.equal(copy.planRevision.number, 1);
+    assert.equal(copy.planRevision.parentId, 'revision-set-1');
+    assert.deepEqual(controller.savedSets().map((record) => record.id), [copy.id, original.id]);
+  } finally {
+    globalThis.localStorage = originalStorage;
+  }
+});
+
 test('saved-set controller persists the plan, recovery cache, and playlist path', async () => {
   const storage = new Map();
   const originalStorage = globalThis.localStorage;
@@ -1077,6 +1214,9 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
   ]);
   const calls = [];
   const state = {
+    draftId: 'draft-1',
+    activeSavedSetId: '',
+    planRevision: { id: 'revision-1', number: 1, parentId: null },
     plan: [
       {
         id: 'track-1',
@@ -1111,6 +1251,9 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
 
     assert.equal(controller.savedSets().length, 1);
     assert.deepEqual(controller.savedSets()[0].tracks, ['track-1']);
+    assert.equal(controller.savedSets()[0].draftId, 'draft-1');
+    assert.deepEqual(controller.savedSets()[0].planRevision, state.planRevision);
+    assert.equal(state.activeSavedSetId, 'draft-1');
     assert.equal(JSON.parse(storage.get('sets')).length, 1);
     assert.equal(calls[1][1].tracks[0].path, '/music/Opening.wav');
     assert.match(message.textContent, /playlist written to \/playlists\/Night Set\.m3u8/);

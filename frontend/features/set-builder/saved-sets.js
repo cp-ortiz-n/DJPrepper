@@ -1,5 +1,11 @@
 /** Durable saved-set loading, recovery, persistence, and export ownership. */
 
+import {
+  createSavedSetLifecycle,
+  restoreSavedSetIdentity,
+  savedSetRecordIdentity,
+} from './saved-set-lifecycle.js';
+
 export function buildSetCsv({
   plan,
   compatibility,
@@ -108,6 +114,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     localStorage.setItem(SET_STORAGE_KEY, JSON.stringify(sets));
     renderSavedSets();
   }
+  const lifecycle = createSavedSetLifecycle({ state, api: setBuilderApi, savedSets, cacheSavedSets });
   async function loadSavedSets() {
     const legacy = cachedSavedSets(),
       needsMigration = localStorage.getItem(SET_STORAGE_MIGRATION_KEY) !== 'true';
@@ -136,9 +143,10 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     if (!state.plan.length) return;
     const button = $('#save-set');
     const sets = [...savedSets()];
-    const id = $('#saved-set-select').value || String(Date.now());
+    const identity = savedSetRecordIdentity(state, $('#saved-set-select').value);
+    const { id } = identity;
     const record = {
-      id,
+      ...identity,
       name: setBrief().name,
       brief: setBrief(),
       planningMode: $('#set-planning-mode').value,
@@ -168,6 +176,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
       existing >= 0 ? sets.splice(existing, 1, record) : sets.unshift(record);
       cacheSavedSets(sets);
       void recordPreference('save', state.plan);
+      state.activeSavedSetId = id;
       $('#saved-set-select').value = id;
       const entries = setM3uEntries();
       try {
@@ -268,11 +277,13 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     });
     state.plan = recoveredPlan;
     setPlanningReceipt(record.planningReceipt || null);
-    const workflow = inferSetWorkflow(record.planningMode, Boolean(savedIdentity.text));
+    restoreSavedSetIdentity(state, record);
+    $('#saved-set-select').value = record.id;
+    const savedWorkflow = inferSetWorkflow(record.planningMode, Boolean(savedIdentity.text));
     $$('[name="set-track-planner"]').forEach((input) => {
-      input.checked = input.value === workflow.trackPlanner;
+      input.checked = input.value === savedWorkflow.trackPlanner;
     });
-    workflow.applyBriefMode(brief.authoringMode || workflow.authoringMode, { announce: false });
+    workflow.applyBriefMode(brief.authoringMode || savedWorkflow.authoringMode, { announce: false });
     workflow.syncPlanningMode();
     state.lockedIds = new Set(record.locked || []);
     state.requiredIds = new Set(record.required || []);
@@ -293,6 +304,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
         ? ` Optimized ${optimized} transition${optimized === 1 ? '' : 's'} that previously used defaults.`
         : '');
   }
+
   function downloadSetText(filename, text, type = 'text/plain') {
     const url = URL.createObjectURL(new Blob([text], { type }));
     const link = document.createElement('a');
@@ -374,7 +386,8 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
   }
 
   return Object.freeze({
-    cacheSavedSets,
+    deleteSavedSet: lifecycle.deleteSavedSet,
+    duplicateSavedSet: lifecycle.duplicateSavedSet,
     exportSetCsv,
     exportSetM3u,
     loadSavedSet,

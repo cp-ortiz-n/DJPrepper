@@ -267,11 +267,12 @@ export function createSetBuilderFeature({
       model: interpreted.model,
     });
     if (announce) {
+      const model = String(interpreted.model || '').trim();
       const source =
         interpreted.provider === 'ollama'
-          ? `Local AI · ${interpreted.model}`
+          ? `Local AI${model ? ` · ${model}` : ''}`
           : interpreted.provider === 'openai'
-            ? `Cloud AI · ${interpreted.model}`
+            ? `Cloud AI${model ? ` · ${model}` : ''}`
             : 'offline rules';
       $('#set-intention-status').textContent =
         `Interpreted with ${source}. Found ${(interpreted.required || []).length} requirement${(interpreted.required || []).length === 1 ? '' : 's'}, ${(interpreted.preferred || []).length} preference${(interpreted.preferred || []).length === 1 ? '' : 's'}, and ${(interpreted.avoided || []).length} limit${(interpreted.avoided || []).length === 1 ? '' : 's'}. Edit anything before generating.`;
@@ -665,6 +666,7 @@ export function createSetBuilderFeature({
     },
     transitions: transitionEditor,
     lifecycle: {
+      advancePlanRevision: () => advanceSetPlanRevision(state),
       eligibleSetTracks,
       pushSetHistory,
       renderSetPlan: () => renderSetPlan(),
@@ -774,7 +776,8 @@ export function createSetBuilderFeature({
     feedback: { recordPreference },
   });
   const {
-    cacheSavedSets,
+    deleteSavedSet,
+    duplicateSavedSet,
     exportSetCsv,
     exportSetM3u,
     loadSavedSet,
@@ -783,6 +786,24 @@ export function createSetBuilderFeature({
     saveCurrentSet,
     savedSets,
   } = savedSetController;
+  const { resetActiveWorkspace, resetBriefControls } = createSetBuilderResetController({
+    state,
+    $,
+    workflow,
+    authoring: {
+      populateSetDetailedGenres,
+      renderExcludedSetGenres,
+      renderFallbackPolicy,
+      renderSetDetailedGenres,
+      renderSetGenreMix,
+    },
+    rendering: { renderSetPlan, renderSetProposals, renderSetRules, updateSetHistoryButtons },
+    planning: {
+      resetSetReviewDraft,
+      setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt),
+      stopTransitionPreview,
+    },
+  });
   async function loadSetBuilder() {
     intentionController.refreshProviderStatus();
     bindSetBuilder();
@@ -1028,30 +1049,7 @@ export function createSetBuilderFeature({
     );
     $('#submit-set-review').onclick = submitSetReview;
     $('#reset-set-brief').onclick = () => {
-      $('#set-builder-form').reset();
-      workflow.applyBriefMode(SET_BRIEF_MODES.AI, { announce: false });
-      $('#set-intention-interpretation').hidden = true;
-      $('#set-journey-preview').hidden = true;
-      renderFallbackPolicy();
-      [...$('#set-genre').options].forEach((option) => {
-        option.selected = option.value === 'all';
-      });
-      populateSetDetailedGenres();
-      [...$('#set-excluded-genres').options].forEach((option) => {
-        option.selected = false;
-      });
-      state.genreSelectionOrder = [];
-      renderSetGenreMix();
-      renderSetDetailedGenres();
-      renderExcludedSetGenres();
-      state.requiredIds.clear();
-      state.excludedIds.clear();
-      state.lockedIds.clear();
-      state.proposals = [];
-      state.activeProposal = '';
-      renderSetRules();
-      renderSetProposals();
-      $('#set-builder-message').textContent = 'Set brief reset.';
+      resetBriefControls();
     };
     $('#set-undo').onclick = undoSetEdit;
     $('#set-redo').onclick = redoSetEdit;
@@ -1078,16 +1076,8 @@ export function createSetBuilderFeature({
     $('#duplicate-set').onclick = async () => {
       const record = savedSets().find((set) => set.id === $('#saved-set-select').value);
       if (!record) return;
-      const copy = {
-        ...record,
-        id: String(Date.now()),
-        name: `${record.name} Copy`,
-        brief: { ...record.brief, name: `${record.name} Copy` },
-        updatedAt: new Date().toISOString(),
-      };
       try {
-        await setBuilderApi.saveSet(copy);
-        cacheSavedSets([copy, ...savedSets()]);
+        const copy = await duplicateSavedSet(record);
         $('#saved-set-select').value = copy.id;
         loadSavedSet(copy);
       } catch (error) {
@@ -1106,8 +1096,9 @@ export function createSetBuilderFeature({
       )
         return;
       try {
-        await setBuilderApi.deleteSet(id);
-        cacheSavedSets(savedSets().filter((set) => set.id !== id));
+        const result = await deleteSavedSet(id);
+        if (result.wasActive) resetActiveWorkspace('Plan deleted. Start a new direction when you are ready.');
+        else $('#set-builder-message').textContent = 'Saved plan deleted.';
       } catch (error) {
         notify(error.message || String(error), 'danger');
       }
@@ -1124,8 +1115,14 @@ import { createSetBuilderFeedback } from './feedback.js';
 import { createSetPlanView } from './plan-view.js';
 import { createSetPlanningSession } from './planning-session.js';
 import { createSavedSetController } from './saved-sets.js';
-import { createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './state.js';
+import {
+  advanceSetPlanRevision,
+  createSetBuilderStore,
+  restoreSetPlan,
+  snapshotSetPlan,
+} from './state.js';
 import { createSetTransitionEditor } from './transition-editor.js';
+import { createSetBuilderResetController } from './workspace-reset.js';
 import { useFrontendServices } from '../../core/frontend-services.js';
 import {
   SET_PROPOSAL_STRATEGIES,

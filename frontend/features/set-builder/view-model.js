@@ -50,19 +50,24 @@ export function journeyEnergyRange(section = {}) {
 export function intentionProviderView(status = {}) {
   const provider = status.provider || 'offline';
   const ready = Boolean(status.available);
+  const model = String(status.model || '').trim();
   return {
     className: `set-provider-status ${ready ? 'ready' : 'offline'}`,
     text:
       provider === 'ollama' && ready
-        ? `Local AI ready · ${status.model}`
+        ? `Local AI ready${model ? ` · ${model}` : ''}`
         : provider === 'openai' && ready
-          ? `Cloud AI ready · ${status.model}`
+          ? `Cloud AI ready${model ? ` · ${model}` : ''}`
           : 'Offline rules · Ollama unavailable',
     title:
       provider === 'ollama'
-        ? `Ollama is answering with ${status.model}.`
+        ? model
+          ? `Ollama is answering with ${model}.`
+          : 'Ollama is available for local language interpretation.'
         : provider === 'openai'
-          ? 'Ollama is unavailable; the configured cloud fallback is active.'
+          ? model
+            ? `Ollama is unavailable; the configured cloud fallback is answering with ${model}.`
+            : 'Ollama is unavailable; the configured cloud fallback is active.'
           : 'Start Ollama to enable local language interpretation.',
   };
 }

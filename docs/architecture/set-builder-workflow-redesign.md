@@ -237,11 +237,20 @@ keep the row count full.
 
 ### Slice A — characterization and immediate correctness
 
-- Freeze current delete, lock, review-draft, journey-edit, warning, save/load,
+- **Status: complete (2026-10-21).**
+- [x] Freeze current delete, lock, review-draft, journey-edit, warning, save/load,
   and undo behavior with tests.
-- Fix active-plan reset after deleting the loaded plan.
-- Fix the provider badge displaying `undefined` when model metadata is absent.
-- Introduce stable draft and plan-revision IDs.
+- [x] Fix active-plan reset after deleting the loaded plan.
+- [x] Fix the provider badge displaying `undefined` when model metadata is absent.
+- [x] Introduce stable draft and plan-revision IDs.
+- [x] Repair the saved-plan loading path exposed by the new browser workflow.
+- [x] Keep reset and saved-plan lifecycle ownership outside the Set Builder
+  composition hotspot.
+
+Verification completed for this slice: the full repository quality gate, 451
+Python tests, 114 JavaScript tests, all 17 browser workflows, the catalog
+stability workflow, and refreshed Python/JavaScript coverage. Musical scoring
+and candidate-selection policy were not changed.
 
 ### Slice B — workspace shell and compact presentation
 

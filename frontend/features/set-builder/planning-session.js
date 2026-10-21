@@ -18,6 +18,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
   const { autoOptimizeSetTransitions, improveSetOrder, setHealth, setHealthIssues, stopTransitionPreview } =
     transitions;
   const {
+    advancePlanRevision = () => null,
     eligibleSetTracks,
     pushSetHistory,
     renderSetPlan,
@@ -31,14 +32,6 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
   let activePlanningJobId = '';
   let planningController = null;
   let planningReceipt = null;
-
-  function receipt() {
-    return planningReceipt;
-  }
-
-  function setReceipt(value) {
-    planningReceipt = value;
-  }
 
   async function generateDeterministicSetPlan() {
     progress.showEligibilityScan?.();
@@ -226,6 +219,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       `Built ${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'}. Optimizing transition techniques for ${preferred.label}…`;
     progress.startTransitionOptimization?.();
     await autoOptimizeSetTransitions();
+    const planRevision = advancePlanRevision();
     preferred.snapshot = setPlanSnapshot();
     preferred.health = setHealth();
     planningReceipt = {
@@ -239,6 +233,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       candidatePool: null,
       planningDurationMs: null,
       generatedAt: new Date().toISOString(),
+      planRevision,
     };
     renderSetPlan();
     $('#set-builder-message').textContent =
@@ -390,16 +385,20 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       planningDurationMs: result.planningDurationMs ?? null,
       generatedAt: new Date().toISOString(),
       observability: result.observability || null,
+      planRevision: null,
     };
     void loadAIObservability();
     $('#set-builder-message').textContent = 'Validated track order ready. Optimizing transition techniques…';
     progress.startTransitionOptimization?.();
     await autoOptimizeSetTransitions();
+    planningReceipt.planRevision = advancePlanRevision();
     renderSetPlan();
     const mixHealth = setHealth();
     const warningCount = result.warnings?.length || 0;
     const source =
-      result.mode === 'ai-planned' ? `${result.provider} · ${result.model}` : 'deterministic safety fallback';
+      result.mode === 'ai-planned'
+        ? [result.provider, result.model].filter(Boolean).join(' · ') || 'AI planner'
+        : 'deterministic safety fallback';
     $('#set-builder-message').textContent =
       mixHealth.score >= brief.minimumHealth
         ? `${result.summary} ${selected.length} tracks · ${source} · ${mixHealth.score}/100 mix health.`
@@ -465,9 +464,11 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     generateAITrackPlan,
     generateDeterministicSetPlan,
     loadAIObservability,
-    receipt,
+    receipt: () => planningReceipt,
     renderSetProposals,
     selectSetProposal,
-    setReceipt,
+    setReceipt: (value) => {
+      planningReceipt = value;
+    },
   });
 }

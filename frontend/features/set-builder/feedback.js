@@ -194,7 +194,7 @@ export function createSetBuilderFeedback({ state, dom, api, music, planning, rev
     const receipt = getPlanningReceipt();
     try {
       const result = await api.submitReview({
-        setId: $('#saved-set-select').value || `draft-${Date.now()}`,
+        setId: state.activeSavedSetId || state.draftId,
         setName: setBrief().name,
         context: preferenceContext(),
         overallDecision: setDecision,

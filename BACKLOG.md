@@ -882,6 +882,11 @@ without replacing the technical safety score.
   direction lifecycle; consolidate health warnings and repair commands; then
   complete quality, browser, stability, and real-library listening gates. Keep
   musical policy unchanged during the workflow refactor.
+  - [x] Slice A completed 2026-10-21: active-plan deletion now returns to a clean
+    draft; saved-plan loading is repaired; draft and plan-revision identities
+    persist; provider labels no longer expose missing model metadata; focused,
+    browser, quality, coverage, and stability gates pass.
+  - [ ] Next: Slice B — compact workspace shell and presentation.
 
 ## Rekordbox track-rating synchronization
 

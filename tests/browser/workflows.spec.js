@@ -178,6 +178,77 @@ test('saved sets survive browser storage clearing and application reload', async
   );
 });
 
+test('deleting the active saved set returns Set Builder to a clean draft', async ({ page }) => {
+  const savedSet = {
+    id: 'active-plan',
+    draftId: 'draft-active-plan',
+    planRevision: {
+      id: 'revision-active-plan-1',
+      number: 1,
+      parentId: null,
+      createdAt: '2026-10-21T12:00:00.000Z',
+    },
+    name: 'Active Plan',
+    brief: { name: 'Active Plan', authoringMode: 'manual' },
+    planningMode: 'classic',
+    planningReceipt: { provider: 'offline', validated: true },
+    tracks: ['opening.wav'],
+    trackDetails: [{ id: 'opening.wav', source_name: 'Opening.wav', artist: 'DJ Test', genre: 'House' }],
+    transitions: {},
+    locked: [],
+    required: [],
+    excluded: [],
+    updatedAt: '2026-10-21T12:00:00.000Z',
+  };
+  await page.route((url) => url.pathname === '/api/set-builder/catalog', (route) =>
+    route.fulfill({
+      json: {
+        tracks: [
+          {
+            downloaded_id: 501,
+            recording_code: 'HOU-000501',
+            version_code: 'ORG',
+            genre: 'House',
+            detailed_genre: 'Deep House',
+            descriptors: [],
+            analysis: {
+              source_name: 'Opening.wav',
+              title: 'Opening',
+              artist: 'DJ Test',
+              bpm: 120,
+              key: 'Am',
+              duration_seconds: 180,
+              energy: 0.5,
+            },
+            job: { id: 501, config_json: '{}', library_path: '/tmp/Opening.wav' },
+          },
+        ],
+      },
+    }),
+  );
+  await page.route((url) => url.pathname === '/api/set-builder/sets', (route) =>
+    route.fulfill({ json: { version: 2, sets: [savedSet] } }),
+  );
+  await page.route((url) => url.pathname === '/api/set-builder/sets/active-plan', (route) =>
+    route.fulfill({ json: { deleted: true, id: 'active-plan' } }),
+  );
+  await page.reload();
+  await openView(page, 'Set Builder');
+
+  await page.locator('#saved-set-select').selectOption('active-plan', { force: true });
+  await page.locator('#load-set').click();
+  await expect(page.locator('#set-result')).toBeVisible();
+  await expect(page.locator('#set-result-name')).toHaveValue('Active Plan');
+
+  await page.locator('#delete-set').click();
+  await page.locator('#app-confirm-accept').click();
+
+  await expect(page.locator('#set-result')).toBeHidden();
+  await expect(page.locator('#saved-set-select')).toHaveValue('');
+  await expect(page.locator('#set-name')).toHaveValue('New DJ Set');
+  await expect(page.locator('#set-builder-message')).toContainText('Plan deleted');
+});
+
 test('Set Builder keeps brief authoring separate from track planning', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
   await openView(page, 'Set Builder');
