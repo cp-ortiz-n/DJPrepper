@@ -1,6 +1,6 @@
 /** AI and deterministic Set Builder planning-session orchestration. */
 
-export function createSetPlanningSession({ state, dom, clients, policy, transitions, lifecycle, view }) {
+export function createSetPlanningSession({ state, dom, clients, policy, transitions, lifecycle, view, progress = {} }) {
   const { $, escapeHtml, notify } = dom;
   const { planningClient, classicPlanner } = clients;
   const {
@@ -41,6 +41,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
   }
 
   async function generateDeterministicSetPlan() {
+    progress.showEligibilityScan?.();
     const brief = setBrief();
     const eligiblePool = eligibleSetTracks(brief);
     const requiredIds = new Set(state.requiredIds);
@@ -223,6 +224,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     restoreSetSnapshot(preferred.snapshot, false);
     $('#set-builder-message').textContent =
       `Built ${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'}. Optimizing transition techniques for ${preferred.label}…`;
+    progress.startTransitionOptimization?.();
     await autoOptimizeSetTransitions();
     preferred.snapshot = setPlanSnapshot();
     preferred.health = setHealth();
@@ -319,6 +321,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     planningController = controller;
     let started;
     try {
+      progress.showCandidatePool?.();
       started = await planningClient.start({
         brief,
         journey,
@@ -342,6 +345,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
         signal: controller.signal,
         onProgress: (jobState) => {
           $('#set-builder-message').textContent = `${jobState.stage} · ${jobState.progress || 0}%`;
+          progress.updateRemotePlanning?.(jobState.stage, jobState.progress);
         },
       });
     } finally {
@@ -389,6 +393,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     };
     void loadAIObservability();
     $('#set-builder-message').textContent = 'Validated track order ready. Optimizing transition techniques…';
+    progress.startTransitionOptimization?.();
     await autoOptimizeSetTransitions();
     renderSetPlan();
     const mixHealth = setHealth();

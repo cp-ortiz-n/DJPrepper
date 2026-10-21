@@ -309,6 +309,7 @@
             <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>AI brief</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div><span id="set-provider-status" class="set-provider-status checking">Checking local AI…</span></div>
             <textarea id="set-intention" rows="4" maxlength="1200" placeholder="Example: Build a driving Latin electronic set with a Techno foundation, Spanish vocals, dembow or Latin percussion, and an Ecuadorian party feel. Allow Latin House and Cumbia edits as bridges."></textarea>
             <div class="set-intention-actions"><small>We’ll turn this into one reviewable direction before selecting tracks.</small><button id="interpret-set-intention" type="button" class="button secondary">Review set direction</button></div>
+            <section id="set-intention-progress" class="set-builder-progress" role="status" aria-live="polite" hidden></section>
             <div id="set-intention-interpretation" class="set-intention-interpretation" hidden>
               <div class="set-intention-summary"><strong>Your set direction</strong><span id="set-intention-status">Review these preferences before generating.</span></div>
               <details class="set-direction-details"><summary>Edit detailed interpretation</summary><div class="set-intention-fields">
@@ -346,6 +347,7 @@
             <button id="set-generate" type="submit">Build this set</button>
             <button id="set-cancel-planning" type="button" class="button secondary" hidden>Cancel planning</button>
             <p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p>
+            <section id="set-planning-progress" class="set-builder-progress" role="status" aria-live="polite" hidden></section>
           </div>
         </form>
         <aside class="panel saved-sets-panel">

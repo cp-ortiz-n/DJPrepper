@@ -444,6 +444,7 @@
 .set-track-review button.active {
   border-color: var(--lime);
   color: var(--lime);
+  background: #252d17;
 }
 .set-review-panel label {
   display: grid;
@@ -460,8 +461,8 @@
   resize: vertical;
 }
 .set-track-review {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto minmax(120px, 1fr);
   gap: 5px;
   margin-top: 8px;
 }
@@ -470,6 +471,28 @@
   min-height: 28px;
   padding: 4px 8px;
   font-size: 9px;
+}
+.set-track-review button {
+  width: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #202320;
+}
+.set-track-review button:hover {
+  border-color: #596057;
+  background: #292d29;
+  filter: none;
+}
+.set-track-review button.active:hover {
+  border-color: var(--lime);
+  color: var(--lime);
+  background: #2b3519;
+}
+.set-track-review select {
+  min-width: 0;
+  height: 28px;
+  margin: 0;
 }
 .set-transition-rating {
   display: grid;
@@ -1403,6 +1426,12 @@
   .set-result-actions {
     justify-content: flex-start;
     margin-top: 12px;
+  }
+  .set-track-review {
+    grid-template-columns: 1fr 1fr;
+  }
+  .set-track-review select {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 900px) {

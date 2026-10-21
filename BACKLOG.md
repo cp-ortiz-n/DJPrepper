@@ -221,6 +221,16 @@ Benefit: fewer regressions from shared closure state and broad callback wiring.
   acceptance, AI cancellation and safety fallback, proposal switching, ranking
   signal loading, and receipt-backed review submission. The coordinator ceiling
   is ratcheted from 1,700 to 1,150 lines.
+- [x] **UX-SET-001 — Clarify Set Builder progress, journey editing, and review state.**
+  Priority: P1. Effort: S. Risk: Medium. Dependencies: ARCH-008D. Acceptance:
+  brief interpretation and track planning expose accessible stage and elapsed-
+  time feedback; malformed journey energy endpoints render a playable value;
+  each journey section reads as one responsive card; selected Keep/Reject
+  controls remain legible. Completed 2026-10-20: a focused progress presenter
+  owns both long-running views, AI job percentages feed the same presentation,
+  journey energy normalization is pure and tested, and browser coverage guards
+  progress, responsive card geometry, invalid endpoints, and selected-review
+  contrast.
 - [x] **ARCH-007C — Decompose DJ Library browser orchestration.**
   Priority: P1. Effort: M. Risk: Medium. Dependencies: ARCH-007B. Acceptance:
   query/filter binding, bulk selection and mutations, and Library intelligence

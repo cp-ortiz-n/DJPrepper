@@ -157,6 +157,15 @@ The UI identifies results as Local AI, Cloud AI, or offline rules. Model output
 is schema-constrained and sanitized against catalog vocabulary before the
 browser uses it. The journey must total 100% of the target runtime; edits to its
 section order, genres, and energy targets feed either safe planning mode.
+While the brief or track order is being prepared, Set Builder shows the current
+stage, elapsed time, validation boundary, and the remaining stages. AI planning
+also shows backend progress when it is available. Journey sections are grouped
+as complete cards so their name, duration, energy movement, genres, character,
+and purpose can be reviewed together. If an AI response omits a section's end
+energy, the UI safely keeps that section at its valid starting energy instead of
+displaying an unknown target. Track **Keep** and **Reject** choices remain
+visible after selection and are not submitted as learning evidence until the
+set review is saved.
 
 When AudioExtender starts, its Terminal prints the detected Set Builder AI
 provider and model. Every interpreted brief also logs the provider, model,

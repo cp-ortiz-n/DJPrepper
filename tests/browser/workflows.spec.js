@@ -246,11 +246,94 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
     sections.some((section) => {
       const energy = section.querySelector('.journey-energy-inputs')?.getBoundingClientRect();
       const character = section.querySelector('.journey-characteristics')?.getBoundingClientRect();
-      return energy && character && energy.right > character.left + 1;
+      return (
+        energy &&
+        character &&
+        energy.left < character.right - 1 &&
+        energy.right > character.left + 1 &&
+        energy.top < character.bottom - 1 &&
+        energy.bottom > character.top + 1
+      );
     }),
   );
   expect(journeyFieldsOverlap).toBe(false);
+  const journeyStructure = await journeyProbe.evaluate((section) => {
+    const primary = section.querySelector('.journey-primary').getBoundingClientRect();
+    const details = section.querySelector('.journey-details').getBoundingClientRect();
+    return {
+      stacked: details.top >= primary.bottom - 1,
+      aligned: Math.abs(primary.left - details.left) <= 1,
+    };
+  });
+  expect(journeyStructure).toEqual({ stacked: true, aligned: true });
   await page.locator('#journey-layout-probe').evaluate((node) => node.remove());
+
+  await page.evaluate(() => {
+    const review = document.createElement('div');
+    review.id = 'set-review-style-probe';
+    review.className = 'set-track-review';
+    review.innerHTML = `<button type="button" class="active">✓ Keep</button><button type="button">× Reject</button><select aria-label="Rejection reason"><option>Reason…</option></select>`;
+    document.querySelector('#set-builder-view').append(review);
+  });
+  const keepButton = page.locator('#set-review-style-probe button.active');
+  await expect(keepButton).toHaveText('✓ Keep');
+  const keepContrast = await keepButton.evaluate((button) => {
+    const style = getComputedStyle(button);
+    return { color: style.color, background: style.backgroundColor, width: button.getBoundingClientRect().width };
+  });
+  expect(keepContrast.color).not.toBe(keepContrast.background);
+  expect(keepContrast.width).toBeLessThan(180);
+  await page.locator('#set-review-style-probe').evaluate((node) => node.remove());
+});
+
+test('Set Builder explains journey planning and normalizes incomplete energy ranges', async ({ page }) => {
+  await page.route('**/api/set-builder/prepare-brief', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({
+      json: {
+        interpretation: {
+          provider: 'ollama',
+          model: 'browser-test',
+          required: [],
+          preferred: ['disco'],
+          avoided: [],
+          requestedGenres: ['disco & funk'],
+          optionalGenres: [],
+          genreSequence: ['disco & funk'],
+          vibe: 'dance-party',
+          curve: 'rise',
+          drift: 'moderate',
+        },
+        journey: {
+          evidence: 'ai-planned',
+          model: 'browser-test',
+          summary: 'A compact disco journey.',
+          sections: [
+            {
+              id: 'opening',
+              name: 'Opening',
+              durationPercent: 100,
+              energyStart: 6,
+              energyEnd: '?',
+              genres: ['disco & funk'],
+              characteristics: ['groovy'],
+              purpose: 'Build momentum',
+            },
+          ],
+        },
+      },
+    });
+  });
+  await openView(page, 'Set Builder');
+  await page.locator('#set-intention').fill('Build a disco set that grows in energy.');
+  await page.locator('#interpret-set-intention').click();
+  const progress = page.locator('#set-intention-progress');
+  await expect(progress).toBeVisible();
+  await expect(progress).toContainText('Understanding your set brief');
+  await expect(progress.locator('li')).toHaveCount(3);
+  await expect(progress).toBeHidden({ timeout: 5000 });
+  await expect(page.locator('.journey-energy-value')).toHaveText('6 → 6');
+  await expect(page.locator('.journey-energy-end')).toHaveValue('6');
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {

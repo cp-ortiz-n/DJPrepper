@@ -435,11 +435,12 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `set-builder-commands.js`        | Plan edit commands, bounded history, undo, redo, and movement                                                 |
 | `set-builder-classic-planner.js` | Deterministic proposal generation, acceptance, and safe fallback selection                                    |
 | `set-builder-planning-session.js` | AI/deterministic planning lifecycle, cancellation, proposal switching, observability, and planning receipts  |
+| `features/set-builder/progress-view.js` | Accessible stage, elapsed-time, and determinate/indeterminate progress presentation for long-running planning |
 | `set-builder-feedback.js`        | Learned preferences, calibration reporting, personalization controls, and set-review submission               |
 | `set-builder-transition-editor.js` | Transition scoring, cue optimization, preview playback, and transition-editor lifecycle                    |
 | `set-builder-plan-view.js`       | Generated-plan rendering plus track rules, alternatives, identity edits, and row interactions                 |
 | `set-builder-saved-sets.js`      | Durable saved-set recovery, persistence, loading, and CSV/M3U8 export                                         |
-| `set-builder-view-model.js`      | Escaped proposal, fallback-policy, and AI-observability presentation models                                   |
+| `set-builder-view-model.js`      | Escaped proposal, fallback-policy, journey-energy normalization, and AI-observability presentation models     |
 | `settings.js`                    | Settings forms, library health, relocation, backups, storage, and refresh coordination                        |
 | `reporting.js`                   | Analysis & Feedback and key-verification rendering                                                            |
 | `request-state-controller.js`    | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence              |

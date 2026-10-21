@@ -3,11 +3,19 @@ import assert from 'node:assert/strict';
 
 import { createApiClient } from '../../../../frontend/core/api-client.js';
 import { createSetBuilderApi } from '../../../../frontend/features/set-builder/api.js';
-import { createClassicSetPlanner, optimizePlanOrder } from '../../../../frontend/features/set-builder/classic-planner.js';
+import {
+  createClassicSetPlanner,
+  optimizePlanOrder,
+} from '../../../../frontend/features/set-builder/classic-planner.js';
 import { createSetEditCommands } from '../../../../frontend/features/set-builder/commands.js';
 import { createSetBuilderFeedback } from '../../../../frontend/features/set-builder/feedback.js';
 import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
+import {
+  formatProgressElapsed,
+  normalizeProgressPercent,
+  progressMarkup,
+} from '../../../../frontend/features/set-builder/progress-view.js';
 import {
   buildSetCsv,
   buildSetM3u,
@@ -22,6 +30,7 @@ import { createSetTransitionEditor } from '../../../../frontend/features/set-bui
 import {
   aiObservabilityCards,
   fallbackPolicyMarkup,
+  journeyEnergyRange,
   journeyEvidenceLabel,
   setProposalMarkup,
 } from '../../../../frontend/features/set-builder/view-model.js';
@@ -1159,4 +1168,34 @@ test('Set Builder view helpers escape content and expose planning evidence', () 
     ),
     /Safety fallback/,
   );
+});
+
+test('journey energy ranges replace missing or invalid endpoints with a playable value', () => {
+  assert.deepEqual(journeyEnergyRange({ energyStart: 6, energyEnd: '?' }), [6, 6]);
+  assert.deepEqual(journeyEnergyRange({ energyStart: 7, energyEnd: '' }), [7, 7]);
+  assert.deepEqual(journeyEnergyRange({ energyStart: 'invalid', energyEnd: 8 }), [5, 8]);
+  assert.deepEqual(journeyEnergyRange({ energyStart: 0, energyEnd: 14 }), [1, 10]);
+});
+
+test('Set Builder progress presentation is bounded, escaped, and stage-aware', () => {
+  assert.equal(normalizeProgressPercent(-4), 0);
+  assert.equal(normalizeProgressPercent(105), 100);
+  assert.equal(normalizeProgressPercent('unknown'), null);
+  assert.equal(formatProgressElapsed(65.8), '1:05');
+  const markup = progressMarkup(
+    {
+      title: '<Planning>',
+      detail: 'Catalog & validation',
+      stages: ['Retrieve', 'Validate', 'Finish'],
+      activeStep: 1,
+      percent: 42,
+      elapsedSeconds: 9,
+    },
+    escapeHtml,
+  );
+  assert.match(markup, /&lt;Planning&gt;/);
+  assert.match(markup, /42% complete/);
+  assert.match(markup, /class="complete"/);
+  assert.match(markup, /class="active"/);
+  assert.match(markup, /0:09/);
 });
