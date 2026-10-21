@@ -869,6 +869,92 @@ without replacing the technical safety score.
 - [x] Distinguish silent genre-coverage loss from explicitly proven zero-candidate catalog scarcity.
 - [ ] Complete the final hands-on acceptance review against the connected real library, pass `--manual-listening-approved`, and tune weights only from that evidence.
 
+## Set Builder workflow redesign
+
+- [ ] **SET-UX-001 — Make Set Builder a fast revision-based workspace.**
+  Priority: P0. Effort: L. Risk: High. Dependencies: ARCH-008D, durable saved
+  sets, validated track planning, recording-family uniqueness, and feedback-
+  informed ranking. Plan and acceptance scenarios:
+  [`docs/architecture/set-builder-workflow-redesign.md`](docs/architecture/set-builder-workflow-redesign.md).
+  Deliver in independent slices: characterize and fix active-plan deletion;
+  introduce the compact workspace; add regenerate-unlocked with durable locks;
+  make rejection an explicit saved reject-and-replace action; add an editable
+  direction lifecycle; consolidate health warnings and repair commands; then
+  complete quality, browser, stability, and real-library listening gates. Keep
+  musical policy unchanged during the workflow refactor.
+
+## Rekordbox track-rating synchronization
+
+Status: **Backlog.** The current Rekordbox integration exports DJ Library Studio
+cues and playlists but does not read Rekordbox's per-track star ratings back into
+the catalog. Implement this as explicit, previewable preference synchronization;
+do not read or modify Rekordbox's private database and do not use song ratings to
+change rendered audio.
+
+- [ ] **SET-RB-001 — Import Rekordbox ratings as durable preference evidence.**
+  Priority: P1. Effort: L. Risk: Medium. Dependencies: recording-family
+  uniqueness and feedback-informed candidate ranking. Acceptance:
+  - Parse a user-selected Rekordbox collection XML through a focused import
+    service. Support ratings `1` through `5`; treat a missing or zero rating as
+    unknown rather than negative feedback.
+  - Persist external ratings, source, source identity, match method, confidence,
+    and synchronization time separately from analyzed musical facts. Repeated
+    imports are idempotent, and ratings survive application restart, reanalysis,
+    rescans, metadata synchronization, and library relocation.
+  - Match conservatively in this order: stable DJ Library Studio/catalog
+    identity when present, normalized file URI/path, exact audio or recording-
+    family identity, then an exact normalized artist/title/duration tuple. Never
+    apply a fuzzy or ambiguous match silently; unmatched and ambiguous rows go
+    to a review result.
+  - Show a dry-run summary before applying changes: total XML tracks, rated
+    tracks, exact matches, unchanged values, proposed changes, ambiguous rows,
+    unmatched rows, and invalid rows. Applying the same file twice produces no
+    additional changes.
+  - Convert ratings to one centrally owned, versioned, and golden-tested
+    preference adjustment. Initial policy: `1=-4`, `2=-2`, `3=0`, `4=+2`, and
+    `5=+4`, with `0/absent=unknown`. The existing total personalization cap
+    remains authoritative.
+  - Use ratings only to rerank otherwise eligible Set Builder candidates. They
+    must never bypass exclusions, required/locked tracks, availability, journey
+    coverage, recording-family uniqueness, validation, or transition-safety
+    rules.
+  - Preserve version-specific ratings. Within one recording family, prefer the
+    higher-rated eligible version while continuing to expose other versions as
+    alternatives. A family may contribute a small bounded song-affinity signal,
+    but an unrated sibling must not inherit the full rating of another version,
+    and conflicting version ratings must remain visible.
+  - Explain the influence in “Why this track” using source and evidence, for
+    example “Rekordbox rating: 5 stars (+4), synced 2026-10-21.” Neutral and
+    unknown ratings produce no hidden adjustment.
+  - Add a Music Files or Settings workflow to select the XML, preview the match,
+    apply it, inspect ambiguous/unmatched tracks, view last-sync status, and
+    clear only imported Rekordbox ratings without deleting local Set Builder
+    feedback.
+  - Cover XML encoding and file-URI normalization, missing/out-of-range values,
+    malformed input, moved files, duplicate titles, recording-family versions,
+    ambiguous matches, idempotent reimport, restart/reanalysis/relocation,
+    ranking caps, hard-rule preservation, alternative-version ordering, API
+    errors, and the browser preview/apply workflow.
+  - Document the one-way export versus rating-import distinction, the Rekordbox
+    collection-export steps, matching rules, scoring policy, privacy boundary,
+    troubleshooting, and rollback procedure in the user, operator, developer,
+    and architecture guides.
+  - Release only after the full quality, coverage, stability, browser, and
+    real-library dry-run gates pass. The first real-library application requires
+    explicit DJ approval of the preview report.
+
+Implementation sequence:
+
+1. Freeze Rekordbox XML fixtures and define the external-rating persistence and
+   matching contracts.
+2. Implement the read-only parser, conservative matcher, and dry-run report.
+3. Add the idempotent persistence migration and apply/clear services.
+4. Integrate the bounded rating signal with candidate ranking, recording-family
+   alternatives, and explanations.
+5. Add the preview/apply/review UI and operational diagnostics.
+6. Complete automated gates, a real-library dry run, documentation, and an
+   explicit approval checkpoint before enabling the signal.
+
 ## Preflight analysis mode
 
 Analyze a batch before rendering audio, then review proposed classifications,
