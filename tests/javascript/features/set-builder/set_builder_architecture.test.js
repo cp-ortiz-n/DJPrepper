@@ -13,8 +13,15 @@ import { createSetPlanView } from '../../../../frontend/features/set-builder/pla
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
 import {
   deduplicateSetRecordings,
+  recordingVersionAlternatives,
+  recordingVersionLabel,
   setRecordingKey,
-} from '../../../../frontend/features/set-builder/policy.js';
+} from '../../../../frontend/features/set-builder/recording-identity.js';
+import {
+  buildVersionAwareReplacementCatalog,
+  defaultVersionAwareReplacements,
+  searchVersionAwareReplacements,
+} from '../../../../frontend/features/set-builder/version-alternatives.js';
 import {
   formatProgressElapsed,
   normalizeProgressPercent,
@@ -239,6 +246,70 @@ test('recording deduplication honors an explicitly preferred catalog entry', () 
   const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
   const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
   assert.deepEqual(deduplicateSetRecordings([original, remix], new Set(['funkytown remix.wav'])), [remix]);
+});
+
+test('recording families retain alternate versions for explicit substitution', () => {
+  const original = {
+    source_name: 'Funkytown.wav',
+    _downloadedId: 1,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'ORG',
+  };
+  const remix = {
+    source_name: 'Funkytown Remix.wav',
+    _downloadedId: 2,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'RMX01',
+  };
+  const other = {
+    source_name: 'Born to Be Alive.wav',
+    _downloadedId: 3,
+    _recordingCode: 'DSC-000002',
+    _versionCode: 'ORG',
+  };
+
+  assert.deepEqual(recordingVersionAlternatives(original, [original, remix, other]), [remix]);
+  assert.equal(recordingVersionLabel(original), 'Original');
+  assert.equal(recordingVersionLabel(remix), 'Remix');
+});
+
+test('version-aware replacement choices separate family versions from different songs', () => {
+  const original = {
+    source_name: 'Funkytown.wav',
+    _downloadedId: 1,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'ORG',
+    _genre: 'Disco',
+  };
+  const remix = {
+    source_name: 'Funkytown Remix.wav',
+    _downloadedId: 2,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'RMX01',
+    _genre: 'Disco',
+  };
+  const other = {
+    source_name: 'Born to Be Alive.wav',
+    _downloadedId: 3,
+    _recordingCode: 'DSC-000002',
+    _versionCode: 'ORG',
+    _genre: 'Disco',
+  };
+  const catalog = buildVersionAwareReplacementCatalog({
+    current: original,
+    library: [original, remix, other],
+    usedRecordingKeys: new Set(),
+    recommendedTracks: [original, other],
+    rankTrack: (track) => ({ track, score: track === remix ? 91 : 82 }),
+  });
+
+  assert.deepEqual(catalog.versionChoices.map(({ track }) => track), [remix]);
+  assert.deepEqual(catalog.recommendedSongs.map(({ track }) => track), [other]);
+  assert.deepEqual(
+    defaultVersionAwareReplacements(catalog.versionChoices, catalog.recommendedSongs).map(({ group }) => group),
+    ['Other versions of this song', 'Recommended different songs'],
+  );
+  assert.deepEqual(searchVersionAwareReplacements(catalog.searchable, 'remix', '').map(({ track }) => track), [remix]);
 });
 
 test('failed brief preparation does not launch more slow AI requests', async () => {

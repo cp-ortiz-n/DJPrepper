@@ -88,7 +88,11 @@ validator. Track uniqueness is enforced by permanent recording family, not by
 filename: an original, remix, alternate import, or spelling/spacing variant of
 the same song can contribute at most one track to a set. This rule applies to
 AI planning, deterministic planning, saved-set recovery, and manual add or
-replace actions. Exact-count schemas restrict model output to real candidate and
+replace actions. **Alternatives** on a recommended track still shows every
+analyzed version in that recording family—such as the original, remix, extended
+mix, or live version—before suggesting different songs. Choosing one replaces
+the current version, so you can compare versions without creating a duplicate.
+Exact-count schemas restrict model output to real candidate and
 section IDs. A narrow structural repair boundary removes duplicates and fills
 missing section slots from eligible candidates while preserving valid unique AI
 choices; every repair is disclosed. The generated-set receipt shows both

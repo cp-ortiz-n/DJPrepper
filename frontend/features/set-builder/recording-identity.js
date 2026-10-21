@@ -60,3 +60,29 @@ export function deduplicateSetRecordings(tracks, preferredTrackIds = new Set()) 
   const selected = new Set(groups.values());
   return (tracks || []).filter((track) => selected.has(track));
 }
+
+export function recordingVersionAlternatives(track, tracks) {
+  const familyKey = setRecordingKey(track);
+  const selectedId = setCatalogTrackId(track) || setTrackId(track);
+  return (tracks || []).filter((candidate) => {
+    const candidateId = setCatalogTrackId(candidate) || setTrackId(candidate);
+    return candidateId !== selectedId && setRecordingKey(candidate) === familyKey;
+  });
+}
+
+export function recordingVersionLabel(track) {
+  const code = String(track?._versionCode || '').trim().toUpperCase();
+  const kind = code.replace(/\d+$/, '');
+  return (
+    {
+      ORG: 'Original',
+      RMX: 'Remix',
+      EXT: 'Extended mix',
+      RADIO: 'Radio edit',
+      LIVE: 'Live version',
+      INST: 'Instrumental',
+      ACAP: 'Acapella',
+      REM: 'Remaster',
+    }[kind] || 'Alternate version'
+  );
+}

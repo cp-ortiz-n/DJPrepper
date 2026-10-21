@@ -227,6 +227,14 @@ serializes both codes, and `recordingKey` is the hard uniqueness key shared by
 candidate retrieval, proposal repair, deterministic fallback, validation, saved
 set recovery, and browser track editing.
 
+Candidate retrieval sends one representative per recording family to the model,
+so model context cannot contain two versions of the same song. The browser keeps
+the complete catalog separately. `recording-identity.js` resolves the selected
+track's family and `plan-view.js` presents the remaining family members as
+explicit version substitutions ahead of different-song recommendations. A
+version choice replaces the current row atomically; it never appends a second
+family member to the running order.
+
 The route surface is:
 
 - `GET /api/set-builder/intention-provider` for provider and model status.

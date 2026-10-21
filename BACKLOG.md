@@ -627,7 +627,9 @@ Status definitions:
   the compact catalog now carries family/version IDs; and candidate retrieval,
   AI repair, deterministic fallback, validation, saved-set recovery, and manual
   plan edits prevent a second member of the same recording family from entering
-  a set. Explicit keep-separate and manual-link decisions remain authoritative.
+  a set. The replacement browser retains and labels every analyzed family member
+  as a version alternative while keeping the final plan family-unique. Explicit
+  keep-separate and manual-link decisions remain authoritative.
 - [~] **Durable background jobs.** Processing jobs persist, interrupted active
   work is recovered to a truthful failure state, and the UI supports pause,
   resume, cancel, retry/reprocess, reordering, review states, and queue cleanup.
