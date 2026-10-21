@@ -22,6 +22,18 @@ class PlanProposalRepairer:
         repaired: list[dict[str, Any]] = []
         repairs: list[dict[str, Any]] = []
         used: set[str] = set()
+        used_recordings: set[str] = set()
+
+        def available(candidate: dict[str, Any]) -> bool:
+            track_id = str(candidate.get("id") or "")
+            recording_key = str(candidate.get("recordingKey") or track_id)
+            return bool(track_id) and track_id not in used and recording_key not in used_recordings
+
+        def reserve(candidate: dict[str, Any]) -> None:
+            track_id = str(candidate.get("id") or "")
+            used.add(track_id)
+            used_recordings.add(str(candidate.get("recordingKey") or track_id))
+
         for section_id, target in section_targets.items():
             eligible = [
                 candidate
@@ -39,10 +51,10 @@ class PlanProposalRepairer:
             forced = [candidate for candidate in eligible if candidate.get("required") or candidate.get("locked")]
             for candidate in forced:
                 track_id = str(candidate.get("id") or "")
-                if track_id in used or len(section_choices) >= target:
+                if not available(candidate) or len(section_choices) >= target:
                     continue
                 section_choices.append(self._selection(track_id, section_id, "Required or locked by the DJ."))
-                used.add(track_id)
+                reserve(candidate)
             for selection in proposed:
                 if len(section_choices) >= target:
                     break
@@ -53,7 +65,7 @@ class PlanProposalRepairer:
                 if (
                     str(selection.get("sectionId") or "") != section_id
                     or proposed_candidate is None
-                    or track_id in used
+                    or not available(proposed_candidate)
                     or section_id not in {str(value) for value in proposed_candidate.get("eligibleSectionIds", [])}
                 ):
                     continue
@@ -65,19 +77,19 @@ class PlanProposalRepairer:
                         "evidence": "ai-suggested",
                     }
                 )
-                used.add(track_id)
+                reserve(proposed_candidate)
             for candidate in eligible:
                 if len(section_choices) >= target:
                     break
                 track_id = str(candidate.get("id") or "")
-                if not track_id or track_id in used:
+                if not available(candidate):
                     continue
                 section_choices.append(
                     self._selection(
                         track_id, section_id, "Filled an invalid or missing AI section slot deterministically."
                     )
                 )
-                used.add(track_id)
+                reserve(candidate)
                 repairs.append({"code": "filled-section-slot", "sectionId": section_id, "trackId": track_id})
             repaired.extend(section_choices)
         original_ids = [str(item.get("trackId") or "") for item in proposed if isinstance(item, dict)]

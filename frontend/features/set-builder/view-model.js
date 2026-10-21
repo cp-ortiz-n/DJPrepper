@@ -35,6 +35,18 @@ export function journeyDurationStatus(sections, durationMinutes) {
   };
 }
 
+export function normalizeJourneyEnergy(value, fallback = 5) {
+  const missing = value == null || String(value).trim() === '';
+  const numeric = missing ? Number.NaN : Number(value);
+  const fallbackValue = Number.isFinite(Number(fallback)) ? Number(fallback) : 5;
+  return Math.max(1, Math.min(10, Number.isFinite(numeric) ? numeric : fallbackValue));
+}
+
+export function journeyEnergyRange(section = {}) {
+  const start = normalizeJourneyEnergy(section.energyStart, 5);
+  return [start, normalizeJourneyEnergy(section.energyEnd, start)];
+}
+
 export function intentionProviderView(status = {}) {
   const provider = status.provider || 'offline';
   const ready = Boolean(status.available);

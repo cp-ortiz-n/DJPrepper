@@ -444,6 +444,7 @@
 .set-track-review button.active {
   border-color: var(--lime);
   color: var(--lime);
+  background: #252d17;
 }
 .set-review-panel label {
   display: grid;
@@ -460,8 +461,8 @@
   resize: vertical;
 }
 .set-track-review {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto auto minmax(120px, 1fr);
   gap: 5px;
   margin-top: 8px;
 }
@@ -470,6 +471,28 @@
   min-height: 28px;
   padding: 4px 8px;
   font-size: 9px;
+}
+.set-track-review button {
+  width: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  background: #202320;
+}
+.set-track-review button:hover {
+  border-color: #596057;
+  background: #292d29;
+  filter: none;
+}
+.set-track-review button.active:hover {
+  border-color: var(--lime);
+  color: var(--lime);
+  background: #2b3519;
+}
+.set-track-review select {
+  min-width: 0;
+  height: 28px;
+  margin: 0;
 }
 .set-transition-rating {
   display: grid;
@@ -1272,6 +1295,13 @@
   display: grid;
   gap: 5px;
 }
+.set-alternative-list > h4 {
+  margin: 8px 0 2px;
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
 .set-alternative-list > article {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(220px, 300px) 92px;
@@ -1282,9 +1312,26 @@
   border-radius: 7px;
   background: #171917;
 }
+.set-alternative-list > article.same-recording-version {
+  border-color: #65783c;
+  background: #1b2117;
+}
 .set-alternative-list > article > div:first-child strong,
 .set-alternative-list > article > div:first-child span {
   display: block;
+}
+.set-alternative-kind {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  color: var(--lime);
+  background: var(--lime-soft);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .set-alternative-list > article > div:first-child strong {
   font-size: 9px;
@@ -1403,6 +1450,12 @@
   .set-result-actions {
     justify-content: flex-start;
     margin-top: 12px;
+  }
+  .set-track-review {
+    grid-template-columns: 1fr 1fr;
+  }
+  .set-track-review select {
+    grid-column: 1 / -1;
   }
 }
 @media (max-width: 900px) {

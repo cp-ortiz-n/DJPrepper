@@ -3,11 +3,30 @@ import assert from 'node:assert/strict';
 
 import { createApiClient } from '../../../../frontend/core/api-client.js';
 import { createSetBuilderApi } from '../../../../frontend/features/set-builder/api.js';
-import { createClassicSetPlanner, optimizePlanOrder } from '../../../../frontend/features/set-builder/classic-planner.js';
+import {
+  createClassicSetPlanner,
+  optimizePlanOrder,
+} from '../../../../frontend/features/set-builder/classic-planner.js';
 import { createSetEditCommands } from '../../../../frontend/features/set-builder/commands.js';
 import { createSetBuilderFeedback } from '../../../../frontend/features/set-builder/feedback.js';
 import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
+import {
+  deduplicateSetRecordings,
+  recordingVersionAlternatives,
+  recordingVersionLabel,
+  setRecordingKey,
+} from '../../../../frontend/features/set-builder/recording-identity.js';
+import {
+  buildVersionAwareReplacementCatalog,
+  defaultVersionAwareReplacements,
+  searchVersionAwareReplacements,
+} from '../../../../frontend/features/set-builder/version-alternatives.js';
+import {
+  formatProgressElapsed,
+  normalizeProgressPercent,
+  progressMarkup,
+} from '../../../../frontend/features/set-builder/progress-view.js';
 import {
   buildSetCsv,
   buildSetM3u,
@@ -22,6 +41,7 @@ import { createSetTransitionEditor } from '../../../../frontend/features/set-bui
 import {
   aiObservabilityCards,
   fallbackPolicyMarkup,
+  journeyEnergyRange,
   journeyEvidenceLabel,
   setProposalMarkup,
 } from '../../../../frontend/features/set-builder/view-model.js';
@@ -204,6 +224,92 @@ test('brief preparation returns both results without requesting a second journey
   assert.deepEqual(result.preferred, ['groovy']);
   assert.deepEqual(result.journey, { sections: [] });
   assert.equal(result.cache.hit, true);
+});
+
+test('recording identity collapses family members and safe title-spacing variants', () => {
+  const original = { source_name: 'Funkytown.wav', artist: 'Lipps Inc', _recordingCode: 'DSC-000001' };
+  const remix = { source_name: 'Funky Town (Remix).wav', artist: 'Lipps Inc', _recordingCode: 'DSC-000001' };
+  const other = { source_name: 'Born to Be Alive.wav', artist: 'Patrick', _recordingCode: 'DSC-000002' };
+  assert.equal(setRecordingKey(original), 'recording:DSC-000001');
+  assert.deepEqual(deduplicateSetRecordings([original, remix, other]), [original, other]);
+  assert.equal(
+    setRecordingKey({ source_name: 'Funky Town.wav', artist: 'Lipps Inc' }),
+    setRecordingKey({ source_name: 'Funkytown.wav', artist: 'Lipps Inc' }),
+  );
+  assert.equal(
+    setRecordingKey({ source_name: 'Rasputin.wav', artist: 'Majestic' }),
+    setRecordingKey({ source_name: 'Rasputin - Majestic Club.wav', artist: 'Majestic' }),
+  );
+});
+
+test('recording deduplication honors an explicitly preferred catalog entry', () => {
+  const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
+  const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
+  assert.deepEqual(deduplicateSetRecordings([original, remix], new Set(['funkytown remix.wav'])), [remix]);
+});
+
+test('recording families retain alternate versions for explicit substitution', () => {
+  const original = {
+    source_name: 'Funkytown.wav',
+    _downloadedId: 1,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'ORG',
+  };
+  const remix = {
+    source_name: 'Funkytown Remix.wav',
+    _downloadedId: 2,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'RMX01',
+  };
+  const other = {
+    source_name: 'Born to Be Alive.wav',
+    _downloadedId: 3,
+    _recordingCode: 'DSC-000002',
+    _versionCode: 'ORG',
+  };
+
+  assert.deepEqual(recordingVersionAlternatives(original, [original, remix, other]), [remix]);
+  assert.equal(recordingVersionLabel(original), 'Original');
+  assert.equal(recordingVersionLabel(remix), 'Remix');
+});
+
+test('version-aware replacement choices separate family versions from different songs', () => {
+  const original = {
+    source_name: 'Funkytown.wav',
+    _downloadedId: 1,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'ORG',
+    _genre: 'Disco',
+  };
+  const remix = {
+    source_name: 'Funkytown Remix.wav',
+    _downloadedId: 2,
+    _recordingCode: 'DSC-000001',
+    _versionCode: 'RMX01',
+    _genre: 'Disco',
+  };
+  const other = {
+    source_name: 'Born to Be Alive.wav',
+    _downloadedId: 3,
+    _recordingCode: 'DSC-000002',
+    _versionCode: 'ORG',
+    _genre: 'Disco',
+  };
+  const catalog = buildVersionAwareReplacementCatalog({
+    current: original,
+    library: [original, remix, other],
+    usedRecordingKeys: new Set(),
+    recommendedTracks: [original, other],
+    rankTrack: (track) => ({ track, score: track === remix ? 91 : 82 }),
+  });
+
+  assert.deepEqual(catalog.versionChoices.map(({ track }) => track), [remix]);
+  assert.deepEqual(catalog.recommendedSongs.map(({ track }) => track), [other]);
+  assert.deepEqual(
+    defaultVersionAwareReplacements(catalog.versionChoices, catalog.recommendedSongs).map(({ group }) => group),
+    ['Other versions of this song', 'Recommended different songs'],
+  );
+  assert.deepEqual(searchVersionAwareReplacements(catalog.searchable, 'remix', '').map(({ track }) => track), [remix]);
 });
 
 test('failed brief preparation does not launch more slow AI requests', async () => {
@@ -1159,4 +1265,34 @@ test('Set Builder view helpers escape content and expose planning evidence', () 
     ),
     /Safety fallback/,
   );
+});
+
+test('journey energy ranges replace missing or invalid endpoints with a playable value', () => {
+  assert.deepEqual(journeyEnergyRange({ energyStart: 6, energyEnd: '?' }), [6, 6]);
+  assert.deepEqual(journeyEnergyRange({ energyStart: 7, energyEnd: '' }), [7, 7]);
+  assert.deepEqual(journeyEnergyRange({ energyStart: 'invalid', energyEnd: 8 }), [5, 8]);
+  assert.deepEqual(journeyEnergyRange({ energyStart: 0, energyEnd: 14 }), [1, 10]);
+});
+
+test('Set Builder progress presentation is bounded, escaped, and stage-aware', () => {
+  assert.equal(normalizeProgressPercent(-4), 0);
+  assert.equal(normalizeProgressPercent(105), 100);
+  assert.equal(normalizeProgressPercent('unknown'), null);
+  assert.equal(formatProgressElapsed(65.8), '1:05');
+  const markup = progressMarkup(
+    {
+      title: '<Planning>',
+      detail: 'Catalog & validation',
+      stages: ['Retrieve', 'Validate', 'Finish'],
+      activeStep: 1,
+      percent: 42,
+      elapsedSeconds: 9,
+    },
+    escapeHtml,
+  );
+  assert.match(markup, /&lt;Planning&gt;/);
+  assert.match(markup, /42% complete/);
+  assert.match(markup, /class="complete"/);
+  assert.match(markup, /class="active"/);
+  assert.match(markup, /0:09/);
 });

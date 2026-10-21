@@ -295,6 +295,7 @@ def deterministic_track_plan(
     """Select a stable, section-aware plan when a model cannot return a valid one."""
     targets = _section_targets(journey, target_track_count)
     used: set[str] = set()
+    used_recordings: set[str] = set()
     journey_sections = {
         str(section.get("id") or f"section-{index + 1}"): section
         for index, section in enumerate(journey.get("sections", []))
@@ -305,7 +306,9 @@ def deterministic_track_plan(
         candidates = [
             candidate
             for candidate in section.get("candidates", [])
-            if candidate.get("available") and str(candidate.get("id") or "") not in used
+            if candidate.get("available")
+            and str(candidate.get("id") or "") not in used
+            and str(candidate.get("recordingKey") or candidate.get("id") or "") not in used_recordings
         ]
         candidates.sort(
             key=lambda candidate: (
@@ -324,6 +327,9 @@ def deterministic_track_plan(
         )
         selected = _select_section_candidates(candidates, target, duration_target)
         used.update(str(candidate.get("id") or "") for candidate in selected)
+        used_recordings.update(
+            str(candidate.get("recordingKey") or candidate.get("id") or "") for candidate in selected
+        )
         chosen_sections.append((section_definition, selected))
     optimized = DeterministicTransitionOptimizer().optimize(chosen_sections)
     selections = [

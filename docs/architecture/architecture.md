@@ -185,7 +185,8 @@ purpose, and start/end energy
         ↓
 POST /api/set-builder/candidate-pool → SetCandidateRetriever
    ├── bounded, diverse candidates per journey section
-   ├── stable catalog IDs and local file availability
+   ├── stable catalog IDs, canonical recording-family keys, and local file availability
+   ├── one representative per recording family before model context is built
    ├── direct, identity, bridge, and fallback scarcity tiers
    └── optional bounded adjustments from DJPreferenceService
         ↓
@@ -197,7 +198,7 @@ POST /api/set-builder/plan-tracks → SetPlanningJobService
    └── phase timings and persisted outcome telemetry
         ↓
 SetPlanValidator
-   ├── IDs, exclusions, required/locked tracks, duplicates, and files
+   ├── IDs, exclusions, required/locked tracks, duplicate IDs/families, and files
    ├── duration, track count, and journey-section coverage
    └── BPM, Camelot-key, and vocal-transition warnings
         ↓
@@ -216,6 +217,23 @@ DeterministicTransitionOptimizer (fallback plans)
    ├── bounded beam search across BPM, Camelot key, vocals, and energy
    └── recognizes half/double-time BPM compatibility
 ```
+
+Catalog row IDs identify files and remain immutable. `recording_code` identifies
+the underlying song across related catalog rows, while `version_code` identifies
+the original, remix, edit, live, or other version. Import/rescan uses conservative
+canonical artist/title matching to assign the family; explicit **Keep separate**
+and manual family links are inference-locked. The Set Builder catalog projection
+serializes both codes, and `recordingKey` is the hard uniqueness key shared by
+candidate retrieval, proposal repair, deterministic fallback, validation, saved
+set recovery, and browser track editing.
+
+Candidate retrieval sends one representative per recording family to the model,
+so model context cannot contain two versions of the same song. The browser keeps
+the complete catalog separately. `recording-identity.js` resolves the selected
+track's family and `plan-view.js` presents the remaining family members as
+explicit version substitutions ahead of different-song recommendations. A
+version choice replaces the current row atomically; it never appends a second
+family member to the running order.
 
 The route surface is:
 
@@ -322,6 +340,14 @@ loading state, and namespaced URL/session persistence. Page-specific modules
 still own their filter fields and API query serialization; they must not add a
 second request sequence, debounce timer, or request controller in `frontend/app.js`.
 
+Music Files separates routine browsing from catalog-wide maintenance. Search and
+sort stay visible; secondary filters live in one disclosure with removable active
+filter chips; catalog-wide identity, file, metadata, artwork, and reanalysis jobs
+live in a separate maintenance disclosure. Selection actions are contextual and
+must not inherit catalog-wide scope. `frontend/features/music-files/state.js`
+owns pure query, filter, and selection projections, `view.js` owns disclosure and
+chip presentation, and `index.js` coordinates API workflows and track interactions.
+
 Settings exposes a consolidated library-health read model at
 `/api/settings/library-health`. It combines connection and configured-root
 status, missing/out-of-root tracks, active and failed metadata batches, storage,
@@ -411,7 +437,9 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `core/frontend-services.js`           | Validated immutable feature contract for API, DOM, feedback, and musical-identity editor capabilities         |
 | `shared/shared-components.js`           | DOM helpers, messages, formatting, pagination                                                                 |
 | `playback.js`                    | Single audio-preview owner                                                                                    |
-| `music-files.js`                 | Music Files rendering, filters, maintenance actions, metadata inspector, and recording-family inspector       |
+| `features/music-files/index.js`  | Music Files workflow coordination, catalog rendering, metadata inspector, and track interactions              |
+| `features/music-files/state.js`  | Pure Music Files filter defaults, API query serialization, active-filter projection, and selection capability |
+| `features/music-files/view.js`   | Music Files filter-chip rendering and mutually exclusive disclosure presentation                              |
 | `dj-library.js`                  | DJ Library catalog loading, feature composition, and compatibility exports                                     |
 | `dj-library-filters.js`          | DJ Library filter controls, URL-backed query state, pagination, and reset behavior                             |
 | `dj-library-intelligence.js`     | DJ role groups and interactive compatibility suggestions                                                       |
@@ -425,11 +453,12 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `set-builder-commands.js`        | Plan edit commands, bounded history, undo, redo, and movement                                                 |
 | `set-builder-classic-planner.js` | Deterministic proposal generation, acceptance, and safe fallback selection                                    |
 | `set-builder-planning-session.js` | AI/deterministic planning lifecycle, cancellation, proposal switching, observability, and planning receipts  |
+| `features/set-builder/progress-view.js` | Accessible stage, elapsed-time, and determinate/indeterminate progress presentation for long-running planning |
 | `set-builder-feedback.js`        | Learned preferences, calibration reporting, personalization controls, and set-review submission               |
 | `set-builder-transition-editor.js` | Transition scoring, cue optimization, preview playback, and transition-editor lifecycle                    |
 | `set-builder-plan-view.js`       | Generated-plan rendering plus track rules, alternatives, identity edits, and row interactions                 |
 | `set-builder-saved-sets.js`      | Durable saved-set recovery, persistence, loading, and CSV/M3U8 export                                         |
-| `set-builder-view-model.js`      | Escaped proposal, fallback-policy, and AI-observability presentation models                                   |
+| `set-builder-view-model.js`      | Escaped proposal, fallback-policy, journey-energy normalization, and AI-observability presentation models     |
 | `settings.js`                    | Settings forms, library health, relocation, backups, storage, and refresh coordination                        |
 | `reporting.js`                   | Analysis & Feedback and key-verification rendering                                                            |
 | `request-state-controller.js`    | Shared debounce, cancellation, stale-response rejection, pagination, and URL/session persistence              |

@@ -80,6 +80,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
   const {
     setBrief,
     setTrackId,
+    setRecordingKey = setTrackId,
     getPlanningReceipt,
     setPlanningReceipt,
     renderSetRules,
@@ -246,9 +247,10 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     let recovered = 0;
     (record.tracks || []).forEach((id) => {
       let track = byId.get(id);
+      if (track && used.has(setRecordingKey(track))) track = null;
       if (!track) {
         track = state.library
-          .filter((candidate) => !used.has(setTrackId(candidate)))
+          .filter((candidate) => !used.has(setRecordingKey(candidate)))
           .map((candidate) => ({
             candidate,
             score: recoveryScore(candidate, details.get(id) || { id }, recoveredPlan.at(-1)),
@@ -260,7 +262,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
         const detail = details.get(id);
         track._aiSelectionReason = detail?.selectionReason || null;
         track._planSectionId = detail?.sectionId || null;
-        used.add(setTrackId(track));
+        used.add(setRecordingKey(track));
         recoveredPlan.push(track);
       }
     });

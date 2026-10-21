@@ -250,6 +250,48 @@ class AITrackPlannerTests(unittest.TestCase):
             ["downloaded:3", "downloaded:4"],
         )
 
+    def test_deterministic_plan_never_uses_two_versions_of_one_recording(self) -> None:
+        pool = {
+            "sections": [
+                {
+                    "sectionId": "opening",
+                    "candidates": [
+                        {
+                            "id": "downloaded:1",
+                            "recordingKey": "recording:DSC-1",
+                            "available": True,
+                            "relevanceScore": 99,
+                        },
+                    ],
+                },
+                {
+                    "sectionId": "peak",
+                    "candidates": [
+                        {
+                            "id": "downloaded:2",
+                            "recordingKey": "recording:DSC-1",
+                            "available": True,
+                            "relevanceScore": 100,
+                        },
+                        {
+                            "id": "downloaded:3",
+                            "recordingKey": "recording:DSC-3",
+                            "available": True,
+                            "relevanceScore": 90,
+                        },
+                    ],
+                },
+            ]
+        }
+        set_journey = {
+            "sections": [
+                {"id": "opening", "durationPercent": 50},
+                {"id": "peak", "durationPercent": 50},
+            ]
+        }
+        result = deterministic_track_plan(pool, set_journey, 2)
+        self.assertEqual([item["trackId"] for item in result["selections"]], ["downloaded:1", "downloaded:3"])
+
     def test_flattened_candidates_merge_multi_section_eligibility(self) -> None:
         candidates = flatten_candidates(
             {

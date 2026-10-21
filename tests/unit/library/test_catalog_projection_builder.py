@@ -25,6 +25,8 @@ class ProjectionRepository:
                 "category": "Electronic / House",
                 "detail_genre": "Deep House",
                 "downloaded_id": 3,
+                "recording_code": "HOU-000003",
+                "version_code": "ORG",
                 "descriptors_json": "not-json",
                 "set_analysis_json": '{"bpm":124}',
                 "title": "Track",
@@ -49,11 +51,13 @@ class CatalogProjectionBuilderTests(unittest.TestCase):
             builder.write_catalog_cache()
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(5, payload["version"])
+        self.assertEqual(6, payload["version"])
         self.assertEqual(1, payload["total"])
         self.assertEqual([], payload["tracks"][0]["descriptors"])
         self.assertEqual("8A", payload["tracks"][0]["analysis"]["_camelot"])
         self.assertEqual(9, payload["tracks"][0]["job"]["id"])
+        self.assertEqual("HOU-000003", payload["tracks"][0]["recording_code"])
+        self.assertEqual("ORG", payload["tracks"][0]["version_code"])
 
 
 if __name__ == "__main__":

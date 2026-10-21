@@ -3,12 +3,14 @@ import {
   SET_IDENTITY_STORAGE_KEY,
   SET_STORAGE_KEY,
   SET_STORAGE_MIGRATION_KEY,
+  deduplicateSetRecordings,
   genreAllocationTargets,
   inferredTrackIdentity,
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
   setCatalogTrackId,
+  setRecordingKey,
   setTrackDetailedGenres,
   setTrackId,
   targetSetEnergy,
@@ -26,18 +28,21 @@ import {
   passesSetCandidateHardFilters,
   resolveStructuredGenreFilters,
 } from './workflow.js';
+import { createSetBuilderProgressView } from './progress-view.js';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
   SET_IDENTITY_STORAGE_KEY,
   SET_STORAGE_KEY,
   SET_STORAGE_MIGRATION_KEY,
+  deduplicateSetRecordings,
   genreAllocationTargets,
   inferredTrackIdentity,
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
   setCatalogTrackId,
+  setRecordingKey,
   setTrackDetailedGenres,
   setTrackId,
   targetSetEnergy,
@@ -83,6 +88,7 @@ export function createSetBuilderFeature({
     durationMinutes: () => Number($('#set-length').value),
   });
   const planningClient = setBuilderApi.planning;
+  const progressView = createSetBuilderProgressView({ $, escapeHtml });
   const classicPlanner = createClassicSetPlanner({
     strategies: SET_PROPOSAL_STRATEGIES,
     schedule: () => new Promise((resolve) => requestAnimationFrame(() => resolve())),
@@ -218,10 +224,10 @@ export function createSetBuilderFeature({
     $('#set-journey-summary').textContent = journey.summary || 'Review the planned journey before generating.';
     $('#set-journey-evidence').textContent = journeyEvidenceLabel(journey);
     container.innerHTML = (journey.sections || [])
-      .map(
-        (section, index) =>
-          `<article class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"><span class="journey-step" aria-hidden="true">${index + 1}</span><div class="journey-primary"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label class="journey-duration-label">Duration<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"><span>%</span></label><label class="journey-energy">Energy <span class="journey-energy-value">${Number(section.energyStart || 5)} → ${Number(section.energyEnd || 5)}</span><span class="journey-energy-inputs"><input class="journey-energy-start" aria-label="Starting energy" type="number" min="1" max="10" step=".5" value="${Number(section.energyStart || 5)}"><i>to</i><input class="journey-energy-end" aria-label="Ending energy" type="number" min="1" max="10" step=".5" value="${Number(section.energyEnd || 5)}"></span></label></div><div class="journey-details"><label class="journey-genres">Genres<input value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres"></label><label>Character<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></div></article>`,
-      )
+      .map((section, index) => {
+        const [energyStart, energyEnd] = journeyEnergyRange(section);
+        return `<article class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"><span class="journey-step" aria-hidden="true">${index + 1}</span><div class="journey-primary"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label class="journey-duration-label">Duration<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"><span>%</span></label><label class="journey-energy">Energy <span class="journey-energy-value">${energyStart} → ${energyEnd}</span><span class="journey-energy-inputs"><input class="journey-energy-start" aria-label="Starting energy" type="number" min="1" max="10" step=".5" value="${energyStart}"><i aria-hidden="true">→</i><input class="journey-energy-end" aria-label="Ending energy" type="number" min="1" max="10" step=".5" value="${energyEnd}"></span></label></div><div class="journey-details"><label class="journey-genres">Genres<input value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres"></label><label>Character<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></div></article>`;
+      })
       .join('');
     const refresh = () => {
       const total = [...container.querySelectorAll('.journey-duration')].reduce(
@@ -232,9 +238,10 @@ export function createSetBuilderFeature({
       status.textContent = `${journey.sections.length} sections · ${total}% of ${Number($('#set-length').value)} minutes · edits drive track placement`;
       status.classList.toggle('invalid', Math.abs(total - 100) > 0.01);
       container.querySelectorAll('.set-journey-section').forEach((row) => {
-        const values = [...row.querySelectorAll('.journey-energy-start,.journey-energy-end')].map((input) =>
-          Number(input.value || 5),
-        );
+        const startInput = row.querySelector('.journey-energy-start'),
+          endInput = row.querySelector('.journey-energy-end'),
+          values = journeyEnergyRange({ energyStart: startInput.value, energyEnd: endInput.value });
+        if (!String(endInput.value).trim() || !Number.isFinite(Number(endInput.value))) endInput.value = values[1];
         row.querySelector('.journey-energy-value').textContent = `${values[0]} → ${values[1]}`;
       });
     };
@@ -510,7 +517,7 @@ export function createSetBuilderFeature({
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
   }
   function eligibleSetTracks(brief) {
-    return state.library.filter((track) => {
+    const eligible = state.library.filter((track) => {
       const bpm = Number(track.bpm || 0);
       const id = setTrackId(track);
       const intention = intentionEvaluation(track, brief);
@@ -543,6 +550,7 @@ export function createSetBuilderFeature({
         timingEligible: brief.timing === 'all' || timingProfile(track) === brief.timing,
       });
     });
+    return deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds]));
   }
   function setPlanSnapshot() {
     return snapshotSetPlan(state, setTrackId);
@@ -578,6 +586,7 @@ export function createSetBuilderFeature({
       setTrackDetailedGenres,
       setTrackId,
       setCatalogTrackId,
+      setRecordingKey,
       setVocalProfile,
       songEnergy,
     },
@@ -665,6 +674,7 @@ export function createSetBuilderFeature({
       setPlanSnapshot,
     },
     view: { aiObservabilityCards, setProposalMarkup },
+    progress: progressView,
   });
   const {
     cancelAITrackPlan,
@@ -704,7 +714,9 @@ export function createSetBuilderFeature({
       saveManualTrackIdentity,
       setCatalogTrackId,
       setCandidateScore,
+      deduplicateSetRecordings,
       setTrackId,
+      setRecordingKey,
       setVocalProfile,
       targetSetEnergy,
       trackIdentity,
@@ -742,6 +754,7 @@ export function createSetBuilderFeature({
     },
     plan: {
       setBrief,
+      setRecordingKey,
       setTrackId,
       getPlanningReceipt: () => planningSession.receipt(),
       setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt),
@@ -793,6 +806,8 @@ export function createSetBuilderFeature({
         _libraryPath: libraryPath,
         _selectedPath: preferred === 'original' ? libraryPath : hasExtended ? job.extended_path : libraryPath,
         _downloadedId: item.downloaded_id || null,
+        _recordingCode: item.recording_code || '',
+        _versionCode: item.version_code || '',
         _descriptors: item.descriptors || [],
       };
       track._manualIdentity = [
@@ -872,8 +887,14 @@ export function createSetBuilderFeature({
           (interpretation.hidden || interpretation.dataset.source !== intentionText)
         ) {
           button.textContent = 'Planning journey…';
-          applyIntentionInterpretation(await intentionController.interpretAndPlan(intentionText));
+          progressView.startJourney();
+          try {
+            applyIntentionInterpretation(await intentionController.interpretAndPlan(intentionText));
+          } finally {
+            progressView.finishJourney();
+          }
         }
+        progressView.startTrackPlanning(mode);
         button.textContent = mode === 'ai-planned' ? 'AI planning tracks…' : 'Building and optimizing…';
         $('#set-builder-message').textContent =
           mode === 'ai-planned'
@@ -892,6 +913,8 @@ export function createSetBuilderFeature({
           notify('The set could not be generated. Your set brief was preserved.', 'danger');
         }
       } finally {
+        progressView.finishJourney();
+        progressView.finishTrackPlanning();
         button.disabled = false;
         button.textContent = 'Build this set';
         $('#set-cancel-planning').hidden = true;
@@ -913,9 +936,11 @@ export function createSetBuilderFeature({
       }
       button.disabled = true;
       button.textContent = 'Planning journey…';
+      progressView.startJourney();
       try {
         applyIntentionInterpretation(await intentionController.interpretAndPlan(text));
       } finally {
+        progressView.finishJourney();
         button.disabled = false;
         button.textContent = 'Review set direction';
       }
@@ -1108,8 +1133,14 @@ import {
   fallbackPolicyMarkup,
   intentionProviderView,
   journeyDurationStatus,
+  journeyEnergyRange,
   journeyEvidenceLabel,
   setProposalMarkup,
 } from './view-model.js';
-export { SET_PROPOSAL_STRATEGIES, intentionProviderView, journeyDurationStatus } from './view-model.js';
+export {
+  SET_PROPOSAL_STRATEGIES,
+  intentionProviderView,
+  journeyDurationStatus,
+  journeyEnergyRange,
+} from './view-model.js';
 export { createSetBuilderStore, createSetBuilderStore as createSetBuilderState } from './state.js';

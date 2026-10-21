@@ -1,16 +1,17 @@
 import {useFrontendServices} from '../../core/frontend-services.js';
+import {
+  activeMusicFilesFilters,
+  clearMusicFilesFilter,
+  musicFilesQuery,
+  musicFilesSelectionSummary,
+} from './state.js';
+import {
+  closeMusicFilesMenus,
+  renderMusicFilesFilterChips,
+  updateMusicFilesFilterDisclosure,
+} from './view.js';
 
-export function createMusicFilesUiState(pageSize = Number(localStorage.getItem('music-files-page-size') || 50)) {
-  return {search:'', genre:'all', detailedGenre:'all', playlist:'all', analysis:'all', artwork:'all', quality:'all', sort:'newest', page:1, pageSize};
-}
-
-export function musicFilesQuery(state) {
-  return new URLSearchParams({
-    paged:'true', page:String(state.page), page_size:String(state.pageSize), search:state.search,
-    genre:state.genre, detailed_genre:state.detailedGenre, playlist:state.playlist,
-    analysis:state.analysis, artwork:state.artwork, quality:state.quality, sort:state.sort,
-  });
-}
+export { createMusicFilesUiState, musicFilesQuery, resetMusicFilesFilters } from './state.js';
 
 export function createMusicFilesFeature({
   services, appConfig, downloadedUiState, downloadedSelection, downloadedRequestState,
@@ -74,12 +75,7 @@ export function createMusicFilesFeature({
           <p class="detailed-genre-empty" hidden>No detailed genres match.</p>
         </div></details>
       </nav>
-      <details class="downloaded-playlist-nav"><summary>Source playlists <b>${playlistEntries.length}</b></summary><div>${playlistEntries.map(([playlist,count]) => `<button type="button" class="filter-downloaded-playlist" data-value="${escapeHtml(playlist)}"><span>${escapeHtml(playlist)}</span><b>${count}</b></button>`).join('') || '<p>No playlists yet.</p>'}</div></details>
-      <details class="downloaded-tools"><summary><span>Music file tools</span><i aria-hidden="true">›</i></summary><div>
-        <section class="music-tool-row"><div><strong>Reconcile files</strong><p>Check new or modified source records against the catalog.</p></div><button type="button" class="sidebar-reconcile">Run</button></section>
-        <section class="music-tool-row"><div><strong>Rescan genres</strong><p>Re-read saved tags and reorganize WAV folders.</p></div><button type="button" class="sidebar-rescan">Run</button></section>
-        <section class="music-tool-row"><div><strong>Sync artwork</strong><p>Find and embed cover art for existing tracks.</p></div><button type="button" class="sidebar-artwork">Run</button></section>
-      </div></details>`;
+      <details class="downloaded-playlist-nav"><summary>Source playlists <b>${playlistEntries.length}</b></summary><div>${playlistEntries.map(([playlist,count]) => `<button type="button" class="filter-downloaded-playlist" data-value="${escapeHtml(playlist)}"><span>${escapeHtml(playlist)}</span><b>${count}</b></button>`).join('') || '<p>No playlists yet.</p>'}</div></details>`;
     const downloadsLayout = document.querySelector('.downloads-layout');
     const downloadsSidebarToggle = summary.querySelector('.downloaded-sidebar-toggle');
     const setDownloadsSidebarCollapsed = collapsed => {
@@ -142,7 +138,7 @@ export function createMusicFilesFeature({
     artworkSelect.value = downloadedUiState.artwork;
     qualitySelect.value = downloadedUiState.quality;
     sort.value = downloadedUiState.sort;
-    const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const keyAnalyzeSelected=$('#downloaded-key-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const editIdentity=$('#downloaded-edit-identity'); const retagSelected = $('#downloaded-retag-selected');
+    const selectAll = $('#downloaded-select-all'); const clearSelection = $('#downloaded-clear-selection'); const analyzeSelected = $('#downloaded-analyze-selected'); const keyAnalyzeSelected=$('#downloaded-key-analyze-selected'); const analyzeMatching = $('#downloaded-analyze-matching'); const reanalyzeSelected = $('#downloaded-reanalyze-selected'); const reanalyzeMatching = $('#downloaded-reanalyze-matching'); const downloadSelected = $('#downloaded-download-selected'); const removeSelected = $('#downloaded-remove-selected'); const changeGenre = $('#downloaded-change-genre'); const editIdentity=$('#downloaded-edit-identity'); const retagSelected = $('#downloaded-retag-selected'); const syncArtworkSelected=$('#downloaded-sync-artwork-selected');
     const rescanGenres = $('#downloaded-rescan-genres');
     const inferMissingIdentities=$('#downloaded-infer-missing-identities');
     const reinferUnprotected=$('#downloaded-reinfer-unprotected');
@@ -189,9 +185,6 @@ export function createMusicFilesFeature({
     };
     const watchIntegrityScan=batchId=>runBackgroundTask({key:'integrity-scan',url:`/api/downloaded-library/integrity-scan/${batchId}`,interval:700,update:batch=>{integrityRoot.open=true;integrityButton.disabled=true;integrityButton.textContent='Scanning…';integrityStatus.textContent=`${batch.stage} · ${Math.round(batch.progress||0)}%`;},complete:batch=>{integrityButton.disabled=false;integrityButton.textContent='Scan collection';renderIntegrityResults(batch);},fail:error=>{integrityButton.disabled=false;integrityButton.textContent='Scan collection';integrityStatus.textContent=error.message;}});
     integrityButton.onclick=async()=>{integrityButton.disabled=true;integrityButton.textContent='Starting…';integrityResults.replaceChildren();integrityStatus.textContent='Indexing catalog and music folders…';const response=await api.raw('/api/downloaded-library/integrity-scan',{method:'POST'});const batch=await response.json();if(!response.ok){integrityButton.disabled=false;integrityButton.textContent='Scan collection';integrityStatus.textContent=api.errorMessage(batch,'Could not start integrity scan.');return;}watchIntegrityScan(batch.batch_id);};
-    summary.querySelector('.sidebar-rescan').onclick = () => rescanGenres.click();
-    summary.querySelector('.sidebar-reconcile').onclick = () => reconcileFiles.click();
-    summary.querySelector('.sidebar-artwork').onclick = () => syncArtwork.click();
     vocabularyReview.onclick=async()=>{
       const dialog=$('#identity-vocabulary-dialog'),list=dialog.querySelector('.identity-vocabulary-list'),summaryRoot=dialog.querySelector('.identity-vocabulary-summary');
       dialog.showModal();list.innerHTML='<p>Scanning playlist vocabulary…</p>';
@@ -297,28 +290,31 @@ export function createMusicFilesFeature({
       key:'artwork-sync', url:`/api/downloaded-library/artwork-sync/${batchId}`, interval:700,
       update:batch => renderMaintenanceProgress(batch.status === 'complete' ? 'Artwork sync complete' : 'Finding and embedding artwork',batch,`${batch.processed} of ${batch.total} checked · ${batch.updated} updated · ${batch.skipped} already ready${batch.resolved ? ` · ${batch.resolved} resolved later` : ''}${batch.failed ? ` · ${batch.failed} need attention` : ''}`),
       complete:async batch => {
-        syncArtwork.disabled=false; syncArtwork.textContent='Sync artwork'; rescanGenres.disabled=false; retagAll.disabled=false;
+        delete syncArtworkSelected.dataset.busy;
+        syncArtwork.disabled=false; syncArtwork.textContent='Sync artwork'; syncArtworkSelected.disabled=false; syncArtworkSelected.textContent='Sync artwork'; rescanGenres.disabled=false; retagAll.disabled=false;
         await loadDownloadedLibrary();
         renderTagFailures(batch,'artwork');
       },
-      fail:error => { renderProgressError('Artwork sync stopped',error); syncArtwork.disabled=false; syncArtwork.textContent='Sync artwork'; rescanGenres.disabled=false; retagAll.disabled=false; },
+      fail:error => { delete syncArtworkSelected.dataset.busy; renderProgressError('Artwork sync stopped',error); syncArtwork.disabled=false; syncArtwork.textContent='Sync artwork'; syncArtworkSelected.disabled=false; syncArtworkSelected.textContent='Sync artwork'; rescanGenres.disabled=false; retagAll.disabled=false; },
     });
-    syncArtwork.onclick = async () => {
-      const selectedTracks=[...downloadedSelection.values()];
+    const startArtworkSync = async (selectedOnly, action) => {
+      const selectedTracks=selectedOnly?[...downloadedSelection.values()]:[];
       const selectedIds=selectedTracks.filter(track=>!track.artwork_available).map(track=>Number(track.id));
-      if(selectedTracks.length&&!selectedIds.length){alert('Every selected track already has artwork.');return;}
-      const targetCount=selectedIds.length||Number(paginationData.filtered_total||0);
-      if (!targetCount || !await confirmAction(selectedIds.length?`Find and embed artwork for ${selectedIds.length} selected track${selectedIds.length===1?'':'s'} that need it?`:`Find and embed artwork for tracks that still need it? Existing artwork will be skipped.`, {title:'Synchronize artwork', acceptLabel:'Start sync'})) return;
-      syncArtwork.disabled=true; rescanGenres.disabled=true; retagAll.disabled=true; syncArtwork.textContent='Starting…';
+      if(selectedOnly&&selectedTracks.length&&!selectedIds.length){alert('Every selected track already has artwork.');return;}
+      const targetCount=selectedOnly?selectedIds.length:Number(paginationData.filtered_total||0);
+      if (!targetCount || !await confirmAction(selectedOnly?`Find and embed artwork for ${selectedIds.length} selected track${selectedIds.length===1?'':'s'} that need it?`:`Find and embed artwork for matching tracks that still need it? Existing artwork will be skipped.`, {title:'Synchronize artwork', acceptLabel:'Start sync'})) return;
+      syncArtworkSelected.dataset.busy='true'; syncArtwork.disabled=true; syncArtworkSelected.disabled=true; rescanGenres.disabled=true; retagAll.disabled=true; action.textContent='Starting…';
       renderMaintenanceProgress('Finding and embedding artwork',{total:paginationData.catalog_total,processed:0,status:'processing'},`0 of ${paginationData.catalog_total} checked · preparing artwork sync`);
       try {
         const response=await api.raw('/api/downloaded-library/artwork-sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:selectedIds})});
         const batch=await response.json();
         if(!response.ok) throw new Error(api.errorMessage(batch, 'Could not start artwork synchronization.'));
-        syncArtwork.textContent='Syncing artwork…';
+        action.textContent='Syncing artwork…';
         watchArtworkBatch(batch.batch_id);
-      } catch(error) { renderProgressError('Artwork sync could not start',error); syncArtwork.disabled=false; syncArtwork.textContent='Sync artwork'; rescanGenres.disabled=false; retagAll.disabled=false; }
+      } catch(error) { delete syncArtworkSelected.dataset.busy; renderProgressError('Artwork sync could not start',error); syncArtwork.disabled=false; syncArtwork.textContent='Sync artwork'; syncArtworkSelected.disabled=false; syncArtworkSelected.textContent='Sync artwork'; rescanGenres.disabled=false; retagAll.disabled=false; }
     };
+    syncArtwork.onclick = () => startArtworkSync(false, syncArtwork);
+    syncArtworkSelected.onclick = () => startArtworkSync(true, syncArtworkSelected);
     api.raw('/api/downloaded-library/rescan-genres-latest', {cache:'no-store'}).then(response => response.json()).then(batch => {
       if (batch.status !== 'processing') return;
       rescanGenres.disabled=true; retagAll.disabled=true; rescanGenres.textContent='Rescanning…';
@@ -338,16 +334,13 @@ export function createMusicFilesFeature({
       if (batch.status === 'none') return;
       renderTagFailures(batch,'artwork');
       if (batch.status === 'processing') {
-        syncArtwork.disabled=true; rescanGenres.disabled=true; retagAll.disabled=true; syncArtwork.textContent='Syncing artwork…';
+        syncArtworkSelected.dataset.busy='true'; syncArtwork.disabled=true; syncArtworkSelected.disabled=true; rescanGenres.disabled=true; retagAll.disabled=true; syncArtwork.textContent='Syncing artwork…';
         watchArtworkBatch(batch.batch_id);
       }
     }).catch(() => {});
     const refreshSelection = () => {
-      const selected = [...downloadedSelection.values()];
-      const downloadable = selected.filter(track => track.available);
-      const missingArtwork = selected.filter(track => !track.artwork_available);
-      const analyzable = downloadable.filter(track => !['queued','processing','complete'].includes(track.analysis_status));
-      $('#downloaded-selection-count').textContent = `${selected.length} selected${selected.length ? ` · ${missingArtwork.length} need artwork` : ''}`;
+      const {selected,downloadable,missingArtwork,analyzable,label}=musicFilesSelectionSummary(downloadedSelection.values());
+      $('#downloaded-selection-count').textContent = label;
       downloadSelected.disabled = !downloadable.length;
       analyzeSelected.disabled = !analyzable.length;
       keyAnalyzeSelected.disabled = !downloadable.length;
@@ -356,8 +349,10 @@ export function createMusicFilesFeature({
       changeGenre.disabled = !selected.length;
       editIdentity.disabled = !selected.length;
       retagSelected.disabled = !downloadable.length;
-      if(syncArtwork.dataset.busy!=='true') syncArtwork.textContent=selected.length ? `Sync artwork${missingArtwork.length ? ` (${missingArtwork.length})` : ''}` : 'Sync artwork';
+      syncArtworkSelected.disabled = syncArtworkSelected.dataset.busy==='true'||!missingArtwork.length;
+      if(syncArtworkSelected.dataset.busy!=='true') syncArtworkSelected.textContent=`Sync artwork${missingArtwork.length ? ` (${missingArtwork.length})` : ''}`;
       document.querySelector('.downloaded-selection').classList.toggle('has-selection', selected.length > 0);
+      if(!selected.length)document.querySelector('.downloaded-selection-more').open=false;
       cards.forEach(card => { const selected=card.querySelector('.downloaded-check input').checked; card.classList.toggle('is-selected',selected); card.setAttribute('aria-selected',String(selected)); });
       selectAll.checked = cards.length > 0 && cards.every(card => card.querySelector('input').checked);
       selectAll.indeterminate = cards.some(card => card.querySelector('input').checked) && !selectAll.checked;
@@ -431,6 +426,31 @@ export function createMusicFilesFeature({
       invalidateLibrary();refreshSelection();return true;
     };
     const requestPage = (page = 1) => { downloadedRequestState.setPage(page); loadDownloadedLibrary(); };
+    const renderFilterState = () => {
+      const filters=activeMusicFilesFilters(downloadedUiState,{
+        genre:genreSelect.selectedOptions[0]?.textContent,
+        detailedGenre:detailedGenreSelect.selectedOptions[0]?.textContent,
+        playlist:playlistSelect.selectedOptions[0]?.textContent,
+        analysis:analysisSelect.selectedOptions[0]?.textContent,
+        artwork:artworkSelect.selectedOptions[0]?.textContent,
+        quality:qualitySelect.selectedOptions[0]?.textContent,
+      });
+      renderMusicFilesFilterChips({
+        container:$('#downloaded-active-filters'),
+        filters,
+        onRemove:key=>{
+          clearMusicFilesFilter(downloadedUiState,key);
+          downloadedRequestState.update({...downloadedUiState},{resetPage:false});
+          loadDownloadedLibrary();
+        },
+      });
+      updateMusicFilesFilterDisclosure({
+        filterPanel:$('#downloaded-filter-panel'),
+        filterBadge:$('#downloaded-filter-badge'),
+        resetButton:$('#downloaded-reset-filters'),
+        filterCount:filters.length,
+      });
+    };
     const syncFilters = () => { downloadedUiState.search=search.value.trim();downloadedUiState.genre=genreSelect.value;downloadedUiState.detailedGenre=detailedGenreSelect.value;downloadedUiState.playlist=playlistSelect.value; downloadedUiState.analysis=analysisSelect.value; downloadedUiState.artwork=artworkSelect.value; downloadedUiState.quality=qualitySelect.value; downloadedUiState.sort=sort.value; requestPage(1); };
     search.oninput = () => {
       captureTextFilter(search, downloadedUiState);
@@ -438,6 +458,11 @@ export function createMusicFilesFeature({
     };
     genreSelect.onchange = () => {downloadedUiState.detailedGenre='all';detailedGenreSelect.value='all';syncFilters();}; detailedGenreSelect.onchange=syncFilters; playlistSelect.onchange = syncFilters; analysisSelect.onchange = syncFilters; artworkSelect.onchange = syncFilters; qualitySelect.onchange=syncFilters; sort.onchange = syncFilters;
     $('#downloaded-reset-filters').onclick=()=>{downloadedRequestState.reset();loadDownloadedLibrary();};
+    const toolbar=$('.downloaded-toolbar');
+    const filterPanel=$('#downloaded-filter-panel');
+    const maintenanceMenu=$('#downloaded-maintenance-menu');
+    const selectionMore=toolbar.querySelector('.downloaded-selection-more');
+    [filterPanel,maintenanceMenu,selectionMore].forEach(menu=>{menu.ontoggle=()=>{if(menu.open)closeMusicFilesMenus(toolbar,menu);};});
     pageSizeSelect.onchange = () => { pageSize=Number(pageSizeSelect.value); downloadedRequestState.update({pageSize},{resetPage:true}); localStorage.setItem('music-files-page-size',String(pageSize)); loadDownloadedLibrary(); };
     cards.forEach((card,index) => card.querySelector('input').onchange = event => { const track=tracks[index]; if (event.currentTarget.checked) downloadedSelection.set(Number(track.id),track); else downloadedSelection.delete(Number(track.id)); refreshSelection(); });
     cards.forEach(card => card.onclick = event => {
@@ -465,12 +490,14 @@ export function createMusicFilesFeature({
     summary.querySelectorAll('.filter-downloaded-playlist').forEach(button => button.classList.toggle('active',button.dataset.value===playlistSelect.value));
     const resultTotal=paginationData.filtered_total===paginationData.catalog_total?`${paginationData.catalog_total} tracks`:`${paginationData.filtered_total} of ${paginationData.catalog_total} tracks`;
     $('#downloaded-filter-count').textContent=`${resultTotal}${paginationData.total_pages>1?` · Page ${currentPage} of ${paginationData.total_pages}`:''}`;
+    $('#downloaded-analysis-summary').textContent=analyzableTotal?`${analyzableTotal} matching track${analyzableTotal===1?'':'s'} need analysis`:'All matching tracks analyzed';
+    renderFilterState();
     const reviewMatching=$('#downloaded-review-matching');
     const reviewFilterActive=['attention','missing_title','missing_artist','missing_genre','missing_artwork','unmapped_genre','broad_genre'].includes(downloadedUiState.analysis);
     reviewMatching.hidden=!reviewFilterActive||!paginationData.filtered_total;
     reviewMatching.textContent=`Review metadata (${paginationData.filtered_total})`;
     analyzeMatching.disabled=!analyzableTotal;
-    analyzeMatching.textContent=analyzableTotal?`Analyze ${analyzableTotal} new track${analyzableTotal===1?'':'s'}`:'All matching analyzed';
+    analyzeMatching.textContent=analyzableTotal?`Analyze ${analyzableTotal} new track${analyzableTotal===1?'':'s'}`:'Analyze matching';
     reanalyzeMatching.disabled=!paginationData.filtered_total;
     reanalyzeMatching.textContent=paginationData.filtered_total?`Reanalyze ${paginationData.filtered_total} track${paginationData.filtered_total===1?'':'s'}`:'No tracks to reanalyze';
     refreshSelection();
@@ -667,9 +694,4 @@ export function createMusicFilesFeature({
   }
 
   return {loadDownloadedLibrary};
-}
-
-export function resetMusicFilesFilters(state) {
-  Object.assign(state, {search:'',genre:'all',detailedGenre:'all',playlist:'all',analysis:'all',artwork:'all',quality:'all',sort:'newest',page:1});
-  return state;
 }

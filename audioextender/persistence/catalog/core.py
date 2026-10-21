@@ -7,12 +7,9 @@ from typing import Any
 
 from audioextender.library.recording_identity import (
     audio_fingerprint,
-    format_family_code,
-    identity_key,
-    next_version_code,
-    version_kind,
 )
 from audioextender.persistence.base import RepositoryMixinBase
+from audioextender.persistence.catalog.identity_assignment import assignment_for_upsert
 from audioextender.persistence.catalog.shared import catalog_now as _now
 
 
@@ -39,49 +36,16 @@ class TrackCoreRepositoryMixin(RepositoryMixinBase):
         resolved_artwork = str(Path(artwork_path).expanduser().resolve()) if artwork_path else ""
         fingerprint = audio_fingerprint(file_path) if file_path.is_file() else ""
         with self._lock, closing(self._connect()) as connection, connection:
-            key = identity_key(artist, title)
-            family_row = None
-            identity_confidence = "new"
-            identity_reason = "New recording family"
-            if spotify_uri:
-                family_row = connection.execute(
-                    """SELECT recording_code FROM downloaded_tracks
-                        WHERE spotify_uri=? AND recording_code!='' ORDER BY id LIMIT 1""",
-                    (spotify_uri,),
-                ).fetchone()
-                if family_row:
-                    identity_confidence = "high"
-                    identity_reason = "Matched the same Spotify recording"
-            if family_row is None and youtube_id:
-                family_row = connection.execute(
-                    """SELECT recording_code FROM downloaded_tracks
-                        WHERE youtube_id=? AND recording_code!='' ORDER BY id LIMIT 1""",
-                    (youtube_id,),
-                ).fetchone()
-                if family_row:
-                    identity_confidence = "high"
-                    identity_reason = "Matched the same source recording"
-            if family_row is None and key != "|":
-                family_row = connection.execute(
-                    """SELECT recording_code FROM downloaded_tracks
-                        WHERE identity_key=? AND recording_code!='' ORDER BY id LIMIT 1""",
-                    (key,),
-                ).fetchone()
-                if family_row:
-                    identity_confidence = "review"
-                    identity_reason = "Matched normalized artist and title"
-            if family_row:
-                recording_code = str(family_row["recording_code"])
-            else:
-                recording_code = format_family_code(self._next_recording_number(connection), genre_category)
-            existing_versions = {
-                str(row[0])
-                for row in connection.execute(
-                    "SELECT version_code FROM downloaded_tracks WHERE recording_code=?",
-                    (recording_code,),
-                )
-            }
-            version_code = next_version_code(version_kind(title), existing_versions)
+            assignment = assignment_for_upsert(
+                connection,
+                title=title,
+                artist=artist,
+                resolved_path=resolved,
+                genre_category=genre_category,
+                spotify_uri=spotify_uri,
+                youtube_id=youtube_id,
+                next_recording_number=self._next_recording_number(connection),
+            )
             connection.execute(
                 "DELETE FROM downloaded_track_exclusions WHERE file_path = ?",
                 (resolved,),
@@ -110,6 +74,11 @@ class TrackCoreRepositoryMixin(RepositoryMixinBase):
                         audio_fingerprint=CASE WHEN excluded.audio_fingerprint != ''
                             THEN excluded.audio_fingerprint ELSE downloaded_tracks.audio_fingerprint END,
                         duration_seconds=COALESCE(excluded.duration_seconds, downloaded_tracks.duration_seconds),
+                        recording_code=excluded.recording_code,
+                        version_code=excluded.version_code,
+                        identity_key=excluded.identity_key,
+                        identity_confidence=excluded.identity_confidence,
+                        identity_reason=excluded.identity_reason,
                         updated_at=excluded.updated_at
                     """,
                 (
@@ -127,11 +96,11 @@ class TrackCoreRepositoryMixin(RepositoryMixinBase):
                     duration_seconds,
                     now,
                     now,
-                    recording_code,
-                    version_code,
-                    key,
-                    identity_confidence,
-                    identity_reason,
+                    assignment.recording_code,
+                    assignment.version_code,
+                    assignment.key,
+                    assignment.confidence,
+                    assignment.reason,
                     fingerprint,
                 ),
             )

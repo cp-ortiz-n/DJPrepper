@@ -36,6 +36,7 @@ class SetPlanValidator:
         warnings: list[dict[str, Any]] = []
         chosen: list[dict[str, Any]] = []
         seen: set[str] = set()
+        seen_recordings: dict[str, str] = {}
         for position, selection in enumerate(selections, start=1):
             track_id = str(selection.get("trackId") or selection.get("id") or "")
             section_id = str(selection.get("sectionId") or "")
@@ -45,6 +46,15 @@ class SetPlanValidator:
                 continue
             if track_id in seen:
                 errors.append({"code": "duplicate-track", "trackId": track_id, "position": position})
+            recording_key = str(candidate.get("recordingKey") or "")
+            if track_id not in seen and recording_key and recording_key in seen_recordings:
+                errors.append({
+                    "code": "duplicate-recording",
+                    "trackId": track_id,
+                    "firstTrackId": seen_recordings[recording_key],
+                    "recordingKey": recording_key,
+                    "position": position,
+                })
             if track_id in excluded:
                 errors.append({"code": "excluded-track", "trackId": track_id, "position": position})
             path = str(candidate.get("path") or "")
@@ -67,6 +77,8 @@ class SetPlanValidator:
                     "position": position,
                 })
             seen.add(track_id)
+            if recording_key:
+                seen_recordings.setdefault(recording_key, track_id)
             chosen.append({
                 **candidate,
                 "sectionId": section_id,

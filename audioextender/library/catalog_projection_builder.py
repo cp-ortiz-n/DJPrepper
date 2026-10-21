@@ -104,6 +104,8 @@ class CatalogProjectionBuilder:
                     "genre": row.get("category") or "Other",
                     "detailed_genre": row.get("detail_genre") or "",
                     "downloaded_id": row.get("downloaded_id"),
+                    "recording_code": row.get("recording_code") or "",
+                    "version_code": row.get("version_code") or "",
                     "descriptors": descriptors,
                     "job": {
                         "id": row["job_id"],
@@ -116,7 +118,7 @@ class CatalogProjectionBuilder:
                     },
                 }
             )
-        return {"version": 5, "tracks": tracks, "total": len(tracks)}
+        return {"version": 6, "tracks": tracks, "total": len(tracks)}
 
     def write_catalog_cache(self) -> None:
         payload = self.build_catalog_payload()

@@ -246,11 +246,94 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
     sections.some((section) => {
       const energy = section.querySelector('.journey-energy-inputs')?.getBoundingClientRect();
       const character = section.querySelector('.journey-characteristics')?.getBoundingClientRect();
-      return energy && character && energy.right > character.left + 1;
+      return (
+        energy &&
+        character &&
+        energy.left < character.right - 1 &&
+        energy.right > character.left + 1 &&
+        energy.top < character.bottom - 1 &&
+        energy.bottom > character.top + 1
+      );
     }),
   );
   expect(journeyFieldsOverlap).toBe(false);
+  const journeyStructure = await journeyProbe.evaluate((section) => {
+    const primary = section.querySelector('.journey-primary').getBoundingClientRect();
+    const details = section.querySelector('.journey-details').getBoundingClientRect();
+    return {
+      stacked: details.top >= primary.bottom - 1,
+      aligned: Math.abs(primary.left - details.left) <= 1,
+    };
+  });
+  expect(journeyStructure).toEqual({ stacked: true, aligned: true });
   await page.locator('#journey-layout-probe').evaluate((node) => node.remove());
+
+  await page.evaluate(() => {
+    const review = document.createElement('div');
+    review.id = 'set-review-style-probe';
+    review.className = 'set-track-review';
+    review.innerHTML = `<button type="button" class="active">✓ Keep</button><button type="button">× Reject</button><select aria-label="Rejection reason"><option>Reason…</option></select>`;
+    document.querySelector('#set-builder-view').append(review);
+  });
+  const keepButton = page.locator('#set-review-style-probe button.active');
+  await expect(keepButton).toHaveText('✓ Keep');
+  const keepContrast = await keepButton.evaluate((button) => {
+    const style = getComputedStyle(button);
+    return { color: style.color, background: style.backgroundColor, width: button.getBoundingClientRect().width };
+  });
+  expect(keepContrast.color).not.toBe(keepContrast.background);
+  expect(keepContrast.width).toBeLessThan(180);
+  await page.locator('#set-review-style-probe').evaluate((node) => node.remove());
+});
+
+test('Set Builder explains journey planning and normalizes incomplete energy ranges', async ({ page }) => {
+  await page.route('**/api/set-builder/prepare-brief', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await route.fulfill({
+      json: {
+        interpretation: {
+          provider: 'ollama',
+          model: 'browser-test',
+          required: [],
+          preferred: ['disco'],
+          avoided: [],
+          requestedGenres: ['disco & funk'],
+          optionalGenres: [],
+          genreSequence: ['disco & funk'],
+          vibe: 'dance-party',
+          curve: 'rise',
+          drift: 'moderate',
+        },
+        journey: {
+          evidence: 'ai-planned',
+          model: 'browser-test',
+          summary: 'A compact disco journey.',
+          sections: [
+            {
+              id: 'opening',
+              name: 'Opening',
+              durationPercent: 100,
+              energyStart: 6,
+              energyEnd: '?',
+              genres: ['disco & funk'],
+              characteristics: ['groovy'],
+              purpose: 'Build momentum',
+            },
+          ],
+        },
+      },
+    });
+  });
+  await openView(page, 'Set Builder');
+  await page.locator('#set-intention').fill('Build a disco set that grows in energy.');
+  await page.locator('#interpret-set-intention').click();
+  const progress = page.locator('#set-intention-progress');
+  await expect(progress).toBeVisible();
+  await expect(progress).toContainText('Understanding your set brief');
+  await expect(progress.locator('li')).toHaveCount(3);
+  await expect(progress).toBeHidden({ timeout: 5000 });
+  await expect(page.locator('.journey-energy-value')).toHaveText('6 → 6');
+  await expect(page.locator('.journey-energy-end')).toHaveValue('6');
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
@@ -264,6 +347,91 @@ test('search fields retain the complete query during overlapping requests', asyn
   await expect(search).toHaveValue('abcdefghijklmnopqrstuvwxyz1234567890');
   await page.waitForTimeout(350);
   await expect(search).toHaveValue('abcdefghijklmnopqrstuvwxyz1234567890');
+});
+
+test('Music Files separates filters, maintenance, and selection actions', async ({ browser }) => {
+  const page = await browser.newPage();
+  await page.route('**/api/downloaded-library?*', (route) =>
+    route.fulfill({
+      json: {
+        tracks: [
+          {
+            id: 701,
+            filename: 'night-drive.wav',
+            title: 'Night Drive',
+            artist: 'Test Artist',
+            genre_category: 'Electronic / House',
+            genre: 'Disco House',
+            playlists: ['Browser Fixture'],
+            available: true,
+            artwork_available: false,
+            analysis_status: 'complete',
+            duration_seconds: 241,
+            recording_code: 'HOU-000701',
+            version_code: 'ORG',
+            descriptors: [],
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 50,
+          filtered_total: 1,
+          catalog_total: 1,
+          total_pages: 1,
+          analyzable_total: 0,
+        },
+        genres: { 'Electronic / House': 1 },
+        detailed_genres: { 'Disco House': 1 },
+        detailed_genres_by_category: { 'Electronic / House': { 'Disco House': 1 } },
+        playlists: { 'Browser Fixture': 1 },
+        review_states: { missing_artwork: 1, needs_attention: 1 },
+      },
+    }),
+  );
+  await page.goto('http://127.0.0.1:4173/');
+  await openView(page, 'Music Files');
+
+  const filters = page.locator('#downloaded-filter-panel');
+  const maintenance = page.locator('#downloaded-maintenance-menu');
+  await expect(filters).not.toHaveAttribute('open', '');
+  await expect(maintenance).not.toHaveAttribute('open', '');
+
+  await filters.locator('summary').click();
+  await expect(filters).toHaveAttribute('open', '');
+  const filterLayout = await page.evaluate(() => {
+    const toolbar = document.querySelector('.downloaded-toolbar').getBoundingClientRect();
+    const drawer = document.querySelector('.downloaded-filters').getBoundingClientRect();
+    const summary = document.querySelector('.downloaded-filter-summary').getBoundingClientRect();
+    return {
+      alignedLeft: drawer.left >= toolbar.left - 1,
+      alignedRight: drawer.right <= toolbar.right + 1,
+      clearsSummary: drawer.bottom <= summary.top + 1,
+    };
+  });
+  expect(filterLayout).toEqual({ alignedLeft: true, alignedRight: true, clearsSummary: true });
+  await page.locator('#downloaded-analysis').evaluate((select) => {
+    select.value = 'complete';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await expect(page.locator('#downloaded-filter-badge')).toHaveText('1');
+  await expect(page.locator('.downloaded-filter-chip')).toContainText('Analyzed');
+
+  await maintenance.locator('summary').click();
+  await expect(maintenance).toHaveAttribute('open', '');
+  await expect(filters).not.toHaveAttribute('open', '');
+  await expect(maintenance.getByRole('button', { name: 'Review vocabulary' })).toBeVisible();
+
+  await page.getByLabel('Select Night Drive').check();
+  const selection = page.locator('.downloaded-selection');
+  await expect(selection).toHaveClass(/has-selection/);
+  await expect(selection).toContainText('1 selected · 1 need artwork');
+  await expect(selection.getByRole('button', { name: 'Edit identity' })).toBeVisible();
+  await selection.locator('.downloaded-selection-more > summary').click();
+  await expect(selection.getByRole('button', { name: 'Sync artwork' })).toBeVisible();
+
+  await page.locator('.downloaded-filter-chip').click();
+  await expect(page.locator('#downloaded-filter-badge')).toBeHidden();
+  await page.close();
 });
 
 test('disconnect and reconnect clear the stale offline presentation', async ({ page }) => {

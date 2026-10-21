@@ -5,13 +5,14 @@ import unittest
 from audioextender.set_builder.proposal_repairer import PlanProposalRepairer
 
 
-def candidate(identifier: str, section: str, *, required: bool = False) -> dict:
+def candidate(identifier: str, section: str, *, required: bool = False, recording_key: str = "") -> dict:
     return {
         "id": identifier,
         "eligibleSectionIds": [section],
         "relevanceScore": 100 - int(identifier.rsplit(":", 1)[-1]),
         "required": required,
         "locked": False,
+        "recordingKey": recording_key or identifier,
     }
 
 
@@ -39,6 +40,22 @@ class PlanProposalRepairerTests(unittest.TestCase):
             ],
         )
         self.assertTrue(any(item["code"] == "filled-section-slot" for item in repairs))
+
+    def test_discards_second_id_from_an_already_used_recording_family(self) -> None:
+        candidates = [
+            candidate("downloaded:1", "opening", recording_key="recording:DSC-1"),
+            candidate("downloaded:2", "dance", recording_key="recording:DSC-1"),
+            candidate("downloaded:3", "dance", recording_key="recording:DSC-3"),
+        ]
+        proposal = {"selections": [
+            {"trackId": "downloaded:1", "sectionId": "opening"},
+            {"trackId": "downloaded:2", "sectionId": "dance"},
+        ]}
+        repaired, _ = PlanProposalRepairer().repair(proposal, candidates, {"opening": 1, "dance": 1})
+        self.assertEqual(
+            [item["trackId"] for item in repaired["selections"]],
+            ["downloaded:1", "downloaded:3"],
+        )
 
 
 if __name__ == "__main__":

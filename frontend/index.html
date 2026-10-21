@@ -172,7 +172,7 @@
     </section>
 
     <section id="downloads-view" class="view page-view">
-      <div class="page-heading">
+      <div class="page-heading downloads-page-heading">
         <div><p class="eyebrow">ORIGINAL AUDIO COLLECTION</p><h1>Manage your music files</h1></div>
         <p>Organize imported WAVs by genre and playlist, then choose which tracks to analyze for DJ preparation.</p>
       </div>
@@ -180,32 +180,42 @@
       <aside id="downloaded-summary" class="panel downloaded-summary"></aside>
       <main class="downloads-main">
       <section class="panel downloaded-toolbar">
-        <div class="downloaded-filters">
-          <label>Find a track<input id="downloaded-search" type="search" placeholder="Search title, artist, track ID, genre, or playlist"></label>
-          <label>Parent genre<select id="downloaded-genre"><option value="all">All parent genres</option></select></label>
-          <label>Detailed genre<select id="downloaded-detailed-genre-filter"><option value="all">All detailed genres</option></select></label>
-          <label>Playlist<select id="downloaded-playlist"><option value="all">All playlists</option></select></label>
-          <label>Analysis<select id="downloaded-analysis"><option value="all">All tracks</option><optgroup label="Track analysis"><option value="needs">Needs audio analysis</option><option value="complete">Analyzed</option><option value="active">Queued or analyzing</option><option value="failed">Analysis failed or canceled</option></optgroup><optgroup label="Needs attention"><option value="attention">All needing attention</option><option value="missing_title">Missing title</option><option value="missing_artist">Missing artist</option><option value="missing_genre">Missing genre tags</option><option value="missing_artwork">Missing artwork</option><option value="unmapped_genre">Unrecognized genre</option><option value="broad_genre">Needs a specific genre</option></optgroup></select></label>
-          <label>Artwork<select id="downloaded-artwork"><option value="all">All artwork</option><option value="missing">Needs artwork</option><option value="available">Has artwork</option></select></label>
-          <label>Audio quality<select id="downloaded-quality"><option value="all">All quality levels</option><option value="excellent">Excellent · 90–100</option><option value="good">Good · 75–89</option><option value="below-target">Needs review · below 75</option><option value="review">Review · 55–74</option><option value="poor">Poor · below 55</option><option value="unanalyzed">Not quality analyzed</option></select></label>
-          <label>Sort<select id="downloaded-sort"><option value="newest">Newest imported</option><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option><option value="genre">Genre</option></select></label>
+        <div class="downloaded-primary-toolbar">
+          <label class="downloaded-search-field">Find a track<input id="downloaded-search" type="search" placeholder="Search title, artist, track ID, genre, or playlist"></label>
+          <details id="downloaded-filter-panel" class="downloaded-filter-panel">
+            <summary class="button secondary">Filters <b id="downloaded-filter-badge" hidden>0</b></summary>
+            <div class="downloaded-filters">
+              <label>Parent genre<select id="downloaded-genre"><option value="all">All parent genres</option></select></label>
+              <label>Detailed genre<select id="downloaded-detailed-genre-filter"><option value="all">All detailed genres</option></select></label>
+              <label>Playlist<select id="downloaded-playlist"><option value="all">All playlists</option></select></label>
+              <label>Analysis<select id="downloaded-analysis"><option value="all">All tracks</option><optgroup label="Track analysis"><option value="needs">Needs audio analysis</option><option value="complete">Analyzed</option><option value="active">Queued or analyzing</option><option value="failed">Analysis failed or canceled</option></optgroup><optgroup label="Needs attention"><option value="attention">All needing attention</option><option value="missing_title">Missing title</option><option value="missing_artist">Missing artist</option><option value="missing_genre">Missing genre tags</option><option value="missing_artwork">Missing artwork</option><option value="unmapped_genre">Unrecognized genre</option><option value="broad_genre">Needs a specific genre</option></optgroup></select></label>
+              <label>Artwork<select id="downloaded-artwork"><option value="all">All artwork</option><option value="missing">Needs artwork</option><option value="available">Has artwork</option></select></label>
+              <label>Audio quality<select id="downloaded-quality"><option value="all">All quality levels</option><option value="excellent">Excellent · 90–100</option><option value="good">Good · 75–89</option><option value="below-target">Needs review · below 75</option><option value="review">Review · 55–74</option><option value="poor">Poor · below 55</option><option value="unanalyzed">Not quality analyzed</option></select></label>
+            </div>
+          </details>
+          <label class="downloaded-sort-field">Sort<select id="downloaded-sort"><option value="newest">Newest imported</option><option value="title">Title A–Z</option><option value="artist">Artist A–Z</option><option value="genre">Genre</option></select></label>
+          <details id="downloaded-maintenance-menu" class="downloaded-maintenance-menu">
+            <summary class="button secondary">Library maintenance</summary>
+            <div class="downloaded-maintenance-menu-content">
+              <header><strong>Library maintenance</strong><small>Catalog-wide operations are kept separate from everyday browsing.</small></header>
+              <section><div><strong>Musical identity</strong><small>Review vocabulary or refresh machine-generated descriptors.</small></div><div><button id="downloaded-vocabulary-review" type="button" class="button secondary">Review vocabulary</button><button id="downloaded-infer-missing-identities" type="button" class="button secondary">Infer missing</button><button id="downloaded-reinfer-unprotected" type="button" class="button secondary">Re-infer unprotected</button></div></section>
+              <section><div><strong>Files and metadata</strong><small>Reconcile sources, folders, embedded tags, and artwork.</small></div><div><button id="downloaded-reconcile-files" type="button" class="button secondary">Reconcile files</button><button id="downloaded-rescan-genres" type="button" class="button secondary">Rescan genres</button><button id="downloaded-retag-all" type="button" class="button secondary">Sync WAV tags</button><button id="downloaded-sync-artwork" type="button" class="button secondary">Sync artwork</button></div></section>
+              <section><div><strong>Analysis</strong><small>Reprocess every track currently matching the active filters.</small></div><button id="downloaded-reanalyze-matching" type="button" class="button secondary">Reanalyze matching</button></section>
+            </div>
+          </details>
         </div>
-        <div class="downloaded-filter-summary"><div><small>Showing</small><strong id="downloaded-filter-count">0 tracks</strong></div><div class="downloaded-matching-actions"><button id="downloaded-reset-filters" type="button" class="button tertiary">Reset filters</button><button id="downloaded-review-matching" type="button" class="button secondary" hidden>Review metadata</button><button id="downloaded-analyze-matching" type="button" class="button secondary" disabled>Analyze matching</button><button id="downloaded-reanalyze-matching" type="button" class="button secondary">Reanalyze matching</button></div></div>
+        <div id="downloaded-active-filters" class="downloaded-active-filters" aria-label="Active filters" hidden></div>
+        <div class="downloaded-filter-summary"><div><small>Showing</small><strong id="downloaded-filter-count">0 tracks</strong><span id="downloaded-analysis-summary">Loading analysis status…</span></div><div class="downloaded-matching-actions"><button id="downloaded-reset-filters" type="button" class="button tertiary" hidden>Clear filters</button><button id="downloaded-review-matching" type="button" class="button secondary" hidden>Review metadata</button><button id="downloaded-analyze-matching" type="button" disabled>Analyze matching</button></div></div>
         <div class="downloaded-selection-anchor">
-          <label><input id="downloaded-select-all" type="checkbox"> Select all visible</label>
-          <div class="downloaded-maintenance-actions"><span>Library tools</span><button id="downloaded-vocabulary-review" type="button" class="button secondary">Review identity vocabulary</button><button id="downloaded-infer-missing-identities" type="button" class="button secondary">Infer missing identities</button><button id="downloaded-reinfer-unprotected" type="button" class="button secondary">Re-infer unprotected</button><button id="downloaded-rescan-genres" type="button" class="button secondary">Rescan genres</button><button id="downloaded-reconcile-files" type="button" class="button secondary">Reconcile files</button><button id="downloaded-retag-all" type="button" class="button secondary">Sync WAV tags</button><button id="downloaded-sync-artwork" type="button" class="button secondary">Sync artwork</button></div>
+          <label><input id="downloaded-select-all" type="checkbox"> Select page</label><small>Selects the tracks visible on this page.</small>
         </div>
         <div class="downloaded-selection">
           <span id="downloaded-selection-count">0 selected</span>
-          <button id="downloaded-clear-selection" type="button" class="button secondary">Clear</button>
-          <button id="downloaded-change-genre" type="button" class="button secondary" disabled>Change genre</button>
-          <button id="downloaded-edit-identity" type="button" class="button secondary" disabled>Edit identity</button>
-          <button id="downloaded-retag-selected" type="button" class="button secondary" disabled>Sync WAV tags</button>
           <button id="downloaded-analyze-selected" type="button" disabled>Analyze</button>
-          <button id="downloaded-key-analyze-selected" type="button" class="button secondary" disabled>Analyze key</button>
-          <button id="downloaded-reanalyze-selected" type="button" class="button secondary" disabled>Reanalyze selected</button>
-          <button id="downloaded-download-selected" type="button" class="button secondary" disabled>Download WAVs</button>
-          <button id="downloaded-remove-selected" type="button" class="button secondary danger-button" disabled>Remove</button>
+          <button id="downloaded-edit-identity" type="button" class="button secondary" disabled>Edit identity</button>
+          <button id="downloaded-change-genre" type="button" class="button secondary" disabled>Change genre</button>
+          <details class="downloaded-selection-more"><summary class="button secondary">More</summary><div><button id="downloaded-key-analyze-selected" type="button" class="button secondary" disabled>Analyze key</button><button id="downloaded-reanalyze-selected" type="button" class="button secondary" disabled>Reanalyze selected</button><button id="downloaded-retag-selected" type="button" class="button secondary" disabled>Sync WAV tags</button><button id="downloaded-sync-artwork-selected" type="button" class="button secondary" disabled>Sync artwork</button><button id="downloaded-download-selected" type="button" class="button secondary" disabled>Download WAVs</button><button id="downloaded-remove-selected" type="button" class="button secondary danger-button" disabled>Remove</button></div></details>
+          <button id="downloaded-clear-selection" type="button" class="button tertiary">Clear</button>
         </div>
         <section id="downloaded-maintenance-progress" class="downloaded-maintenance-progress" aria-live="polite" hidden>
           <div><strong id="downloaded-progress-title">Library maintenance</strong><span id="downloaded-progress-percent">0%</span><button id="downloaded-progress-dismiss" type="button" aria-label="Dismiss maintenance status">×</button></div>
@@ -299,6 +309,7 @@
             <div class="set-intention-heading"><div><label for="set-intention">Set intention <span>AI brief</span></label><small>Describe the musical identity, crowd, influences, and progression—not only a genre.</small></div><span id="set-provider-status" class="set-provider-status checking">Checking local AI…</span></div>
             <textarea id="set-intention" rows="4" maxlength="1200" placeholder="Example: Build a driving Latin electronic set with a Techno foundation, Spanish vocals, dembow or Latin percussion, and an Ecuadorian party feel. Allow Latin House and Cumbia edits as bridges."></textarea>
             <div class="set-intention-actions"><small>We’ll turn this into one reviewable direction before selecting tracks.</small><button id="interpret-set-intention" type="button" class="button secondary">Review set direction</button></div>
+            <section id="set-intention-progress" class="set-builder-progress" role="status" aria-live="polite" hidden></section>
             <div id="set-intention-interpretation" class="set-intention-interpretation" hidden>
               <div class="set-intention-summary"><strong>Your set direction</strong><span id="set-intention-status">Review these preferences before generating.</span></div>
               <details class="set-direction-details"><summary>Edit detailed interpretation</summary><div class="set-intention-fields">
@@ -336,6 +347,7 @@
             <button id="set-generate" type="submit">Build this set</button>
             <button id="set-cancel-planning" type="button" class="button secondary" hidden>Cancel planning</button>
             <p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p>
+            <section id="set-planning-progress" class="set-builder-progress" role="status" aria-live="polite" hidden></section>
           </div>
         </form>
         <aside class="panel saved-sets-panel">

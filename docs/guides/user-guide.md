@@ -84,7 +84,15 @@ retryable instead of losing or silently applying it.
 Phase 2D compares every validated AI proposal with an independently generated
 deterministic baseline. AI wins only when it improves the deterministic quality
 score, preserves requested-genre coverage, and still passes every hard
-validator. Exact-count schemas restrict model output to real candidate and
+validator. Track uniqueness is enforced by permanent recording family, not by
+filename: an original, remix, alternate import, or spelling/spacing variant of
+the same song can contribute at most one track to a set. This rule applies to
+AI planning, deterministic planning, saved-set recovery, and manual add or
+replace actions. **Alternatives** on a recommended track still shows every
+analyzed version in that recording family—such as the original, remix, extended
+mix, or live version—before suggesting different songs. Choosing one replaces
+the current version, so you can compare versions without creating a duplicate.
+Exact-count schemas restrict model output to real candidate and
 section IDs. A narrow structural repair boundary removes duplicates and fills
 missing section slots from eligible candidates while preserving valid unique AI
 choices; every repair is disclosed. The generated-set receipt shows both
@@ -157,6 +165,15 @@ The UI identifies results as Local AI, Cloud AI, or offline rules. Model output
 is schema-constrained and sanitized against catalog vocabulary before the
 browser uses it. The journey must total 100% of the target runtime; edits to its
 section order, genres, and energy targets feed either safe planning mode.
+While the brief or track order is being prepared, Set Builder shows the current
+stage, elapsed time, validation boundary, and the remaining stages. AI planning
+also shows backend progress when it is available. Journey sections are grouped
+as complete cards so their name, duration, energy movement, genres, character,
+and purpose can be reviewed together. If an AI response omits a section's end
+energy, the UI safely keeps that section at its valid starting energy instead of
+displaying an unknown target. Track **Keep** and **Reject** choices remain
+visible after selection and are not submitted as learning evidence until the
+set review is saved.
 
 When AudioExtender starts, its Terminal prints the detected Set Builder AI
 provider and model. Every interpreted brief also logs the provider, model,
@@ -240,6 +257,21 @@ a WAV container's high PCM bitrate as proof that its original download was
 lossless. Music Files shows the stored score on each track, while Settings shows
 coverage, the library average, and the Excellent, Good, Review, and Poor counts.
 
+### Browse and maintain Music Files
+
+Music Files keeps everyday browsing separate from catalog maintenance. Search
+and sort are always available. Open **Filters** for genre, detailed genre,
+playlist, analysis, artwork, and quality constraints; active constraints appear
+as removable chips above the result count. **Library maintenance** contains
+catalog-wide identity inference, file reconciliation, metadata, artwork, genre,
+and reanalysis operations. Those actions may affect every matching track and do
+not depend on the current page selection.
+
+Use **Select page** to choose the visible tracks. A contextual action bar then
+offers analysis, identity, genre, metadata synchronization, artwork, download,
+and removal actions for only that selection. Clearing the selection removes the
+bar. The count beside it calls out selected tracks that still need artwork.
+
 Candidate auditions are opt-in because rendering six contextual audio files for
 every song adds processing time and visual clutter. Enable **Review candidates**
 before adding files, or click **Create review** on a completed track. The new
@@ -257,6 +289,11 @@ and library relocation. **Collection integrity** presents conservative duplicate
 matches for review; merging combines catalog references while deliberately
 leaving the unused WAV on disk, and **Keep as separate recording** assigns a new
 family when two similar tracks are genuinely different.
+Exact normalized artist/title matches also converge automatically when a track
+is imported, rescanned, or saved with corrected metadata. Harmless title
+spacing differences such as `Funkytown` and `Funky Town` share one recording
+family. Permanent catalog row IDs are never rewritten; the shared family ID is
+the identity used to prevent the same song from appearing twice in Set Builder.
 The Review page presents one **Accept option** button per candidate and permits
 one selected intro plus one selected outro; choosing another option replaces the
 earlier selection for that side. After both

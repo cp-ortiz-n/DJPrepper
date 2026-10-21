@@ -1,5 +1,12 @@
 /** Plan rendering and interactive track-editing ownership for Set Builder. */
 
+import {
+  buildVersionAwareReplacementCatalog,
+  defaultVersionAwareReplacements,
+  recordingVersionCount,
+  searchVersionAwareReplacements,
+} from './version-alternatives.js';
+
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
   const { $, $$, escapeHtml } = dom;
   const {
@@ -14,6 +21,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     music;
   const {
     SET_IDENTITY_STORAGE_KEY,
+    deduplicateSetRecordings,
     eligibleSetTracks,
     genreAllocationTargets,
     identityStore,
@@ -23,6 +31,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     saveManualTrackIdentity,
     setCatalogTrackId,
     setCandidateScore,
+    setRecordingKey,
     setTrackId,
     setVocalProfile,
     targetSetEnergy,
@@ -307,6 +316,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           : '';
         const review = trackReviewDraft.get(id) || {},
           metrics = track._candidateMetrics || {};
+        const alternateVersionCount = recordingVersionCount(track, state.library);
         const pairId = index ? `${setCatalogTrackId(state.plan[index - 1])}→${setCatalogTrackId(track)}` : '';
         return `<article class="set-track-card${locked ? ' locked' : ''}" draggable="${locked ? 'false' : 'true'}" data-index="${index}"><span class="set-position">${index + 1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
           track,
@@ -323,7 +333,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           })
           .join(
             '',
-          )}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision === 'accept' ? 'active' : ''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision === 'reject' ? 'active' : ''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">Find alternative</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
+          )}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision === 'accept' ? 'active' : ''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision === 'reject' ? 'active' : ''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
       })
       .join('');
     bindSetRows();
@@ -498,12 +508,12 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
   }
   function addSetTrack(insertIndex = state.plan.length, anchor = null) {
     document.querySelectorAll('.set-add-track-panel').forEach((item) => item.remove());
-    const used = new Set(state.plan.map(setTrackId));
+    const used = new Set(state.plan.map(setRecordingKey));
     const brief = setBrief();
     const previous = state.plan[insertIndex - 1];
     const next = state.plan[insertIndex];
-    const available = state.library
-      .filter((track) => !used.has(setTrackId(track)))
+    const available = deduplicateSetRecordings(state.library)
+      .filter((track) => !used.has(setRecordingKey(track)))
       .map((track) => ({
         track,
         score:
@@ -561,8 +571,9 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     panel.querySelector('.alternative-search').focus();
   }
   function replaceSetTrack(index) {
-    const used = new Set(state.plan.map(setTrackId));
+    const used = new Set(state.plan.filter((_, position) => position !== index).map(setRecordingKey));
     const brief = setBrief();
+    const current = state.plan[index];
     const previous = state.plan[index - 1];
     const next = state.plan[index + 1];
     const rankTrack = (track) => ({
@@ -571,49 +582,43 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         setCandidateScore(track, previous, index, state.plan.length, brief) +
         (next ? compatibility(track, next).score * 0.3 : 0),
     });
-    const available = state.library
-      .filter((track) => !used.has(setTrackId(track)))
-      .map(rankTrack)
-      .sort((a, b) => b.score - a.score);
-    const recommendedIds = new Set(
-      eligibleSetTracks(brief)
-        .filter((track) => !used.has(setTrackId(track)))
-        .map(setTrackId),
-    );
+    const { versionChoices, recommendedSongs, searchable, genres } = buildVersionAwareReplacementCatalog({
+      current,
+      library: state.library,
+      usedRecordingKeys: used,
+      recommendedTracks: eligibleSetTracks(brief),
+      rankTrack,
+    });
     const card = $(`.set-track-card[data-index="${index}"]`);
     if (!card) return;
     card.querySelector('.set-alternative-panel')?.remove();
     const panel = document.createElement('section');
     panel.className = 'set-alternative-panel';
-    const genres = [...new Set(available.map((choice) => choice.track._genre).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b),
-    );
-    panel.innerHTML = `<header><div><strong>Replace this track</strong><span>Start with recommended matches or search your entire DJ Library.</span></div><button type="button" class="close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
+    panel.innerHTML = `<header><div><strong>Choose an alternative</strong><span>Use another version of this song or replace it with a different recording. Only one version can remain in the set.</span></div><button type="button" class="close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, version, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
     const list = panel.querySelector('.set-alternative-list');
     const status = panel.querySelector('.set-alternative-status');
     const renderChoices = () => {
       const query = panel.querySelector('.alternative-search').value.trim().toLowerCase();
       const genre = panel.querySelector('.alternative-genre').value;
       const searching = Boolean(query || genre);
-      const matches = available.filter((choice) => {
-        const track = choice.track;
-        const haystack = `${track.source_name || ''} ${track.artist || ''} ${track._genre || ''}`.toLowerCase();
-        return (!query || haystack.includes(query)) && (!genre || track._genre === genre);
-      });
-      const choices = (
-        searching ? matches : matches.filter((choice) => recommendedIds.has(setTrackId(choice.track)))
-      ).slice(0, searching ? 30 : 5);
+      const matches = searchVersionAwareReplacements(searchable, query, genre);
+      const choices = searching
+        ? matches.slice(0, 30).map((choice) => ({ ...choice, group: 'Search results' }))
+        : defaultVersionAwareReplacements(versionChoices, recommendedSongs);
       status.textContent = searching
         ? `${matches.length} matching unused track${matches.length === 1 ? '' : 's'} · showing ${choices.length}`
-        : `${choices.length} recommended replacement${choices.length === 1 ? '' : 's'} · search to choose any track`;
+        : `${versionChoices.length} other version${versionChoices.length === 1 ? '' : 's'} · ${recommendedSongs.length} recommended different song${recommendedSongs.length === 1 ? '' : 's'}`;
       list.innerHTML = choices.length
         ? choices
-            .map((choice, choiceIndex) => {
+            .map((choice, choiceIndex, items) => {
               const track = choice.track;
               const preview = track._job?.id
                 ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
                 : '';
-              return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">Use this track</button></article>`;
+              const heading = !choiceIndex || items[choiceIndex - 1].group !== choice.group
+                ? `<h4>${escapeHtml(choice.group)}</h4>`
+                : '';
+              return `${heading}<article data-choice="${choiceIndex}" class="${choice.sameRecording ? 'same-recording-version' : ''}"><div><em class="set-alternative-kind">${choice.sameRecording ? escapeHtml(choice.versionLabel) : 'Different song'}</em><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">${choice.sameRecording ? 'Use this version' : 'Use this track'}</button></article>`;
             })
             .join('')
         : '<p class="empty">No unused tracks match that search.</p>';
