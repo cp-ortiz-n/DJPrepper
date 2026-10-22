@@ -1,9 +1,8 @@
 """Local DJ Library Studio web interface; the AudioExtender CLI remains independent."""
 
 # Runtime compatibility names are installed atomically by ``_bind_runtime``.
-# They intentionally do not exist while this module is only being imported.
-# ruff: noqa: F821
-# mypy: disable-error-code="name-defined"
+# Their explicit declarations below keep that legacy facade visible to static
+# analysis without eagerly constructing application services during import.
 
 from __future__ import annotations
 
@@ -238,6 +237,85 @@ STORAGE_INVENTORY_SNAPSHOT = DEFAULT_PATHS.storage_inventory_snapshot
 logger = logging.getLogger("uvicorn.error")
 wav_tag_audit_refresh_active = False
 library_index_refresh_active = False
+
+# ``_bind_runtime`` and the construction helpers replace these sentinels before
+# the application handles a request. Real assignments (rather than annotation-
+# only declarations) are intentional: Pyflakes-based tools require a lexical
+# binding, while eager construction here would open the database during import.
+_UNBOUND: Any = object()
+
+# State installed by ``composition.runtime_bindings``.
+repository: Any = _UNBOUND
+service: Any = _UNBOUND
+library_relocation: Any = _UNBOUND
+pending_backup_restores: Any = _UNBOUND
+creative_commons_registry: Any = _UNBOUND
+creative_commons_batches: Any = _UNBOUND
+creative_commons_batch_lock: Any = _UNBOUND
+wav_tag_audit_refresh_lock: Any = _UNBOUND
+metadata_batch_registry: Any = _UNBOUND
+integrity_scan_batches: Any = _UNBOUND
+integrity_scan_batch_lock: Any = _UNBOUND
+audio_quality_batches: Any = _UNBOUND
+audio_quality_batch_lock: Any = _UNBOUND
+key_analysis_batches: Any = _UNBOUND
+key_analysis_batch_lock: Any = _UNBOUND
+library_consolidation_batches: Any = _UNBOUND
+library_consolidation_batch_lock: Any = _UNBOUND
+downloaded_catalog_migration_lock: Any = _UNBOUND
+report_cache_lock: Any = _UNBOUND
+report_cache: Any = _UNBOUND
+analytics_cache_lock: Any = _UNBOUND
+analytics_cache: Any = _UNBOUND
+library_catalog_cache_lock: Any = _UNBOUND
+library_catalog_cache: Any = _UNBOUND
+library_status_cache_lock: Any = _UNBOUND
+library_status_cache: Any = _UNBOUND
+storage_inventory_lock: Any = _UNBOUND
+storage_inventory_cache: Any = _UNBOUND
+library_index_refresh_lock: Any = _UNBOUND
+performance_diagnostics_lock: Any = _UNBOUND
+waveform_generation_locks_guard: Any = _UNBOUND
+waveform_generation_locks: Any = _UNBOUND
+performance_diagnostics: Any = _UNBOUND
+performance_cache_stats: Any = _UNBOUND
+
+# Services installed by the focused construction helpers in ``create_app``.
+performance_diagnostics_service: Any = _UNBOUND
+source_matching_service: Any = _UNBOUND
+local_media_service: Any = _UNBOUND
+downloaded_catalog_migrator: Any = _UNBOUND
+intention_planner: Any = _UNBOUND
+journey_planner: Any = _UNBOUND
+brief_preparation: Any = _UNBOUND
+set_preference_service: Any = _UNBOUND
+set_review_service: Any = _UNBOUND
+candidate_retriever: Any = _UNBOUND
+set_plan_validator: Any = _UNBOUND
+track_planner: Any = _UNBOUND
+preset_service: Any = _UNBOUND
+downloaded_library_delivery_service: Any = _UNBOUND
+recording_family_service: Any = _UNBOUND
+downloaded_track_mutation_service: Any = _UNBOUND
+audio_quality_scan_service: Any = _UNBOUND
+creative_commons_service: Any = _UNBOUND
+creative_commons_archive_service: Any = _UNBOUND
+import_issue_service: Any = _UNBOUND
+import_service: Any = _UNBOUND
+local_import_service: Any = _UNBOUND
+playlist_match_service: Any = _UNBOUND
+library_job_catalog_service: Any = _UNBOUND
+library_maintenance_service: Any = _UNBOUND
+metadata_batch_service: Any = _UNBOUND
+job_workflow_service: Any = _UNBOUND
+job_review_service: Any = _UNBOUND
+track_metadata_mutations: Any = _UNBOUND
+downloaded_catalog_query_service: Any = _UNBOUND
+artwork_thumbnail_service: Any = _UNBOUND
+downloaded_analysis_queue: Any = _UNBOUND
+reporting_service: Any = _UNBOUND
+creative_commons_worker: Any = _UNBOUND
+_run_integrity_scan: Any = _UNBOUND
 
 
 def _record_cache_result(cache_name: str, hit: bool) -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -18,7 +19,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from audioextender.persistence.facade import JobRepository
 from audioextender.web import application as web
-from audioextender.web.composition import ApplicationPaths, ApplicationRuntime
+from audioextender.web.composition import ApplicationPaths, ApplicationRuntime, runtime_bindings
 from tests.support.paths import PROJECT_ROOT
 
 web_runtime = cast(Any, web)
@@ -58,7 +59,7 @@ class WebCompositionContractTests(unittest.TestCase):
             "from audioextender.web import application as web; "
             "import json; "
             "print(json.dumps({'resolved': web.app._resolved is not None, "
-            "'repository_bound': 'repository' in web.__dict__}))"
+            "'repository_unbound': web.repository is web._UNBOUND}))"
         )
         completed = subprocess.run(
             [sys.executable, "-c", command],
@@ -67,7 +68,30 @@ class WebCompositionContractTests(unittest.TestCase):
             capture_output=True,
             text=True,
         )
-        self.assertEqual(json.loads(completed.stdout), {"resolved": False, "repository_bound": False})
+        self.assertEqual(json.loads(completed.stdout), {"resolved": False, "repository_unbound": True})
+
+    def test_runtime_binding_contract_is_explicit_to_static_analysis(self) -> None:
+        runtime = web.app.state.runtime
+        binding_names = set(runtime_bindings(runtime))
+        source = Path(web.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        module_bindings = {
+            node.target.id
+            for node in tree.body
+            if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+        }
+        module_bindings.update(
+            target.id
+            for node in tree.body
+            if isinstance(node, ast.Assign)
+            for target in node.targets
+            if isinstance(target, ast.Name)
+        )
+
+        self.assertEqual(binding_names - module_bindings, set())
+        self.assertIsNot(web.library_catalog_cache, web._UNBOUND)
+        self.assertNotIn("ruff: noqa: F821", source)
+        self.assertNotIn('disable-error-code="name-defined"', source)
 
     def test_shell_and_modules_are_not_cached_between_local_restarts(self) -> None:
         shell = self.client.get("/")
