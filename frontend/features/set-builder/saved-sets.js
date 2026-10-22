@@ -5,7 +5,6 @@ import {
   restoreSavedSetIdentity,
   savedSetRecordIdentity,
 } from './saved-set-lifecycle.js';
-
 export function buildSetCsv({
   plan,
   compatibility,
@@ -278,6 +277,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     });
     state.plan = recoveredPlan;
     setPlanningReceipt(record.planningReceipt || null);
+    state.revisionComparison = record.planningReceipt?.regeneration || null;
     restoreSavedSetIdentity(state, record);
     $('#saved-set-select').value = record.id;
     const savedWorkflow = inferSetWorkflow(record.planningMode, Boolean(savedIdentity.text));

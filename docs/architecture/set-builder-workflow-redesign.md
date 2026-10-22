@@ -278,10 +278,29 @@ and planning payloads were not changed.
 
 ### Slice C — regenerate with locks
 
-- Add the explicit regenerate contract and command.
-- Preserve locked tracks by journey section, required tracks, exclusions, and
+- **Status: complete (2026-10-21).**
+- [x] Add the explicit **Regenerate unlocked** contract and command.
+- [x] Preserve locked tracks by journey section, required tracks, exclusions, and
   recording-family uniqueness.
-- Add revision comparison and whole-plan Undo.
+- [x] Send the base revision with AI planning requests and keep the deterministic
+  path on the same revision boundary.
+- [x] Show stayed/changed/locked-preserved counts and mark newly selected tracks.
+- [x] Restore the complete prior plan, lock state, transition settings, planning
+  receipt, revision identity, and comparison through one Undo operation.
+
+The backend now treats locked section placement as a hard validation rule.
+Candidate retrieval emits a locked track only for its preserved section, both
+AI and deterministic fallback receive section minimums, and an invalid result
+cannot be applied. Required/excluded validation and recording-family uniqueness
+remain authoritative in their existing services; the browser does not duplicate
+those rules.
+
+Verification completed for this slice: the full repository quality gate, 454
+Python tests, 119 JavaScript tests, all 18 browser workflows, the catalog
+stability workflow, and refreshed Python/JavaScript coverage pass. The browser
+workflow regenerates a loaded saved revision, verifies its locked track and
+base revision contract, checks changed-track presentation, and restores the
+entire prior revision with Undo. Musical scoring weights were not changed.
 
 ### Slice D — durable reject-and-replace
 
@@ -313,7 +332,7 @@ and planning payloads were not changed.
 
 1. Delete the loaded saved plan; the selector clears and the user returns to a
    clean Direction screen without refreshing the browser.
-2. Lock three tracks, regenerate, and verify all three remain in their sections
+2. [x] Lock tracks, regenerate, and verify they remain in their sections
    while unlocked tracks change and the old revision can be restored.
 3. Reject a track with a reason; the choice is visibly saved, the track is
    replaced with a valid non-family-duplicate alternative, and Undo restores

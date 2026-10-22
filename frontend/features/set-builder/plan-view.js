@@ -54,13 +54,14 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     getPlanningReceipt,
     pushSetHistory,
     recordPreference,
+    regenerateUnlocked,
     renderSetProposals,
     setBrief,
     setPlanSnapshot,
     updateSetHistoryButtons,
   } = lifecycle;
   const { trackReviewDraft, transitionReviewDraft } = review;
-  const workspaceShell = createSetBuilderWorkspaceShell({ state, $, $$, setTrackId });
+  const workspaceShell = createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regenerateUnlocked });
 
   function renderSetRules() {
     const byId = new Map(state.library.map((track) => [setTrackId(track), track]));
@@ -327,7 +328,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           .map((role) => LIBRARY_ROLE_INFO[role]?.[0] || role)
           .join(
             ', ',
-          )}</span>${preview}</div>${compactTrackSummaryMarkup({ track, transition, locked, review, formatKey: formatLibraryKey, energyLabel: energyBand(songEnergy(track)), healthThreshold, escapeHtml })}<div class="set-track-meta"><strong>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended ? 'Extended edit available' : 'Original analyzed track'}${metrics.preferenceAdjustment ? ` · preference ${metrics.preferenceAdjustment > 0 ? '+' : ''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta > 0 ? '+' : ''}${metrics.rankDelta}` : ''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons
+          )}</span>${preview}</div>${compactTrackSummaryMarkup({ track, transition, locked, review, changed: state.revisionComparison?.changedTrackIds?.includes(id), formatKey: formatLibraryKey, energyLabel: energyBand(songEnergy(track)), healthThreshold, escapeHtml })}<div class="set-track-meta"><strong>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended ? 'Extended edit available' : 'Original analyzed track'}${metrics.preferenceAdjustment ? ` · preference ${metrics.preferenceAdjustment > 0 ? '+' : ''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta > 0 ? '+' : ''}${metrics.rankDelta}` : ''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons
           .map((reason) => {
             const label = ['verified', 'estimated', 'ai-suggested'].includes(reason.kind)
               ? `<em>${escapeHtml(reason.kind)}</em>`

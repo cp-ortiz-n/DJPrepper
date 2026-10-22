@@ -1,5 +1,13 @@
 /** AI and deterministic Set Builder planning-session orchestration. */
 
+import {
+  aiPlanningContext,
+  assignPlanSections,
+  catalogIds,
+  planningJourney,
+} from './planning-request.js';
+import { createSetRegenerationCommand } from './regeneration.js';
+
 export function createSetPlanningSession({ state, dom, clients, policy, transitions, lifecycle, view, progress = {} }) {
   const { $, escapeHtml, notify } = dom;
   const { planningClient, classicPlanner } = clients;
@@ -36,6 +44,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
   async function generateDeterministicSetPlan() {
     progress.showEligibilityScan?.();
     const brief = setBrief();
+    const journey = planningJourney(brief);
     const eligiblePool = eligibleSetTracks(brief);
     const requiredIds = new Set(state.requiredIds);
     const intendedGenres = [...(brief.identity?.requestedGenres || []), ...(brief.identity?.optionalGenres || [])];
@@ -58,7 +67,11 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     }
     const averageSeconds =
       pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
-    const count = Math.max(2, Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)));
+    const count = Math.max(
+      2,
+      new Set([...state.requiredIds, ...state.lockedIds]).size,
+      Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)),
+    );
     const required = pool.filter((track) => state.requiredIds.has(setTrackId(track)));
     const genreTargets = genreAllocationTargets(brief.genres, brief.genreWeights, count);
     const previousPlan = state.plan;
@@ -215,6 +228,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     const preferred = result.preferred;
     state.activeProposal = preferred.id;
     restoreSetSnapshot(preferred.snapshot, false);
+    assignPlanSections(state.plan, journey, state.lockedIds, setTrackId);
     $('#set-builder-message').textContent =
       `Built ${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'}. Optimizing transition techniques for ${preferred.label}…`;
     progress.startTransitionOptimization?.();
@@ -238,49 +252,6 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     renderSetPlan();
     $('#set-builder-message').textContent =
       `${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
-  }
-
-  function planningJourney(brief) {
-    if (brief.identity?.journey?.sections?.length) return brief.identity.journey;
-    const genres = [...brief.detailedGenres, ...brief.genres];
-    const energy = { rise: [3.5, 7.5], 'peak-release': [4, 8], waves: [4.5, 7], steady: [5.5, 5.5] }[brief.curve] || [
-      4.5, 6.5,
-    ];
-    return {
-      version: 1,
-      summary: 'Single editable journey derived from the structured set brief.',
-      durationMinutes: brief.length,
-      sections: [
-        {
-          id: 'section-1',
-          name: 'Full set',
-          durationPercent: 100,
-          energyStart: energy[0],
-          energyEnd: energy[1],
-          genres,
-          characteristics: [brief.vibe, brief.curve].filter(Boolean),
-          purpose: 'Honor the structured brief while maintaining a playable flow.',
-        },
-      ],
-    };
-  }
-
-  function planningTrackCount(brief) {
-    const pool = eligibleSetTracks(brief);
-    if (pool.length < 2)
-      throw new Error(
-        `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and manually selected genres.`,
-      );
-    const averageSeconds =
-      pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
-    const protectedCount = new Set([...state.requiredIds, ...state.lockedIds]).size;
-    if (protectedCount > 100) throw new Error('AI Planned mode supports at most 100 required or locked tracks.');
-    return Math.max(2, protectedCount, Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)));
-  }
-
-  function catalogIds(ids) {
-    const bySetId = new Map(state.library.map((track) => [setTrackId(track), setCatalogTrackId(track)]));
-    return [...ids].map((id) => bySetId.get(id)).filter(Boolean);
   }
 
   async function cancelAITrackPlan() {
@@ -310,8 +281,13 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
   async function generateAITrackPlan() {
     await cancelAITrackPlan();
     const brief = setBrief();
-    const journey = planningJourney(brief);
-    const targetTrackCount = planningTrackCount(brief);
+    const idTools = { setTrackId, setCatalogTrackId };
+    const { journey, lockedSections, targetTrackCount } = aiPlanningContext({
+      state,
+      brief,
+      eligiblePool: eligibleSetTracks(brief),
+      ...idTools,
+    });
     const controller = new AbortController();
     planningController = controller;
     let started;
@@ -322,9 +298,11 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
         journey,
         target_duration_minutes: brief.length,
         target_track_count: targetTrackCount,
-        required_track_ids: catalogIds(state.requiredIds),
-        excluded_track_ids: catalogIds(state.excludedIds),
-        locked_track_ids: catalogIds(state.lockedIds),
+        required_track_ids: catalogIds(state.requiredIds, state.library, idTools),
+        excluded_track_ids: catalogIds(state.excludedIds, state.library, idTools),
+        locked_track_ids: catalogIds(state.lockedIds, state.library, idTools),
+        locked_track_sections: lockedSections,
+        base_plan_revision: state.planRevision,
         per_section_limit: Math.min(100, Math.max(30, targetTrackCount)),
         total_limit: 100,
       });
@@ -385,6 +363,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       planningDurationMs: result.planningDurationMs ?? null,
       generatedAt: new Date().toISOString(),
       observability: result.observability || null,
+      basePlanRevision: result.basePlanRevision || null,
       planRevision: null,
     };
     void loadAIObservability();
@@ -459,11 +438,25 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     });
   }
 
+  const regenerateUnlocked = createSetRegenerationCommand({
+    state,
+    snapshot: setPlanSnapshot,
+    restore: (snapshot) => restoreSetSnapshot(snapshot, false),
+    generate: () =>
+      $('#set-planning-mode').value === 'ai-planned' ? generateAITrackPlan() : generateDeterministicSetPlan(),
+    render: renderSetPlan,
+    getReceipt: () => planningReceipt,
+    setReceipt: (receipt) => {
+      planningReceipt = receipt;
+    },
+  });
+
   return Object.freeze({
     cancelAITrackPlan,
     generateAITrackPlan,
     generateDeterministicSetPlan,
     loadAIObservability,
+    regenerateUnlocked,
     receipt: () => planningReceipt,
     renderSetProposals,
     selectSetProposal,

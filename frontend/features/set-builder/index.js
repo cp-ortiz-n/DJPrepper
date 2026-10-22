@@ -521,6 +521,7 @@ export function createSetBuilderFeature({
     const eligible = state.library.filter((track) => {
       const bpm = Number(track.bpm || 0);
       const id = setTrackId(track);
+      if (state.requiredIds.has(id) || state.lockedIds.has(id)) return !state.excludedIds.has(id);
       const intention = intentionEvaluation(track, brief);
       const requestedGenres = brief.identity?.requestedGenres || [],
         optionalGenres = brief.identity?.optionalGenres || [],
@@ -554,10 +555,11 @@ export function createSetBuilderFeature({
     return deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds]));
   }
   function setPlanSnapshot() {
-    return snapshotSetPlan(state, setTrackId);
+    return { ...snapshotSetPlan(state, setTrackId), planningReceipt: planningSession?.receipt() || null };
   }
   function restoreSetSnapshot(snapshot, render = true) {
     restoreSetPlan(state, snapshot, state.library, setTrackId);
+    if (Object.hasOwn(snapshot || {}, 'planningReceipt')) planningSession?.setReceipt(snapshot.planningReceipt);
     if (render) renderSetPlan();
   }
   function pushSetHistory() {
@@ -683,6 +685,7 @@ export function createSetBuilderFeature({
     generateAITrackPlan,
     generateDeterministicSetPlan,
     loadAIObservability,
+    regenerateUnlocked,
     renderSetProposals,
   } = planningSession;
   const planView = createSetPlanView({
@@ -731,6 +734,7 @@ export function createSetBuilderFeature({
       getPlanningReceipt: () => planningSession.receipt(),
       pushSetHistory,
       recordPreference,
+      regenerateUnlocked,
       renderSetProposals,
       setBrief,
       setPlanSnapshot,

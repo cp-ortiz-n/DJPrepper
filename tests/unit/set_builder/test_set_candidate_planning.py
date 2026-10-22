@@ -150,6 +150,21 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertEqual(result["candidateCount"], 2)
         self.assertEqual([len(section["candidates"]) for section in result["sections"]], [2, 2])
 
+    def test_locked_track_is_only_emitted_for_its_preserved_journey_section(self) -> None:
+        result = SetCandidateRetriever().retrieve(
+            [catalog_track(1, Path("/missing/one.wav")), catalog_track(2, Path("/missing/two.wav"))],
+            journey("Reggaeton", "Salsa"),
+            locked_ids={"downloaded:1"},
+            locked_sections={"downloaded:1": "section-2"},
+            section_limit=2,
+        )
+        sections = {
+            section["sectionId"]: {candidate["id"] for candidate in section["candidates"]}
+            for section in result["sections"]
+        }
+        self.assertNotIn("downloaded:1", sections["section-1"])
+        self.assertIn("downloaded:1", sections["section-2"])
+
     def test_collapses_persisted_recording_family_to_one_candidate(self) -> None:
         tracks = [
             catalog_track(1, Path("/missing/original.wav"), recording_code="DSC-000001", version_code="ORG"),
@@ -337,6 +352,19 @@ class SetPlanValidatorTests(unittest.TestCase):
         )
         duplicate = next(error for error in result["errors"] if error["code"] == "duplicate-recording")
         self.assertEqual(duplicate["firstTrackId"], "downloaded:1")
+
+    def test_rejects_a_locked_track_moved_to_another_journey_section(self) -> None:
+        result = SetPlanValidator(duration_tolerance=1).validate(
+            [{"trackId": "downloaded:1", "sectionId": "section-2"}],
+            [self.candidates[0]],
+            self.journey,
+            locked_ids={"downloaded:1"},
+            locked_sections={"downloaded:1": "section-1"},
+            target_track_count=1,
+        )
+        mismatch = next(error for error in result["errors"] if error["code"] == "locked-section-mismatch")
+        self.assertEqual(mismatch["expectedSectionId"], "section-1")
+        self.assertEqual(mismatch["actualSectionId"], "section-2")
 
 
 class SetCandidatePlanningRouteTests(unittest.TestCase):

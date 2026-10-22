@@ -891,7 +891,11 @@ without replacing the technical safety score.
     persistent workspace action bar. Desktop, narrow-screen, keyboard, focus,
     reduced-motion, warm-cache, and full browser workflows pass without
     changing musical policy or planning payloads.
-  - [ ] Next: Slice C — regenerate with locks.
+  - [x] Slice C completed 2026-10-21: **Regenerate unlocked** reuses the current
+    direction, sends the base revision and section-aware locks, preserves hard
+    required/excluded and recording-family rules, reports the revision delta,
+    and restores the entire prior revision through Undo.
+  - [ ] Next: Slice D — durable reject-and-replace.
 
 ## Rekordbox track-rating synchronization
 

@@ -227,6 +227,37 @@ class AITrackPlannerTests(unittest.TestCase):
             ["section-1", "section-2"],
         )
 
+    def test_deterministic_regeneration_preserves_locked_track_section(self) -> None:
+        pool = {
+            "sections": [
+                {
+                    "sectionId": "opening",
+                    "candidates": [{"id": "downloaded:2", "available": True, "relevanceScore": 100}],
+                },
+                {
+                    "sectionId": "peak",
+                    "candidates": [
+                        {"id": "downloaded:1", "available": True, "locked": True, "relevanceScore": 1000},
+                        {"id": "downloaded:3", "available": True, "relevanceScore": 90},
+                    ],
+                },
+            ]
+        }
+        set_journey = {
+            "sections": [
+                {"id": "opening", "durationPercent": 50},
+                {"id": "peak", "durationPercent": 50},
+            ]
+        }
+        result = deterministic_track_plan(
+            pool,
+            set_journey,
+            2,
+            locked_sections={"downloaded:1": "peak"},
+        )
+        locked = next(item for item in result["selections"] if item["trackId"] == "downloaded:1")
+        self.assertEqual(locked["sectionId"], "peak")
+
     def test_deterministic_plan_balances_relevance_with_section_runtime(self) -> None:
         candidates = [
             {
@@ -375,6 +406,8 @@ class SetPlanningJobServiceTests(unittest.TestCase):
             "required_track_ids": [],
             "excluded_track_ids": [],
             "locked_track_ids": [],
+            "locked_track_sections": {},
+            "base_plan_revision": {"id": "revision-1", "number": 1},
             "target_duration_minutes": 8,
             "target_track_count": 2,
             "per_section_limit": 1,
@@ -444,15 +477,21 @@ class SetPlanningJobServiceTests(unittest.TestCase):
             response = client.post("/api/set-builder/plan-tracks", json=request)
             status = client.get(f"/api/set-builder/plan-tracks/{response.json()['jobId']}")
             telemetry = client.get("/api/set-builder/ai-observability")
+            invalid = client.post(
+                "/api/set-builder/plan-tracks",
+                json={**request, "locked_track_sections": {"downloaded:1": "missing-section"}},
+            )
         self.assertEqual(response.status_code, 202)
         self.assertEqual(status.status_code, 200)
         self.assertEqual(status.json()["status"], "complete", status.json())
         self.assertTrue(status.json()["result"]["valid"])
         self.assertIn("evaluation", status.json()["result"])
         self.assertIn("planningDurationMs", status.json()["result"])
+        self.assertEqual(status.json()["result"]["basePlanRevision"]["id"], "revision-1")
         self.assertIn("candidateRetrievalMs", status.json()["result"]["observability"])
         self.assertEqual(telemetry.status_code, 200)
         self.assertEqual(telemetry.json()["completedCount"], 1)
+        self.assertEqual(invalid.status_code, 422)
 
     def test_persisted_inflight_job_becomes_retryable_after_restart(self) -> None:
         with TemporaryDirectory() as temporary:

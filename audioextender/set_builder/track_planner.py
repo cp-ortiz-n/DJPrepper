@@ -45,7 +45,8 @@ TRACK_PLAN_SCHEMA: dict[str, Any] = {
 TRACK_PLAN_INSTRUCTIONS = (
     "Create a DJ running order only from the supplied candidates. Return only the requested JSON. "
     "Use every trackId exactly as supplied; never invent, shorten, or rewrite an ID. Select targetTrackCount tracks. "
-    "Assign tracks only to eligibleSectionIds, cover every journey section, preserve required and locked tracks, and "
+    "Assign tracks only to eligibleSectionIds, cover every journey section, preserve required and locked tracks, "
+    "assign every lockedTrackSections entry to its exact section, and "
     "never repeat a track. Use exactly the per-section counts in sectionTrackTargets. Follow section order, energy "
     "direction, requested genres, and musical identity. Prefer "
     "workable BPM, Camelot-key, vocal, and timing transitions. Bridge or fallback tracks are allowed only when direct "
@@ -286,14 +287,36 @@ def _section_targets(journey: dict[str, Any], count: int) -> dict[str, int]:
     return {str(section.get("id") or f"section-{index + 1}"): targets[index] for index, section in enumerate(sections)}
 
 
+def _section_targets_with_locks(journey: dict[str, Any], count: int, locked_sections: dict[str, str]) -> dict[str, int]:
+    targets = _section_targets(journey, count)
+    minimums = {
+        section_id: sum(locked_section == section_id for locked_section in locked_sections.values())
+        for section_id in targets
+    }
+    for section_id, minimum in minimums.items():
+        while targets[section_id] < minimum:
+            donors = [
+                candidate
+                for candidate in targets
+                if candidate != section_id and targets[candidate] > max(1, minimums[candidate])
+            ]
+            if not donors:
+                break
+            donor = max(donors, key=lambda candidate: targets[candidate] - minimums[candidate])
+            targets[donor] -= 1
+            targets[section_id] += 1
+    return targets
+
+
 def deterministic_track_plan(
     candidate_pool: dict[str, Any],
     journey: dict[str, Any],
     target_track_count: int,
     target_duration_minutes: int | None = None,
+    locked_sections: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Select a stable, section-aware plan when a model cannot return a valid one."""
-    targets = _section_targets(journey, target_track_count)
+    targets = _section_targets_with_locks(journey, target_track_count, locked_sections or {})
     used: set[str] = set()
     used_recordings: set[str] = set()
     journey_sections = {
@@ -412,12 +435,14 @@ class AITrackPlanner:
         required_ids: set[str],
         excluded_ids: set[str],
         locked_ids: set[str],
+        locked_sections: dict[str, str] | None = None,
         cancel_check: Callable[[], None] = lambda: None,
     ) -> dict[str, Any]:
         planning_started = perf_counter()
         provider_status_started = perf_counter()
         candidates = flatten_candidates(candidate_pool)
-        section_targets = _section_targets(journey, target_track_count)
+        locked_by_section = locked_sections or {}
+        section_targets = _section_targets_with_locks(journey, target_track_count, locked_by_section)
         model_candidates = bounded_model_candidates(candidates, section_targets)
         base_payload = {
             "brief": brief,
@@ -427,6 +452,7 @@ class AITrackPlanner:
             "sectionTrackTargets": section_targets,
             "requiredTrackIds": sorted(required_ids),
             "lockedTrackIds": sorted(locked_ids),
+            "lockedTrackSections": locked_by_section,
             "candidates": model_candidates,
         }
         failures: list[list[dict[str, Any]]] = []
@@ -470,12 +496,17 @@ class AITrackPlanner:
                         required_ids=required_ids,
                         excluded_ids=excluded_ids,
                         locked_ids=locked_ids,
+                        locked_sections=locked_by_section,
                         target_duration_minutes=target_duration_minutes,
                         target_track_count=target_track_count,
                     )
                     if validation["valid"]:
                         fallback = deterministic_track_plan(
-                            candidate_pool, journey, target_track_count, target_duration_minutes
+                            candidate_pool,
+                            journey,
+                            target_track_count,
+                            target_duration_minutes,
+                            locked_by_section,
                         )
                         baseline_validation = self.validator.validate(
                             fallback["selections"],
@@ -484,6 +515,7 @@ class AITrackPlanner:
                             required_ids=required_ids,
                             excluded_ids=excluded_ids,
                             locked_ids=locked_ids,
+                            locked_sections=locked_by_section,
                             target_duration_minutes=target_duration_minutes,
                             target_track_count=target_track_count,
                         )
@@ -561,7 +593,9 @@ class AITrackPlanner:
                     failures.append([{"code": "provider-error", "message": str(error)}])
                     previous = None
         cancel_check()
-        fallback = deterministic_track_plan(candidate_pool, journey, target_track_count, target_duration_minutes)
+        fallback = deterministic_track_plan(
+            candidate_pool, journey, target_track_count, target_duration_minutes, locked_by_section
+        )
         validation = self.validator.validate(
             fallback["selections"],
             candidates,
@@ -569,6 +603,7 @@ class AITrackPlanner:
             required_ids=required_ids,
             excluded_ids=excluded_ids,
             locked_ids=locked_ids,
+            locked_sections=locked_by_section,
             target_duration_minutes=target_duration_minutes,
             target_track_count=target_track_count,
         )

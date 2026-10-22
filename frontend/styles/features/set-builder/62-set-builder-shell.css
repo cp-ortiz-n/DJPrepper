@@ -69,6 +69,16 @@
 .set-export-menu[open] > button {
   width: 100%;
 }
+.set-revision-comparison {
+  margin: 0 0 12px;
+  padding: 8px 11px;
+  border: 1px solid #53632f;
+  border-radius: 8px;
+  color: #dce7bc;
+  background: #182016;
+  font-size: 8px;
+  font-weight: 750;
+}
 .set-running-order-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
@@ -278,6 +288,10 @@
   width: auto;
   height: 34px;
   margin: 0;
+}
+#regenerate-set {
+  border-color: #6b7d3d;
+  color: var(--lime);
 }
 @media (max-width: 1100px) {
   .set-running-order-workspace {

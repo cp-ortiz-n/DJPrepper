@@ -121,6 +121,7 @@ class SetPlanningJobService:
                 required_ids=set(request["required_track_ids"]),
                 excluded_ids=set(request["excluded_track_ids"]),
                 locked_ids=set(request["locked_track_ids"]),
+                locked_sections=request.get("locked_track_sections", {}),
                 constraints=request["brief"],
                 section_limit=request["per_section_limit"],
                 total_limit=request["total_limit"],
@@ -142,6 +143,7 @@ class SetPlanningJobService:
                 required_ids=set(request["required_track_ids"]),
                 excluded_ids=set(request["excluded_track_ids"]),
                 locked_ids=set(request["locked_track_ids"]),
+                locked_sections=request.get("locked_track_sections", {}),
                 cancel_check=lambda: self._check_canceled(job_id),
             )
             timings["planningAndValidationMs"] = round((perf_counter() - phase_started) * 1000)
@@ -152,6 +154,7 @@ class SetPlanningJobService:
                     {"sectionId": section["sectionId"], "scarcity": section["scarcity"]} for section in pool["sections"]
                 ],
             }
+            result["basePlanRevision"] = request.get("base_plan_revision")
             phase_started = perf_counter()
             result["evaluation"] = self.evaluator.evaluate(
                 result["plan"],

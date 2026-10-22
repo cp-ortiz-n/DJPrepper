@@ -1,5 +1,7 @@
 /** Compact Set Builder workspace presentation and selected-track ownership. */
 
+import { revisionComparisonLabel } from './regeneration.js';
+
 export function workspaceIdentity(state) {
   const revision = Number(state.planRevision?.number || 0);
   return {
@@ -25,16 +27,17 @@ export function compactTrackSummaryMarkup({
   formatKey,
   energyLabel,
   healthThreshold,
+  changed = false,
   escapeHtml,
 }) {
-  const chips = trackStateChips({ locked, decision: review?.decision, changed: Boolean(track._changed) });
+  const chips = trackStateChips({ locked, decision: review?.decision, changed });
   const match = transition.score == null ? 'Opening' : `${transition.score}% match`;
   return `<div class="set-track-summary"><span>${escapeHtml(track._genre || 'Other')}</span><span>${Number(track.bpm || 0).toFixed(1)} BPM</span><span>${escapeHtml(formatKey(track.key))}</span><span>${escapeHtml(energyLabel)} energy</span><strong class="${transition.score != null && transition.score < healthThreshold ? 'warning' : ''}">${match}</strong></div><div class="set-track-chips">${chips
     .map((chip) => `<span class="${chip.kind}">${chip.label}</span>`)
     .join('')}</div>`;
 }
 
-export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId }) {
+export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regenerateUnlocked }) {
   let movedNodes = [];
 
   function inspector() {
@@ -97,8 +100,13 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId }) {
     const identity = workspaceIdentity(state);
     const stateLabel = $('#set-workspace-state');
     const revisionLabel = $('#set-workspace-revision');
+    const comparison = $('#set-revision-comparison');
     if (stateLabel) stateLabel.textContent = identity.stateLabel;
     if (revisionLabel) revisionLabel.textContent = identity.revisionLabel;
+    if (comparison) {
+      comparison.textContent = revisionComparisonLabel(state.revisionComparison);
+      comparison.hidden = !state.revisionComparison;
+    }
   }
 
   function beforeRender() {
@@ -146,6 +154,24 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId }) {
     panel.scrollIntoView({ behavior, block: 'center' });
     panel.querySelector('summary').focus();
   };
+  const regenerateAction = $('#regenerate-set');
+  if (regenerateAction)
+    regenerateAction.onclick = async () => {
+      regenerateAction.disabled = true;
+      regenerateAction.textContent = 'Regenerating…';
+      $('#set-builder-message').textContent = 'Keeping locked tracks and rebuilding the rest of this revision…';
+      try {
+        const comparison = await regenerateUnlocked();
+        $('#set-builder-message').textContent =
+          `${revisionComparisonLabel(comparison)}. Undo restores the complete previous revision.`;
+      } catch (error) {
+        $('#set-builder-message').textContent =
+          `Regeneration failed: ${error?.message || error}. The previous revision remains available.`;
+      } finally {
+        regenerateAction.disabled = false;
+        regenerateAction.textContent = 'Regenerate unlocked';
+      }
+    };
   inspectorPanel?.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       event.preventDefault();

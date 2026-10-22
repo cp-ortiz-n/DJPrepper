@@ -12,6 +12,16 @@ import { createSetBuilderFeedback } from '../../../../frontend/features/set-buil
 import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
 import {
+  assignPlanSections,
+  lockedTrackSections,
+  planningJourney,
+} from '../../../../frontend/features/set-builder/planning-request.js';
+import {
+  comparePlanRevisions,
+  createSetRegenerationCommand,
+  revisionComparisonLabel,
+} from '../../../../frontend/features/set-builder/regeneration.js';
+import {
   deduplicateSetRecordings,
   recordingVersionAlternatives,
   recordingVersionLabel,
@@ -343,17 +353,20 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
   store.plan = [...library];
   store.lockedIds.add('a');
   store.transitionSettings['a→b'] = { bars: 16 };
+  store.revisionComparison = { stayed: 1, changedTrackIds: ['b'] };
 
   const snapshot = snapshotSetPlan(store, trackId);
   store.plan = [];
   store.lockedIds.clear();
   store.transitionSettings['a→b'].bars = 8;
+  store.revisionComparison = null;
   restoreSetPlan(store, snapshot, library, trackId);
 
   assert.equal(store.compactMode, true);
   assert.deepEqual(store.plan, library);
   assert.deepEqual([...store.lockedIds], ['a']);
   assert.deepEqual(store.transitionSettings, { 'a→b': { bars: 16 } });
+  assert.deepEqual(store.revisionComparison, { stayed: 1, changedTrackIds: ['b'] });
 });
 
 test('Set Builder keeps stable draft and plan revision identities until an explicit reset', () => {
@@ -418,6 +431,135 @@ test('compact workspace presentation exposes plan identity and concise track sta
   assert.match(markup, /58% match/);
   assert.match(markup, /class="warning"/);
   assert.match(markup, /Kept/);
+});
+
+test('planning requests derive stable journey sections and preserve explicit locked placements', () => {
+  const journey = planningJourney({
+    length: 60,
+    genres: ['House'],
+    detailedGenres: [],
+    curve: 'waves',
+    vibe: 'dance',
+    identity: {
+      journey: {
+        sections: [
+          { id: 'opening', durationPercent: 40 },
+          { id: 'peak', durationPercent: 60 },
+        ],
+      },
+    },
+  });
+  const plan = [
+    { id: 'a', catalogId: 'downloaded:1', _planSectionId: 'opening' },
+    { id: 'b', catalogId: 'downloaded:2' },
+    { id: 'c', catalogId: 'downloaded:3' },
+  ];
+  assignPlanSections(plan, journey, new Set(['a']), trackId);
+  assert.deepEqual(plan.map((track) => track._planSectionId), ['opening', 'peak', 'peak']);
+  assert.deepEqual(
+    lockedTrackSections({
+      plan,
+      lockedIds: new Set(['a', 'c']),
+      journey,
+      setTrackId: trackId,
+      setCatalogTrackId: (track) => track.catalogId,
+    }),
+    { 'downloaded:1': 'opening', 'downloaded:3': 'peak' },
+  );
+});
+
+test('regeneration compares revisions, preserves locked tracks, and creates one undoable revision', async () => {
+  const library = [{ id: 'locked' }, { id: 'old' }, { id: 'new' }];
+  const state = {
+    plan: library.slice(0, 2),
+    lockedIds: new Set(['locked']),
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    transitionSettings: {},
+    planRevision: { id: 'revision-1', number: 1 },
+    revisionComparison: null,
+    history: [],
+    future: [],
+  };
+  let receipt = { planRevision: state.planRevision };
+  const snapshot = () => ({ ...snapshotSetPlan(state, trackId), planningReceipt: receipt });
+  const restore = (value) => {
+    restoreSetPlan(state, value, library, trackId);
+    receipt = value.planningReceipt;
+  };
+  const commands = createSetEditCommands({ store: state, snapshot, restore, render() {} });
+  const regenerate = createSetRegenerationCommand({
+    state,
+    snapshot,
+    restore,
+    generate: async () => {
+      commands.checkpoint();
+      state.plan = [library[0], library[2]];
+      state.planRevision = { id: 'revision-2', number: 2, parentId: 'revision-1' };
+      receipt = { planRevision: state.planRevision };
+    },
+    render() {},
+    getReceipt: () => receipt,
+    setReceipt: (value) => {
+      receipt = value;
+    },
+  });
+
+  const comparison = await regenerate();
+  assert.deepEqual(
+    { stayed: comparison.stayed, changed: comparison.changed, lockedPreserved: comparison.lockedPreserved },
+    { stayed: 1, changed: 1, lockedPreserved: 1 },
+  );
+  assert.equal(revisionComparisonLabel(comparison), 'Revision 2 · 1 stayed · 1 changed · 1/1 locked preserved');
+  assert.equal(commands.undo(), true);
+  assert.deepEqual(state.plan.map(trackId), ['locked', 'old']);
+  assert.equal(state.planRevision.number, 1);
+  assert.equal(receipt.planRevision.number, 1);
+});
+
+test('failed regeneration rolls every partial plan mutation back to the stable revision', async () => {
+  const library = [{ id: 'locked' }, { id: 'old' }, { id: 'partial' }];
+  const state = {
+    plan: library.slice(0, 2),
+    lockedIds: new Set(['locked']),
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    transitionSettings: { 'locked→old': { bars: 16 } },
+    planRevision: { id: 'revision-1', number: 1 },
+    revisionComparison: null,
+    history: [],
+    future: [],
+  };
+  let receipt = { planRevision: state.planRevision };
+  const snapshot = () => ({ ...snapshotSetPlan(state, trackId), planningReceipt: receipt });
+  const restore = (value) => {
+    restoreSetPlan(state, value, library, trackId);
+    receipt = value.planningReceipt;
+  };
+  const regenerate = createSetRegenerationCommand({
+    state,
+    snapshot,
+    restore,
+    generate: async () => {
+      state.history.push(snapshot());
+      state.plan = [library[2]];
+      state.transitionSettings = {};
+      receipt = { planRevision: { id: 'partial', number: 2 } };
+      throw new Error('validation failed');
+    },
+    render() {},
+    getReceipt: () => receipt,
+    setReceipt: (value) => {
+      receipt = value;
+    },
+  });
+
+  await assert.rejects(regenerate(), /validation failed/);
+  assert.deepEqual(state.plan.map(trackId), ['locked', 'old']);
+  assert.deepEqual(state.transitionSettings, { 'locked→old': { bars: 16 } });
+  assert.equal(state.planRevision.number, 1);
+  assert.equal(state.history.length, 0);
+  assert.equal(receipt.planRevision.number, 1);
 });
 
 test('provider labels never expose a missing model as undefined', () => {
@@ -905,6 +1047,80 @@ test('planning session retains a validated deterministic safety fallback from th
   assert.equal(session.receipt().mode, 'deterministic-fallback');
   assert.equal(session.receipt().fallbackReason, 'quality threshold');
   assert.match(elements.get('#set-builder-message').textContent, /deterministic safety fallback/);
+});
+
+test('AI regeneration request carries its base revision and section-aware locked-track contract', async () => {
+  const state = {
+    library: [
+      { id: 'a', catalogId: 'downloaded:1', duration_seconds: 180, _planSectionId: 'opening' },
+      { id: 'b', catalogId: 'downloaded:2', duration_seconds: 180, _planSectionId: 'peak' },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(['a']),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+    planRevision: { id: 'revision-4', number: 4 },
+  };
+  state.plan = [...state.library];
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-cancel-planning', { hidden: true }],
+  ]);
+  let request;
+  const planningClient = {
+    start: async (value) => {
+      request = value;
+      return { jobId: 'job-regenerate' };
+    },
+    wait: async () => ({
+      mode: 'ai-planned',
+      provider: 'ollama',
+      model: 'qwen3.5:4b',
+      summary: 'Regenerated safely.',
+      warnings: [],
+      plan: [
+        { id: 'downloaded:1', sectionId: 'opening' },
+        { id: 'downloaded:2', sectionId: 'peak' },
+      ],
+      basePlanRevision: { id: 'revision-4', number: 4 },
+    }),
+    cancel: async () => {},
+    observability: async () => ({ completedCount: 1, failedCount: 0, canceledCount: 0 }),
+  };
+  const { session } = planningSessionFor({
+    state,
+    elements,
+    planningClient,
+    classicPlanner: {},
+    overrides: {
+      lifecycle: {
+        setBrief: () => ({
+          length: 10,
+          genres: [],
+          detailedGenres: [],
+          minimumHealth: 65,
+          identity: {
+            journey: {
+              sections: [
+                { id: 'opening', durationPercent: 50 },
+                { id: 'peak', durationPercent: 50 },
+              ],
+            },
+          },
+        }),
+      },
+    },
+  });
+
+  await session.generateAITrackPlan();
+
+  assert.deepEqual(request.base_plan_revision, { id: 'revision-4', number: 4 });
+  assert.deepEqual(request.locked_track_ids, ['downloaded:1']);
+  assert.deepEqual(request.locked_track_sections, { 'downloaded:1': 'opening' });
+  assert.deepEqual(session.receipt().basePlanRevision, { id: 'revision-4', number: 4 });
 });
 
 test('planning session switches proposals while preserving edits made to the prior direction', async () => {

@@ -278,6 +278,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     required: [],
     excluded: [],
   };
+  let regenerationRequest;
   await page.route((url) => url.pathname === '/api/set-builder/catalog', (route) =>
     route.fulfill({
       json: {
@@ -297,6 +298,31 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await page.route((url) => url.pathname === '/api/set-builder/sets', (route) =>
     route.fulfill({ json: { version: 2, sets: [savedSet] } }),
   );
+  await page.route((url) => url.pathname === '/api/set-builder/plan-tracks', async (route) => {
+    regenerationRequest = route.request().postDataJSON();
+    await route.fulfill({ status: 202, json: { jobId: 'browser-regeneration', status: 'pending' } });
+  });
+  await page.route((url) => url.pathname === '/api/set-builder/plan-tracks/browser-regeneration', (route) =>
+    route.fulfill({
+      json: {
+        status: 'complete',
+        stage: 'Validated running order ready',
+        progress: 100,
+        result: {
+          mode: 'ai-planned',
+          provider: 'ollama',
+          model: 'test-model',
+          summary: 'Regenerated unlocked tracks.',
+          warnings: [],
+          basePlanRevision: savedSet.planRevision,
+          plan: [
+            { id: 'downloaded:700', sectionId: 'section-1' },
+            { id: 'downloaded:702', sectionId: 'section-1' },
+          ],
+        },
+      },
+    }),
+  );
   await page.reload();
   await openView(page, 'Set Builder');
   await page.locator('#saved-set-select').selectOption(savedSet.id, { force: true });
@@ -310,6 +336,20 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(rows.first().locator('.set-track-summary')).toContainText('120.0 BPM');
   await expect(rows.first().locator('.set-track-chips')).toContainText('Locked');
   expect(await page.locator('.set-result-head').evaluate((node) => getComputedStyle(node).position)).toBe('sticky');
+
+  await page.getByText('AI-assisted', { exact: true }).click();
+  await page.locator('#regenerate-set').click();
+  await expect(page.locator('#set-revision-comparison')).toContainText('Revision 3');
+  await expect(page.locator('#set-revision-comparison')).toContainText('1/1 locked preserved');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText('Opening');
+  await expect(rows.nth(1)).toContainText('Peak');
+  expect(regenerationRequest.base_plan_revision).toEqual(savedSet.planRevision);
+  expect(regenerationRequest.locked_track_sections['downloaded:700']).toBeTruthy();
+  await page.locator('#set-undo').click();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(1)).toContainText('Lift');
+  await expect(page.locator('#set-workspace-revision')).toHaveText('Revision 2');
 
   await rows.first().getByRole('button', { name: 'More' }).click();
   const inspector = page.locator('#set-track-inspector');
