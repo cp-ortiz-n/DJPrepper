@@ -29,7 +29,7 @@ AudioExtender/
 ├── frontend/             # app.js plus core/shared/features/styles ownership
 ├── tests/               # Unit/contract tests, fixtures, and isolated browser smoke workflows
 ├── scripts/             # quality/, benchmarks/, maintenance/, and development/
-├── docs/                # guides/, architecture/, operations/, audits/, and decisions/
+├── docs/                # guides/, flows/, architecture/, operations/, audits/, and decisions/
 ├── workspace/
 │   ├── input/           # Drop source songs here
 │   ├── output/          # Generated WAVs, edits, reports, backups, and exports
@@ -53,6 +53,16 @@ Contributor setup, placement rules, and the supported verification commands are
 summarized in [`CONTRIBUTING.md`](../../CONTRIBUTING.md).
 The authoritative placement rules and expanded tree are in
 [`code-organization.md`](../architecture/code-organization.md).
+
+## End-to-end workflow documentation
+
+Use the [application workflow atlas](../flows/README.md) when a change crosses
+the browser, HTTP, service, and persistence boundaries. It contains visual and
+tabular maps for startup/navigation, imports, track processing, Music Files,
+DJ Library, Set Builder, review/reporting, settings/operations, and shared data
+propagation. The architecture documents remain authoritative for ownership and
+compatibility rules; the flow documents explain how those owners collaborate
+during a user workflow.
 
 ## Maintainer quick guide
 

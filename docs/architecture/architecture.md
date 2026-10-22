@@ -8,6 +8,10 @@ Compatibility-sensitive rationale is recorded in the
 changing saved-set durability, musical authority, operation lifecycles, schema
 migration, or the application's deployment/frontend shape.
 
+For a user-action-first view of how frontend features, routes, services, models,
+repositories, and files connect, start with the
+[application workflow atlas](../flows/README.md).
+
 ## Runtime entry points
 
 | Entry point                        | Purpose                                                                               |

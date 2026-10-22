@@ -111,6 +111,7 @@ recursive through `scripts/quality/check_javascript_syntax.mjs`.
 | `scripts/maintenance/` | Safe workspace cleanup |
 | `scripts/development/` | Browser-smoke application server |
 | `docs/guides/` | User, operator, and developer guidance |
+| `docs/flows/` | End-to-end workflow diagrams, functions, models, persistence, and failure paths |
 | `docs/architecture/` | Current ownership, maps, and technical contracts |
 | `docs/operations/` | Operational procedures and release gates |
 | `docs/audits/` | Point-in-time architecture and dependency audits |

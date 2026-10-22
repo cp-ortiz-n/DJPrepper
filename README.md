@@ -136,6 +136,8 @@ are in the [user guide](docs/guides/user-guide.md#optional-local-ai-for-set-buil
 - [Contributing](CONTRIBUTING.md) — supported toolchain and change workflow
 - [Architecture](docs/architecture/architecture.md) — authoritative module ownership and
   dependency rules
+- [Application workflow atlas](docs/flows/README.md) — visual end-to-end flows from user
+  actions through frontend modules, routes, services, models, persistence, and files
 - [Repository map](docs/architecture/repository-map.md) — source and test navigation
 - [Architecture decisions](docs/decisions/README.md) — compatibility-sensitive
   decisions and their rationale

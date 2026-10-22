@@ -71,7 +71,9 @@ scripts/
 
 docs/
   guides/                 # user, operator, and developer guidance
+  flows/                  # end-to-end user and data workflow maps
   architecture/           # current ownership and technical contracts
+  decisions/              # compatibility-sensitive architecture decisions
   operations/             # release gates and operational procedures
   audits/                 # point-in-time architecture and dependency audits
 

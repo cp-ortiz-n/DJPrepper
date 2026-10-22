@@ -127,7 +127,7 @@ class PackageStructureTests(unittest.TestCase):
         )
         self.assertEqual([], sorted(path.name for path in scripts.glob("*.*")))
 
-        expected_document_owners = {"architecture", "audits", "decisions", "guides", "operations"}
+        expected_document_owners = {"architecture", "audits", "decisions", "flows", "guides", "operations"}
         docs = PROJECT_ROOT / "docs"
         self.assertEqual(expected_document_owners, {path.name for path in docs.iterdir() if path.is_dir()})
         self.assertEqual([], sorted(path.name for path in docs.glob("*.*")))
