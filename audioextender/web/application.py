@@ -747,6 +747,7 @@ def _register_routers(application: FastAPI) -> None:
             source_matching_service,
         ),
     ]
+
     for router in routers:
         application.include_router(router)
 

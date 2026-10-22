@@ -81,6 +81,15 @@ warnings, evaluation, fallback reason, journey, and per-track selection reasons.
 Planning jobs persist locally; an app restart marks interrupted work as safely
 retryable instead of losing or silently applying it.
 
+After a plan exists, use **Lock** on any track that must stay, then choose
+**Regenerate unlocked** in the persistent workspace bar. Set Builder reuses the
+current brief and journey rather than interpreting the intention again. Locked
+tracks remain in their current journey sections; required tracks, exclusions,
+available-file checks, and one-version-per-recording rules still apply. The
+workspace reports how many tracks stayed or changed and how many locks were
+preserved. **Undo** restores the complete previous revision, including its
+track order, locks, transitions, revision number, and planning receipt.
+
 Phase 2D compares every validated AI proposal with an independently generated
 deterministic baseline. AI wins only when it improves the deterministic quality
 score, preserves requested-genre coverage, and still passes every hard

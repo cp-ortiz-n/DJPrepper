@@ -21,6 +21,8 @@ from audioextender.imports.source_matching import SourceMatchError, SourceMatchi
 
 
 class AuthorizedImportRequest(BaseModel):
+    """Request model for creating an authorized source import."""
+
     url: str = Field(min_length=10, max_length=500)
     rights_basis: Literal["own-upload", "creative-commons", "public-domain", "permission"]
     confirmation: bool
@@ -32,6 +34,8 @@ class AuthorizedImportRequest(BaseModel):
 
 
 class SourceMatchRequest(BaseModel):
+    """Request model for matching a single source URL."""
+
     url: str = Field(min_length=10, max_length=500)
 
 

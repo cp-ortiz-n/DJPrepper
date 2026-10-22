@@ -882,6 +882,20 @@ without replacing the technical safety score.
   direction lifecycle; consolidate health warnings and repair commands; then
   complete quality, browser, stability, and real-library listening gates. Keep
   musical policy unchanged during the workflow refactor.
+  - [x] Slice A completed 2026-10-21: active-plan deletion now returns to a clean
+    draft; saved-plan loading is repaired; draft and plan-revision identities
+    persist; provider labels no longer expose missing model metadata; focused,
+    browser, quality, coverage, and stability gates pass.
+  - [x] Slice B completed 2026-10-21: the generated plan now uses a sticky
+    revision header, compact selectable rows, a focused track inspector, and a
+    persistent workspace action bar. Desktop, narrow-screen, keyboard, focus,
+    reduced-motion, warm-cache, and full browser workflows pass without
+    changing musical policy or planning payloads.
+  - [x] Slice C completed 2026-10-21: **Regenerate unlocked** reuses the current
+    direction, sends the base revision and section-aware locks, preserves hard
+    required/excluded and recording-family rules, reports the revision delta,
+    and restores the entire prior revision through Undo.
+  - [ ] Next: Slice D — durable reject-and-replace.
 
 ## Rekordbox track-rating synchronization
 

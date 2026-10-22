@@ -24,12 +24,14 @@ class SetPlanValidator:
         required_ids: set[str] | None = None,
         excluded_ids: set[str] | None = None,
         locked_ids: set[str] | None = None,
+        locked_sections: dict[str, str] | None = None,
         target_duration_minutes: int | None = None,
         target_track_count: int | None = None,
     ) -> dict[str, Any]:
         required = required_ids or set()
         excluded = excluded_ids or set()
         locked = locked_ids or set()
+        locked_by_section = locked_sections or {}
         by_id = {str(candidate.get("id") or ""): candidate for candidate in candidates}
         section_ids = {str(section.get("id") or "") for section in journey.get("sections", [])}
         errors: list[dict[str, Any]] = []
@@ -62,6 +64,15 @@ class SetPlanValidator:
                 errors.append({"code": "unavailable-file", "trackId": track_id, "position": position})
             if section_id not in section_ids:
                 errors.append({"code": "unknown-section", "sectionId": section_id, "position": position})
+            expected_section = locked_by_section.get(track_id)
+            if expected_section and section_id != expected_section:
+                errors.append({
+                    "code": "locked-section-mismatch",
+                    "trackId": track_id,
+                    "expectedSectionId": expected_section,
+                    "actualSectionId": section_id,
+                    "position": position,
+                })
             eligible_sections = {str(value) for value in candidate.get("eligibleSectionIds", [])}
             if eligible_sections and section_id not in eligible_sections:
                 errors.append({"code": "candidate-section-mismatch", "trackId": track_id, "position": position})

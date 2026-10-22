@@ -86,6 +86,12 @@ plan was retained. A provider outage must fall back rather than make the app
 unusable. See [Optional local AI](user-guide.md#optional-local-ai-for-set-builder)
 for configuration details.
 
+Regeneration requests also record the base plan revision and section assignment
+for every locked track. A completed revision reports stayed, changed, and
+locked-preserved counts. If the planner drops a lock or moves it to another
+journey section, validation rejects the result; the previous revision remains
+usable and can be restored with Undo.
+
 ## Backups and recovery
 
 Back up the configured music-library folder together with the application's

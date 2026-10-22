@@ -21,6 +21,8 @@ def record(set_id: str = "set-1", name: str = "Friday") -> dict:
         "id": set_id,
         "name": name,
         "tracks": ["track-1", "track-2"],
+        "draftId": "draft-1",
+        "planRevision": {"id": "revision-1", "number": 1, "parentId": None},
         "planningReceipt": {"provider": "ollama", "validated": True},
         "transitions": {"1": {"bars": 16}},
         "locked": ["track-1"],
@@ -37,6 +39,8 @@ class SavedSetServiceTests(unittest.TestCase):
         self.assertTrue(result["survives_restart"])
         self.assertEqual(restored["version"], 2)
         self.assertEqual(restored["sets"][0]["planningReceipt"]["provider"], "ollama")
+        self.assertEqual(restored["sets"][0]["draftId"], "draft-1")
+        self.assertEqual(restored["sets"][0]["planRevision"]["id"], "revision-1")
         self.assertEqual(restored["sets"][0]["transitions"]["1"]["bars"], 16)
         self.assertIn(SAVED_SET_STORAGE_KEY, repository.values)
 

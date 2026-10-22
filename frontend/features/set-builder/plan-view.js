@@ -6,6 +6,7 @@ import {
   recordingVersionCount,
   searchVersionAwareReplacements,
 } from './version-alternatives.js';
+import { compactTrackSummaryMarkup, createSetBuilderWorkspaceShell } from './workspace-shell.js';
 
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
   const { $, $$, escapeHtml } = dom;
@@ -53,12 +54,14 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     getPlanningReceipt,
     pushSetHistory,
     recordPreference,
+    regenerateUnlocked,
     renderSetProposals,
     setBrief,
     setPlanSnapshot,
     updateSetHistoryButtons,
   } = lifecycle;
   const { trackReviewDraft, transitionReviewDraft } = review;
+  const workspaceShell = createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regenerateUnlocked });
 
   function renderSetRules() {
     const byId = new Map(state.library.map((track) => [setTrackId(track), track]));
@@ -245,6 +248,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
   }
   function renderSetPlan() {
     const result = $('#set-result');
+    workspaceShell.beforeRender();
     result.hidden = !state.plan.length;
     if (!state.plan.length) return;
     closeTransitionEditors();
@@ -324,7 +328,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           .map((role) => LIBRARY_ROLE_INFO[role]?.[0] || role)
           .join(
             ', ',
-          )}</span>${preview}</div><div class="set-track-meta"><strong>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended ? 'Extended edit available' : 'Original analyzed track'}${metrics.preferenceAdjustment ? ` · preference ${metrics.preferenceAdjustment > 0 ? '+' : ''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta > 0 ? '+' : ''}${metrics.rankDelta}` : ''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons
+          )}</span>${preview}</div>${compactTrackSummaryMarkup({ track, transition, locked, review, changed: state.revisionComparison?.changedTrackIds?.includes(id), formatKey: formatLibraryKey, energyLabel: energyBand(songEnergy(track)), healthThreshold, escapeHtml })}<div class="set-track-meta"><strong>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended ? 'Extended edit available' : 'Original analyzed track'}${metrics.preferenceAdjustment ? ` · preference ${metrics.preferenceAdjustment > 0 ? '+' : ''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta > 0 ? '+' : ''}${metrics.rankDelta}` : ''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons
           .map((reason) => {
             const label = ['verified', 'estimated', 'ai-suggested'].includes(reason.kind)
               ? `<em>${escapeHtml(reason.kind)}</em>`
@@ -333,11 +337,12 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           })
           .join(
             '',
-          )}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision === 'accept' ? 'active' : ''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision === 'reject' ? 'active' : ''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="set-identity">Identity tags</button></div></article>`;
+          )}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision === 'accept' ? 'active' : ''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision === 'reject' ? 'active' : ''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="set-identity">Identity tags</button></div><div class="set-track-quick-actions"><button type="button" class="set-quick-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-quick-alternative">Replace</button><button type="button" class="set-inspect-track">More</button></div></article>`;
       })
       .join('');
     bindSetRows();
     bindCompactAudio($('#set-track-list'));
+    workspaceShell.bindRows();
     setSvgCurve('#set-energy-curve', state.plan.map(songEnergy), '#d6ff44');
     setSvgCurve(
       '#set-bpm-curve',
@@ -381,7 +386,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       const index = Number(card.dataset.index);
       card.querySelector('.set-move-up').onclick = () => moveSetTrack(index, index - 1);
       card.querySelector('.set-move-down').onclick = () => moveSetTrack(index, index + 1);
-      card.querySelector('.set-lock').onclick = () => {
+      const toggleLock = () => {
         pushSetHistory();
         const track = state.plan[index],
           id = setTrackId(track),
@@ -390,6 +395,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         if (locking) void recordPreference('lock', track);
         renderSetPlan();
       };
+      card.querySelectorAll('.set-lock, .set-quick-lock').forEach((button) => (button.onclick = toggleLock));
       card.querySelector('.set-remove').onclick = () => {
         pushSetHistory();
         const track = state.plan[index];
@@ -400,6 +406,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       };
       card.querySelector('.set-add-after').onclick = () => addSetTrack(index + 1, card);
       card.querySelector('.set-alternative').onclick = () => replaceSetTrack(index);
+      card.querySelector('.set-quick-alternative').onclick = () => replaceSetTrack(index);
       card.querySelector('.set-identity').onclick = () => openTrackIdentityEditor(index, card);
       card.querySelectorAll('[data-track-review]').forEach(
         (button) =>

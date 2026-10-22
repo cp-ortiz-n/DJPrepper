@@ -1,7 +1,17 @@
-export function createSetBuilderStore({ storage = globalThis.localStorage } = {}) {
+export function createSetBuilderId(prefix = 'set') {
+  const value = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${value}`;
+}
+
+export function createSetBuilderStore({ storage = globalThis.localStorage, createId = createSetBuilderId } = {}) {
   return {
     library: [],
     plan: [],
+    draftId: createId('draft'),
+    activeSavedSetId: '',
+    planRevision: null,
+    revisionComparison: null,
+    selectedTrackId: '',
     requiredIds: new Set(),
     excludedIds: new Set(),
     lockedIds: new Set(),
@@ -22,6 +32,8 @@ export function snapshotSetPlan(store, trackId) {
     tracks: store.plan.map(trackId),
     locked: [...store.lockedIds],
     transitions: structuredClone(store.transitionSettings),
+    revision: store.planRevision ? structuredClone(store.planRevision) : null,
+    comparison: store.revisionComparison ? structuredClone(store.revisionComparison) : null,
   };
 }
 
@@ -30,5 +42,45 @@ export function restoreSetPlan(store, snapshot, library, trackId) {
   store.plan = (snapshot?.tracks || []).map((id) => byId.get(id)).filter(Boolean);
   store.lockedIds = new Set(snapshot?.locked || []);
   store.transitionSettings = structuredClone(snapshot?.transitions || {});
+  if (snapshot && Object.hasOwn(snapshot, 'revision')) {
+    store.planRevision = snapshot.revision ? structuredClone(snapshot.revision) : null;
+  }
+  if (snapshot && Object.hasOwn(snapshot, 'comparison')) {
+    store.revisionComparison = snapshot.comparison ? structuredClone(snapshot.comparison) : null;
+  }
   return store.plan;
+}
+
+export function advanceSetPlanRevision(
+  store,
+  { createId = createSetBuilderId, now = () => new Date().toISOString() } = {},
+) {
+  const previous = store.planRevision;
+  store.planRevision = {
+    id: createId('revision'),
+    number: Number(previous?.number || 0) + 1,
+    parentId: previous?.id || null,
+    createdAt: now(),
+  };
+  return structuredClone(store.planRevision);
+}
+
+export function resetSetBuilderWorkspace(store, { createId = createSetBuilderId } = {}) {
+  store.plan = [];
+  store.draftId = createId('draft');
+  store.activeSavedSetId = '';
+  store.planRevision = null;
+  store.revisionComparison = null;
+  store.selectedTrackId = '';
+  store.requiredIds.clear();
+  store.excludedIds.clear();
+  store.lockedIds.clear();
+  store.genreSelectionOrder = [];
+  store.generationNonce += 1;
+  store.proposals = [];
+  store.activeProposal = '';
+  store.history = [];
+  store.future = [];
+  store.transitionSettings = {};
+  return store;
 }

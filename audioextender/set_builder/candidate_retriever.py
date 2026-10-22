@@ -141,6 +141,7 @@ class SetCandidateRetriever:
         required_ids: set[str] | None = None,
         excluded_ids: set[str] | None = None,
         locked_ids: set[str] | None = None,
+        locked_sections: dict[str, str] | None = None,
         constraints: dict[str, Any] | None = None,
         section_limit: int | None = None,
         total_limit: int | None = None,
@@ -148,6 +149,7 @@ class SetCandidateRetriever:
         required = required_ids or set()
         excluded = excluded_ids or set()
         locked = locked_ids or set()
+        locked_by_section = locked_sections or {}
         limit = max(1, min(section_limit or self.default_section_limit, self.maximum_section_limit))
         total_cap = max(1, min(total_limit or self.maximum_total, self.maximum_total))
         compact = [_compact_track(item) for item in catalog]
@@ -166,6 +168,9 @@ class SetCandidateRetriever:
             section_id = str(section.get("id") or f"section-{len(sections) + 1}")
             ranked = []
             for track in compact:
+                locked_section = locked_by_section.get(track["id"])
+                if locked_section and locked_section != section_id:
+                    continue
                 score, tier, reasons = _match_score(track, section)
                 technical_score = score
                 preference_adjustment, preference_reasons = (

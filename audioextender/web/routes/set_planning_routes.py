@@ -23,6 +23,7 @@ class SetCandidatePoolRequest(BaseModel):
     required_track_ids: list[str] = Field(default_factory=list, max_length=500)
     excluded_track_ids: list[str] = Field(default_factory=list, max_length=5000)
     locked_track_ids: list[str] = Field(default_factory=list, max_length=500)
+    locked_track_sections: dict[str, str] = Field(default_factory=dict, max_length=500)
     per_section_limit: int = Field(default=16, ge=1, le=100)
     total_limit: int = Field(default=100, ge=1, le=100)
 
@@ -34,6 +35,7 @@ class SetPlanValidationRequest(BaseModel):
     required_track_ids: list[str] = Field(default_factory=list, max_length=500)
     excluded_track_ids: list[str] = Field(default_factory=list, max_length=5000)
     locked_track_ids: list[str] = Field(default_factory=list, max_length=500)
+    locked_track_sections: dict[str, str] = Field(default_factory=dict, max_length=500)
     target_duration_minutes: int | None = Field(default=None, ge=1, le=480)
     target_track_count: int | None = Field(default=None, ge=1, le=500)
 
@@ -44,6 +46,8 @@ class SetTrackPlanningRequest(BaseModel):
     required_track_ids: list[str] = Field(default_factory=list, max_length=500)
     excluded_track_ids: list[str] = Field(default_factory=list, max_length=5000)
     locked_track_ids: list[str] = Field(default_factory=list, max_length=500)
+    locked_track_sections: dict[str, str] = Field(default_factory=dict, max_length=500)
+    base_plan_revision: dict[str, Any] | None = None
     target_duration_minutes: int = Field(ge=15, le=480)
     target_track_count: int = Field(ge=2, le=100)
     per_section_limit: int = Field(default=20, ge=2, le=100)
@@ -54,8 +58,15 @@ class SetTrackPlanningRequest(BaseModel):
         sections = self.journey.get("sections", [])
         if not isinstance(sections, list) or not 1 <= len(sections) <= 12:
             raise ValueError("journey must contain between 1 and 12 sections")
+        section_ids = {str(section.get("id") or "") for section in sections if isinstance(section, dict)}
+        if not set(self.locked_track_sections).issubset(self.locked_track_ids):
+            raise ValueError("locked_track_sections may only reference locked_track_ids")
+        if not set(self.locked_track_sections.values()).issubset(section_ids):
+            raise ValueError("locked_track_sections must reference journey sections")
         if len(json.dumps(self.brief, ensure_ascii=False)) > 50_000:
             raise ValueError("brief exceeds the 50 KB planning limit")
+        if self.base_plan_revision and len(json.dumps(self.base_plan_revision, ensure_ascii=False)) > 2_000:
+            raise ValueError("base_plan_revision exceeds the 2 KB planning limit")
         return self
 
 
@@ -102,6 +113,7 @@ def create_set_planning_router(deps: SetPlanningRouteDependencies) -> APIRouter:
             required_ids=set(request.required_track_ids),
             excluded_ids=set(request.excluded_track_ids),
             locked_ids=set(request.locked_track_ids),
+            locked_sections=request.locked_track_sections,
             section_limit=request.per_section_limit,
             total_limit=request.total_limit,
         )
@@ -115,6 +127,7 @@ def create_set_planning_router(deps: SetPlanningRouteDependencies) -> APIRouter:
             required_ids=set(request.required_track_ids),
             excluded_ids=set(request.excluded_track_ids),
             locked_ids=set(request.locked_track_ids),
+            locked_sections=request.locked_track_sections,
             target_duration_minutes=request.target_duration_minutes,
             target_track_count=request.target_track_count,
         )

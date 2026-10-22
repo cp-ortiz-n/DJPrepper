@@ -178,6 +178,207 @@ test('saved sets survive browser storage clearing and application reload', async
   );
 });
 
+test('deleting the active saved set returns Set Builder to a clean draft', async ({ page }) => {
+  const savedSet = {
+    id: 'active-plan',
+    draftId: 'draft-active-plan',
+    planRevision: {
+      id: 'revision-active-plan-1',
+      number: 1,
+      parentId: null,
+      createdAt: '2026-10-21T12:00:00.000Z',
+    },
+    name: 'Active Plan',
+    brief: { name: 'Active Plan', authoringMode: 'manual' },
+    planningMode: 'classic',
+    planningReceipt: { provider: 'offline', validated: true },
+    tracks: ['opening.wav'],
+    trackDetails: [{ id: 'opening.wav', source_name: 'Opening.wav', artist: 'DJ Test', genre: 'House' }],
+    transitions: {},
+    locked: [],
+    required: [],
+    excluded: [],
+    updatedAt: '2026-10-21T12:00:00.000Z',
+  };
+  await page.route((url) => url.pathname === '/api/set-builder/catalog', (route) =>
+    route.fulfill({
+      json: {
+        tracks: [
+          {
+            downloaded_id: 501,
+            recording_code: 'HOU-000501',
+            version_code: 'ORG',
+            genre: 'House',
+            detailed_genre: 'Deep House',
+            descriptors: [],
+            analysis: {
+              source_name: 'Opening.wav',
+              title: 'Opening',
+              artist: 'DJ Test',
+              bpm: 120,
+              key: 'Am',
+              duration_seconds: 180,
+              energy: 0.5,
+            },
+            job: { id: 501, config_json: '{}', library_path: '/tmp/Opening.wav' },
+          },
+        ],
+      },
+    }),
+  );
+  await page.route((url) => url.pathname === '/api/set-builder/sets', (route) =>
+    route.fulfill({ json: { version: 2, sets: [savedSet] } }),
+  );
+  await page.route((url) => url.pathname === '/api/set-builder/sets/active-plan', (route) =>
+    route.fulfill({ json: { deleted: true, id: 'active-plan' } }),
+  );
+  await page.reload();
+  await openView(page, 'Set Builder');
+
+  await page.locator('#saved-set-select').selectOption('active-plan', { force: true });
+  await page.locator('#load-set').click();
+  await expect(page.locator('#set-result')).toBeVisible();
+  await expect(page.locator('#set-result-name')).toHaveValue('Active Plan');
+
+  await page.locator('#delete-set').click();
+  await page.locator('#app-confirm-accept').click();
+
+  await expect(page.locator('#set-result')).toBeHidden();
+  await expect(page.locator('#saved-set-select')).toHaveValue('');
+  await expect(page.locator('#set-name')).toHaveValue('New DJ Set');
+  await expect(page.locator('#set-builder-message')).toContainText('Plan deleted');
+});
+
+test('Set Builder compact workspace supports inspection, keyboard navigation, and narrow screens', async ({
+  page,
+}) => {
+  const tracks = [
+    ['Opening.wav', 'DJ Test', 'Deep House', 120, 'Am', 0.45],
+    ['Lift.wav', 'DJ Test', 'House', 124, 'C', 0.68],
+    ['Peak.wav', 'DJ Test', 'Techno', 128, 'Gm', 0.84],
+  ];
+  const savedSet = {
+    id: 'workspace-shell-plan',
+    draftId: 'draft-workspace-shell',
+    planRevision: { id: 'revision-shell-2', number: 2, parentId: 'revision-shell-1' },
+    name: 'Workspace Shell Plan',
+    brief: { name: 'Workspace Shell Plan', authoringMode: 'manual', minimumHealth: 55 },
+    planningMode: 'classic',
+    planningReceipt: { provider: 'offline', validated: true },
+    tracks: tracks.map(([name]) => name.toLowerCase()),
+    trackDetails: tracks.map(([source_name, artist, genre, bpm]) => ({
+      id: source_name.toLowerCase(),
+      source_name,
+      artist,
+      genre,
+      bpm,
+    })),
+    transitions: {},
+    locked: ['opening.wav'],
+    required: [],
+    excluded: [],
+  };
+  let regenerationRequest;
+  await page.route((url) => url.pathname === '/api/set-builder/catalog', (route) =>
+    route.fulfill({
+      json: {
+        tracks: tracks.map(([source_name, artist, genre, bpm, key, energy], index) => ({
+          downloaded_id: 700 + index,
+          recording_code: `TST-00070${index}`,
+          version_code: 'ORG',
+          genre,
+          detailed_genre: genre,
+          descriptors: [],
+          analysis: { source_name, artist, bpm, key, energy, duration_seconds: 180 },
+          job: { id: 700 + index, config_json: '{}', library_path: `/tmp/${source_name}` },
+        })),
+      },
+    }),
+  );
+  await page.route((url) => url.pathname === '/api/set-builder/sets', (route) =>
+    route.fulfill({ json: { version: 2, sets: [savedSet] } }),
+  );
+  await page.route((url) => url.pathname === '/api/set-builder/plan-tracks', async (route) => {
+    regenerationRequest = route.request().postDataJSON();
+    await route.fulfill({ status: 202, json: { jobId: 'browser-regeneration', status: 'pending' } });
+  });
+  await page.route((url) => url.pathname === '/api/set-builder/plan-tracks/browser-regeneration', (route) =>
+    route.fulfill({
+      json: {
+        status: 'complete',
+        stage: 'Validated running order ready',
+        progress: 100,
+        result: {
+          mode: 'ai-planned',
+          provider: 'ollama',
+          model: 'test-model',
+          summary: 'Regenerated unlocked tracks.',
+          warnings: [],
+          basePlanRevision: savedSet.planRevision,
+          plan: [
+            { id: 'downloaded:700', sectionId: 'section-1' },
+            { id: 'downloaded:702', sectionId: 'section-1' },
+          ],
+        },
+      },
+    }),
+  );
+  await page.reload();
+  await openView(page, 'Set Builder');
+  await page.locator('#saved-set-select').selectOption(savedSet.id, { force: true });
+  await page.locator('#load-set').click();
+
+  const result = page.locator('#set-result');
+  const rows = page.locator('.set-track-card');
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator('#set-workspace-state')).toHaveText('Saved plan');
+  await expect(page.locator('#set-workspace-revision')).toHaveText('Revision 2');
+  await expect(rows.first().locator('.set-track-summary')).toContainText('120.0 BPM');
+  await expect(rows.first().locator('.set-track-chips')).toContainText('Locked');
+  expect(await page.locator('.set-result-head').evaluate((node) => getComputedStyle(node).position)).toBe('sticky');
+
+  await page.getByText('AI-assisted', { exact: true }).click();
+  await page.locator('#regenerate-set').click();
+  await expect(page.locator('#set-revision-comparison')).toContainText('Revision 3');
+  await expect(page.locator('#set-revision-comparison')).toContainText('1/1 locked preserved');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toContainText('Opening');
+  await expect(rows.nth(1)).toContainText('Peak');
+  expect(regenerationRequest.base_plan_revision).toEqual(savedSet.planRevision);
+  expect(regenerationRequest.locked_track_sections['downloaded:700']).toBeTruthy();
+  await page.locator('#set-undo').click();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(1)).toContainText('Lift');
+  await expect(page.locator('#set-workspace-revision')).toHaveText('Revision 2');
+
+  await rows.first().getByRole('button', { name: 'More' }).click();
+  const inspector = page.locator('#set-track-inspector');
+  await expect(inspector).toBeVisible();
+  await expect(inspector.locator('.set-track-inspector-title')).toHaveText('Opening');
+  await expect(inspector.locator('.set-track-meta')).toBeVisible();
+  await expect(inspector.locator('.set-row-actions')).toBeVisible();
+  await expect(inspector.getByRole('button', { name: 'Close track inspector' })).toBeFocused();
+  const accessibility = await new AxeBuilder({ page }).include('#set-result').withTags(['wcag2a', 'wcag2aa']).analyze();
+  expect(
+    accessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact)),
+  ).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(inspector).toBeHidden();
+  await expect(rows.first()).toBeFocused();
+
+  await rows.nth(1).focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(rows.nth(2)).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await rows.nth(1).press('Enter');
+  await expect(inspector).toBeVisible();
+  expect(await result.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const transitionDuration = await inspector.evaluate((node) => getComputedStyle(node).transitionDuration);
+  expect(Number.parseFloat(transitionDuration)).toBeLessThanOrEqual(0.00001);
+});
+
 test('Set Builder keeps brief authoring separate from track planning', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 900 });
   await openView(page, 'Set Builder');

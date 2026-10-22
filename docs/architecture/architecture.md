@@ -198,7 +198,7 @@ POST /api/set-builder/plan-tracks → SetPlanningJobService
    └── phase timings and persisted outcome telemetry
         ↓
 SetPlanValidator
-   ├── IDs, exclusions, required/locked tracks, duplicate IDs/families, and files
+   ├── IDs, exclusions, required/locked tracks, locked journey sections, duplicate IDs/families, and files
    ├── duration, track count, and journey-section coverage
    └── BPM, Camelot-key, and vocal-transition warnings
         ↓
@@ -282,6 +282,14 @@ responses contain only stable track and section IDs. `PlanProposalRepairer`
 restores explanations from catalog evidence before validation. Genre coverage
 may be satisfied through disclosed scarcity only when the evaluated candidate
 pool contains zero available matches for every missing requested term.
+
+An existing plan is regenerated through the same bounded planning lifecycle.
+The request adds its base revision plus a `locked_track_sections` map. Candidate
+retrieval exposes each locked track only in its preserved section, section
+allocation reserves enough slots for those locks, and `SetPlanValidator`
+rejects a missing or moved lock. The browser snapshots the full prior revision
+before applying the validated result, records stayed/changed/locked-preserved
+counts, and uses the existing edit-history owner for whole-revision Undo.
 
 Provider selection defaults to `auto`: Ollama first, OpenAI only when
 configured, then deterministic offline rules in the browser. Configuration is
