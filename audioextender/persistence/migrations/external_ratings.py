@@ -14,5 +14,6 @@ def initialize_external_track_ratings(connection: sqlite3.Connection) -> None:
         source_location TEXT NOT NULL DEFAULT '', synced_at TEXT NOT NULL,
         PRIMARY KEY(track_id, source),
         FOREIGN KEY(track_id) REFERENCES downloaded_tracks(id) ON DELETE CASCADE);
+        CREATE INDEX IF NOT EXISTS idx_external_track_ratings_source
         ON external_track_ratings(source, rating DESC, track_id);"""
     )
