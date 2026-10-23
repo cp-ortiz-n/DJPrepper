@@ -163,6 +163,7 @@ class SetCandidateRetriever:
         ]
         compact, collapsed_ids = _deduplicate_recordings(compact, required | locked)
         known_ids = {track["id"] for track in compact}
+        strict_genres = str((journey.get("genrePolicy") or {}).get("mode") or "").casefold() == "strict"
         sections: list[dict[str, Any]] = []
         emitted: set[str] = set()
         for section in journey.get("sections", []):
@@ -173,6 +174,8 @@ class SetCandidateRetriever:
                 if locked_section and locked_section != section_id:
                     continue
                 score, tier, reasons = _match_score(track, section)
+                if strict_genres and tier != "direct" and track["id"] not in required | locked:
+                    continue
                 technical_score = score
                 preference_adjustment, preference_reasons = (
                     self.preference_ranker.adjustment(track, str((constraints or {}).get("vibe") or "balanced"))
@@ -243,6 +246,7 @@ class SetCandidateRetriever:
         available_ids = {track["id"] for track in compact if track["available"]}
         return {
             "version": 1,
+            "genrePolicy": "strict" if strict_genres else "related",
             "sections": sections,
             "candidateCount": len(emitted),
             "duplicateRecordingsCollapsed": len(collapsed_ids),

@@ -61,7 +61,9 @@ PLANNER_INSTRUCTIONS = (
     "When the brief uses ordering language such as 'start with', 'from there', 'then', or 'end with', put every "
     "directly requested catalog genre in genreSequence in performance order. Genres joined by 'and' belong to the "
     "same neighboring section but still appear individually and in stated order. Do not put non-genre traits there. "
-    "Never invent catalog genres. Preserve cultural, rhythmic, vocal, energy, venue, and crowd intent as concise "
+    "Never invent catalog genres. Default drift to none. Only use low, moderate, or wide drift when the DJ explicitly "
+    "asks for related genres, bridges, or open-genre exploration; naming one genre is not permission to broaden it. "
+    "Preserve cultural, rhythmic, vocal, energy, venue, and crowd intent as concise "
     "preferred descriptors. Return only the requested JSON schema."
 )
 
@@ -79,6 +81,27 @@ NON_GENRE_JOURNEY_TERMS = {
 
 def _clean_term(value: Any) -> str:
     return " ".join(re.sub(r"[^a-z0-9&]+", " ", str(value or "").strip().lower()).split())
+
+
+def _explicit_drift(brief: str) -> str:
+    """Return only the genre expansion level the DJ explicitly authorized."""
+    normalized = _clean_term(brief)
+    if re.search(r"\b(?:do not drift|no genre drift|strict genre|only this genre|direct genres only)\b", normalized):
+        return "none"
+    if re.search(r"\b(?:wide genre|open genre|genre agnostic|context over genre)\b", normalized):
+        return "wide"
+    if re.search(
+        r"\b(?:close variants|close genres|adjacent genres|related genres only|slight genre drift)\b",
+        normalized,
+    ):
+        return "low"
+    if re.search(
+        r"\b(?:allow related genres|allow genre bridges|musical bridges|genre bridges|broaden the genres|genre drift)\b"
+        r"|\ballow\b.{0,60}\bbridges\b",
+        normalized,
+    ):
+        return "moderate"
+    return "none"
 
 
 def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief: str = "") -> dict[str, Any]:
@@ -107,6 +130,9 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief
         cleaned["genreSequence"] = sorted(
             explicit_genres, key=lambda genre: normalized_brief.index(f" {genre} ")
         )
+        cleaned["drift"] = _explicit_drift(brief)
+    elif cleaned.get("drift") not in {"none", "low", "moderate", "wide"}:
+        cleaned["drift"] = "none"
     return cleaned
 
 

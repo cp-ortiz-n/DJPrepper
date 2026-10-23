@@ -16,6 +16,18 @@ identity, required tracks, and final validation remain deterministic authority.
 Both paths produce the same planning request. The browser never sends the full
 database to a model; it sends a bounded set of validated catalog candidates.
 
+An exact genre request is strict by default. For example, `Latin Techno` may
+change energy, character, and purpose across sections, but it cannot silently
+become Latin Pop, R&B, House, or Amapiano. Model-proposed catalog neighbors are
+retained only as unselected suggestions. The DJ must enable **Allow related
+genres** and add a suggestion deliberately before it enters the journey.
+
+AI-created journeys begin in **Needs confirmation** state. Editing a section,
+changing genre expansion, or changing the prompt returns the journey to that
+state. **Confirm journey** validates 100% duration coverage, non-empty genres,
+and the strict genre boundary; only then can track planning begin. Loaded saved
+plans retain their already-reviewed journey for backward compatibility.
+
 Track selection is a separate decision from brief authoring:
 
 | Track selection | What happens                                                                    |
@@ -31,8 +43,8 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 
 | Owner                                                             | Responsibility                                                               |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret and schema-check the editable direction                            |
-| `SetCandidateRetriever`                                           | Apply availability, genre, BPM, key, vocal, timing, lock, and identity rules |
+| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret, schema-check, and enforce explicit genre expansion authority       |
+| `SetCandidateRetriever`                                           | Apply strict genre policy, availability, mixing, lock, and identity rules     |
 | `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                               |
 | `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks       |
 | Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                     |
@@ -54,6 +66,8 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 - Invalid or weaker AI output is replaced by the validated deterministic plan.
 - Recording-family duplicates cannot occupy two set positions.
 - Other versions of a recording may be shown as explicit alternatives.
+- Exact genre requests never expand through scarcity fallback; the DJ is asked
+  to allow related genres explicitly instead.
 - Plan health is an explanation signal; hard validation is the release gate.
 
 ## Verification

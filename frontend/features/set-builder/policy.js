@@ -231,7 +231,11 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
       ? 'low'
       : /wide|open genre|context over genre/.test(lower)
         ? 'wide'
-        : 'moderate';
+        : /allow related genres|allow genre bridges|musical bridges|genre bridges|genre drift|allow[^.]{0,60}bridges/.test(
+              lower,
+            )
+          ? 'moderate'
+          : 'none';
   const chill = /(?:chill|kickback|laid[- ]?back|low[- ]?key)/.test(lower);
   const dance = /(?:party|danc(?:e|ing))/.test(lower);
   const vibe =

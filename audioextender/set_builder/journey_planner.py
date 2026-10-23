@@ -46,7 +46,9 @@ JOURNEY_SCHEMA: dict[str, Any] = {
 JOURNEY_INSTRUCTIONS = (
     "You are planning the high-level sections of a DJ set, not selecting tracks. Return only the requested JSON. "
     "Use the supplied interpreted intention as authoritative. Preserve explicitly requested genre order and keep "
-    "optional genres optional. Never invent a genre outside catalog_vocabulary. Treat melodic, warm-up, peak-time, "
+    "optional genres optional. When drift is none, use only requestedGenres, optionalGenres, and genreSequence; vary "
+    "energy, character, and purpose instead of introducing adjacent genres. Never invent a genre outside "
+    "catalog_vocabulary. Treat melodic, warm-up, peak-time, "
     "closing, and similar words as characteristics or purposes, not genres. Section durationPercent values must total "
     "100. Use 1-10 energy values and allow deliberate waves or resets when requested. Keep the plan practical and "
     "concise, normally 3-6 sections. Do not claim knowledge of tracks or audio that was not supplied."
@@ -188,6 +190,50 @@ def _preserves_requested_sequence(journey: dict[str, Any], interpreted: dict[str
     return cursor == len(expected)
 
 
+def enforce_journey_genre_policy(
+    journey: dict[str, Any], interpreted: dict[str, Any], vocabulary: list[str]
+) -> dict[str, Any]:
+    """Prevent an exact genre brief from silently expanding into catalog neighbors."""
+    drift = str(interpreted.get("drift") or "none").strip().lower()
+    core = list(dict.fromkeys(
+        genre
+        for value in [*interpreted.get("genreSequence", []), *interpreted.get("requestedGenres", [])]
+        if (genre := _canonical_genre(value, vocabulary))
+    ))
+    optional = list(dict.fromkeys(
+        genre
+        for value in interpreted.get("optionalGenres", [])
+        if (genre := _canonical_genre(value, vocabulary)) and genre not in core
+    ))
+    allowed = [*core, *optional]
+    strict = drift == "none" and bool(allowed)
+    policy: dict[str, Any] = {
+        "mode": "strict" if strict else "related",
+        "coreGenres": core,
+        "optionalGenres": optional,
+        "repairedSections": [],
+    }
+    journey["genrePolicy"] = policy
+    if not strict:
+        return journey
+    sections = journey.get("sections", [])
+    for index, section in enumerate(sections):
+        proposed = list(dict.fromkeys(section.get("genres", [])))
+        kept = [genre for genre in proposed if genre in allowed]
+        removed = [genre for genre in proposed if genre not in allowed]
+        if not kept:
+            source = core or optional
+            position = min(len(source) - 1, int(index * len(source) / max(1, len(sections))))
+            kept = [source[position]]
+        if removed:
+            section["suggestedGenres"] = removed
+        section["genres"] = kept
+        if kept != proposed:
+            policy["repairedSections"].append(str(section.get("id") or f"section-{index + 1}"))
+            section["purpose"] = f"Develop the requested {', '.join(kept)} direction at this energy level."
+    return journey
+
+
 @dataclass(frozen=True)
 class JourneyPlanner:
     intention_planner: IntentionPlanner
@@ -199,6 +245,7 @@ class JourneyPlanner:
         try:
             result = self._plan_with_provider(brief, interpreted, vocabulary)
             journey = sanitize_journey(result, vocabulary, duration_minutes)
+            journey = enforce_journey_genre_policy(journey, interpreted, vocabulary)
             if not _preserves_requested_sequence(journey, interpreted, vocabulary):
                 raise ValueError("AI journey omitted or reordered an explicitly requested genre")
             status = self.intention_planner.status()

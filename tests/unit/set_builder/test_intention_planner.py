@@ -100,6 +100,30 @@ class IntentionPlannerTests(unittest.TestCase):
         )
         self.assertEqual(result["genreSequence"], ["cumbia", "latin techno"])
 
+    def test_exact_genre_request_disables_unrequested_genre_drift(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [], "preferred": [], "avoided": [],
+                "requestedGenres": ["Latin Techno"], "optionalGenres": [],
+                "genreSequence": ["Latin Techno"], "drift": "moderate",
+            },
+            ["Latin Techno", "Latin House", "Amapiano"],
+            "Create a Latin Techno set",
+        )
+        self.assertEqual(result["drift"], "none")
+
+    def test_related_genre_drift_requires_explicit_authorization(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [], "preferred": [], "avoided": [],
+                "requestedGenres": ["Latin Techno"], "optionalGenres": [],
+                "genreSequence": ["Latin Techno"], "drift": "none",
+            },
+            ["Latin Techno", "Latin House"],
+            "Create a Latin Techno set and allow related genres",
+        )
+        self.assertEqual(result["drift"], "moderate")
+
     def test_positional_descriptor_is_not_treated_as_a_genre(self) -> None:
         result = sanitize_interpretation(
             {

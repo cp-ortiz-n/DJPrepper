@@ -33,6 +33,7 @@ test('composition modules stay within explicit ownership ceilings', () => {
     'features/dj-library/selection.js': 375,
     'features/dj-library/view.js': 575,
     'features/set-builder/index.js': 3500,
+    'features/set-builder/journey-review.js': 275,
     'features/set-builder/policy.js': 340,
     'shared/track-metadata-ui.js': 280,
     'features/processing/processing-job-detail.js': 220,

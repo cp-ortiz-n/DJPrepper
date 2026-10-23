@@ -165,6 +165,17 @@ class SetCandidateRetrieverTests(unittest.TestCase):
             {"identity", "bridge", "fallback"},
         )
 
+    def test_strict_journey_excludes_unrequested_bridge_and_fallback_candidates(self) -> None:
+        tracks = [
+            catalog_track(1, Path("/missing/direct.wav"), genre="Electronic / Techno", detail="Latin Techno"),
+            catalog_track(2, Path("/missing/bridge.wav"), genre="Latin / House", detail="Latin House"),
+        ]
+        strict_journey = journey("Latin Techno")
+        strict_journey["genrePolicy"] = {"mode": "strict", "coreGenres": ["latin techno"]}
+        result = SetCandidateRetriever().retrieve(tracks, strict_journey, section_limit=4)
+        self.assertEqual([candidate["id"] for candidate in result["sections"][0]["candidates"]], ["downloaded:1"])
+        self.assertEqual(result["genrePolicy"], "strict")
+
     def test_caps_pool_and_limits_repeated_artists(self) -> None:
         tracks = [catalog_track(index, Path(f"/missing/{index}.wav"), artist="Same") for index in range(1, 7)]
         tracks.append(catalog_track(8, Path("/missing/8.wav"), artist="Different"))

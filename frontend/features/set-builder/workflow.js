@@ -37,6 +37,48 @@ export function setBriefModeMessage(authoringMode) {
     : 'Describe the outcome. Local AI will translate it into a brief you can review.';
 }
 
+export function offlineJourneyFromInterpretation(interpreted = {}, durationMinutes = 60) {
+  const genres = [
+    ...new Set(
+      [
+        ...(interpreted.genreSequence || []),
+        ...(interpreted.requestedGenres || []),
+        ...(interpreted.optionalGenres || []),
+      ].filter(Boolean),
+    ),
+  ];
+  const core = genres.length ? genres : ['other'];
+  const section = (id, name, durationPercent, energyStart, energyEnd, index, purpose) => ({
+    id,
+    name,
+    durationPercent,
+    energyStart,
+    energyEnd,
+    genres: [core[Math.min(core.length - 1, index)]],
+    characteristics: index === 0 && interpreted.opening ? [interpreted.opening] : [],
+    purpose,
+  });
+  return {
+    version: 1,
+    summary: interpreted.explanation || 'A catalog-safe journey derived from the requested direction.',
+    durationMinutes: Number(durationMinutes),
+    evidence: 'deterministic-fallback',
+    provider: 'offline',
+    model: null,
+    genrePolicy: {
+      mode: interpreted.drift === 'none' ? 'strict' : 'related',
+      coreGenres: [...new Set([...(interpreted.genreSequence || []), ...(interpreted.requestedGenres || [])])],
+      optionalGenres: [...(interpreted.optionalGenres || [])],
+      repairedSections: [],
+    },
+    sections: [
+      section('opening', 'Opening', 25, 4, 6, 0, 'Establish the requested musical identity.'),
+      section('build', 'Build', 45, 6, 8, Math.floor((core.length - 1) / 2), 'Develop the energy and groove.'),
+      section('closing', 'Closing', 30, 8, 7, core.length - 1, 'Deliver a deliberate finish.'),
+    ],
+  };
+}
+
 export function resolveStructuredGenreFilters(authoringMode, { genres, detailedGenres, excludedGenres, weights }) {
   if (authoringMode === SET_BRIEF_MODES.AI) {
     return { genres: [], detailedGenres: [], excludedGenres: [], weights: {} };
@@ -61,6 +103,12 @@ export function allowsCandidateGenre({
   drift,
   preferredIdentityMatches,
 }) {
+  if (
+    authoringMode === SET_BRIEF_MODES.AI &&
+    hasInterpretedIdentity &&
+    drift === 'none'
+  )
+    return requestedGenreMatch;
   if (!requiresStrictGenreEligibility(authoringMode)) return true;
   return (
     (directGenre && requestedGenreMatch) || (hasInterpretedIdentity && drift === 'wide' && preferredIdentityMatches > 0)
@@ -156,7 +204,9 @@ export function createSetIntentionController({ $, api, providerView, offlineInte
     } catch (error) {
       if (![404, 503].includes(error.status)) {
         console.warn('Brief preparation failed; using offline interpretation:', error);
-        return { ...offlineInterpret(text, vocabulary()), text, provider: 'offline' };
+        const interpreted = { ...offlineInterpret(text, vocabulary()), text, provider: 'offline' };
+        interpreted.journey = offlineJourneyFromInterpretation(interpreted, durationMinutes());
+        return interpreted;
       }
       console.warn('Combined brief preparation failed; using compatibility workflow:', error);
     }
@@ -170,6 +220,7 @@ export function createSetIntentionController({ $, api, providerView, offlineInte
       });
     } catch (error) {
       console.warn('Journey planning failed:', error);
+      interpreted.journey = offlineJourneyFromInterpretation(interpreted, durationMinutes());
     }
     return interpreted;
   };

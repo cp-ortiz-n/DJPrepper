@@ -510,21 +510,27 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
     sections.id = 'journey-layout-probe';
     sections.className = 'set-journey-sections';
     sections.style.width = '1000px';
-    sections.innerHTML = `<article class="set-journey-section">
-      <span class="journey-step">1</span>
-      <div class="journey-primary">
-        <label>Section<input value="Warm-up"></label>
-        <label class="journey-duration-label">Duration<input type="number" value="15"><span>%</span></label>
-        <label class="journey-energy">Energy <span class="journey-energy-value">4 → 6</span>
-          <span class="journey-energy-inputs"><input type="number" value="4"><i>to</i><input type="number" value="6"></span>
-        </label>
-      </div>
-      <div class="journey-details">
-        <label class="journey-genres">Genres<input value="disco &amp; funk, latin house"></label>
-        <label>Character<input class="journey-characteristics" value="groovy, melodic"></label>
-        <label class="journey-purpose">Purpose<input value="Build energy gradually"></label>
-      </div>
-    </article>`;
+    sections.innerHTML = `<details class="set-journey-section" open>
+      <summary class="journey-section-summary">
+        <span class="journey-step">1</span>
+        <span class="journey-summary-title"><strong>Warm-up</strong><small>Build energy gradually</small></span>
+        <span class="journey-summary-stat"><small>Duration</small><strong>15%</strong></span>
+        <span class="journey-summary-stat"><small>Energy</small><strong>4 → 6</strong></span>
+        <span class="journey-summary-genres"><span>disco &amp; funk</span><span>latin house</span></span>
+        <span class="journey-summary-edit">Edit</span>
+      </summary>
+      <div class="journey-editor"><div class="journey-primary">
+          <label>Section<input value="Warm-up"></label>
+          <label class="journey-duration-label">Duration<input type="number" value="15"><span>%</span></label>
+          <label class="journey-energy">Energy <span class="journey-energy-value">4 → 6</span>
+            <span class="journey-energy-inputs"><input type="number" value="4"><i>to</i><input type="number" value="6"></span>
+          </label>
+        </div><div class="journey-details">
+          <label class="journey-genres">Genres<input value="disco &amp; funk, latin house"></label>
+          <label>Character<input class="journey-characteristics" value="groovy, melodic"></label>
+          <label class="journey-purpose">Purpose<input value="Build energy gradually"></label>
+        </div></div>
+    </details>`;
     document.querySelector('#set-builder-view').append(sections);
   });
   const journeyProbe = page.locator('#journey-layout-probe .set-journey-section');
@@ -553,6 +559,8 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
     };
   });
   expect(journeyStructure).toEqual({ stacked: true, aligned: true });
+  await journeyProbe.locator('summary').click();
+  expect(await journeyProbe.evaluate((section) => section.getBoundingClientRect().height)).toBeLessThan(90);
   await page.locator('#journey-layout-probe').evaluate((node) => node.remove());
 
   await page.evaluate(() => {
@@ -621,6 +629,14 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
   await expect(progress).toBeHidden({ timeout: 5000 });
   await expect(page.locator('.journey-energy-value')).toHaveText('6 → 6');
   await expect(page.locator('.journey-energy-end')).toHaveValue('6');
+  await expect(page.locator('#set-journey-confirmation')).toHaveText('Needs confirmation');
+  await expect(page.locator('#set-generate')).toBeDisabled();
+  await page.locator('#set-journey-confirm').click();
+  await expect(page.locator('#set-journey-confirmation')).toHaveText('Confirmed');
+  await expect(page.locator('#set-generate')).toBeEnabled();
+  await page.locator('.journey-purpose input').fill('Build a different kind of momentum');
+  await expect(page.locator('#set-journey-confirmation')).toContainText('Unconfirmed');
+  await expect(page.locator('#set-generate')).toBeDisabled();
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {

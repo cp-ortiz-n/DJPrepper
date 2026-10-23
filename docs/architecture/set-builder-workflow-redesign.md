@@ -165,6 +165,12 @@ section name, duration, genres, character, purpose, and energy movement. **Edit
 direction** opens all fields in one drawer with validation and reset-to-AI
 controls.
 
+Exact genre requests are strict unless the DJ explicitly enables related
+genres. AI suggestions outside that boundary remain visible but unselected.
+New or edited journeys require **Confirm journey** before track selection; the
+confirmation gate checks section genres and total duration and becomes dirty
+again after any edit.
+
 After any edit:
 
 - show **Direction changed** in the workspace header;

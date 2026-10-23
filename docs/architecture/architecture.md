@@ -314,8 +314,12 @@ canonicalized against catalog vocabulary, schema labels and placeholders are
 removed, and malformed or unavailable provider responses fall through safely.
 Journey percentages are normalized to 100%, energy values are bounded to 1–10,
 unknown genres are rejected, and omission or reordering of required genre
-sequences triggers deterministic fallback. Edited journey sections directly
-control positional genre and energy targets in either safe generator. The
+sequences triggers deterministic fallback. A deterministic genre-policy pass
+also removes valid-but-unrequested catalog genres unless the DJ explicitly
+authorized drift. Removed genres remain disclosed as unselected suggestions.
+The browser's `journey-review.js` owner requires confirmation after generation
+or any edit and serializes the strict/related policy with the journey. Edited
+journey sections directly control positional genre and energy targets in either safe generator. The
 candidate and validator services are provider-independent. `track_planner.py`
 owns provider adaptation, repair, and fallback; `planning_jobs.py` owns lifecycle
 and cancellation; `planning_store.py` atomically persists job/request state and

@@ -252,13 +252,21 @@ test('Set Builder interprets an intention into editable deterministic preference
   const result = setBuilder.interpretSetIntention(
     'Build a driving Latin electronic set with a Techno foundation. Favor Spanish vocals, dembow or Latin percussion for an Ecuadorian party crowd. Avoid generic instrumental Techno.',
   );
-  assert.equal(result.drift, 'moderate');
+  assert.equal(result.drift, 'none');
   assert.ok(result.preferred.includes('techno foundation'));
   assert.ok(result.preferred.includes('spanish vocals'));
   assert.ok(result.preferred.includes('dembow'));
   assert.ok(result.preferred.includes('ecuadorian party'));
   assert.deepEqual(result.avoided, ['generic instrumental techno']);
   assert.equal(result.fallbackPolicy.length, 5);
+});
+
+test('Set Builder requires explicit permission before broadening requested genres', () => {
+  assert.equal(setBuilder.interpretSetIntention('Create a Latin Techno set', ['Latin Techno']).drift, 'none');
+  assert.equal(
+    setBuilder.interpretSetIntention('Create a Latin Techno set and allow related genres', ['Latin Techno']).drift,
+    'moderate',
+  );
 });
 
 test('Set Builder derives identity separately from catalog genre', () => {

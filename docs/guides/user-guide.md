@@ -61,6 +61,17 @@ journey made of named sections, runtime percentages, catalog genres, musical
 characteristics, purposes, and start/end energy targets. The default `auto`
 provider order is local Ollama, optional OpenAI, and finally deterministic rules.
 
+After reviewing an AI brief, confirm its **Planned journey** before building the
+track list. Exact genre prompts are strict by default: “Create a Latin Techno
+set” keeps Latin Techno in every section while allowing the energy and purpose
+to evolve. The journey starts as compact overview rows; expand only the section
+you want to edit. Use **Use in every section** to apply the core genres at once.
+Related catalog genres proposed by the model appear as unselected suggestions;
+turn on **Allow related genres** and add only the bridges you actually want.
+Editing any section marks the journey unconfirmed again. **Reset** restores
+the reviewed proposal, while **Regenerate journey** creates another structure
+from the current prompt.
+
 Set Builder separates two decisions. First, choose **Describe what I want** to
 have Local AI turn natural language into an editable brief, or **Build manually**
 to configure that direction yourself. Then choose **AI curated** to have the

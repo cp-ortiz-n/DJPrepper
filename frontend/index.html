@@ -319,9 +319,18 @@
                 <label>Genre drift<select id="set-intention-drift"><option value="none">None · direct genres only</option><option value="low">Low · close variants</option><option value="moderate" selected>Moderate · musical bridges</option><option value="wide">Wide · context before genre</option></select></label>
               </div></details>
               <section id="set-journey-preview" class="set-journey-preview" hidden>
-                <header><div><strong>Planned journey</strong><small id="set-journey-summary">Review the sections before generating tracks.</small></div><span id="set-journey-evidence"></span></header>
+                <header><div><strong>Planned journey</strong><small id="set-journey-summary">Review the sections before generating tracks.</small></div><div class="set-journey-badges"><span id="set-journey-evidence"></span><span id="set-journey-confirmation" class="needs-review">Needs confirmation</span></div></header>
+                <div class="set-journey-policy">
+                  <div class="set-journey-core"><div><small>Core genres</small><div id="set-journey-core-genres" class="set-journey-core-genres"></div></div><button id="set-journey-apply-core" type="button" class="button tertiary">Use in every section</button></div>
+                  <label class="set-journey-related-toggle"><input id="set-allow-related-genres" type="checkbox"><span class="set-journey-switch" aria-hidden="true"></span><span><strong>Related genres</strong><small id="set-journey-related-status">Off · exact genres only</small></span></label>
+                </div>
+                <datalist id="set-journey-genre-options"></datalist>
                 <div id="set-journey-sections" class="set-journey-sections"></div>
-                <p id="set-journey-total" class="set-journey-total"></p>
+                <div class="set-journey-actions">
+                  <p id="set-journey-total" class="set-journey-total"></p>
+                  <div><button id="set-journey-reset" type="button" class="button tertiary">Reset</button><button id="set-journey-regenerate" type="button" class="button secondary">Regenerate</button></div>
+                  <button id="set-journey-confirm" type="button" class="button primary">Confirm journey</button>
+                </div>
               </section>
               <details class="set-fallback-details"><summary>How scarce music is handled</summary><ol id="set-fallback-policy" class="set-fallback-policy"></ol></details>
             </div>

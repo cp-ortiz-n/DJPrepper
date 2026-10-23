@@ -29,6 +29,7 @@ import {
   resolveStructuredGenreFilters,
 } from './workflow.js';
 import { createSetBuilderProgressView } from './progress-view.js';
+import { createSetJourneyReview } from './journey-review.js';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -89,6 +90,19 @@ export function createSetBuilderFeature({
   });
   const planningClient = setBuilderApi.planning;
   const progressView = createSetBuilderProgressView({ $, escapeHtml });
+  const journeyReview = createSetJourneyReview({
+    $,
+    $$,
+    workflow,
+    escapeHtml,
+    option,
+    parseIdentityTerms,
+    intentionVocabulary,
+    durationMinutes: () => Number($('#set-length').value),
+    journeyDurationStatus,
+    journeyEnergyRange,
+    journeyEvidenceLabel,
+  });
   const classicPlanner = createClassicSetPlanner({
     strategies: SET_PROPOSAL_STRATEGIES,
     schedule: () => new Promise((resolve) => requestAnimationFrame(() => resolve())),
@@ -163,29 +177,6 @@ export function createSetBuilderFeature({
       score: preferred.length * 14 + required.length * 22 - avoided.length * 35 - missingRequired.length * 45,
     };
   }
-  function currentJourney() {
-    const root = $('#set-journey-preview');
-    if (!root || root.hidden) return null;
-    const sections = [...root.querySelectorAll('.set-journey-section')].map((row, index) => ({
-      id: row.dataset.id || `section-${index + 1}`,
-      name: row.querySelector('.journey-name').value.trim() || `Section ${index + 1}`,
-      durationPercent: Number(row.querySelector('.journey-duration').value || 0),
-      energyStart: Number(row.querySelector('.journey-energy-start').value || 5),
-      energyEnd: Number(row.querySelector('.journey-energy-end').value || 5),
-      genres: parseIdentityTerms(row.querySelector('.journey-genres input').value),
-      characteristics: parseIdentityTerms(row.querySelector('.journey-characteristics').value),
-      purpose: row.querySelector('.journey-purpose input').value.trim(),
-    }));
-    const duration = journeyDurationStatus(sections, Number($('#set-length').value));
-    if (!duration.valid)
-      throw new Error(`Journey section durations total ${duration.total}%. Adjust them to 100% before generating.`);
-    return {
-      version: 1,
-      summary: $('#set-journey-summary').textContent,
-      durationMinutes: Number($('#set-length').value),
-      sections,
-    };
-  }
   function currentIntention() {
     const usesAIBrief = workflow.briefMode() === SET_BRIEF_MODES.AI,
       text = usesAIBrief ? $('#set-intention').value.trim() : '',
@@ -195,7 +186,7 @@ export function createSetBuilderFeature({
     try {
       if (usesAIBrief && panel.dataset.source === text) interpreted = JSON.parse(panel.dataset.interpretation || '{}');
     } catch (_) {}
-    const journey = usesAIBrief ? currentJourney() : null;
+    const journey = usesAIBrief ? journeyReview.current() : null;
     const journeySequence = journey?.sections.flatMap((section) => section.genres) || [];
     return {
       text,
@@ -216,38 +207,6 @@ export function createSetBuilderFeature({
   function renderFallbackPolicy(policy = DEFAULT_SET_FALLBACK_POLICY) {
     $('#set-fallback-policy').innerHTML = fallbackPolicyMarkup(policy, escapeHtml);
   }
-  function renderJourney(journey) {
-    const root = $('#set-journey-preview'),
-      container = $('#set-journey-sections');
-    root.hidden = false;
-    root.dataset.journey = JSON.stringify(journey);
-    $('#set-journey-summary').textContent = journey.summary || 'Review the planned journey before generating.';
-    $('#set-journey-evidence').textContent = journeyEvidenceLabel(journey);
-    container.innerHTML = (journey.sections || [])
-      .map((section, index) => {
-        const [energyStart, energyEnd] = journeyEnergyRange(section);
-        return `<article class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"><span class="journey-step" aria-hidden="true">${index + 1}</span><div class="journey-primary"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label class="journey-duration-label">Duration<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"><span>%</span></label><label class="journey-energy">Energy <span class="journey-energy-value">${energyStart} → ${energyEnd}</span><span class="journey-energy-inputs"><input class="journey-energy-start" aria-label="Starting energy" type="number" min="1" max="10" step=".5" value="${energyStart}"><i aria-hidden="true">→</i><input class="journey-energy-end" aria-label="Ending energy" type="number" min="1" max="10" step=".5" value="${energyEnd}"></span></label></div><div class="journey-details"><label class="journey-genres">Genres<input value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres"></label><label>Character<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></div></article>`;
-      })
-      .join('');
-    const refresh = () => {
-      const total = [...container.querySelectorAll('.journey-duration')].reduce(
-          (sum, input) => sum + Number(input.value || 0),
-          0,
-        ),
-        status = $('#set-journey-total');
-      status.textContent = `${journey.sections.length} sections · ${total}% of ${Number($('#set-length').value)} minutes · edits drive track placement`;
-      status.classList.toggle('invalid', Math.abs(total - 100) > 0.01);
-      container.querySelectorAll('.set-journey-section').forEach((row) => {
-        const startInput = row.querySelector('.journey-energy-start'),
-          endInput = row.querySelector('.journey-energy-end'),
-          values = journeyEnergyRange({ energyStart: startInput.value, energyEnd: endInput.value });
-        if (!String(endInput.value).trim() || !Number.isFinite(Number(endInput.value))) endInput.value = values[1];
-        row.querySelector('.journey-energy-value').textContent = `${values[0]} → ${values[1]}`;
-      });
-    };
-    container.querySelectorAll('input').forEach((input) => input.addEventListener('input', refresh));
-    refresh();
-  }
   function applyIntentionInterpretation(interpreted, { announce = true } = {}) {
     const panel = $('#set-intention-interpretation');
     panel.hidden = false;
@@ -257,10 +216,12 @@ export function createSetBuilderFeature({
     $('#set-intention-preferred').value = (interpreted.preferred || []).join(', ');
     $('#set-intention-avoided').value = (interpreted.avoided || []).join(', ');
     $('#set-intention-drift').value = interpreted.drift || 'moderate';
+    if ($('#set-allow-related-genres'))
+      $('#set-allow-related-genres').checked = (interpreted.drift || 'none') !== 'none';
     if (interpreted.vibe) $('#set-vibe').value = interpreted.vibe;
     if (interpreted.curve) $('#set-curve').value = interpreted.curve;
     renderFallbackPolicy(interpreted.fallbackPolicy || DEFAULT_SET_FALLBACK_POLICY);
-    if (interpreted.journey) renderJourney(interpreted.journey);
+    if (interpreted.journey) journeyReview.render(interpreted.journey, { confirmed: !announce });
     intentionController.showProvider({
       available: interpreted.provider !== 'offline',
       provider: interpreted.provider,
@@ -920,6 +881,11 @@ export function createSetBuilderFeature({
             progressView.finishJourney();
           }
         }
+        if (briefMode === SET_BRIEF_MODES.AI && $('#set-journey-preview').dataset.confirmed !== 'true') {
+          $('#set-builder-message').textContent =
+            'Review and confirm the planned journey before choosing tracks. Your edits are preserved.';
+          return;
+        }
         progressView.startTrackPlanning(mode);
         button.textContent = mode === 'ai-planned' ? 'AI planning tracks…' : 'Building and optimizing…';
         $('#set-builder-message').textContent =
@@ -943,6 +909,7 @@ export function createSetBuilderFeature({
         progressView.finishTrackPlanning();
         button.disabled = false;
         workflow.syncPlanningMode();
+        journeyReview.syncBuildAvailability();
         $('#set-cancel-planning').hidden = true;
       }
     };
@@ -971,6 +938,7 @@ export function createSetBuilderFeature({
         button.textContent = 'Review set direction';
       }
     };
+    journeyReview.bind({ onRegenerate: () => $('#interpret-set-intention').click() });
     $$('[name="set-brief-mode"]').forEach((input) => {
       input.addEventListener('change', () => workflow.applyBriefMode(input.value));
     });

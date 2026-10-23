@@ -67,9 +67,9 @@ class BriefPreparationServiceTests(unittest.TestCase):
             "sections": [
                 {
                     "name": "Peak",
-                    "purpose": "High energy",
+                    "purpose": "High energy with an unrelated detour",
                     "durationPercent": 100,
-                    "genres": ["Latin House"],
+                    "genres": ["Amapiano"],
                     "characteristics": ["bouncy"],
                     "energyStart": 8,
                     "energyEnd": 9,
@@ -80,11 +80,14 @@ class BriefPreparationServiceTests(unittest.TestCase):
         response.json.return_value = {"message": {"content": json.dumps(interpretation)}}
         service = BriefPreparationService(IntentionPlanner(provider="ollama"))
         with patch("audioextender.set_builder.intention_planner.httpx.post", return_value=response) as post:
-            result = service.prepare("High energy Latin House", ["Latin House"], 60)
+            result = service.prepare("High energy Latin House", ["Latin House", "Amapiano"], 60)
         post.assert_called_once()
         self.assertEqual(post.call_args.kwargs["json"]["format"], BRIEF_SCHEMA)
         self.assertEqual(result["journey"]["evidence"], "ai-planned")
         self.assertEqual(result["journey"]["sections"][0]["energyStart"], 8)
+        self.assertEqual(result["journey"]["sections"][0]["genres"], ["latin house"])
+        self.assertEqual(result["journey"]["sections"][0]["suggestedGenres"], ["amapiano"])
+        self.assertEqual(result["journey"]["genrePolicy"]["mode"], "strict")
         self.assertNotIn("journey", result["interpretation"])
 
     def test_cache_isolated_from_client_mutation_and_changed_duration(self) -> None:

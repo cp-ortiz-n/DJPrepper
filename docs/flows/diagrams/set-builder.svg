@@ -65,8 +65,8 @@
   <rect x="735" y="199" width="124" height="25" rx="12.5"
     fill="#147f9f"/>
   <text class="owner" x="748" y="216">Set Builder UI</text>
-  <text class="call-title" text-anchor="middle"><tspan x="870.0" y="239.0">Review direction</tspan></text>
-  <text class="symbol" text-anchor="middle"><tspan x="870.0" y="276.0">edit sections and constraints</tspan></text>
+  <text class="call-title" text-anchor="middle"><tspan x="870.0" y="239.0">Review and confirm</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="870.0" y="276.0">strict genres + editable sections</tspan></text>
 </g><g class="call" id="call-4">
   <text class="call-number" x="1054.0" y="172.0">(4)</text>
   <rect x="1054" y="185" width="300" height="122" rx="16"
@@ -113,5 +113,5 @@
   <text class="call-title" text-anchor="middle"><tspan x="202.0" y="436.0">Save and export</tspan></text>
   <text class="symbol" text-anchor="middle"><tspan x="202.0" y="473.0">SavedSetService + preflight</tspan></text>
 </g>
-  <text class="alternate-title" x="52" y="565">ALTERNATE PATHS</text><g class="alternate"><rect x="52" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="77" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="100" y="613">Invalid or weaker AI proposal → select the validated deterministic baseline.</tspan></text></g><g class="alternate"><rect x="733" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="758" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="781" y="613">Regeneration → preserve locked tracks and restore the prior revision on</tspan><tspan x="781" y="631">failure.</tspan></text></g>
+  <text class="alternate-title" x="52" y="565">ALTERNATE PATHS</text><g class="alternate"><rect x="52" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="77" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="100" y="613">Invalid or weaker AI proposal → select the validated deterministic baseline.</tspan></text></g><g class="alternate"><rect x="733" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="758" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="781" y="613">Unrequested genre → keep it unselected until the DJ enables related genres.</tspan></text></g>
 </svg>

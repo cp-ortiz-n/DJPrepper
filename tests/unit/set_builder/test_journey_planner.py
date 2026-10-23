@@ -9,7 +9,13 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from audioextender.set_builder.intention_planner import IntentionPlanner
-from audioextender.set_builder.journey_planner import JOURNEY_SCHEMA, JourneyPlanner, offline_journey, sanitize_journey
+from audioextender.set_builder.journey_planner import (
+    JOURNEY_SCHEMA,
+    JourneyPlanner,
+    enforce_journey_genre_policy,
+    offline_journey,
+    sanitize_journey,
+)
 from audioextender.set_builder.saved_sets import SavedSetService
 from audioextender.web.routes.set_builder_routes import SetBuilderRouteDependencies, create_set_builder_router
 
@@ -47,6 +53,33 @@ class JourneyPlannerTests(unittest.TestCase):
                          ["cumbia", "salsa", "schranz"])
         self.assertIn("melodic", journey["sections"][0]["characteristics"])
         self.assertEqual(sum(section["durationPercent"] for section in journey["sections"]), 100)
+
+    def test_strict_genre_policy_repairs_unrequested_catalog_genres_without_losing_sections(self) -> None:
+        journey = sanitize_journey(
+            {
+                "summary": "Latin Techno with unrelated detours.",
+                "sections": [
+                    {"name": "Opening", "purpose": "Open", "durationPercent": 50,
+                     "genres": ["Latin Techno"], "characteristics": ["driving"],
+                     "energyStart": 6, "energyEnd": 7},
+                    {"name": "Peak", "purpose": "Add R&B", "durationPercent": 50,
+                     "genres": ["Latin R&B", "Amapiano"], "characteristics": ["bass forward"],
+                     "energyStart": 8, "energyEnd": 9},
+                ],
+            },
+            ["Latin Techno", "Latin R&B", "Amapiano"],
+            60,
+        )
+        repaired = enforce_journey_genre_policy(
+            journey,
+            {"requestedGenres": ["Latin Techno"], "genreSequence": ["Latin Techno"],
+             "optionalGenres": [], "drift": "none"},
+            ["Latin Techno", "Latin R&B", "Amapiano"],
+        )
+        self.assertEqual([section["genres"] for section in repaired["sections"]],
+                         [["latin techno"], ["latin techno"]])
+        self.assertEqual(repaired["sections"][1]["suggestedGenres"], ["latin r&b", "amapiano"])
+        self.assertEqual(repaired["genrePolicy"]["repairedSections"], ["section-2"])
 
     def test_invalid_ai_sequence_falls_back_without_losing_requested_genres(self) -> None:
         planner = JourneyPlanner(IntentionPlanner(provider="offline"))

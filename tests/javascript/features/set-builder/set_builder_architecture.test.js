@@ -74,6 +74,7 @@ import {
   createSetIntentionController,
   createSetWorkflowController,
   inferSetWorkflow,
+  offlineJourneyFromInterpretation,
   passesSetCandidateHardFilters,
   requiresStrictGenreEligibility,
   resolveStructuredGenreFilters,
@@ -349,6 +350,22 @@ test('failed brief preparation does not launch more slow AI requests', async () 
   const result = await controller.interpretAndPlan('House');
   assert.equal(result.provider, 'offline');
   assert.deepEqual(result.requestedGenres, ['house']);
+  assert.equal(result.journey.sections.length, 3);
+  assert.deepEqual(result.journey.sections.map((section) => section.genres), [['house'], ['house'], ['house']]);
+});
+
+test('offline journey preserves exact genres and a complete editable duration', () => {
+  const journey = offlineJourneyFromInterpretation(
+    { requestedGenres: ['latin techno'], genreSequence: ['latin techno'], optionalGenres: [], drift: 'none' },
+    90,
+  );
+  assert.equal(journey.genrePolicy.mode, 'strict');
+  assert.equal(journey.sections.reduce((total, section) => total + section.durationPercent, 0), 100);
+  assert.deepEqual(journey.sections.flatMap((section) => section.genres), [
+    'latin techno',
+    'latin techno',
+    'latin techno',
+  ]);
 });
 
 test('Set Builder store snapshots and restores plan identity, locks, and transitions', () => {
@@ -616,14 +633,14 @@ test('genre eligibility stays consistent across every authoring and planner comb
   });
 });
 
-test('AI-authored genres rank candidates without becoming hard catalog filters', () => {
+test('AI-authored genres become ranking guidance after related genres are authorized', () => {
   assert.equal(
     allowsCandidateGenre({
       authoringMode: SET_BRIEF_MODES.AI,
       directGenre: false,
       requestedGenreMatch: false,
       hasInterpretedIdentity: true,
-      drift: 'none',
+      drift: 'moderate',
       preferredIdentityMatches: 0,
     }),
     true,
@@ -647,6 +664,31 @@ test('manual genre filters remain strict while wide identity drift remains avail
       hasInterpretedIdentity: true,
       drift: 'wide',
       preferredIdentityMatches: 1,
+    }),
+    true,
+  );
+});
+
+test('AI-authored exact genre briefs remain strict until related genres are enabled', () => {
+  assert.equal(
+    allowsCandidateGenre({
+      authoringMode: SET_BRIEF_MODES.AI,
+      directGenre: true,
+      requestedGenreMatch: false,
+      hasInterpretedIdentity: true,
+      drift: 'none',
+      preferredIdentityMatches: 2,
+    }),
+    false,
+  );
+  assert.equal(
+    allowsCandidateGenre({
+      authoringMode: SET_BRIEF_MODES.AI,
+      directGenre: true,
+      requestedGenreMatch: false,
+      hasInterpretedIdentity: true,
+      drift: 'moderate',
+      preferredIdentityMatches: 0,
     }),
     true,
   );
