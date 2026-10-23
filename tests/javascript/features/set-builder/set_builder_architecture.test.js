@@ -79,6 +79,7 @@ import {
   resolveStructuredGenreFilters,
   resolveSetPlanningMode,
   setBriefModeMessage,
+  setPlanningPresentation,
 } from '../../../../frontend/features/set-builder/workflow.js';
 
 const trackId = (track) => track.id;
@@ -683,6 +684,17 @@ test('saved planning modes migrate into the two-part workflow without losing int
   });
 });
 
+test('planning presentation keeps brief provenance separate from track selection', () => {
+  assert.deepEqual(setPlanningPresentation(SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.AI), {
+    actionLabel: 'Build AI-curated set',
+    summary: 'Direction: AI interpreted · Tracks: AI curated',
+  });
+  assert.deepEqual(setPlanningPresentation(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.DETERMINISTIC), {
+    actionLabel: 'Build rules-based set',
+    summary: 'Direction: Manual brief · Tracks: Rules-based',
+  });
+});
+
 test('workflow controller updates mode surfaces without clearing authored values', () => {
   const elements = new Map([
     ['#set-builder-form', { dataset: {} }],
@@ -690,6 +702,8 @@ test('workflow controller updates mode surfaces without clearing authored values
     ['#set-manual-brief', { hidden: true }],
     ['#set-brief-mode-help', { textContent: '' }],
     ['#set-planning-mode', { value: '' }],
+    ['#set-planning-summary', { textContent: '' }],
+    ['#set-generate', { textContent: '', disabled: false }],
     ['#set-builder-message', { textContent: '' }],
   ]);
   const briefInputs = [
@@ -713,6 +727,8 @@ test('workflow controller updates mode surfaces without clearing authored values
   assert.equal(elements.get('#set-ai-brief').hidden, true);
   assert.equal(elements.get('#set-manual-brief').hidden, false);
   assert.equal(elements.get('#set-planning-mode').value, 'ai-planned');
+  assert.equal(elements.get('#set-planning-summary').textContent, 'Direction: Manual brief · Tracks: AI curated');
+  assert.equal(elements.get('#set-generate').textContent, 'Build AI-curated set');
   assert.match(elements.get('#set-brief-mode-help').textContent, /yourself/);
 });
 

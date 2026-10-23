@@ -942,7 +942,7 @@ class WebApiTests(unittest.TestCase):
         self.assertIn("Bring music into your workspace", response.text)
         self.assertIn("Analyze for Library", response.text)
         self.assertIn("Set Builder", response.text)
-        self.assertIn("Build this set", response.text)
+        self.assertIn("Build AI-curated set", response.text)
 
     def test_import_failures_can_be_retried_as_a_background_batch(self) -> None:
         failure = {

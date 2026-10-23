@@ -166,10 +166,11 @@ and historical library-job removal are owned by `audioextender/library/`.
 ## Set Builder intention planning
 
 Set Builder uses optional language-model boundaries to understand a DJ's
-natural-language brief and, in AI Planned mode, choose a running order from a
-server-controlled shortlist. The model never inspects audio or the unrestricted
-catalog, and every proposed order passes deterministic validation before it can
-reach the browser.
+natural-language brief and, with **AI-curated** track selection, choose a running
+order from a server-controlled shortlist. Brief authoring and track selection
+are independent choices in the interface. The model never inspects audio or the
+unrestricted catalog, and every proposed order passes deterministic validation
+before it can reach the browser.
 
 ```text
 Natural-language brief
@@ -306,8 +307,9 @@ controlled by `AUDIOEXTENDER_LLM_PROVIDER`, `OLLAMA_HOST`,
 `OPENAI_SET_BUILDER_MODEL`.
 
 Only the text brief and a bounded catalog vocabulary list cross this boundary;
-audio and filesystem paths never do. AI Planned mode adds only the bounded
-candidate metadata needed for selection. OpenAI requests use `store: false`. Returned genres are
+audio and filesystem paths never do. AI-curated selection (persisted internally
+as `ai-planned`) adds only the bounded candidate metadata needed for selection.
+OpenAI requests use `store: false`. Returned genres are
 canonicalized against catalog vocabulary, schema labels and placeholders are
 removed, and malformed or unavailable provider responses fall through safely.
 Journey percentages are normalized to 100%, energy values are bounded to 1–10,

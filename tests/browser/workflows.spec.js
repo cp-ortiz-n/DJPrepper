@@ -395,7 +395,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(rows.first().locator('.set-track-chips')).toContainText('Locked');
   expect(await page.locator('.set-result-head').evaluate((node) => getComputedStyle(node).position)).toBe('sticky');
 
-  await page.getByText('AI-assisted', { exact: true }).click();
+  await page.getByText('AI curated', { exact: true }).click();
   await page.locator('#regenerate-set').click();
   await expect(page.locator('#set-revision-comparison')).toContainText('Revision 3');
   await expect(page.locator('#set-revision-comparison')).toContainText('1/1 locked preserved');
@@ -479,6 +479,11 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
   const intention = page.locator('#set-intention');
   const plannerChoices = page.locator('.set-track-planner label > span');
   await expect(plannerChoices).toHaveCount(2);
+  await expect(page.locator('#set-planning-mode')).toHaveAttribute('type', 'hidden');
+  await expect(page.locator('#set-planning-mode-combobox-search')).toHaveCount(0);
+  await expect(page.locator('#set-planning-summary')).toHaveText('Direction: AI interpreted · Tracks: AI curated');
+  await expect(page.locator('#set-generate')).toHaveText('Build AI-curated set');
+  await expect(page.locator('#set-cancel-planning')).toBeHidden();
   const plannerWidths = await plannerChoices.evaluateAll((items) =>
     items.map((item) => item.getBoundingClientRect().width),
   );
@@ -490,12 +495,15 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
   await expect(page.locator('#set-manual-brief')).toBeVisible();
   await expect(page.locator('#set-planning-mode')).toHaveValue('ai-planned');
 
-  await page.getByText('Deterministic', { exact: true }).click();
+  await page.getByText('Rules-based', { exact: true }).click();
   await expect(page.locator('#set-planning-mode')).toHaveValue('classic');
+  await expect(page.locator('#set-planning-summary')).toHaveText('Direction: Manual brief · Tracks: Rules-based');
+  await expect(page.locator('#set-generate')).toHaveText('Build rules-based set');
   await page.getByText('Describe what I want', { exact: true }).click();
   await expect(page.locator('#set-ai-brief')).toBeVisible();
   await expect(intention).toHaveValue('A melodic Latin warm-up that grows into techno.');
   await expect(page.locator('#set-planning-mode')).toHaveValue('interpreted');
+  await expect(page.locator('#set-planning-summary')).toHaveText('Direction: AI interpreted · Tracks: Rules-based');
 
   await page.evaluate(() => {
     const sections = document.createElement('div');

@@ -16,6 +16,17 @@ identity, required tracks, and final validation remain deterministic authority.
 Both paths produce the same planning request. The browser never sends the full
 database to a model; it sends a bounded set of validated catalog candidates.
 
+Track selection is a separate decision from brief authoring:
+
+| Track selection | What happens                                                                    |
+| --------------- | ------------------------------------------------------------------------------- |
+| AI curated      | AI ranks and orders a bounded candidate pool; deterministic validation follows |
+| Rules-based     | Local genre, BPM, key, energy, and constraint scoring chooses and orders tracks |
+
+The interface presents these two choices directly. Legacy saved-set values
+(`ai-planned`, `interpreted`, and `classic`) remain an internal compatibility
+contract and are migrated into the two-part workflow when a plan is loaded.
+
 ## Planning owners
 
 | Owner                                                             | Responsibility                                                               |

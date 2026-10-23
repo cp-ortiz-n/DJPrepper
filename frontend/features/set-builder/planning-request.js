@@ -32,7 +32,7 @@ export function planningTrackCount({ brief, pool, protectedIds, journey, lockedS
     );
   const averageSeconds =
     pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
-  if (protectedIds.size > 100) throw new Error('AI Planned mode supports at most 100 required or locked tracks.');
+  if (protectedIds.size > 100) throw new Error('AI-curated planning supports at most 100 required or locked tracks.');
   const occupiedSections = new Set(Object.values(lockedSections));
   const sectionMinimum = Object.keys(lockedSections).length +
     Math.max(0, (journey?.sections?.length || 0) - occupiedSections.size);

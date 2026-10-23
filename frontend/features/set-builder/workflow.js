@@ -8,6 +8,16 @@ export const SET_TRACK_PLANNERS = Object.freeze({
   DETERMINISTIC: 'deterministic',
 });
 
+export function setPlanningPresentation(authoringMode, trackPlanner) {
+  const aiTracks = trackPlanner === SET_TRACK_PLANNERS.AI;
+  return {
+    actionLabel: aiTracks ? 'Build AI-curated set' : 'Build rules-based set',
+    summary: `Direction: ${authoringMode === SET_BRIEF_MODES.AI ? 'AI interpreted' : 'Manual brief'} · Tracks: ${
+      aiTracks ? 'AI curated' : 'Rules-based'
+    }`,
+  };
+}
+
 export function resolveSetPlanningMode(authoringMode, trackPlanner) {
   if (trackPlanner === SET_TRACK_PLANNERS.AI) return 'ai-planned';
   return authoringMode === SET_BRIEF_MODES.AI ? 'interpreted' : 'classic';
@@ -81,8 +91,15 @@ export function createSetWorkflowController({ $, $$ }) {
   const briefMode = () => $('[name="set-brief-mode"]:checked')?.value || SET_BRIEF_MODES.AI;
   const trackPlanner = () => $('[name="set-track-planner"]:checked')?.value || SET_TRACK_PLANNERS.AI;
   const syncPlanningMode = () => {
-    const mode = resolveSetPlanningMode(briefMode(), trackPlanner());
+    const authoringMode = briefMode();
+    const planner = trackPlanner();
+    const mode = resolveSetPlanningMode(authoringMode, planner);
     $('#set-planning-mode').value = mode;
+    const presentation = setPlanningPresentation(authoringMode, planner);
+    const summary = $('#set-planning-summary');
+    const action = $('#set-generate');
+    if (summary) summary.textContent = presentation.summary;
+    if (action && !action.disabled) action.textContent = presentation.actionLabel;
     return mode;
   };
   const applyBriefMode = (mode, { announce = true } = {}) => {

@@ -6,6 +6,15 @@ export function createSearchableSelectController({ root = document, storageRoot 
     if (!select.id) select.id = `app-select-${++generatedSelectId}`;
     const id = select.id;
     let search = root.getElementById(`${id}-combobox-search`);
+    const eligible = !select.hidden && select.getAttribute('aria-hidden') !== 'true';
+    if (!eligible) {
+      if (search) {
+        search.hidden = true;
+        const menu = root.getElementById(`${id}-combobox-menu`);
+        if (menu) menu.hidden = true;
+      }
+      return;
+    }
     if (!search) {
       let container = select.closest('label');
       if (!container) {
@@ -161,7 +170,7 @@ export function createSearchableSelectController({ root = document, storageRoot 
   }
 
   function refresh() {
-    root.querySelectorAll('select').forEach(enhance);
+    root.querySelectorAll('select[data-searchable]').forEach(enhance);
   }
 
   const observer = new MutationObserver(() => {

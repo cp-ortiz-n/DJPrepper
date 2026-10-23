@@ -873,7 +873,7 @@
 }
 .set-generate-row {
   display: grid;
-  grid-template-columns: minmax(190px, 268px) minmax(190px, 268px) minmax(220px, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px) minmax(180px, 220px);
   align-items: center;
   gap: 12px;
   margin-top: 16px;
@@ -882,10 +882,17 @@
 }
 .set-track-planner {
   grid-column: 1/-1;
-  grid-template-columns: repeat(2, minmax(220px, 320px));
+  grid-template-columns: repeat(2, minmax(220px, 340px));
   justify-content: start;
   width: 100%;
   margin: 0;
+}
+.set-planning-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1.45;
 }
 .set-generate-row > button {
   width: 100%;
@@ -893,7 +900,11 @@
   height: 44px;
   margin: 0;
 }
+#set-cancel-planning[hidden] {
+  display: none;
+}
 .set-generate-row .form-message {
+  grid-column: 1 / -1;
   align-self: center;
   margin: 0;
   color: var(--muted);
@@ -1020,14 +1031,6 @@
     transform: translateX(300%);
   }
 }
-.set-planning-mode {
-  min-width: 240px;
-  color: var(--muted);
-  font-size: 8px;
-}
-.set-planning-mode select {
-  margin-top: 5px;
-}
 .set-journey {
   margin: 15px 0 12px;
   border: 1px solid var(--line);
@@ -1092,7 +1095,7 @@
     grid-template-columns: 1fr;
   }
   .set-track-planner,
-  .set-generate-row .form-message {
+  .set-planning-summary {
     grid-column: 1;
   }
   .set-generate-row > button {

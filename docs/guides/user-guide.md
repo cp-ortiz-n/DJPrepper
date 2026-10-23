@@ -61,11 +61,13 @@ journey made of named sections, runtime percentages, catalog genres, musical
 characteristics, purposes, and start/end energy targets. The default `auto`
 provider order is local Ollama, optional OpenAI, and finally deterministic rules.
 
-Set Builder now exposes three explicit planning modes: **AI Planned** lets the
-configured model select and order tracks from a bounded catalog shortlist,
-**AI Interpreted** uses the model for the brief and journey while deterministic
-rules choose tracks, and **Classic** uses local rules only. AI Planned results
-are still validated against real catalog IDs,
+Set Builder separates two decisions. First, choose **Describe what I want** to
+have Local AI turn natural language into an editable brief, or **Build manually**
+to configure that direction yourself. Then choose **AI curated** to have the
+configured model rank and order a bounded catalog shortlist, or **Rules-based**
+to use local genre, BPM, key, energy, and constraint scoring only. The summary
+above the build action always shows both choices. AI-curated results are still
+validated against real catalog IDs,
 available files, exclusions, required or locked tracks, duration, section
 coverage, BPM jumps, keys, and vocal collisions. Invalid model plans receive up
 to two bounded repair attempts, then fall back to a deterministic catalog-backed

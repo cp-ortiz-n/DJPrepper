@@ -942,7 +942,7 @@ export function createSetBuilderFeature({
         progressView.finishJourney();
         progressView.finishTrackPlanning();
         button.disabled = false;
-        button.textContent = 'Build this set';
+        workflow.syncPlanningMode();
         $('#set-cancel-planning').hidden = true;
       }
     };
@@ -979,8 +979,8 @@ export function createSetBuilderFeature({
         workflow.syncPlanningMode();
         $('#set-builder-message').textContent =
           input.value === SET_TRACK_PLANNERS.AI
-            ? 'AI will choose and order tracks from a validated catalog candidate pool.'
-            : 'Compatibility rules will choose and order tracks without an AI planning call.';
+            ? 'AI will rank and order validated catalog tracks. Compatibility checks still verify the result.'
+            : 'Rules will rank tracks by genre, BPM, key, energy, and constraints without an AI planning call.';
       });
     });
     const briefName = $('#set-name'),
