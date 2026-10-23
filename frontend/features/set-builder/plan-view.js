@@ -6,6 +6,7 @@ import {
   recordingVersionCount,
   searchVersionAwareReplacements,
 } from './version-alternatives.js';
+import { bindTrackReordering } from './track-reordering.js';
 import { compactTrackSummaryMarkup, createSetBuilderWorkspaceShell } from './workspace-shell.js';
 
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
@@ -322,7 +323,8 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           metrics = track._candidateMetrics || {};
         const alternateVersionCount = recordingVersionCount(track, state.library);
         const pairId = index ? `${setCatalogTrackId(state.plan[index - 1])}→${setCatalogTrackId(track)}` : '';
-        return `<article class="set-track-card${locked ? ' locked' : ''}" draggable="${locked ? 'false' : 'true'}" data-index="${index}"><span class="set-position">${index + 1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
+        const trackName = track.source_name.replace(/\.[^.]+$/, '');
+        return `<article class="set-track-card${locked ? ' locked' : ''}" data-index="${index}"><span class="set-position"><b>${index + 1}</b><button type="button" class="set-drag-handle" draggable="${locked ? 'false' : 'true'}" ${locked ? 'disabled' : ''} aria-label="${locked ? `Track ${index + 1} is locked; unlock it before reordering` : `Drag track ${index + 1}: ${escapeHtml(trackName)}`}" title="${locked ? 'Unlock this track to reorder it' : 'Drag to reorder · use arrow keys for precise movement'}">⠿</button></span><div class="set-track-title"><strong>${escapeHtml(trackName)}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
           track,
         )
           .map((role) => LIBRARY_ROLE_INFO[role]?.[0] || role)
@@ -378,11 +380,17 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       : `<p class="set-ready">Set health target ${healthThreshold} met with no transition warnings. Listen through the plan before performing it live.</p>`;
   }
   function moveSetTrack(from, to) {
-    if (editCommands.move(from, to)) updateSetHistoryButtons();
+    if (!editCommands.move(from, to)) return false;
+    updateSetHistoryButtons();
+    const movedTrack = state.plan[to];
+    const message = $('#set-builder-message');
+    if (message && movedTrack)
+      message.textContent = `${movedTrack.source_name.replace(/\.[^.]+$/, '')} moved to position ${to + 1}. Undo is available.`;
+    return true;
   }
   function bindSetRows() {
-    let dragging = null;
-    $$('.set-track-card').forEach((card) => {
+    const cards = $$('.set-track-card');
+    cards.forEach((card) => {
       const index = Number(card.dataset.index);
       card.querySelector('.set-move-up').onclick = () => moveSetTrack(index, index - 1);
       card.querySelector('.set-move-down').onclick = () => moveSetTrack(index, index + 1);
@@ -437,22 +445,12 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       card
         .querySelector('.set-audition')
         ?.addEventListener('click', (event) => auditionTransition(index, event.currentTarget));
-      card.querySelector('.edit-transition')?.addEventListener('click', () => openTransitionEditor(index, card));
-      card.ondragstart = (event) => {
-        if (event.target.closest('input,select,button,audio,.transition-editor,.set-compact-audio')) {
-          event.preventDefault();
-          return;
-        }
-        dragging = index;
-        card.classList.add('dragging');
-      };
-      card.ondragend = () => card.classList.remove('dragging');
-      card.ondragover = (event) => event.preventDefault();
-      card.ondrop = (event) => {
-        event.preventDefault();
-        moveSetTrack(dragging, index);
-      };
+      card.querySelector('.edit-transition')?.addEventListener('click', () => {
+        workspaceShell.closeInspector();
+        openTransitionEditor(index, card);
+      });
     });
+    bindTrackReordering({ cards, planLength: state.plan.length, moveTrack: moveSetTrack });
   }
   function openTrackIdentityEditor(index, card) {
     card.querySelector('.set-identity-editor')?.remove();
@@ -622,9 +620,10 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
               const preview = track._job?.id
                 ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
                 : '';
-              const heading = !choiceIndex || items[choiceIndex - 1].group !== choice.group
-                ? `<h4>${escapeHtml(choice.group)}</h4>`
-                : '';
+              const heading =
+                !choiceIndex || items[choiceIndex - 1].group !== choice.group
+                  ? `<h4>${escapeHtml(choice.group)}</h4>`
+                  : '';
               return `${heading}<article data-choice="${choiceIndex}" class="${choice.sameRecording ? 'same-recording-version' : ''}"><div><em class="set-alternative-kind">${choice.sameRecording ? escapeHtml(choice.versionLabel) : 'Different song'}</em><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">${choice.sameRecording ? 'Use this version' : 'Use this track'}</button></article>`;
             })
             .join('')

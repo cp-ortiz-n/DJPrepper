@@ -409,6 +409,12 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(rows.nth(1)).toContainText('Lift');
   await expect(page.locator('#set-workspace-revision')).toHaveText('Revision 2');
 
+  await expect(rows.first().locator('.set-drag-handle')).toBeDisabled();
+  await rows.nth(1).locator('.set-drag-handle').dragTo(rows.nth(2));
+  await expect(rows.nth(1)).toContainText('Peak');
+  await page.locator('#set-undo').evaluate((button) => button.click());
+  await expect(rows.nth(1)).toContainText('Lift');
+
   await rows.first().getByRole('button', { name: 'More' }).click();
   const inspector = page.locator('#set-track-inspector');
   await expect(inspector).toBeVisible();
@@ -416,6 +422,10 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(inspector.locator('.set-track-meta')).toBeVisible();
   await expect(inspector.locator('.set-row-actions')).toBeVisible();
   await expect(inspector.getByRole('button', { name: 'Close track inspector' })).toBeFocused();
+  expect(await inspector.evaluate((node) => getComputedStyle(node).position)).toBe('fixed');
+  await page.locator('#set-workspace-state').click();
+  await expect(inspector).toBeHidden();
+  await rows.first().getByRole('button', { name: 'More' }).click();
   const accessibility = await new AxeBuilder({ page }).include('#set-result').withTags(['wcag2a', 'wcag2aa']).analyze();
   expect(
     accessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact)),
@@ -423,6 +433,16 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await page.keyboard.press('Escape');
   await expect(inspector).toBeHidden();
   await expect(rows.first()).toBeFocused();
+
+  await rows.nth(1).getByRole('button', { name: 'More' }).click();
+  await inspector.getByRole('button', { name: 'Edit mix' }).click();
+  await expect(inspector).toBeHidden();
+  const transitionEditor = rows.nth(1).locator('.transition-editor');
+  await expect(transitionEditor).toBeVisible();
+  await expect(transitionEditor.getByRole('button', { name: 'Close transition editor' })).toBeFocused();
+  expect(await transitionEditor.locator('header').evaluate((node) => getComputedStyle(node).position)).toBe('sticky');
+  await page.keyboard.press('Escape');
+  await expect(transitionEditor).toHaveCount(0);
 
   await rows.nth(1).focus();
   await page.keyboard.press('ArrowDown');

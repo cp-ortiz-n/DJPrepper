@@ -90,6 +90,16 @@ workspace reports how many tracks stayed or changed and how many locks were
 preserved. **Undo** restores the complete previous revision, including its
 track order, locks, transitions, revision number, and planning receipt.
 
+The running order has a visible drag handle beneath each track number. Drag an
+unlocked track before or after another row to reorder it, or focus the handle
+and use the Up/Down arrow keys for precise keyboard movement. Reordering is
+undoable and immediately recalculates the neighboring transition scores. A
+locked track must be unlocked before it can be moved. **More** opens a fixed
+track inspector whose close control remains visible; click outside the
+inspector or press Escape to dismiss it. Opening **Edit mix** closes the
+inspector first. The transition editor keeps its close control visible while
+scrolling, also provides **Done editing** at the bottom, and accepts Escape.
+
 Phase 2D compares every validated AI proposal with an independently generated
 deterministic baseline. AI wins only when it improves the deterministic quality
 score, preserves requested-genre coverage, and still passes every hard

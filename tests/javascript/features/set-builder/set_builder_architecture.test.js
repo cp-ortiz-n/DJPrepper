@@ -51,6 +51,10 @@ import {
 } from '../../../../frontend/features/set-builder/state.js';
 import { createSetTransitionEditor } from '../../../../frontend/features/set-builder/transition-editor.js';
 import {
+  bindTrackReordering,
+  dropDestinationIndex,
+} from '../../../../frontend/features/set-builder/track-reordering.js';
+import {
   compactTrackSummaryMarkup,
   trackStateChips,
   workspaceIdentity,
@@ -739,6 +743,68 @@ test('Set edit commands own checkpoint, move, undo, redo, and bounded history', 
   commands.checkpoint();
   assert.equal(store.history.length, 2);
   assert.equal(renders, 3);
+});
+
+test('drag reordering resolves before and after destinations after removing the source', () => {
+  assert.equal(dropDestinationIndex(0, 2, false, 4), 1);
+  assert.equal(dropDestinationIndex(0, 2, true, 4), 2);
+  assert.equal(dropDestinationIndex(3, 1, false, 4), 1);
+  assert.equal(dropDestinationIndex(3, 1, true, 4), 2);
+  assert.equal(dropDestinationIndex(1, 1, false, 4), 1);
+  assert.equal(dropDestinationIndex(-1, 1, false, 4), -1);
+  assert.equal(dropDestinationIndex(1, 8, false, 4), -1);
+});
+
+test('track reordering binds explicit drag and keyboard interactions', () => {
+  const card = (index) => {
+    const classes = new Set();
+    const handle = {
+      listeners: {},
+      addEventListener(type, listener) {
+        this.listeners[type] = listener;
+      },
+    };
+    return {
+      dataset: { index: String(index) },
+      handle,
+      classList: {
+        add: (...names) => names.forEach((name) => classes.add(name)),
+        remove: (...names) => names.forEach((name) => classes.delete(name)),
+        contains: (name) => classes.has(name),
+        toggle: (name, active) => (active ? classes.add(name) : classes.delete(name)),
+      },
+      querySelector: () => handle,
+      getBoundingClientRect: () => ({ top: 0, height: 100 }),
+      contains: () => false,
+    };
+  };
+  const cards = [card(0), card(1), card(2)];
+  const moves = [];
+  let focused = false;
+  bindTrackReordering({
+    cards,
+    planLength: cards.length,
+    moveTrack(from, to) {
+      moves.push([from, to]);
+      return true;
+    },
+    documentRef: { querySelector: () => ({ focus: () => (focused = true) }) },
+    schedule: (callback) => callback(),
+  });
+
+  let prevented = false;
+  cards[1].handle.listeners.keydown({ key: 'ArrowDown', preventDefault: () => (prevented = true) });
+  assert.equal(prevented, true);
+  assert.equal(focused, true);
+  assert.deepEqual(moves, [[1, 2]]);
+
+  const transfer = { setData() {}, effectAllowed: '', dropEffect: '' };
+  cards[0].ondragstart({ target: { closest: () => cards[0].handle }, dataTransfer: transfer });
+  cards[2].ondragover({ preventDefault() {}, clientY: 90, dataTransfer: transfer });
+  assert.equal(cards[2].classList.contains('drag-after'), true);
+  cards[2].ondrop({ preventDefault() {} });
+  assert.deepEqual(moves.at(-1), [0, 2]);
+  assert.equal(cards[2].classList.contains('drag-after'), false);
 });
 
 test('transition editor owns health, runtime, default transition settings, and order optimization', () => {

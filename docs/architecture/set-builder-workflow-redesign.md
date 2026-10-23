@@ -266,6 +266,12 @@ and candidate-selection policy were not changed.
   delegates existing commands without changing their payloads.
 - [x] Verify desktop, narrow viewport, keyboard row navigation, inspector focus
   restoration, reduced motion, and warm-cache application startup.
+- [x] Keep the inspector in a bounded viewport drawer, dismiss it on outside
+  interaction or Escape, and close it before opening the transition editor.
+- [x] Expose running-order drag handles with before/after drop feedback,
+  keyboard reordering, undo integration, and locked-track protection.
+- [x] Keep transition-editor exit controls reachable through a sticky header,
+  bottom completion action, and Escape handling.
 
 Verification completed for this slice: the full repository quality gate, 451
 Python tests, 115 JavaScript tests, the catalog stability workflow, refreshed

@@ -64,7 +64,9 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regen
     panel.querySelector('.set-track-inspector-content').replaceChildren();
     state.selectedTrackId = '';
     if (restoreFocus && selectedId) {
-      $$('.set-track-card').find((card) => setTrackId(state.plan[Number(card.dataset.index)]) === selectedId)?.focus();
+      $$('.set-track-card')
+        .find((card) => setTrackId(state.plan[Number(card.dataset.index)]) === selectedId)
+        ?.focus();
     }
   }
 
@@ -146,14 +148,20 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regen
   const inspectorPanel = inspector();
   if (inspectorPanel)
     inspectorPanel.querySelector('.close-set-inspector').onclick = () => closeInspector({ restoreFocus: true });
+  globalThis.document?.addEventListener('pointerdown', (event) => {
+    const panel = inspector();
+    if (!panel || panel.hidden || panel.contains(event.target) || event.target.closest('.set-track-card')) return;
+    closeInspector();
+  });
   const reviewAction = $('#review-set-action');
-  if (reviewAction) reviewAction.onclick = () => {
-    const panel = $('#set-review-panel');
-    panel.open = true;
-    const behavior = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-    panel.scrollIntoView({ behavior, block: 'center' });
-    panel.querySelector('summary').focus();
-  };
+  if (reviewAction)
+    reviewAction.onclick = () => {
+      const panel = $('#set-review-panel');
+      panel.open = true;
+      const behavior = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      panel.scrollIntoView({ behavior, block: 'center' });
+      panel.querySelector('summary').focus();
+    };
   const regenerateAction = $('#regenerate-set');
   if (regenerateAction)
     regenerateAction.onclick = async () => {
