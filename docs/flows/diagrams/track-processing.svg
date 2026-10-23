@@ -1,43 +1,117 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1933"
-  viewBox="0 0 1600 1933" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="700"
+  viewBox="0 0 1440 700" role="img" aria-labelledby="title desc">
   <title id="title">Track processing</title>
-  <desc id="desc">Jobs move through durable queue state, analysis, candidate selection, rendering, and publication.</desc>
+  <desc id="desc">A durable job moves through analysis, optional edit creation, export, and publication. Calls are numbered in execution order.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
       markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#167ba3"/>
-    </marker>
-    <marker id="arrow-failure" viewBox="0 0 10 10" refX="9" refY="5"
-      markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d85852"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1680a6"/>
     </marker>
     <style>
-      .title { font: 700 28px system-ui, -apple-system, sans-serif; fill: #132f3a; }
-      .subtitle { font: 400 15px system-ui, -apple-system, sans-serif; fill: #52666e; }
-      .lane-label {
-        font: 700 14px system-ui, -apple-system, sans-serif;
+      .title { font: 750 30px system-ui, -apple-system, sans-serif; fill: #18323c; }
+      .subtitle { font: 400 15px system-ui, -apple-system, sans-serif; fill: #60747c; }
+      .order-note {
+        font: 650 12px system-ui, -apple-system, sans-serif;
+        fill: #1680a6;
+        letter-spacing: .7px;
+      }
+      .call-number { font: 700 14px system-ui, -apple-system, sans-serif; fill: #1680a6; }
+      .owner { font: 700 11px system-ui, -apple-system, sans-serif; fill: #ffffff; letter-spacing: .25px; }
+      .call-title { font: 720 17px system-ui, -apple-system, sans-serif; fill: #18323c; }
+      .symbol { font: 500 12px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #60747c; }
+      .arrow {
+        fill: none;
+        stroke: #1680a6;
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .alternate-title {
+        font: 750 12px system-ui, -apple-system, sans-serif;
+        fill: #60747c;
         letter-spacing: 1.3px;
-        fill: #52666e;
-        text-transform: uppercase;
       }
-      .node-label { font: 700 15px system-ui, -apple-system, sans-serif; }
-      .edge-label {
-        font: 700 11px system-ui, -apple-system, sans-serif;
-        fill: #132f3a;
-        letter-spacing: .4px;
-      }
-      .details-title { font: 700 19px system-ui, -apple-system, sans-serif; fill: #132f3a; }
-      .step-number { font: 700 13px system-ui, -apple-system, sans-serif; fill: #ffffff; }
-      .step-text { font: 500 13px system-ui, -apple-system, sans-serif; fill: #132f3a; }
+      .alternate-text { font: 500 13px system-ui, -apple-system, sans-serif; fill: #18323c; }
     </style>
   </defs>
-  <rect width="1600" height="1933" fill="#ffffff"/>
-  <text class="title" x="35" y="43">Track processing</text>
-  <text class="subtitle" x="35" y="72">Jobs move through durable queue state, analysis, candidate selection, rendering, and publication.</text>
-  <line x1="35" y1="94" x2="1565" y2="94" stroke="#e8f0f3"/>
-  <rect x="35.0" y="135" width="340" height="1136" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/><rect x="405.0" y="135" width="340" height="1136" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/><rect x="775.0" y="135" width="340" height="1136" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/><rect x="1145.0" y="135" width="340" height="1136" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/>
-  <text class="lane-label" x="205" y="122" text-anchor="middle">User &amp; browser</text><text class="lane-label" x="575" y="122" text-anchor="middle">HTTP boundary</text><text class="lane-label" x="945" y="122" text-anchor="middle">Services &amp; policy</text><text class="lane-label" x="1315" y="122" text-anchor="middle">Durable state</text>
-  <g><path d="M 344.0 178.0 H 390.0 V 178.0 H 436.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 714.0 178.0 H 945.0 V 290.0 H 1176.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 1176.0 290.0 H 1130.0 V 290.0 H 1084.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 945.0 325.0 H 975.0 V 479.0 H 945.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 945.0 549.0 H 975.0 V 686.0 H 945.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 945.0 790.0 H 1130.0 V 1151.0 H 1315.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/><rect x="1078.0" y="950.5" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="1130.0" y="966.5" text-anchor="middle">YES</text></g><g><path d="M 945.0 790.0 H 975.0 V 927.0 H 945.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/><rect x="893.0" y="838.5" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="945.0" y="854.5" text-anchor="middle">NO</text></g><g><path d="M 945.0 997.0 H 975.0 V 1151.0 H 945.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 1084.0 1186.0 H 1130.0 V 1186.0 H 1176.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 1176.0 1186.0 H 760.0 V 1186.0 H 344.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 806.0 514.0 H 760.0 V 850.0 H 714.0" fill="none" stroke="#d85852" stroke-width="2.5" marker-end="url(#arrow-failure)"/><rect x="708.0" y="662.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="760.0" y="678.0" text-anchor="middle">ERROR</text></g><g><path d="M 806.0 962.0 H 760.0 V 850.0 H 714.0" fill="none" stroke="#d85852" stroke-width="2.5" marker-end="url(#arrow-failure)"/><rect x="708.0" y="886.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="760.0" y="902.0" text-anchor="middle">ERROR</text></g><g><path d="M 806.0 1186.0 H 760.0 V 850.0 H 714.0" fill="none" stroke="#d85852" stroke-width="2.5" marker-end="url(#arrow-failure)"/><rect x="708.0" y="998.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="760.0" y="1014.0" text-anchor="middle">ERROR</text></g><g><path d="M 714.0 850.0 H 945.0 V 290.0 H 1176.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/><rect x="893.0" y="550.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="945.0" y="566.0" text-anchor="middle">failed receipt</text></g>
-  <g id="command"><title>Analyze, extend, or convert</title><rect x="66.0" y="143.0" width="278" height="70" rx="35" fill="#25afc1" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="205.0" y="179.0">Analyze, extend, or convert</tspan></text></g><g id="create"><title>POST /api/jobs</title><rect x="436.0" y="143.0" width="278" height="70" rx="8" fill="#277fa7" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="575.0" y="179.0">POST /api/jobs</tspan></text></g><g id="queue"><title>Create durable job row</title><rect x="1176.0" y="255.0" width="278" height="70" rx="8" fill="#725ca8" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="1315.0" y="291.0">Create durable job row</tspan></text></g><g id="worker"><title>Schedule WebJobService worker</title><rect x="806.0" y="255.0" width="278" height="70" rx="8" fill="#277fa7" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="281.0">Schedule WebJobService</tspan><tspan x="945.0" y="302.0">worker</tspan></text></g><g id="prepare"><title>Load, cache, and analyze</title><rect x="806.0" y="479.0" width="278" height="70" rx="8" fill="#277fa7" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="515.0">Load, cache, and analyze</tspan></text></g><g id="analysis"><title>Analysis only?</title><polygon points="945,680 1061,738 945,796 829,738" fill="#3dbb8b" stroke="#278c68" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="739.0">Analysis only?</tspan></text></g><g id="select"><title>Rank and select candidates</title><rect x="806.0" y="927.0" width="278" height="70" rx="8" fill="#277fa7" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="963.0">Rank and select candidates</tspan></text></g><g id="render"><title>Render and export artifacts</title><rect x="806.0" y="1151.0" width="278" height="70" rx="8" fill="#277fa7" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="1187.0">Render and export artifacts</tspan></text></g><g id="publish"><title>Update job and catalog</title><rect x="1176.0" y="1151.0" width="278" height="70" rx="8" fill="#725ca8" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="1315.0" y="1187.0">Update job and catalog</tspan></text></g><g id="result"><title>Show complete or attention state</title><rect x="66.0" y="1151.0" width="278" height="70" rx="35" fill="#25afc1" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="205.0" y="1177.0">Show complete or attention</tspan><tspan x="205.0" y="1198.0">state</tspan></text></g><g id="cleanup"><title>Fail safely and clean up</title><rect x="436.0" y="815.0" width="278" height="70" rx="8" fill="#d85852" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="575.0" y="851.0">Fail safely and clean up</tspan></text></g>
-  <line x1="35" y1="1321" x2="1565" y2="1321" stroke="#e8f0f3"/><text class="details-title" x="35" y="1351">Detailed implementation steps</text><g class="step"><rect x="35" y="1366" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1397" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1402" text-anchor="middle">1</text><text class="step-text"><tspan x="92" y="1383">The Process workspace builds a JobCreationCommand from uploads, mode, preset, and</tspan><tspan x="92" y="1401">explicit overrides.</tspan></text></g><g class="step"><rect x="815" y="1366" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1397" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1402" text-anchor="middle">2</text><text class="step-text"><tspan x="872" y="1383">JobWorkflowService rejects unsupported input before persistence, then creates the</tspan><tspan x="872" y="1401">durable queue row.</tspan></text></g><g class="step"><rect x="35" y="1442" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1473" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1478" text-anchor="middle">3</text><text class="step-text"><tspan x="92" y="1459">WebJobService.enqueue_many() schedules eligible work under the configured</tspan><tspan x="92" y="1477">concurrency policy.</tspan></text></g><g class="step"><rect x="815" y="1442" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1473" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1478" text-anchor="middle">4</text><text class="step-text"><tspan x="872" y="1459">DatabaseProgress records stage, percentage, logs, cancellation, and attention</tspan><tspan x="872" y="1477">state in SQLite.</tspan></text></g><g class="step"><rect x="35" y="1518" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1549" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1554" text-anchor="middle">5</text><text class="step-text"><tspan x="92" y="1535">AnalysisPreparationService loads AudioData, checks AnalysisCache, and optionally</tspan><tspan x="92" y="1553">produces stem evidence.</tspan></text></g><g class="step"><rect x="815" y="1518" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1549" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1554" text-anchor="middle">6</text><text class="step-text"><tspan x="872" y="1535">Analysis derives tempo, beat grid, key confidence, arrangement sections, style,</tspan><tspan x="872" y="1553">energy, vocals, and timing.</tspan></text></g><g class="step"><rect x="35" y="1594" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1625" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1630" text-anchor="middle">7</text><text class="step-text"><tspan x="92" y="1611">Analysis-only jobs build a FileResult without entering candidate selection or</tspan><tspan x="92" y="1629">render stages.</tspan></text></g><g class="step"><rect x="815" y="1594" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1625" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1630" text-anchor="middle">8</text><text class="step-text"><tspan x="872" y="1611">CandidateSelectionOrchestrator ranks intro/outro sections and records alternatives</tspan><tspan x="872" y="1629">and fallback reasons.</tspan></text></g><g class="step"><rect x="35" y="1670" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1701" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1706" text-anchor="middle">9</text><text class="step-text"><tspan x="92" y="1687">Manual-choice requirements pause in an attention state and resume through a new</tspan><tspan x="92" y="1705">reprocess request.</tspan></text></g><g class="step"><rect x="815" y="1670" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1701" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1706" text-anchor="middle">10</text><text class="step-text"><tspan x="872" y="1687">create_extended_edit() assembles repetitions, optimized boundaries, stem-aware</tspan><tspan x="872" y="1705">joins, and cue structure.</tspan></text></g><g class="step"><rect x="35" y="1746" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1777" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1782" text-anchor="middle">11</text><text class="step-text"><tspan x="92" y="1763">RenderExportTransaction and ExportService write WAVs, previews, auditions, cues,</tspan><tspan x="92" y="1781">and artifact paths.</tspan></text></g><g class="step"><rect x="815" y="1746" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1777" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1782" text-anchor="middle">12</text><text class="step-text"><tspan x="872" y="1763">TrackResultBuilder creates the immutable FileResult used by web, CLI, reports, and</tspan><tspan x="872" y="1781">catalog publication.</tspan></text></g><g class="step"><rect x="35" y="1822" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1853" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1858" text-anchor="middle">13</text><text class="step-text"><tspan x="92" y="1839">ProcessingFailureCleanup stops progress exactly once and prevents later stages</tspan><tspan x="92" y="1857">from claiming success.</tspan></text></g>
+  <rect width="1440" height="700" fill="#ffffff"/>
+  <rect x="28" y="25" width="1384" height="510" rx="24" fill="#f4f8fa"/>
+  <text class="title" x="52" y="67">Track processing</text>
+  <text class="subtitle" x="52" y="95">A durable job moves through analysis, optional edit creation, export, and publication.</text>
+  <text class="order-note" x="52" y="132">PRIMARY CALL ORDER</text>
+  <path class="arrow" d="M 352 246.0 H 378" marker-end="url(#arrow)"/><path class="arrow" d="M 686 246.0 H 712" marker-end="url(#arrow)"/><path class="arrow" d="M 1020 246.0 H 1046" marker-end="url(#arrow)"/><path class="arrow" d="M 1354 246.0 H 1371.0 V 443.0 H 1362" marker-end="url(#arrow)"/><path class="arrow" d="M 1054 443.0 H 1028" marker-end="url(#arrow)"/><path class="arrow" d="M 720 443.0 H 694" marker-end="url(#arrow)"/><path class="arrow" d="M 386 443.0 H 360" marker-end="url(#arrow)"/>
+  <g class="call" id="call-1">
+  <text class="call-number" x="52.0" y="172.0">(1)</text>
+  <rect x="52" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="67" y="199" width="96" height="25" rx="12.5"
+    fill="#147f9f"/>
+  <text class="owner" x="80" y="216">Process UI</text>
+  <text class="call-title" text-anchor="middle"><tspan x="202.0" y="239.0">Submit processing command</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="202.0" y="276.0">POST /api/jobs</tspan></text>
+</g><g class="call" id="call-2">
+  <text class="call-number" x="386.0" y="172.0">(2)</text>
+  <rect x="386" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="401" y="199" width="82" height="25" rx="12.5"
+    fill="#4b6cb7"/>
+  <text class="owner" x="414" y="216">Workflow</text>
+  <text class="call-title" text-anchor="middle"><tspan x="536.0" y="239.0">Validate and persist job</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="536.0" y="276.0">JobWorkflowService.create</tspan></text>
+</g><g class="call" id="call-3">
+  <text class="call-number" x="720.0" y="172.0">(3)</text>
+  <rect x="720" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="735" y="199" width="61" height="25" rx="12.5"
+    fill="#258b72"/>
+  <text class="owner" x="748" y="216">Queue</text>
+  <text class="call-title" text-anchor="middle"><tspan x="870.0" y="239.0">Schedule worker</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="870.0" y="276.0">WebJobService.enqueue_many</tspan></text>
+</g><g class="call" id="call-4">
+  <text class="call-number" x="1054.0" y="172.0">(4)</text>
+  <rect x="1054" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="1069" y="199" width="82" height="25" rx="12.5"
+    fill="#258b72"/>
+  <text class="owner" x="1082" y="216">Analysis</text>
+  <text class="call-title" text-anchor="middle"><tspan x="1204.0" y="239.0">Load and analyze</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="1204.0" y="276.0">AnalysisPreparationService.prepare</tspan></text>
+</g><g class="call" id="call-5">
+  <text class="call-number" x="1054.0" y="369.0">(5)</text>
+  <rect x="1054" y="382" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="1069" y="396" width="89" height="25" rx="12.5"
+    fill="#258b72"/>
+  <text class="owner" x="1082" y="413">Selection</text>
+  <text class="call-title" text-anchor="middle"><tspan x="1204.0" y="436.0">Select edit candidates</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="1204.0" y="473.0">CandidateSelectionOrchestrator</tspan></text>
+</g><g class="call" id="call-6">
+  <text class="call-number" x="720.0" y="369.0">(6)</text>
+  <rect x="720" y="382" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="735" y="396" width="61" height="25" rx="12.5"
+    fill="#258b72"/>
+  <text class="owner" x="748" y="413">Audio</text>
+  <text class="call-title" text-anchor="middle"><tspan x="870.0" y="436.0">Render and export</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="870.0" y="473.0">RenderExportTransaction</tspan></text>
+</g><g class="call" id="call-7">
+  <text class="call-number" x="386.0" y="369.0">(7)</text>
+  <rect x="386" y="382" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="401" y="396" width="131" height="25" rx="12.5"
+    fill="#705aa8"/>
+  <text class="owner" x="414" y="413">Queue + catalog</text>
+  <text class="call-title" text-anchor="middle"><tspan x="536.0" y="436.0">Publish result</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="536.0" y="473.0">FileResult + projections</tspan></text>
+</g><g class="call" id="call-8">
+  <text class="call-number" x="52.0" y="369.0">(8)</text>
+  <rect x="52" y="382" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="67" y="396" width="96" height="25" rx="12.5"
+    fill="#147f9f"/>
+  <text class="owner" x="80" y="413">Process UI</text>
+  <text class="call-title" text-anchor="middle"><tspan x="202.0" y="436.0">Show queue state</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="202.0" y="473.0">poll active / attention / history</tspan></text>
+</g>
+  <text class="alternate-title" x="52" y="565">ALTERNATE PATHS</text><g class="alternate"><rect x="52" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="77" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="100" y="613">Analysis-only job → skip candidate selection and rendering, then publish</tspan><tspan x="100" y="631">analysis.</tspan></text></g><g class="alternate"><rect x="733" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="758" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="781" y="613">Stage failure → run exactly-once cleanup and persist a failed receipt.</tspan></text></g>
 </svg>

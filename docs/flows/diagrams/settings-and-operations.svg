@@ -1,43 +1,108 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1745"
-  viewBox="0 0 1600 1745" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="700"
+  viewBox="0 0 1440 700" role="img" aria-labelledby="title desc">
   <title id="title">Settings and operations</title>
-  <desc id="desc">Validated configuration, relocation, backup, cleanup, and diagnostics protect durable library state.</desc>
+  <desc id="desc">Explicit commands and verification protect settings, storage, relocation, and backups. Calls are numbered in execution order.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
       markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#167ba3"/>
-    </marker>
-    <marker id="arrow-failure" viewBox="0 0 10 10" refX="9" refY="5"
-      markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d85852"/>
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1680a6"/>
     </marker>
     <style>
-      .title { font: 700 28px system-ui, -apple-system, sans-serif; fill: #132f3a; }
-      .subtitle { font: 400 15px system-ui, -apple-system, sans-serif; fill: #52666e; }
-      .lane-label {
-        font: 700 14px system-ui, -apple-system, sans-serif;
+      .title { font: 750 30px system-ui, -apple-system, sans-serif; fill: #18323c; }
+      .subtitle { font: 400 15px system-ui, -apple-system, sans-serif; fill: #60747c; }
+      .order-note {
+        font: 650 12px system-ui, -apple-system, sans-serif;
+        fill: #1680a6;
+        letter-spacing: .7px;
+      }
+      .call-number { font: 700 14px system-ui, -apple-system, sans-serif; fill: #1680a6; }
+      .owner { font: 700 11px system-ui, -apple-system, sans-serif; fill: #ffffff; letter-spacing: .25px; }
+      .call-title { font: 720 17px system-ui, -apple-system, sans-serif; fill: #18323c; }
+      .symbol { font: 500 12px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #60747c; }
+      .arrow {
+        fill: none;
+        stroke: #1680a6;
+        stroke-width: 2.5;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .alternate-title {
+        font: 750 12px system-ui, -apple-system, sans-serif;
+        fill: #60747c;
         letter-spacing: 1.3px;
-        fill: #52666e;
-        text-transform: uppercase;
       }
-      .node-label { font: 700 15px system-ui, -apple-system, sans-serif; }
-      .edge-label {
-        font: 700 11px system-ui, -apple-system, sans-serif;
-        fill: #132f3a;
-        letter-spacing: .4px;
-      }
-      .details-title { font: 700 19px system-ui, -apple-system, sans-serif; fill: #132f3a; }
-      .step-number { font: 700 13px system-ui, -apple-system, sans-serif; fill: #ffffff; }
-      .step-text { font: 500 13px system-ui, -apple-system, sans-serif; fill: #132f3a; }
+      .alternate-text { font: 500 13px system-ui, -apple-system, sans-serif; fill: #18323c; }
     </style>
   </defs>
-  <rect width="1600" height="1745" fill="#ffffff"/>
-  <text class="title" x="35" y="43">Settings and operations</text>
-  <text class="subtitle" x="35" y="72">Validated configuration, relocation, backup, cleanup, and diagnostics protect durable library state.</text>
-  <line x1="35" y1="94" x2="1565" y2="94" stroke="#e8f0f3"/>
-  <rect x="35.0" y="135" width="340" height="1024" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/><rect x="405.0" y="135" width="340" height="1024" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/><rect x="775.0" y="135" width="340" height="1024" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/><rect x="1145.0" y="135" width="340" height="1024" rx="18" fill="#f7f9fa" stroke="#e8f0f3"/>
-  <text class="lane-label" x="205" y="122" text-anchor="middle">User &amp; browser</text><text class="lane-label" x="575" y="122" text-anchor="middle">HTTP boundary</text><text class="lane-label" x="945" y="122" text-anchor="middle">Services &amp; policy</text><text class="lane-label" x="1315" y="122" text-anchor="middle">Durable state</text>
-  <g><path d="M 205.0 213.0 H 235.0 V 350.0 H 205.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 313.0 402.0 H 374.5 V 402.0 H 436.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 714.0 402.0 H 775.5 V 402.0 H 837.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 945.0 454.0 H 975.0 V 591.0 H 945.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/><rect x="893.0" y="502.5" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="945.0" y="518.5" text-anchor="middle">YES</text></g><g><path d="M 837.0 402.0 H 775.5 V 626.0 H 714.0" fill="none" stroke="#d85852" stroke-width="2.5" marker-end="url(#arrow-failure)"/><rect x="723.5" y="494.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="775.5" y="510.0" text-anchor="middle">NO</text></g><g><path d="M 945.0 661.0 H 975.0 V 798.0 H 945.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 1053.0 850.0 H 1114.5 V 850.0 H 1176.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/><rect x="1062.5" y="830.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="1114.5" y="846.0" text-anchor="middle">PASS</text></g><g><path d="M 837.0 850.0 H 775.5 V 850.0 H 714.0" fill="none" stroke="#d85852" stroke-width="2.5" marker-end="url(#arrow-failure)"/><rect x="723.5" y="830.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="775.5" y="846.0" text-anchor="middle">FAIL</text></g><g><path d="M 1176.0 850.0 H 760.0 V 1074.0 H 344.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/></g><g><path d="M 575.0 661.0 H 390.0 V 1039.0 H 205.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/><rect x="338.0" y="830.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="390.0" y="846.0" text-anchor="middle">unchanged</text></g><g><path d="M 436.0 850.0 H 390.0 V 1074.0 H 344.0" fill="none" stroke="#167ba3" stroke-width="2.5" marker-end="url(#arrow)"/><rect x="338.0" y="942.0" width="104" height="22" rx="11" fill="#ffffff"/><text class="edge-label" x="390.0" y="958.0" text-anchor="middle">safe state</text></g>
-  <g id="choose"><title>Choose settings operation</title><rect x="66.0" y="143.0" width="278" height="70" rx="35" fill="#25afc1" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="205.0" y="179.0">Choose settings operation</tspan></text></g><g id="operation"><title>Update, relocate, backup, cleanup?</title><polygon points="205,344 321,402 205,460 89,402" fill="#3dbb8b" stroke="#278c68" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="205.0" y="393.0">Update, relocate, backup,</tspan><tspan x="205.0" y="414.0">cleanup?</tspan></text></g><g id="request"><title>Send explicit command</title><rect x="436.0" y="367.0" width="278" height="70" rx="8" fill="#277fa7" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="575.0" y="403.0">Send explicit command</tspan></text></g><g id="guard"><title>Confirmation and safety checks pass?</title><polygon points="945,344 1061,402 945,460 829,402" fill="#3dbb8b" stroke="#278c68" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="393.0">Confirmation and safety</tspan><tspan x="945.0" y="414.0">checks pass?</tspan></text></g><g id="execute"><title>Execute owning service</title><rect x="806.0" y="591.0" width="278" height="70" rx="8" fill="#277fa7" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="627.0">Execute owning service</tspan></text></g><g id="verify"><title>Verify result and integrity</title><polygon points="945,792 1061,850 945,908 829,850" fill="#3dbb8b" stroke="#278c68" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="945.0" y="851.0">Verify result and integrity</tspan></text></g><g id="persist"><title>Persist settings / manifest / backup</title><rect x="1176.0" y="815.0" width="278" height="70" rx="8" fill="#725ca8" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="1315.0" y="841.0">Persist settings / manifest</tspan><tspan x="1315.0" y="862.0">/ backup</tspan></text></g><g id="finish"><title>Show operation receipt</title><rect x="66.0" y="1039.0" width="278" height="70" rx="35" fill="#25afc1" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="205.0" y="1075.0">Show operation receipt</tspan></text></g><g id="refuse"><title>Stop with recovery guidance</title><rect x="436.0" y="591.0" width="278" height="70" rx="8" fill="#d85852" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="575.0" y="627.0">Stop with recovery guidance</tspan></text></g><g id="rollback"><title>Rollback or mark retryable</title><rect x="436.0" y="815.0" width="278" height="70" rx="8" fill="#d85852" stroke="#185d78" stroke-width="2"/><text class="node-label" fill="#ffffff" text-anchor="middle"><tspan x="575.0" y="851.0">Rollback or mark retryable</tspan></text></g>
-  <line x1="35" y1="1209" x2="1565" y2="1209" stroke="#e8f0f3"/><text class="details-title" x="35" y="1239">Detailed implementation steps</text><g class="step"><rect x="35" y="1254" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1285" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1290" text-anchor="middle">1</text><text class="step-text"><tspan x="92" y="1271">The Settings feature loads effective WebSettings, defaults, library status,</tspan><tspan x="92" y="1289">health, storage, and diagnostics.</tspan></text></g><g class="step"><rect x="815" y="1254" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1285" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1290" text-anchor="middle">2</text><text class="step-text"><tspan x="872" y="1271">Updates validate WebSettings and persist only overrides through the system-state</tspan><tspan x="872" y="1289">repository capability.</tspan></text></g><g class="step"><rect x="35" y="1330" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1361" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1366" text-anchor="middle">3</text><text class="step-text"><tspan x="92" y="1347">Library health distinguishes configured, available, writable, cataloged, degraded,</tspan><tspan x="92" y="1365">and recovery states.</tspan></text></g><g class="step"><rect x="815" y="1330" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1361" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1366" text-anchor="middle">4</text><text class="step-text"><tspan x="872" y="1347">LibraryRelocationPlanner checks source/destination topology, capacity, conflicts,</tspan><tspan x="872" y="1365">and relink prerequisites.</tspan></text></g><g class="step"><rect x="35" y="1406" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1437" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1442" text-anchor="middle">5</text><text class="step-text"><tspan x="92" y="1423">LibraryFileTransferService copies into staging with resumable progress and</tspan><tspan x="92" y="1441">cancellation checks.</tspan></text></g><g class="step"><rect x="815" y="1406" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1437" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1442" text-anchor="middle">6</text><text class="step-text"><tspan x="872" y="1423">LibraryRelocationVerifier checks sizes or hashes before LibraryMetadataRelinker</tspan><tspan x="872" y="1441">changes authoritative paths.</tspan></text></g><g class="step"><rect x="35" y="1482" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1513" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1518" text-anchor="middle">7</text><text class="step-text"><tspan x="92" y="1499">LibraryRelocationCoordinator records a durable manifest and can roll back or mark</tspan><tspan x="92" y="1517">interrupted work retryable.</tspan></text></g><g class="step"><rect x="815" y="1482" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1513" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1518" text-anchor="middle">8</text><text class="step-text"><tspan x="872" y="1499">LibraryBackupService snapshots SQLite consistently and packages allowlisted</tspan><tspan x="872" y="1517">managed state with SHA-256 hashes.</tspan></text></g><g class="step"><rect x="35" y="1558" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1589" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1594" text-anchor="middle">9</text><text class="step-text"><tspan x="92" y="1575">Restore preview validates archive paths and contents, requires an exact</tspan><tspan x="92" y="1593">confirmation, and creates a safety backup.</tspan></text></g><g class="step"><rect x="815" y="1558" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1589" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1594" text-anchor="middle">10</text><text class="step-text"><tspan x="872" y="1575">Storage cleanup accepts only a named managed target; full cleanup requires its</tspan><tspan x="872" y="1593">separate confirmation phrase.</tspan></text></g><g class="step"><rect x="35" y="1634" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="62" cy="1665" r="17" fill="#277fa7"/><text class="step-number" x="62" y="1670" text-anchor="middle">11</text><text class="step-text"><tspan x="92" y="1651">PerformanceDiagnostics records bounded timing/failure samples and cache hit rates</tspan><tspan x="92" y="1669">without becoming durable state.</tspan></text></g><g class="step"><rect x="815" y="1634" width="750" height="62" rx="10" fill="#f7f9fa" stroke="#e8f0f3"/><circle cx="842" cy="1665" r="17" fill="#277fa7"/><text class="step-number" x="842" y="1670" text-anchor="middle">12</text><text class="step-text"><tspan x="872" y="1651">Every operation returns LifecycleProjection or a receipt with status,</tspan><tspan x="872" y="1669">capabilities, output, and recovery guidance.</tspan></text></g>
+  <rect width="1440" height="700" fill="#ffffff"/>
+  <rect x="28" y="25" width="1384" height="510" rx="24" fill="#f4f8fa"/>
+  <text class="title" x="52" y="67">Settings and operations</text>
+  <text class="subtitle" x="52" y="95">Explicit commands and verification protect settings, storage, relocation, and backups.</text>
+  <text class="order-note" x="52" y="132">PRIMARY CALL ORDER</text>
+  <path class="arrow" d="M 352 246.0 H 378" marker-end="url(#arrow)"/><path class="arrow" d="M 686 246.0 H 712" marker-end="url(#arrow)"/><path class="arrow" d="M 1020 246.0 H 1046" marker-end="url(#arrow)"/><path class="arrow" d="M 1354 246.0 H 1371.0 V 443.0 H 1362" marker-end="url(#arrow)"/><path class="arrow" d="M 1054 443.0 H 1028" marker-end="url(#arrow)"/><path class="arrow" d="M 720 443.0 H 694" marker-end="url(#arrow)"/>
+  <g class="call" id="call-1">
+  <text class="call-number" x="52.0" y="172.0">(1)</text>
+  <rect x="52" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="67" y="199" width="103" height="25" rx="12.5"
+    fill="#147f9f"/>
+  <text class="owner" x="80" y="216">Settings UI</text>
+  <text class="call-title" text-anchor="middle"><tspan x="202.0" y="239.0">Choose an operation</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="202.0" y="276.0">update / move / backup / clean</tspan></text>
+</g><g class="call" id="call-2">
+  <text class="call-number" x="386.0" y="172.0">(2)</text>
+  <rect x="386" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="401" y="199" width="124" height="25" rx="12.5"
+    fill="#4b6cb7"/>
+  <text class="owner" x="414" y="216">Settings route</text>
+  <text class="call-title" text-anchor="middle"><tspan x="536.0" y="239.0">Send explicit command</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="536.0" y="276.0">validated request model</tspan></text>
+</g><g class="call" id="call-3">
+  <text class="call-number" x="720.0" y="172.0">(3)</text>
+  <rect x="720" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="735" y="199" width="145" height="25" rx="12.5"
+    fill="#258b72"/>
+  <text class="owner" x="748" y="216">Operation service</text>
+  <text class="call-title" text-anchor="middle"><tspan x="870.0" y="239.0">Run safety preflight</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="870.0" y="276.0">confirmation + capability checks</tspan></text>
+</g><g class="call" id="call-4">
+  <text class="call-number" x="1054.0" y="172.0">(4)</text>
+  <rect x="1054" y="185" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="1069" y="199" width="61" height="25" rx="12.5"
+    fill="#258b72"/>
+  <text class="owner" x="1082" y="216">Owner</text>
+  <text class="call-title" text-anchor="middle"><tspan x="1204.0" y="239.0">Execute operation</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="1204.0" y="276.0">update / transfer / archive</tspan></text>
+</g><g class="call" id="call-5">
+  <text class="call-number" x="1054.0" y="369.0">(5)</text>
+  <rect x="1054" y="382" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="1069" y="396" width="82" height="25" rx="12.5"
+    fill="#258b72"/>
+  <text class="owner" x="1082" y="413">Verifier</text>
+  <text class="call-title" text-anchor="middle"><tspan x="1204.0" y="436.0">Verify integrity</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="1204.0" y="473.0">size / hash / health</tspan></text>
+</g><g class="call" id="call-6">
+  <text class="call-number" x="720.0" y="369.0">(6)</text>
+  <rect x="720" y="382" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="735" y="396" width="103" height="25" rx="12.5"
+    fill="#705aa8"/>
+  <text class="owner" x="748" y="413">Persistence</text>
+  <text class="call-title" text-anchor="middle"><tspan x="870.0" y="436.0">Commit durable state</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="870.0" y="473.0">settings / manifest / backup</tspan></text>
+</g><g class="call" id="call-7">
+  <text class="call-number" x="386.0" y="369.0">(7)</text>
+  <rect x="386" y="382" width="300" height="122" rx="16"
+    fill="#ffffff" stroke="#d7e4e9" stroke-width="2"/>
+  <rect x="401" y="396" width="103" height="25" rx="12.5"
+    fill="#147f9f"/>
+  <text class="owner" x="414" y="413">Settings UI</text>
+  <text class="call-title" text-anchor="middle"><tspan x="536.0" y="436.0">Show operation receipt</tspan></text>
+  <text class="symbol" text-anchor="middle"><tspan x="536.0" y="473.0">status + recovery action</tspan></text>
+</g>
+  <text class="alternate-title" x="52" y="565">ALTERNATE PATHS</text><g class="alternate"><rect x="52" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="77" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="100" y="613">Preflight refusal → leave durable state unchanged and explain the required</tspan><tspan x="100" y="631">correction.</tspan></text></g><g class="alternate"><rect x="733" y="583" width="655" height="72" rx="14" fill="#fff8f7" stroke="#eed1cf"/><circle cx="758" cy="619" r="8" fill="#c95955"/><text class="alternate-text"><tspan x="781" y="613">Verification failure → roll back when possible or mark the operation</tspan><tspan x="781" y="631">retryable.</tspan></text></g>
 </svg>

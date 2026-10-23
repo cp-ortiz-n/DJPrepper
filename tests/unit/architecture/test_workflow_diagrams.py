@@ -48,7 +48,11 @@ class WorkflowDiagramTests(unittest.TestCase):
             self.assertIsNotNone(root.find("svg:desc", namespace), diagram)
             self.assertGreaterEqual(len(root.findall(".//svg:rect", namespace)), 6, diagram)
             self.assertGreaterEqual(len(root.findall(".//svg:path", namespace)), 5, diagram)
-            self.assertGreaterEqual(len(root.findall(".//svg:g[@class='step']", namespace)), 8, diagram)
+            calls = root.findall(".//svg:g[@class='call']", namespace)
+            numbers = root.findall(".//svg:text[@class='call-number']", namespace)
+            self.assertGreaterEqual(len(calls), 6, diagram)
+            self.assertLessEqual(len(calls), 8, diagram)
+            self.assertEqual([node.text for node in numbers], [f"({index})" for index in range(1, len(calls) + 1)])
 
     def test_rendered_diagrams_match_their_source_definitions(self) -> None:
         renderer = run_path(str(PROJECT_ROOT / "scripts" / "development" / "render_workflow_diagrams.py"))
