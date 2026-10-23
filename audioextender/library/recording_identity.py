@@ -17,6 +17,11 @@ _VERSION_PATTERNS = (
     ("ACAP", re.compile(r"\b(?:a\s*cappella|acapella|vocals? only)\b", re.I)),
 )
 
+_ARTIST_CREDIT_SEPARATOR = re.compile(
+    r"\s*(?:,|;|/|\b(?:feat(?:uring)?|ft|vs)\.?\b)\s*",
+    re.I,
+)
+
 
 def normalize_identity_text(value: str) -> str:
     value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
@@ -59,6 +64,8 @@ def canonical_title_key(title: str, artist: str = "") -> str:
     value = title
     parts = re.split(r"\s+[-–—]\s+", title)
     if len(parts) > 1:
+        if version_kind(title) != "ORG" and version_kind(parts[-1]) != "ORG":
+            value = " - ".join(parts[:-1])
         suffix = normalize_identity_text(parts[-1])
         artist_text = normalize_identity_text(artist)
         remainder = suffix
@@ -68,6 +75,35 @@ def canonical_title_key(title: str, artist: str = "") -> str:
         if remainder and set(remainder.split()).issubset(version_words):
             value = " - ".join(parts[:-1])
     return base_title(value).replace(" ", "")
+
+
+def artist_credit_keys(artist: str) -> set[str]:
+    """Return normalized full and individual artist credits.
+
+    Ampersands are intentionally not separators because they commonly belong to
+    a single act's name. Short partial credits are retained for exact full-name
+    comparisons but are not enough to establish cross-credit overlap.
+    """
+    full = normalize_identity_text(artist)
+    if not full:
+        return set()
+    parts = {
+        normalize_identity_text(part)
+        for part in _ARTIST_CREDIT_SEPARATOR.split(artist)
+        if normalize_identity_text(part)
+    }
+    return {full, *parts}
+
+
+def artists_share_credit(left: str, right: str) -> bool:
+    """Return whether two artist fields share a conservative named credit."""
+    left_full = normalize_identity_text(left)
+    right_full = normalize_identity_text(right)
+    if not left_full or not right_full:
+        return False
+    if left_full == right_full:
+        return True
+    return any(len(credit.replace(" ", "")) >= 4 for credit in artist_credit_keys(left) & artist_credit_keys(right))
 
 
 def identity_key(artist: str, title: str) -> str:

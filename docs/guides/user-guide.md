@@ -293,8 +293,13 @@ Every Music Files recording has a permanent readable identity such as
 `HOU-000184-ORG`. Related versions share the `HOU-000184` family while the
 three-letter prefix identifies the parent genre and suffixes identify
 the original, extended edit, remix, radio edit, live recording, remaster,
-instrumental, or acapella. These IDs survive renames, genre moves, reanalysis,
-and library relocation. **Collection integrity** presents conservative duplicate
+instrumental, or acapella. Manually confirmed IDs survive renames, genre moves,
+reanalysis, and library relocation. Reanalysis may repair an unlocked legacy
+family ID when another catalog row has the exact canonical song title and a
+shared named artist credit—for example, an original and a credited remix. It
+does not use broad fuzzy title similarity, and **Keep as separate recording** or
+a manual family link prevents future automatic reassignment. **Collection
+integrity** presents conservative duplicate
 matches for review; merging combines catalog references while deliberately
 leaving the unused WAV on disk, and **Keep as separate recording** assigns a new
 family when two similar tracks are genuinely different.

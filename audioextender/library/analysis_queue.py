@@ -44,6 +44,8 @@ class DownloadedTrackAnalysisQueue:
             if resolved_source in existing_paths:
                 skipped.append(track_id)
                 continue
+            if force:
+                self._repository.reassess_recording_family(track_id)
             job_id = self._repository.create(
                 source.name,
                 source,

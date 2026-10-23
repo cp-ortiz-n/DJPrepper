@@ -226,8 +226,11 @@ DeterministicTransitionOptimizer (fallback plans)
 Catalog row IDs identify files and remain immutable. `recording_code` identifies
 the underlying song across related catalog rows, while `version_code` identifies
 the original, remix, edit, live, or other version. Import/rescan uses conservative
-canonical artist/title matching to assign the family; explicit **Keep separate**
-and manual family links are inference-locked. The Set Builder catalog projection
+canonical artist/title matching to assign the family. Forced reanalysis also
+reassesses an unlocked singleton family using an exact canonical title plus a
+shared named artist credit or stable source identity; it never performs broad
+fuzzy merging or splits an established family. Explicit **Keep separate** and
+manual family links are inference-locked. The Set Builder catalog projection
 serializes both codes, and `recordingKey` is the hard uniqueness key shared by
 candidate retrieval, proposal repair, deterministic fallback, validation, saved
 set recovery, and browser track editing.
@@ -396,6 +399,7 @@ persist; terminal receipts replace that provisional statement with the outcome.
 | `track_core.py`       | Core downloaded-track CRUD, playlists, duplicates, and fingerprints    |
 | `track_descriptors.py` | Musical-identity descriptors, inference state, and vocabulary review  |
 | `recording_families.py` | Recording identities, version relationships, suggestions, and merge |
+| `recording_family_reassessment.py` | Conservative reanalysis repair for legacy family assignments |
 | `track_projections.py` | Catalog paging, filtering, search projections, and facets             |
 | `track_metadata_state.py` | Artwork, metadata, paths, import failures, and deletion state       |
 | `track_analysis_state.py` | Audio-quality and key-analysis result persistence                    |

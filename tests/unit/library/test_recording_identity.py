@@ -7,6 +7,7 @@ from contextlib import closing
 from pathlib import Path
 
 from audioextender.library.recording_identity import (
+    artists_share_credit,
     base_title,
     canonical_title_key,
     genre_family_code,
@@ -141,9 +142,11 @@ class RecordingIdentityTests(unittest.TestCase):
             )
             before = repository.get_downloaded_track(second_id)
             separated = repository.separate_recording(second_id)
+            reassessed = repository.reassess_recording_family(second_id)
             assert before is not None
             self.assertNotEqual(before["recording_code"], separated["recording_code"])
             self.assertEqual(separated["identity_confidence"], "manual")
+            self.assertEqual(reassessed["recording_code"], separated["recording_code"])
             self.assertEqual(repository.duplicate_candidates(), [])
 
     def test_title_normalization_keeps_version_meaning_out_of_family_name(self) -> None:
@@ -155,7 +158,68 @@ class RecordingIdentityTests(unittest.TestCase):
         self.assertEqual(canonical_title_key("Funkytown", "Lipps Inc"), "funkytown")
         self.assertEqual(canonical_title_key("Funky Town", "Lipps Inc"), "funkytown")
         self.assertEqual(canonical_title_key("Rasputin - Majestic Club", "Majestic"), "rasputin")
+        self.assertEqual(
+            canonical_title_key("Rasputin - Majestic Club VIP Remix", "Majestic, Boney M."),
+            "rasputin",
+        )
         self.assertEqual(identity_key("Lipps Inc", "Funkytown"), identity_key("Lipps Inc", "Funky Town"))
+
+    def test_artist_credit_overlap_handles_added_remixer_credits(self) -> None:
+        self.assertTrue(artists_share_credit("Baccara", "GBX, Baccara"))
+        self.assertTrue(artists_share_credit("Lipps Inc.", "Lipps Inc., Domy R"))
+        self.assertFalse(artists_share_credit("Baccara", "Lipps Inc."))
+
+    def test_reanalysis_repairs_legacy_original_and_remix_family_ids(self) -> None:
+        examples = (
+            (
+                "Rasputin",
+                "Majestic, Boney M.",
+                "Rasputin - Majestic Club VIP Remix",
+                "Majestic, Boney M.",
+            ),
+            (
+                "Yes Sir, I Can Boogie",
+                "Baccara",
+                "Yes Sir, I Can Boogie (Paul Keenan Remix)",
+                "GBX, Baccara",
+            ),
+            ("Funky Town", "Lipps Inc.", "Funkytown - Domy R Informal Remix", "Lipps Inc., Domy R"),
+        )
+        for original_title, original_artist, remix_title, remix_artist in examples:
+            with self.subTest(remix=remix_title), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                database = root / "catalog.sqlite3"
+                repository = JobRepository(database)
+                original = root / "original.wav"
+                remix = root / "remix.wav"
+                original.write_bytes(b"RIFF-original")
+                remix.write_bytes(b"RIFF-remix")
+                original_id = repository.upsert_downloaded_track(
+                    title=original_title,
+                    artist=original_artist,
+                    file_path=original,
+                )
+                remix_id = repository.upsert_downloaded_track(
+                    title=remix_title,
+                    artist=remix_artist,
+                    file_path=remix,
+                )
+                original_track = repository.get_downloaded_track(original_id)
+                assert original_track is not None
+                with closing(sqlite3.connect(database)) as connection, connection:
+                    connection.execute(
+                        """UPDATE downloaded_tracks SET recording_code='DSC-999999',
+                        version_code='RMX01',identity_confidence='migrated',
+                        identity_reason='Legacy catalog assignment' WHERE id=?""",
+                        (remix_id,),
+                    )
+
+                repaired = repository.reassess_recording_family(remix_id)
+
+                self.assertEqual(repaired["recording_code"], original_track["recording_code"])
+                self.assertEqual(repaired["version_code"], "RMX01")
+                self.assertEqual(repaired["identity_confidence"], "review")
+                self.assertIn("Reanalysis matched", repaired["identity_reason"])
 
     def test_spacing_variants_receive_the_same_persisted_recording_family(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
