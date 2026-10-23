@@ -84,6 +84,9 @@ class WavMetadataTests(unittest.TestCase):
                 artist="Artist",
                 genre="House",
                 album="Night Set",
+                downloaded_id=42,
+                recording_code="HOU-000042",
+                version_code="EXT01",
             )
             xml_path = root / "rekordbox.xml"
             write_rekordbox_xml([result], xml_path)
@@ -93,6 +96,10 @@ class WavMetadataTests(unittest.TestCase):
             self.assertEqual(track.attrib["Artist"], "Artist")
             self.assertEqual(track.attrib["Genre"], "House")
             self.assertEqual(track.attrib["Album"], "Night Set")
+            self.assertEqual(
+                track.attrib["Comments"],
+                "DJLS:downloaded:42 DJLS:recording:HOU-000042:EXT01",
+            )
 
     def test_filename_metadata_fallback(self) -> None:
         self.assertEqual(split_artist_title("Artist - Track"), ("Artist", "Track"))

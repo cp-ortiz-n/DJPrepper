@@ -11,7 +11,7 @@ from audioextender.library.musical_profile import MUSICAL_PROFILE_VERSION
 from audioextender.library.recording_identity import recording_dedupe_key
 from audioextender.set_builder.preference_learning import PersonalizedCandidateRanker
 
-SET_BUILDER_CATALOG_VERSION = 6
+SET_BUILDER_CATALOG_VERSION = 7
 
 
 def _terms(value: Any) -> list[str]:
@@ -76,6 +76,7 @@ def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
         "roles": [str(role) for role in profile.get("roles", analysis.get("_roles", [])) if role],
         "path": path,
         "available": bool(path and Path(path).is_file()),
+        "externalRating": item.get("external_rating"),
     }
 
 
@@ -266,6 +267,7 @@ def _deduplicate_recordings(
             key=lambda track: (
                 track["id"] not in protected_ids,
                 not bool(track.get("available")),
+                -int((track.get("externalRating") or {}).get("rating") or 0),
                 str(track.get("versionCode") or "ORG") != "ORG",
                 not bool(track.get("bpm")),
                 not bool(track.get("key")),

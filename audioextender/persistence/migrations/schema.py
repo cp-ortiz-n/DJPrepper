@@ -7,6 +7,7 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from audioextender.persistence.migrations.external_ratings import initialize_external_track_ratings
 from audioextender.persistence.migrations.musical_verification import initialize_musical_verifications
 
 SchemaAction = Callable[[sqlite3.Connection], None]
@@ -28,6 +29,7 @@ class RepositorySchemaInitializer:
             SchemaStep("catalog-core", _initialize_catalog_core),
             SchemaStep("recording-identities", identity_migration),
             SchemaStep("catalog-relations", _initialize_catalog_relations),
+            SchemaStep("external-track-ratings", initialize_external_track_ratings),
             SchemaStep("library-search", _initialize_library_search),
             SchemaStep("system-state", _initialize_system_state),
         )
@@ -146,9 +148,6 @@ def _initialize_catalog_core(connection: sqlite3.Connection) -> None:
             "key_candidates_json": "TEXT NOT NULL DEFAULT '[]'",
             "key_analyzed_at": "TEXT NOT NULL DEFAULT ''",
         },
-    )
-    connection.execute(
-        "CREATE TABLE IF NOT EXISTS system_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)"
     )
     connection.execute(
         """CREATE TABLE IF NOT EXISTS downloaded_track_descriptors (

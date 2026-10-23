@@ -67,6 +67,51 @@ class DJPreferenceServiceTests(unittest.TestCase):
         self.assertEqual(adjustment, 8)
         self.assertTrue(any("latin house" in reason for reason in reasons))
 
+    def test_rekordbox_rating_uses_versioned_mapping(self) -> None:
+        def profile(_context: str | None) -> dict:
+            return {"enabled": True, "activeSignals": []}
+
+        ranker = PersonalizedCandidateRanker(profile)
+        adjustment, reasons = ranker.adjustment(
+            {
+                "genre": "House",
+                "detailedGenres": [],
+                "descriptors": [],
+                "artist": "Artist",
+                "vocals": "mixed",
+                "energy": 0.5,
+                "bpm": 124,
+                "externalRating": {"source": "rekordbox", "rating": 5, "synced_at": "2026-10-21T12:00:00Z"},
+            },
+            "peak-time",
+        )
+        self.assertEqual(adjustment, 4)
+        self.assertEqual(reasons, ["Rekordbox rating: 5 stars (+4), synced 2026-10-21."])
+
+    def test_rekordbox_rating_and_local_feedback_share_the_total_cap(self) -> None:
+        def profile(_context: str | None) -> dict:
+            return {
+                "enabled": True,
+                "activeSignals": [{"dimension": "genre", "value": "house", "adjustment": 10, "evidenceCount": 10}],
+            }
+
+        adjustment, reasons = PersonalizedCandidateRanker(profile).adjustment(
+            {
+                "genre": "House",
+                "detailedGenres": [],
+                "descriptors": [],
+                "artist": "Artist",
+                "vocals": "mixed",
+                "energy": 0.5,
+                "bpm": 124,
+                "externalRating": {"source": "rekordbox", "rating": 5},
+            },
+            "peak-time",
+        )
+
+        self.assertEqual(adjustment, 8)
+        self.assertEqual(len(reasons), 2)
+
     def test_pause_reset_and_disk_persistence(self) -> None:
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "preferences.json"

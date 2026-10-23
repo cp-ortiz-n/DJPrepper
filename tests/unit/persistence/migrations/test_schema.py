@@ -22,6 +22,7 @@ class RepositorySchemaTests(unittest.TestCase):
                 "catalog-core",
                 "recording-identities",
                 "catalog-relations",
+                "external-track-ratings",
                 "library-search",
                 "system-state",
             ],
@@ -56,6 +57,7 @@ class RepositorySchemaTests(unittest.TestCase):
                     "jobs",
                     "downloaded_tracks",
                     "downloaded_track_descriptors",
+                    "external_track_ratings",
                     "library_search_index",
                     "system_state",
                 }.issubset(tables)

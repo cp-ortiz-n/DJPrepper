@@ -37,7 +37,9 @@ export function createSetBuilderFeedback({ state, dom, api, music, planning, rev
         ? sum + Number(signal.adjustment || 0)
         : sum;
     }, 0);
-    return Math.max(-8, Math.min(8, total * 0.5));
+    const rating = Number(track._externalRating?.rating || track.externalRating?.rating || 0);
+    const ratingAdjustment = { 1: -4, 2: -2, 3: 0, 4: 2, 5: 4 }[rating] || 0;
+    return Math.max(-8, Math.min(8, total * 0.5 + ratingAdjustment));
   }
 
   function preferenceEventId() {

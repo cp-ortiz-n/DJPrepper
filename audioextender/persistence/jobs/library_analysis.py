@@ -23,7 +23,13 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                 "SELECT COUNT(*), COALESCE(MAX(id),0), COALESCE(MAX(updated_at),'') FROM downloaded_tracks"
             ).fetchone()
             indexed = int(connection.execute("SELECT COUNT(*) FROM library_search_index").fetchone()[0])
-        return json.dumps({"jobs": list(jobs), "tracks": list(tracks), "indexed": indexed}, separators=(",", ":"))
+            ratings = connection.execute(
+                "SELECT COUNT(*), COALESCE(MAX(synced_at),'') FROM external_track_ratings"
+            ).fetchone()
+        return json.dumps(
+            {"jobs": list(jobs), "tracks": list(tracks), "ratings": list(ratings), "indexed": indexed},
+            separators=(",", ":"),
+        )
 
     def catalog_source_signatures(self) -> dict[str, tuple[int, int]]:
         with closing(self._connect()) as connection:
@@ -294,6 +300,10 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                     jobs.source_path, jobs.wav_path,
                     jobs.extended_path, jobs.config_json,
                     downloaded.file_path AS library_path,
+                    CASE WHEN ratings.rating IS NULL THEN NULL ELSE json_object(
+                        'source', ratings.source, 'rating', ratings.rating,
+                        'synced_at', ratings.synced_at, 'match_method', ratings.match_method
+                    ) END AS external_rating_json,
                     (SELECT json_group_array(json_object(
                         'category', descriptors.category, 'value', descriptors.value,
                         'provenance', descriptors.provenance,
@@ -304,6 +314,8 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                     FROM library_search_index idx
                     JOIN jobs ON jobs.id = idx.job_id
                     LEFT JOIN downloaded_tracks downloaded ON downloaded.id = idx.downloaded_id
+                    LEFT JOIN external_track_ratings ratings
+                        ON ratings.track_id=downloaded.id AND ratings.source='rekordbox'
                     ORDER BY idx.source_name COLLATE NOCASE, idx.job_id"""
             ).fetchall()
         return [dict(row) for row in rows]

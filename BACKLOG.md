@@ -899,18 +899,20 @@ without replacing the technical safety score.
 
 ## Rekordbox track-rating synchronization
 
-Status: **Backlog.** The current Rekordbox integration exports DJ Library Studio
-cues and playlists but does not read Rekordbox's per-track star ratings back into
-the catalog. Implement this as explicit, previewable preference synchronization;
+Status: **In progress — parser, conservative preview/apply matching, durable
+storage, Settings workflow, and bounded Set Builder ranking are complete.** The
+current Rekordbox integration exports DJ Library Studio cues and playlists and
+can read Rekordbox's per-track star ratings back into the catalog. This remains
+explicit, previewable preference synchronization;
 do not read or modify Rekordbox's private database and do not use song ratings to
 change rendered audio.
 
-- [ ] **SET-RB-001 — Import Rekordbox ratings as durable preference evidence.**
+- [~] **SET-RB-001 — Import Rekordbox ratings as durable preference evidence.**
   Priority: P1. Effort: L. Risk: Medium. Dependencies: recording-family
   uniqueness and feedback-informed candidate ranking. Acceptance:
-  - Parse a user-selected Rekordbox collection XML through a focused import
-    service. Support ratings `1` through `5`; treat a missing or zero rating as
-    unknown rather than negative feedback.
+  - Parse a user-selected Rekordbox collection XML or UTF-16 tab-separated TXT
+    export through a focused import service. Support ratings `1` through `5`;
+    treat a missing or zero rating as unknown rather than negative feedback.
   - Persist external ratings, source, source identity, match method, confidence,
     and synchronization time separately from analyzed musical facts. Repeated
     imports are idempotent, and ratings survive application restart, reanalysis,
@@ -940,8 +942,9 @@ change rendered audio.
   - Explain the influence in “Why this track” using source and evidence, for
     example “Rekordbox rating: 5 stars (+4), synced 2026-10-21.” Neutral and
     unknown ratings produce no hidden adjustment.
-  - Add a Music Files or Settings workflow to select the XML, preview the match,
-    apply it, inspect ambiguous/unmatched tracks, view last-sync status, and
+  - Add a Music Files or Settings workflow to select the XML or TXT export,
+    preview the match, apply it, inspect ambiguous/unmatched tracks, view
+    last-sync status, and
     clear only imported Rekordbox ratings without deleting local Set Builder
     feedback.
   - Cover XML encoding and file-URI normalization, missing/out-of-range values,
@@ -968,6 +971,10 @@ Implementation sequence:
 5. Add the preview/apply/review UI and operational diagnostics.
 6. Complete automated gates, a real-library dry run, documentation, and an
    explicit approval checkpoint before enabling the signal.
+
+Implementation progress (2026-10-22): steps 1–5 and the full automated quality,
+coverage, stability, and browser gates are complete. The first real-library dry
+run with explicit DJ approval remains the release checkpoint.
 
 ## Preflight analysis mode
 

@@ -22,6 +22,8 @@ ACTION_WEIGHTS = {
     "replace-out": -2.0,
 }
 FEATURE_DIMENSIONS = {"genre", "descriptor", "artist", "vocals", "energy", "bpm"}
+REKORDBOX_RATING_POLICY_VERSION = 1
+REKORDBOX_RATING_ADJUSTMENTS = {1: -4.0, 2: -2.0, 3: 0.0, 4: 2.0, 5: 4.0}
 
 
 def _now() -> str:
@@ -204,15 +206,22 @@ class PersonalizedCandidateRanker:
         ]
         # Damp the combined signal so broad attributes such as BPM and energy do not
         # immediately saturate the cap and hide a more distinctive genre or descriptor.
-        adjustment = max(
-            -self.maximum_adjustment,
-            min(
-                self.maximum_adjustment,
-                sum(float(signal.get("adjustment") or 0) for signal in matched) * 0.5,
-            ),
-        )
+        learned_adjustment = sum(float(signal.get("adjustment") or 0) for signal in matched) * 0.5
         reasons = [
             f"Learned {signal['dimension']} preference: {signal['value']} ({signal['evidenceCount']} distinct tracks)."
             for signal in matched
         ]
+        external = track.get("externalRating") or {}
+        rating = int(external.get("rating") or 0) if isinstance(external, dict) else 0
+        rating_adjustment = REKORDBOX_RATING_ADJUSTMENTS.get(rating, 0.0)
+        if rating_adjustment:
+            synced = str(external.get("synced_at") or "").split("T", 1)[0]
+            reasons.append(
+                f"Rekordbox rating: {rating} stars ({rating_adjustment:+g})"
+                + (f", synced {synced}." if synced else ".")
+            )
+        adjustment = max(
+            -self.maximum_adjustment,
+            min(self.maximum_adjustment, learned_adjustment + rating_adjustment),
+        )
         return round(adjustment, 2), reasons

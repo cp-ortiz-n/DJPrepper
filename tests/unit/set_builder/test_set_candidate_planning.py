@@ -31,6 +31,7 @@ def catalog_track(
     title: str | None = None,
     recording_code: str = "",
     version_code: str = "ORG",
+    external_rating: int | None = None,
 ) -> dict:
     return {
         "downloaded_id": track_id,
@@ -39,6 +40,7 @@ def catalog_track(
         "descriptors": descriptors or [],
         "recording_code": recording_code,
         "version_code": version_code,
+        "external_rating": {"source": "rekordbox", "rating": external_rating} if external_rating else None,
         "analysis": {
             "source_name": f"Track {track_id}.wav",
             "title": title or f"Track {track_id}",
@@ -103,6 +105,36 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertEqual(candidate["vocals"], "vocal-safe")
         self.assertEqual(candidate["timing"], "variable")
         self.assertEqual(candidate["roles"], ["closing"])
+
+    def test_recording_family_prefers_higher_rated_version_without_emitting_duplicates(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            original = root / "original.wav"
+            remix = root / "remix.wav"
+            original.touch()
+            remix.touch()
+            tracks = [
+                catalog_track(
+                    1,
+                    original,
+                    title="Same Song",
+                    recording_code="HOU-000001",
+                    version_code="ORG",
+                    external_rating=2,
+                ),
+                catalog_track(
+                    2,
+                    remix,
+                    title="Same Song (Remix)",
+                    recording_code="HOU-000001",
+                    version_code="RMX01",
+                    external_rating=5,
+                ),
+            ]
+            result = SetCandidateRetriever().retrieve(tracks, journey("Reggaeton"))
+        candidates = result["sections"][0]["candidates"]
+        self.assertEqual([item["id"] for item in candidates], ["downloaded:2"])
+        self.assertEqual(result["collapsedTrackIds"], ["downloaded:1"])
 
     def test_honors_exclusions_and_surfaces_missing_and_unavailable_requirements(self) -> None:
         result = SetCandidateRetriever().retrieve(

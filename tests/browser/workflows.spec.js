@@ -62,6 +62,64 @@ test('persisted settings render after browser refresh', async ({ page }) => {
   await expect(page.locator('#setting-outro-search')).toHaveValue('31');
 });
 
+test('Rekordbox TXT ratings are previewed before exact matches are applied', async ({ page }) => {
+  await page.route((url) => url.pathname === '/api/settings/rekordbox-ratings/preview', (route) =>
+    route.fulfill({
+      json: {
+        token: 'rating-preview-1',
+        filename: 'collection.txt',
+        format: 'txt',
+        total_export_tracks: 4,
+        unrated_tracks: 1,
+        invalid_rows: 0,
+        rated_tracks: 3,
+        matched_tracks: 2,
+        proposed_changes: 1,
+        unchanged_values: 1,
+        ambiguous_rows: 1,
+        unmatched_rows: 0,
+        match_methods: { 'catalog-identity': 2 },
+        matches: [
+          { artist: 'Majestic', title: 'Rasputin', rating: 5, match_method: 'catalog-identity' },
+        ],
+        ambiguous: [{ artist: 'Lipps Inc', title: 'Funkytown', rating: 3 }],
+        unmatched: [],
+        review_truncated: false,
+      },
+    }),
+  );
+  await page.route((url) => url.pathname === '/api/settings/rekordbox-ratings/apply', (route) =>
+    route.fulfill({
+      json: {
+        changed: 1,
+        matched: 2,
+        synced_at: '2026-10-22T12:00:00Z',
+        status: {
+          rated_tracks: 2,
+          ratings: { 5: 1, 3: 1 },
+          last_synced_at: '2026-10-22T12:00:00Z',
+          tracks: [{ artist: 'Majestic', title: 'Rasputin', rating: 5, match_method: 'catalog-identity' }],
+        },
+      },
+    }),
+  );
+
+  await openSettings(page);
+  await page.locator('.rekordbox-rating-panel > summary').click();
+  await page.locator('#rekordbox-rating-file').setInputFiles({
+    name: 'collection.txt',
+    mimeType: 'text/plain',
+    buffer: Buffer.from('#\tTrack Title\tArtist\tRating\tTime'),
+  });
+  await expect(page.locator('#rekordbox-rating-preview')).toContainText('1 rating changes ready');
+  await expect(page.locator('#rekordbox-rating-preview')).toContainText('3 rated in TXT');
+  await expect(page.locator('#rekordbox-rating-preview')).toContainText('1 ambiguous');
+  await page.locator('#apply-rekordbox-ratings').click();
+  await page.locator('#app-confirm-accept').click();
+  await expect(page.locator('#rekordbox-rating-message')).toContainText('1 ratings updated');
+  await expect(page.locator('#rekordbox-rating-status')).toContainText('2 synced ratings');
+});
+
 test('all primary tabs work with native browser media behavior', async ({ browser }) => {
   const page = await browser.newPage();
   const errors = [];

@@ -145,6 +145,7 @@ database and backup opening whenever this sequence changes.
 | `audioextender/web/routes/set_builder_routes.py`         | Set Builder catalog, intention provider/interpretation, preflight, playlist exports |
 | `audioextender/web/routes/set_planning_routes.py`        | Candidate retrieval, validation, and asynchronous AI track-planning jobs            |
 | `audioextender/web/routes/set_preference_routes.py`      | Inspect, record, pause, and reset local Set Builder preference signals              |
+| `audioextender/web/routes/rekordbox_rating_routes.py`    | Preview, apply, inspect, and clear public Rekordbox XML/TXT rating evidence         |
 | `audioextender/web/routes/set_review_routes.py`          | Persist set, track, and transition reviews and expose calibration reports           |
 | `audioextender/web/routes/settings_routes.py`            | Settings, storage, backup/restore, relocation, cleanup                              |
 | `audioextender/web/routes/imports.py`             | Source matching plus authorized, local-file, and playlist import delivery            |
@@ -406,6 +407,18 @@ persist; terminal receipts replace that provisional statement with the outcome.
 Add SQL to the mixin that owns its data, not back to `facade.py`. The database
 is `workspace/output/reports/audioextender.sqlite3`. State that must survive restarts
 belongs in SQLite, not module globals or browser-only storage.
+
+### External rating boundary
+
+`imports/rekordbox_ratings.py` parses user-selected public collection XML or
+UTF-16 tab-separated TXT exports and performs conservative catalog matching.
+TXT exports lack paths and application identity markers, so they use only exact
+normalized artist/title/duration matches. HTTP routes expose preview and apply as
+separate commands. `persistence/catalog/external_ratings.py` owns durable,
+source-scoped evidence. Catalog projections attach the evidence to a specific
+recording version; Set Builder may rerank an already eligible candidate but may
+not use a rating to bypass any hard filter, recording-family uniqueness, or
+transition validation.
 
 ## Processing pipeline
 

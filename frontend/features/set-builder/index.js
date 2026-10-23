@@ -834,6 +834,7 @@ export function createSetBuilderFeature({
         _recordingCode: item.recording_code || '',
         _versionCode: item.version_code || '',
         _descriptors: item.descriptors || [],
+        _externalRating: item.external_rating || null,
       };
       track._manualIdentity = [
         ...new Set([

@@ -528,6 +528,23 @@
         <div id="relocation-plan-summary" class="relocation-plan-summary" hidden></div>
         <div id="relocation-progress" class="relocation-progress" hidden><div><strong id="relocation-stage">Preparing…</strong><span id="relocation-percent">0%</span></div><progress id="relocation-progress-bar" max="100" value="0"></progress><p id="relocation-detail"></p><div class="relocation-actions"><button id="relocation-rollback" class="button secondary" type="button" hidden>Restore original catalog</button><button id="relocation-cancel" class="button secondary" type="button">Cancel safely</button><button id="relocation-start" type="button">Start relocation</button></div></div>
       </section>
+      <details class="panel settings-drawer rekordbox-rating-panel">
+        <summary><span><b>Rekordbox ratings</b><small>Import your 1–5 star ratings as bounded Set Builder preference evidence</small></span><i aria-hidden="true">›</i></summary>
+        <div class="settings-drawer-body rekordbox-rating-body">
+          <div class="rekordbox-rating-intro">
+            <div><strong>Sync a collection export</strong><span>Export your Rekordbox collection as XML or TXT, then preview it here. DJ Library Studio never reads or modifies the private Rekordbox database.</span></div>
+            <input id="rekordbox-rating-file" type="file" accept=".xml,.txt,text/plain,text/tab-separated-values,text/xml,application/xml" hidden>
+            <button id="preview-rekordbox-ratings" class="button secondary" type="button">Choose export &amp; preview</button>
+            <button id="apply-rekordbox-ratings" type="button" disabled>Apply ratings</button>
+          </div>
+          <div id="rekordbox-rating-status" class="rekordbox-rating-status"><strong>Checking synced ratings…</strong></div>
+          <div id="rekordbox-rating-preview" class="rekordbox-rating-preview" hidden></div>
+          <div class="rekordbox-rating-footer">
+            <p id="rekordbox-rating-message" role="status">Ratings rerank eligible tracks only. They never bypass exclusions, locks, availability, or transition safety.</p>
+            <button id="clear-rekordbox-ratings" class="button secondary" type="button" disabled>Clear imported ratings</button>
+          </div>
+        </div>
+      </details>
       <details class="panel settings-drawer backup-manager-panel">
         <summary><span><b>Backup & restore</b><small>Protect analysis, verified keys, metadata, playlists, settings, and library identity</small></span><i aria-hidden="true">›</i></summary>
         <div class="settings-drawer-body backup-manager-body">

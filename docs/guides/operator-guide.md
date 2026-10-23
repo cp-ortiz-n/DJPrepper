@@ -92,6 +92,25 @@ locked-preserved counts. If the planner drops a lock or moves it to another
 journey section, validation rejects the result; the previous revision remains
 usable and can be restored with Undo.
 
+## Operate Rekordbox rating synchronization
+
+Rating synchronization is an explicit two-step import under **Settings →
+Rekordbox ratings**. Preview is read-only. Apply writes only exact catalog
+matches to SQLite and leaves ambiguous or unmatched export rows untouched.
+
+- Export a public collection XML or UTF-16 tab-separated TXT file from
+  Rekordbox; do not grant access to its private database. XML can carry stable
+  paths or DJ Library Studio identities. TXT matching is deliberately limited
+  to exact normalized artist, title, and duration.
+- Review match counts before applying, especially after moving a library or
+  changing metadata.
+- Re-importing the same ratings is idempotent and reports zero changes.
+- Use **Clear imported ratings** to roll back the signal without deleting local
+  Set Builder feedback or analyzed musical facts.
+- Back up the catalog before the first large real-library application. If many
+  rows are unmatched, reconnect/reconcile the library and preview again rather
+  than accepting weaker matching.
+
 ## Backups and recovery
 
 Back up the configured music-library folder together with the application's

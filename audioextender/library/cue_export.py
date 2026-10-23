@@ -208,6 +208,16 @@ def write_rekordbox_xml(results: Iterable[Any], path: Path) -> None:
             attributes["Genre"] = str(result.genre)
         if getattr(result, "album", ""):
             attributes["Album"] = str(result.album)
+        downloaded_id = getattr(result, "downloaded_id", None)
+        recording_code = str(getattr(result, "recording_code", "") or "")
+        version_code = str(getattr(result, "version_code", "") or "")
+        identity_markers = []
+        if downloaded_id is not None:
+            identity_markers.append(f"DJLS:downloaded:{downloaded_id}")
+        if recording_code and version_code:
+            identity_markers.append(f"DJLS:recording:{recording_code}:{version_code}")
+        if identity_markers:
+            attributes["Comments"] = " ".join(identity_markers)
         track = ET.SubElement(
             collection,
             "TRACK",

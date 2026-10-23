@@ -1135,3 +1135,25 @@ Import the generated WAV, analyze it in Rekordbox, and verify the first downbeat
 and phrase grid by ear. Set a memory cue at the start of the added intro and near
 the added outro. Because the edit adds audio before the source, previously saved
 cue timestamps from the original file will not match the new file.
+
+### Bring Rekordbox star ratings back into Set Builder
+
+Rekordbox cue export and rating synchronization are separate flows. DJ Library
+Studio writes cue/playlist XML, but it reads ratings only from a public
+collection XML or tab-separated TXT export that you explicitly select; it never
+opens or changes the private Rekordbox database.
+
+1. Export the collection from Rekordbox after saving your 1–5 star ratings. XML
+   gives the strongest identity matching; the UTF-16 TXT export is also
+   supported and uses its exact artist, title, and `Time` duration fields.
+2. Open **Settings → Rekordbox ratings** and choose the XML or TXT file.
+3. Review exact matches, unchanged ratings, ambiguous rows, and tracks that were
+   not found. Ambiguous and unmatched rows are never applied automatically.
+4. Select **Apply ratings** to save the reviewed exact matches.
+
+The Settings panel shows the rating distribution and synced tracks. Set Builder
+uses `1=-4`, `2=-2`, `3=0`, `4=+2`, and `5=+4` only as bounded preference
+evidence. Ratings cannot make an excluded, unavailable, duplicate-family, or
+musically unsafe track eligible. Each version retains its own rating, and other
+versions remain available as alternatives. **Clear imported ratings** removes
+only Rekordbox evidence; local Set Builder feedback is preserved.

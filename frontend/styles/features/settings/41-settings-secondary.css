@@ -53,6 +53,110 @@
   display: grid;
   gap: 16px;
 }
+.rekordbox-rating-body {
+  display: grid;
+  gap: 14px;
+}
+.rekordbox-rating-intro,
+.rekordbox-rating-footer,
+.rekordbox-rating-status,
+.rekordbox-preview-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rekordbox-rating-intro > div,
+.rekordbox-rating-footer > p,
+.rekordbox-preview-summary {
+  flex: 1;
+}
+.rekordbox-rating-intro strong,
+.rekordbox-rating-intro span,
+.rekordbox-rating-status strong,
+.rekordbox-rating-status span,
+.rekordbox-rating-status small,
+.rekordbox-preview-summary strong,
+.rekordbox-preview-summary span,
+.rekordbox-preview-summary small {
+  display: block;
+}
+.rekordbox-rating-intro span,
+.rekordbox-rating-status span,
+.rekordbox-rating-status small,
+.rekordbox-preview-summary span,
+.rekordbox-preview-summary small,
+.rekordbox-rating-footer p {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.rekordbox-rating-intro button,
+.rekordbox-rating-footer button {
+  width: auto;
+  min-width: 150px;
+  margin: 0;
+}
+.rekordbox-rating-status,
+.rekordbox-rating-preview {
+  position: relative;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #141614;
+}
+.rekordbox-rating-status > div {
+  flex: 1;
+}
+.rekordbox-rating-status > details {
+  min-width: 180px;
+}
+.rekordbox-rating-status summary {
+  cursor: pointer;
+  color: var(--lime);
+  font-size: 9px;
+}
+.rekordbox-rating-status .rekordbox-review-list {
+  position: absolute;
+  z-index: 3;
+  right: 40px;
+  left: 40px;
+  max-height: 320px;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #101210;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.rekordbox-rating-preview[hidden] {
+  display: none;
+}
+.rekordbox-rating-preview details {
+  margin-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.rekordbox-rating-preview summary {
+  padding: 10px 0 5px;
+  cursor: pointer;
+  font-size: 9px;
+}
+.rekordbox-review-list {
+  display: grid;
+  gap: 4px;
+}
+.rekordbox-review-list > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 8px;
+}
+.rekordbox-review-list i {
+  color: var(--lime);
+  font-style: normal;
+}
 .backup-create-panel,
 .backup-restore-panel {
   display: grid;
@@ -282,7 +386,11 @@
     grid-column: auto;
   }
   .settings-drawer-toolbar,
-  .preset-manager-actions {
+  .preset-manager-actions,
+  .rekordbox-rating-intro,
+  .rekordbox-rating-footer,
+  .rekordbox-rating-status,
+  .rekordbox-preview-summary {
     align-items: stretch;
     flex-direction: column;
   }

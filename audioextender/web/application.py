@@ -56,6 +56,7 @@ from audioextender.imports.creative_commons_worker import CreativeCommonsBatchWo
 from audioextender.imports.local import LocalAudioImportService
 from audioextender.imports.playlist_csv import parse_playlist_csv
 from audioextender.imports.playlist_match import PlaylistMatchService
+from audioextender.imports.rekordbox_ratings import RekordboxRatingSyncService
 from audioextender.imports.service import (
     ImportService,
     authorized_source_provider,
@@ -198,6 +199,7 @@ from audioextender.web.routes.recording_family_routes import (
     TrackFamilyLinkRequest,  # noqa: F401 - compatibility re-export
     create_recording_family_router,
 )
+from audioextender.web.routes.rekordbox_rating_routes import create_rekordbox_rating_router
 from audioextender.web.routes.reporting_routes import (
     OverrideRequest,  # noqa: F401 - compatibility re-export
     ReportingRouteDependencies,
@@ -698,7 +700,7 @@ def _build_set_builder_services() -> dict[str, Any]:
     }
 
 
-def _register_routers(application: FastAPI) -> None:
+def _register_routers(application: FastAPI, rekordbox_rating_sync_service: RekordboxRatingSyncService) -> None:
     """Register feature routers after every dependency family is composed."""
     routers = [
         create_frontend_router(),
@@ -714,6 +716,7 @@ def _register_routers(application: FastAPI) -> None:
             )
         ),
         create_recording_family_router(recording_family_service),
+        create_rekordbox_rating_router(rekordbox_rating_sync_service),
         create_downloaded_track_mutation_router(downloaded_track_mutation_service),
         create_audio_quality_router(audio_quality_scan_service),
         create_creative_commons_router(
@@ -1058,26 +1061,22 @@ def create_app(
         raise ValueError("Pass either runtime or paths, not both")
     runtime = runtime or ApplicationRuntime.create(paths or DEFAULT_PATHS)
     _bind_runtime(runtime)
-
     global import_service, local_import_service, playlist_match_service, creative_commons_service
     global creative_commons_archive_service, creative_commons_worker, import_issue_service, source_matching_service
-    global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service
+    global audio_quality_scan_service, artwork_thumbnail_service, library_maintenance_service, recording_family_service
     global local_media_service, downloaded_catalog_migrator, library_job_catalog_service
     global track_metadata_mutations, metadata_batch_service, downloaded_track_mutation_service
-    global recording_family_service
     global _run_integrity_scan, intention_planner, journey_planner, brief_preparation, set_preference_service
     global set_review_service, candidate_retriever, set_plan_validator, track_planner
     global downloaded_analysis_queue, downloaded_catalog_query_service, downloaded_library_delivery_service
-    global preset_service, job_workflow_service, job_review_service, reporting_service
-    global catalog_projection_builder, catalog_projection_publisher
-    global performance_diagnostics_service
+    global preset_service, job_workflow_service, job_review_service, reporting_service, catalog_projection_builder
+    global catalog_projection_publisher, performance_diagnostics_service
 
     performance_diagnostics_service = PerformanceDiagnostics(
         samples=performance_diagnostics,
         cache_stats=performance_cache_stats,
         lock=performance_diagnostics_lock,
     )
-
     catalog_projection_builder = _current_catalog_projection_builder()
     catalog_projection_publisher = CatalogProjectionPublisher(
         repository=lambda: repository,
@@ -1087,6 +1086,7 @@ def create_app(
         memory_cache=library_catalog_cache,
         memory_cache_lock=library_catalog_cache_lock,
     )
+    rekordbox_rating_sync_service = RekordboxRatingSyncService(repository, catalog_projection_publisher.publish)
     artwork_thumbnail_service = ArtworkThumbnailService(
         thumbnail_root=lambda: _music_library_root() / ".artwork" / "thumbnails",
         record_cache_result=_record_cache_result,
@@ -1162,7 +1162,7 @@ def create_app(
         UncachedStaticFiles(directory=runtime.paths.frontend, check_dir=False),
         name="assets",
     )
-    _register_routers(application)
+    _register_routers(application, rekordbox_rating_sync_service)
 
     def startup() -> None:
         runtime.repository.recover_interrupted()

@@ -51,13 +51,14 @@ class CatalogProjectionBuilderTests(unittest.TestCase):
             builder.write_catalog_cache()
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(6, payload["version"])
+        self.assertEqual(7, payload["version"])
         self.assertEqual(1, payload["total"])
         self.assertEqual([], payload["tracks"][0]["descriptors"])
         self.assertEqual("8A", payload["tracks"][0]["analysis"]["_camelot"])
         self.assertEqual(9, payload["tracks"][0]["job"]["id"])
         self.assertEqual("HOU-000003", payload["tracks"][0]["recording_code"])
         self.assertEqual("ORG", payload["tracks"][0]["version_code"])
+        self.assertIsNone(payload["tracks"][0]["external_rating"])
 
 
 if __name__ == "__main__":

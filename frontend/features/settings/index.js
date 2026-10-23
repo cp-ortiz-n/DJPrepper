@@ -1,4 +1,5 @@
 import {useFrontendServices} from '../../core/frontend-services.js';
+import {createRekordboxRatingSync} from './rekordbox-ratings.js';
 
 export function createSettingsController({loadConfig, loadPresets, loadLibraryStatus, loadRelocationState}) {
   return {
@@ -32,6 +33,7 @@ export function createSettingsFeature({
   libraryAvailabilityView,
 }) {
   const {api, $, operationReceiptText, confirmAction} = useFrontendServices(services);
+  const rekordboxRatings = createRekordboxRatingSync({api, $, escapeHtml, confirmAction, invalidateCatalogs});
   $('#settings-form').addEventListener('submit', async event => {
     event.preventDefault();
     const values = {
@@ -321,6 +323,7 @@ export function createSettingsFeature({
       loadLibraryStatus();
       loadRelocationState();
       loadLibraryHealth();
+      rekordboxRatings.loadStatus();
       return configured;
     },
   };
