@@ -1,11 +1,19 @@
 /** AI and deterministic Set Builder planning-session orchestration. */
-
 import {
   aiPlanningContext,
   assignPlanSections,
   catalogIds,
   planningJourney,
 } from './planning-request.js';
+import {
+  createJourneyAllocation,
+  deterministicTrackCount,
+  ensureRequestedGenreCoverage,
+  journeyPlanSnapshot,
+  journeySectionFallbacks,
+  sectionCandidatePool,
+  shortlistJourneyPool,
+} from './journey-allocation.js';
 import { createSetRegenerationCommand } from './regeneration.js';
 
 export function createSetPlanningSession({ state, dom, clients, policy, transitions, lifecycle, view, progress = {} }) {
@@ -52,29 +60,26 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       intentionEvaluation(track, brief).score +
       (intendedGenres.some((term) => trackMatchesIntendedGenre(track, term)) ? 40 : 0) -
       Math.abs(songEnergy(track) - targetSetEnergy(0, 2, brief)) * 12;
-    const shortlistLimit = 800;
-    const pool =
-      eligiblePool.length <= shortlistLimit
-        ? eligiblePool
-        : [...eligiblePool].sort((a, b) => coarseScore(b) - coarseScore(a)).slice(0, shortlistLimit);
-    eligiblePool
-      .filter((track) => requiredIds.has(setTrackId(track)) && !pool.includes(track))
-      .forEach((track) => pool.push(track));
+    const pool = shortlistJourneyPool({ eligiblePool, requiredIds, setTrackId, score: coarseScore });
     if (pool.length < 2) {
       $('#set-builder-message').textContent =
         `Only ${pool.length} analyzed track${pool.length === 1 ? '' : 's'} passed the hard filters. Check BPM, vocals, timing, exclusions, and manually selected genres.`;
       return;
     }
-    const averageSeconds =
-      pool.reduce((sum, track) => sum + Math.max(90, Number(track.duration_seconds || 210) - 30), 0) / pool.length;
-    const count = Math.max(
-      2,
-      new Set([...state.requiredIds, ...state.lockedIds]).size,
-      Math.min(pool.length, Math.ceil((brief.length * 60) / averageSeconds)),
-    );
+    const protectedCount = new Set([...state.requiredIds, ...state.lockedIds]).size;
+    const count = deterministicTrackCount(pool, brief.length, protectedCount);
     const required = pool.filter((track) => state.requiredIds.has(setTrackId(track)));
     const genreTargets = genreAllocationTargets(brief.genres, brief.genreWeights, count);
     const previousPlan = state.plan;
+    const allocation = createJourneyAllocation({ journey, count, pool, trackMatchesIntendedGenre, setTrackId });
+    const { matchesSection, positionSections } = allocation;
+    if (allocation.scarcity) {
+      const { section, slots, available } = allocation.scarcity;
+      const genres = (section?.genres || []).join(' or ') || 'the section genres';
+      $('#set-builder-message').textContent =
+        `${section?.name || 'A journey section'} needs ${slots} unique tracks matching ${genres}, but only ${available} analyzed track${available === 1 ? ' is' : 's are'} available. Edit that section, enable related genres, or analyze and retag more matching music.`;
+      return;
+    }
     const buildVariation = (strategy, generatedTrackIds) => {
       const remaining = new Map(pool.map((track) => [setTrackId(track), track]));
       const nextPlan = [];
@@ -126,6 +131,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
           return;
         }
         const previous = nextPlan[index - 1] || null;
+        const section = positionSections[index];
         const targetGenre = nextGenre();
         const identityTarget = intendedGenreForPosition(brief.identity, index, count);
         const available = [...remaining.values()];
@@ -135,7 +141,14 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
         const targeted = targetGenre
           ? available.filter((track) => trackMatchesSetGenre(track, targetGenre))
           : available;
-        const candidatePool = identityTargeted.length ? identityTargeted : targeted.length ? targeted : available;
+        const candidatePool = sectionCandidatePool({
+          available,
+          section,
+          allocation,
+          identityTargeted,
+          globallyTargeted: targeted,
+          setTrackId,
+        });
         const ranked = candidatePool
           .map((track) => {
             const id = setTrackId(track);
@@ -174,38 +187,28 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       required.forEach((track) => {
         if (!nextPlan.some((item) => setTrackId(item) === setTrackId(track))) nextPlan.push(track);
       });
-      intendedGenres.forEach((term) => {
-        if (nextPlan.some((track) => trackMatchesIntendedGenre(track, term))) return;
-        const replacement = [...remaining.values()]
-          .filter((track) => trackMatchesIntendedGenre(track, term))
-          .sort((a, b) => coarseScore(b) - coarseScore(a))[0];
-        if (!replacement) return;
-        const replaceIndex = nextPlan
-          .map((track, index) => ({
+      ensureRequestedGenreCoverage({
+        plan: nextPlan,
+        remaining,
+        intendedGenres,
+        trackMatchesIntendedGenre,
+        coarseScore,
+        candidateScore: (track, index) =>
+          setCandidateScore(
             track,
+            nextPlan[index - 1] || null,
             index,
-            score: setCandidateScore(
-              track,
-              nextPlan[index - 1] || null,
-              index,
-              count,
-              brief,
-              strategy,
-              generatedTrackIds,
-            ),
-          }))
-          .filter(
-            (item) =>
-              item.index > 0 &&
-              !state.lockedIds.has(setTrackId(item.track)) &&
-              !state.requiredIds.has(setTrackId(item.track)),
-          )
-          .sort((a, b) => a.score - b.score)[0]?.index;
-        if (replaceIndex == null) return;
-        remaining.set(setTrackId(nextPlan[replaceIndex]), nextPlan[replaceIndex]);
-        remaining.delete(setTrackId(replacement));
-        nextPlan[replaceIndex] = replacement;
+            count,
+            brief,
+            strategy,
+            generatedTrackIds,
+          ),
+        canReplace: (track) =>
+          !state.lockedIds.has(setTrackId(track)) && !state.requiredIds.has(setTrackId(track)),
+        replacementAllowed: (replacement, index) => matchesSection(replacement, positionSections[index]),
+        setTrackId,
       });
+      assignPlanSections(nextPlan, journey, state.lockedIds, setTrackId);
       return failed ? [] : nextPlan;
     };
     const result = await classicPlanner.generate({
@@ -215,7 +218,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       improveOrder: (plan) => improveSetOrder(plan, brief),
       evaluate: setHealth,
       trackId: setTrackId,
-      snapshot: (plan) => ({ tracks: plan.map(setTrackId), locked: [...state.lockedIds], transitions: {} }),
+      snapshot: (plan) => journeyPlanSnapshot(plan, state.lockedIds, setTrackId),
     });
     if (!result.accepted.length) {
       const issues = setHealthIssues(result.best.health, brief.minimumHealth);
@@ -229,6 +232,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     state.activeProposal = preferred.id;
     restoreSetSnapshot(preferred.snapshot, false);
     assignPlanSections(state.plan, journey, state.lockedIds, setTrackId);
+    const sectionFallbacks = journeySectionFallbacks(state.plan, positionSections, matchesSection);
     $('#set-builder-message').textContent =
       `Built ${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'}. Optimizing transition techniques for ${preferred.label}…`;
     progress.startTransitionOptimization?.();
@@ -242,7 +246,11 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       provider: brief.identity?.provider || 'offline',
       model: null,
       summary: `${preferred.label} selected from ${result.accepted.length} deterministic direction${result.accepted.length === 1 ? '' : 's'}.`,
-      warnings: [],
+      warnings: sectionFallbacks.map(({ index, section }) => ({
+        code: 'expanded-genre-match',
+        position: index + 1,
+        sectionId: section.id,
+      })),
       evaluation: null,
       candidatePool: null,
       planningDurationMs: null,
@@ -251,7 +259,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     };
     renderSetPlan();
     $('#set-builder-message').textContent =
-      `${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'} ready · ${preferred.label} applied at ${preferred.health.score}/100. Switch directions below to compare.`;
+      `${result.accepted.length} distinct direction${result.accepted.length === 1 ? '' : 's'} ready · ${preferred.label} applied at ${preferred.health.score}/100${sectionFallbacks.length ? ` · ${sectionFallbacks.length} related-genre fill${sectionFallbacks.length === 1 ? '' : 's'} disclosed below` : ''}. Switch directions below to compare.`;
   }
 
   async function cancelAITrackPlan() {

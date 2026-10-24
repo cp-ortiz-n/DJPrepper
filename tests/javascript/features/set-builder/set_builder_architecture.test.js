@@ -371,7 +371,10 @@ test('offline journey preserves exact genres and a complete editable duration', 
 test('Set Builder store snapshots and restores plan identity, locks, and transitions', () => {
   const storage = { getItem: () => 'true' };
   const store = createSetBuilderStore({ storage });
-  const library = [{ id: 'a' }, { id: 'b' }];
+  const library = [
+    { id: 'a', _planSectionId: 'opening' },
+    { id: 'b', _planSectionId: 'closing' },
+  ];
   store.plan = [...library];
   store.lockedIds.add('a');
   store.transitionSettings['a→b'] = { bars: 16 };
@@ -382,6 +385,9 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
   store.lockedIds.clear();
   store.transitionSettings['a→b'].bars = 8;
   store.revisionComparison = null;
+  library.forEach((track) => {
+    track._planSectionId = 'wrong';
+  });
   restoreSetPlan(store, snapshot, library, trackId);
 
   assert.equal(store.compactMode, true);
@@ -389,6 +395,7 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
   assert.deepEqual([...store.lockedIds], ['a']);
   assert.deepEqual(store.transitionSettings, { 'a→b': { bars: 16 } });
   assert.deepEqual(store.revisionComparison, { stayed: 1, changedTrackIds: ['b'] });
+  assert.deepEqual(store.plan.map((track) => track._planSectionId), ['opening', 'closing']);
 });
 
 test('Set Builder keeps stable draft and plan revision identities until an explicit reset', () => {
@@ -1048,6 +1055,162 @@ test('planning session builds and receipts an accepted deterministic proposal', 
   assert.deepEqual(session.receipt().planRevision, { id: 'revision-1', number: 1 });
   assert.match(elements.get('#set-builder-message').textContent, /Balanced applied at 82\/100/);
   assert.equal(Object.isFrozen(session), true);
+});
+
+test('deterministic planning fills tracks from each confirmed journey section', async () => {
+  const state = {
+    library: [
+      { id: 'house-1', catalogId: 1, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-2', catalogId: 2, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-3', catalogId: 3, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-4', catalogId: 4, duration_seconds: 180, genres: ['house'] },
+      { id: 'techno-1', catalogId: 5, duration_seconds: 180, genres: ['latin techno', 'techno'] },
+      { id: 'techno-2', catalogId: 6, duration_seconds: 180, genres: ['latin techno', 'techno'] },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+    genreSelectionOrder: [],
+    generationNonce: 0,
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-planning-mode', { value: 'classic' }],
+  ]);
+  const classicPlanner = {
+    async generate(options) {
+      const plan = options.buildVariation('balanced', new Set());
+      const proposal = {
+        id: 'balanced',
+        label: 'Balanced',
+        accepted: true,
+        snapshot: options.snapshot(plan),
+        health: options.evaluate(plan),
+      };
+      return { accepted: [proposal], proposals: [proposal], preferred: proposal, best: proposal };
+    },
+  };
+  const journey = {
+    genrePolicy: { mode: 'strict' },
+    sections: [
+      { id: 'warm-up', name: 'Warm-up', durationPercent: 33, genres: ['house'] },
+      { id: 'opening', name: 'Opening', durationPercent: 34, genres: ['house', 'latin techno'] },
+      { id: 'closing', name: 'Closing', durationPercent: 33, genres: ['techno'] },
+    ],
+  };
+  const { session } = planningSessionFor({
+    state,
+    elements,
+    classicPlanner,
+    planningClient: {},
+    overrides: {
+      policy: {
+        trackMatchesIntendedGenre: (track, genre) => track.genres.includes(genre),
+        trackMatchesSetGenre: (track, genre) => track.genres.includes(genre),
+      },
+      lifecycle: {
+        setBrief: () => ({
+          length: 15,
+          genres: ['house', 'techno'],
+          detailedGenres: [],
+          genreWeights: { house: 50, techno: 50 },
+          genreFlow: 'chapters',
+          minimumHealth: 65,
+          curve: 'rise',
+          identity: { journey },
+        }),
+        restoreSetSnapshot(snapshot) {
+          const byId = new Map(state.library.map((track) => [track.id, track]));
+          state.plan = snapshot.tracks.map((id) => byId.get(id));
+        },
+      },
+    },
+  });
+
+  await session.generateDeterministicSetPlan();
+
+  assert.deepEqual(state.plan.slice(0, 2).map((track) => track.genres[0]), ['house', 'house']);
+  assert.deepEqual(state.plan.slice(2, 4).map((track) => track.genres[0]), ['house', 'house']);
+  assert.deepEqual(state.plan.slice(4).map((track) => track.genres.at(-1)), ['techno', 'techno']);
+  assert.deepEqual(state.plan.map((track) => track._planSectionId), [
+    'warm-up',
+    'warm-up',
+    'opening',
+    'opening',
+    'closing',
+    'closing',
+  ]);
+});
+
+test('strict deterministic planning reports section scarcity instead of drifting genres', async () => {
+  const state = {
+    library: [
+      { id: 'house-1', catalogId: 1, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-2', catalogId: 2, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-3', catalogId: 3, duration_seconds: 180, genres: ['house'] },
+      { id: 'techno-1', catalogId: 4, duration_seconds: 180, genres: ['techno'] },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+    genreSelectionOrder: [],
+    generationNonce: 0,
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-planning-mode', { value: 'classic' }],
+  ]);
+  let plannerCalled = false;
+  const journey = {
+    genrePolicy: { mode: 'strict' },
+    sections: [
+      { id: 'opening', name: 'Opening', durationPercent: 50, genres: ['house'] },
+      { id: 'closing', name: 'Closing', durationPercent: 50, genres: ['techno'] },
+    ],
+  };
+  const { session } = planningSessionFor({
+    state,
+    elements,
+    classicPlanner: {
+      async generate() {
+        plannerCalled = true;
+        throw new Error('planner should not run');
+      },
+    },
+    planningClient: {},
+    overrides: {
+      policy: {
+        trackMatchesIntendedGenre: (track, genre) => track.genres.includes(genre),
+      },
+      lifecycle: {
+        setBrief: () => ({
+          length: 10,
+          genres: ['house', 'techno'],
+          detailedGenres: [],
+          genreWeights: { house: 50, techno: 50 },
+          genreFlow: 'chapters',
+          minimumHealth: 65,
+          curve: 'rise',
+          identity: { journey },
+        }),
+      },
+    },
+  });
+
+  await session.generateDeterministicSetPlan();
+
+  assert.equal(plannerCalled, false);
+  assert.equal(state.plan.length, 0);
+  assert.match(elements.get('#set-builder-message').textContent, /Closing needs 2 unique tracks matching techno/);
+  assert.match(elements.get('#set-builder-message').textContent, /only 1 analyzed track is available/);
 });
 
 test('planning session cancels the active AI job and aborts its pending result', async () => {
@@ -1760,6 +1923,32 @@ test('final mix optimization improves returned order without moving locked track
     plan.map((track) => track.id),
     ['locked', 'high', 'middle'],
   );
+});
+
+test('final mix optimization never moves tracks across confirmed journey sections', () => {
+  const plan = [
+    { id: 'opening-high', energy: 0.9, _planSectionId: 'opening' },
+    { id: 'opening-low', energy: 0.1, _planSectionId: 'opening' },
+    { id: 'closing-low', energy: 0.1, _planSectionId: 'closing' },
+    { id: 'closing-high', energy: 0.9, _planSectionId: 'closing' },
+  ];
+  const editor = transitionEditorFor(
+    { plan, lockedIds: new Set(), transitionSettings: {} },
+    {
+      optimizePlanOrder,
+      songEnergy: (track) => track.energy,
+      targetSetEnergy: (index) => (index < 2 ? 0.1 : 0.9),
+    },
+  );
+
+  const optimized = editor.improveSetOrder(plan, { identity: {} });
+
+  assert.deepEqual(optimized.map((track) => track._planSectionId), [
+    'opening',
+    'opening',
+    'closing',
+    'closing',
+  ]);
 });
 
 test('Set Builder view helpers escape content and expose planning evidence', () => {

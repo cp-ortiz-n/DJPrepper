@@ -47,6 +47,7 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 | `SetCandidateRetriever`                                           | Apply strict genre policy, availability, mixing, lock, and identity rules     |
 | `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                               |
 | `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks       |
+| `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity |
 | Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                     |
 | Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                      |
 | `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt           |
@@ -68,6 +69,12 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 - Other versions of a recording may be shown as explicit alternatives.
 - Exact genre requests never expand through scarcity fallback; the DJ is asked
   to allow related genres explicitly instead.
+- Rules-based planning selects against the genre list for the position's
+  confirmed journey section. Transition optimization may reorder tracks only
+  inside that section, never across its boundaries.
+- If a strict section does not have enough unique analyzed matches, generation
+  stops with the section name, required count, and available count. The existing
+  plan remains unchanged.
 - Plan health is an explanation signal; hard validation is the release gate.
 
 ## Verification

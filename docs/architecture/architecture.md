@@ -319,7 +319,10 @@ also removes valid-but-unrequested catalog genres unless the DJ explicitly
 authorized drift. Removed genres remain disclosed as unselected suggestions.
 The browser's `journey-review.js` owner requires confirmation after generation
 or any edit and serializes the strict/related policy with the journey. Edited
-journey sections directly control positional genre and energy targets in either safe generator. The
+journey sections directly control positional genre and energy targets in either
+safe generator. `journey-allocation.js` owns rules-based section capacity,
+section-specific candidate pools, and scarcity reporting; the transition
+optimizer cannot exchange tracks across confirmed section boundaries. The
 candidate and validator services are provider-independent. `track_planner.py`
 owns provider adaptation, repair, and fallback; `planning_jobs.py` owns lifecycle
 and cancellation; `planning_store.py` atomically persists job/request state and

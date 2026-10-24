@@ -30,6 +30,9 @@ export function createSetBuilderStore({ storage = globalThis.localStorage, creat
 export function snapshotSetPlan(store, trackId) {
   return {
     tracks: store.plan.map(trackId),
+    sections: Object.fromEntries(
+      store.plan.filter((track) => track._planSectionId).map((track) => [trackId(track), track._planSectionId]),
+    ),
     locked: [...store.lockedIds],
     transitions: structuredClone(store.transitionSettings),
     revision: store.planRevision ? structuredClone(store.planRevision) : null,
@@ -40,6 +43,11 @@ export function snapshotSetPlan(store, trackId) {
 export function restoreSetPlan(store, snapshot, library, trackId) {
   const byId = new Map(library.map((track) => [trackId(track), track]));
   store.plan = (snapshot?.tracks || []).map((id) => byId.get(id)).filter(Boolean);
+  if (snapshot && Object.hasOwn(snapshot, 'sections')) {
+    store.plan.forEach((track) => {
+      track._planSectionId = snapshot.sections?.[trackId(track)] || null;
+    });
+  }
   store.lockedIds = new Set(snapshot?.locked || []);
   store.transitionSettings = structuredClone(snapshot?.transitions || {});
   if (snapshot && Object.hasOwn(snapshot, 'revision')) {

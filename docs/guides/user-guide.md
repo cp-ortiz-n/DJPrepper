@@ -72,6 +72,14 @@ Editing any section marks the journey unconfirmed again. **Reset** restores
 the reviewed proposal, while **Regenerate journey** creates another structure
 from the current prompt.
 
+Rules-based planning now treats those section genres as positional constraints,
+not just overall set suggestions. It fills each section from matching analyzed
+tracks and keeps transition optimization inside the section boundary. When a
+strict section needs more unique matches than the catalog contains, the build
+stops and names the scarce section instead of silently filling it with another
+genre. Edit that section, enable related genres, or analyze and retag additional
+matching tracks, then build again.
+
 Set Builder separates two decisions. First, choose **Describe what I want** to
 have Local AI turn natural language into an editable brief, or **Build manually**
 to configure that direction yourself. Then choose **AI curated** to have the

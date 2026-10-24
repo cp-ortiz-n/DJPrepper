@@ -96,6 +96,8 @@ export function createSetTransitionEditor({
     return optimizePlanOrder(plan, {
       fitness: (candidate) => setOrderFitness(candidate, brief),
       isFixed: (track) => state.lockedIds.has(setTrackId(track)),
+      canSwap: (left, _leftIndex, right) =>
+        !left._planSectionId || !right._planSectionId || left._planSectionId === right._planSectionId,
       maximumPasses: 16,
     });
   }
