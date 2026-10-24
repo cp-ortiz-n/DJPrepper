@@ -595,7 +595,30 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
 });
 
 test('Set Builder explains journey planning and normalizes incomplete energy ranges', async ({ page }) => {
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/catalog',
+    (route) =>
+      route.fulfill({
+        json: {
+          tracks: [
+            {
+              downloaded_id: 91,
+              genre: 'Disco & Funk',
+              detailed_genre: 'Disco',
+              descriptors: [],
+              analysis: { source_name: 'Catalog Disco.wav', artist: 'Fixture', bpm: 124, key: 'Am', energy: 0.7 },
+              job: { id: 91, config_json: '{}', library_path: '/tmp/Catalog Disco.wav' },
+            },
+          ],
+        },
+      }),
+  );
+  await page.reload();
+  await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   await page.route('**/api/set-builder/prepare-brief', async (route) => {
+    expect(route.request().postDataJSON().catalog_vocabulary).toEqual([
+      { canonical: 'disco & funk', aliases: ['disco & funk', 'disco'], count: 1 },
+    ]);
     await new Promise((resolve) => setTimeout(resolve, 300));
     await route.fulfill({
       json: {

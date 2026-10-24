@@ -170,10 +170,14 @@ controls.
 
 Exact genre requests are strict unless the DJ explicitly enables related
 genres. AI suggestions outside that boundary remain visible but unselected.
-Canonical short-name aliases are resolved before trusting model classification;
-when a detailed tag and parent genre share the same phrase, the stable catalog
-parent wins. The one-pass preparation service revalidates that authority and
-repairs an empty model journey before it reaches the confirmation screen.
+Canonical genre aliases are data, not application constants. The frontend builds
+structured `{canonical, aliases, count}` entries from each catalog track's
+organized genre path and detailed genres. Both offline and provider-backed
+interpretation use that same request vocabulary; the backend normalizes it,
+prefers direct canonical matches, and otherwise uses catalog prevalence to
+resolve ambiguity. Legacy string vocabularies remain valid for exact matching.
+The one-pass preparation service revalidates that authority and repairs an empty
+model journey before it reaches the confirmation screen.
 New or edited journeys require **Confirm journey** before track selection; the
 confirmation gate checks section genres and total duration and becomes dirty
 again after any edit.

@@ -269,9 +269,12 @@ test('Set Builder requires explicit permission before broadening requested genre
     setBuilder.interpretSetIntention('Create a Latin Techno set and allow related genres', ['Latin Techno']).drift,
     'moderate',
   );
-  assert.deepEqual(setBuilder.interpretSetIntention('Build a disco set', ['Disco & Funk']).requestedGenres, [
-    'disco & funk',
-  ]);
+  assert.deepEqual(
+    setBuilder.interpretSetIntention('Build a disco set', [
+      { canonical: 'Disco & Funk', aliases: ['Disco'], count: 14 },
+    ]).requestedGenres,
+    ['disco & funk'],
+  );
 });
 
 test('Set Builder derives identity separately from catalog genre', () => {
@@ -292,12 +295,18 @@ test('Set Builder derives identity separately from catalog genre', () => {
 test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {
   const result = setBuilder.interpretSetIntention(
     'Build a latin reggaeton and dembow mix that also includes some rab/rap, hip hop for a chill party, kickback. Some dancing will take place as well. Add something melodic in the beginning.',
+    [
+      { canonical: 'Reggaeton', aliases: ['Reggaeton'], count: 12 },
+      { canonical: 'Dembow', aliases: ['Dembow'], count: 8 },
+      { canonical: 'R&B & Soul', aliases: ['R&B', 'RAB'], count: 5 },
+      { canonical: 'Hip-Hop & Rap', aliases: ['Hip Hop', 'Rap'], count: 9 },
+    ],
   );
   for (const term of ['dembow', 'reggaeton', 'r&b', 'rap', 'hip hop', 'chill kickback', 'dance-friendly'])
     assert.ok(result.preferred.includes(term), term);
   assert.equal(result.vibe, 'balanced');
   assert.equal(result.opening, 'melodic');
-  assert.deepEqual(result.requestedGenres, ['reggaeton', 'dembow', 'r&b', 'hip hop', 'rap']);
+  assert.deepEqual(result.requestedGenres, ['reggaeton', 'dembow', 'r&b & soul', 'hip hop & rap']);
   assert.deepEqual(result.avoided, []);
 });
 
@@ -360,8 +369,8 @@ test('Set Builder recognizes future catalog vocabulary without another hard-code
     'Jersey Club',
     'Future Genre Not Requested',
   ]);
-  assert.ok(result.preferred.includes('jersey club'));
-  assert.ok(!result.preferred.includes('future genre not requested'));
+  assert.deepEqual(result.requestedGenres, ['jersey club']);
+  assert.ok(!result.requestedGenres.includes('future genre not requested'));
 });
 
 test('Settings controller preserves startup ordering', async () => {

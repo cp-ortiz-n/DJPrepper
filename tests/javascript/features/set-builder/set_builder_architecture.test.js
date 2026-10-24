@@ -9,6 +9,7 @@ import {
 } from '../../../../frontend/features/set-builder/classic-planner.js';
 import { createSetEditCommands } from '../../../../frontend/features/set-builder/commands.js';
 import { createSetBuilderFeedback } from '../../../../frontend/features/set-builder/feedback.js';
+import { createCatalogGenreVocabulary } from '../../../../frontend/features/set-builder/genre-vocabulary.js';
 import {
   reconcileInterpretedGenreAuthority,
   repairJourneyGenrePolicy,
@@ -403,24 +404,31 @@ test('written genre brief removes nested parents and unrequested AI neighbors', 
 });
 
 test('written disco brief restores one canonical core genre from an empty model interpretation', () => {
+  const vocabulary = createCatalogGenreVocabulary([
+    { _genre: 'Disco & Funk', _detailedGenre: 'Disco' },
+    { _genre: 'Disco & Funk', _detailedGenre: 'Nu Disco' },
+  ]);
   const interpreted = reconcileInterpretedGenreAuthority(
     {
       text: 'Create a disco set',
-      requestedGenres: [],
+      requestedGenres: ['disco'],
       optionalGenres: [],
       genreSequence: [],
     },
-    ['Disco & Funk', 'disco'],
+    vocabulary,
   );
   assert.deepEqual(interpreted.requestedGenres, ['disco & funk']);
   assert.deepEqual(interpreted.optionalGenres, []);
   assert.deepEqual(interpreted.genreSequence, ['disco & funk']);
+  assert.deepEqual(vocabulary, [
+    { canonical: 'disco & funk', aliases: ['disco & funk', 'nu disco', 'disco'], count: 2 },
+  ]);
   assert.deepEqual(
     reconcileInterpretedGenreAuthority(
       { text: 'Create a disco set', requestedGenres: [], optionalGenres: [], genreSequence: [] },
       [],
     ).requestedGenres,
-    ['disco & funk'],
+    [],
   );
 });
 

@@ -64,10 +64,13 @@ provider order is local Ollama, optional OpenAI, and finally deterministic rules
 After reviewing an AI brief, confirm its **Planned journey** before building the
 track list. Exact genre prompts are strict by default: “Create a Latin Techno
 set” keeps Latin Techno in every section while allowing the energy and purpose
-to evolve. Common short names are canonicalized before journey planning—for
-example, “disco” selects the catalog’s **Disco & Funk** parent instead of being
-left as a soft descriptive preference. The written brief remains authoritative
-even when the AI omits that genre from its structured response. The journey
+to evolve. Short names are canonicalized from relationships in your current
+catalog: Set Builder groups each organized genre with the detailed genre names
+found on its tracks and uses catalog prevalence to resolve ambiguous aliases.
+For example, “disco” selects **Disco & Funk** when Disco is a detailed genre on
+tracks organized there. No global list of genre exceptions is required, so new
+genres become available as the library evolves. The written brief remains
+authoritative even when the AI omits that genre from its structured response. The journey
 starts as compact overview rows; expand only the section you want to edit. Use
 **Use in every section** to apply the core genres at once.
 Related catalog genres proposed by the model appear as unselected suggestions;

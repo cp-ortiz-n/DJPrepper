@@ -6,7 +6,6 @@
     "audioextender/set_builder/plan_validator.py",
     "audioextender/set_builder/preference_learning.py",
     "audioextender/set_builder/transition_optimizer.py",
-    "tests/unit/set_builder/test_intention_planner.py",
     "tests/unit/set_builder/test_journey_planner.py",
     "tests/integration/set_builder/test_local_intention_acceptance.py",
     "tests/unit/set_builder/test_plan_comparator.py",

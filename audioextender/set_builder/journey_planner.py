@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from audioextender.set_builder.genre_vocabulary import canonical_genres
 from audioextender.set_builder.intention_planner import IntentionPlanner, _clean_term
 
 logger = logging.getLogger("uvicorn.error")
@@ -238,9 +239,9 @@ def enforce_journey_genre_policy(
 class JourneyPlanner:
     intention_planner: IntentionPlanner
 
-    def plan(self, brief: str, interpreted: dict[str, Any], catalog_vocabulary: list[str],
+    def plan(self, brief: str, interpreted: dict[str, Any], catalog_vocabulary: list[Any],
              duration_minutes: int) -> dict[str, Any]:
-        vocabulary = sorted({str(value).strip() for value in catalog_vocabulary if str(value).strip()})[:800]
+        vocabulary = canonical_genres(catalog_vocabulary)[:800]
         started = perf_counter()
         try:
             result = self._plan_with_provider(brief, interpreted, vocabulary)

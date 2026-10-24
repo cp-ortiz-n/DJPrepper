@@ -41,7 +41,10 @@ class BriefPreparationServiceTests(unittest.TestCase):
         result = service.prepare("Melodic Latin House", ["Latin House"], 60)
 
         planner.interpret.assert_called_once_with(
-            "Melodic Latin House", ["Latin House"], schema=BRIEF_SCHEMA, instructions=BRIEF_INSTRUCTIONS
+            "Melodic Latin House",
+            [{"canonical": "latin house", "aliases": ["latin house"], "count": 0}],
+            schema=BRIEF_SCHEMA,
+            instructions=BRIEF_INSTRUCTIONS,
         )
         self.assertEqual(result["journey"]["evidence"], "ai-interpreted")
         self.assertEqual(result["journey"]["sections"][0]["genres"], ["latin house"])
@@ -79,7 +82,11 @@ class BriefPreparationServiceTests(unittest.TestCase):
                 ],
             },
         }
-        result = BriefPreparationService(planner).prepare("Create a disco set", ["Disco & Funk", "disco"], 60)
+        result = BriefPreparationService(planner).prepare(
+            "Create a disco set",
+            [{"canonical": "Disco & Funk", "aliases": ["Disco"], "count": 12}],
+            60,
+        )
         self.assertEqual(result["interpretation"]["requestedGenres"], ["disco & funk"])
         self.assertEqual(result["interpretation"]["genreSequence"], ["disco & funk"])
         self.assertEqual(result["journey"]["sections"][0]["genres"], ["disco & funk"])
@@ -173,12 +180,16 @@ class BriefPreparationServiceTests(unittest.TestCase):
                 "/api/set-builder/prepare-brief",
                 json={
                     "brief": "Latin House",
-                    "catalog_vocabulary": ["Latin House"],
+                    "catalog_vocabulary": [{"canonical": "Latin House", "aliases": ["Guaracha"], "count": 9}],
                     "duration_minutes": 45,
                 },
             )
             self.assertEqual(response.status_code, 200)
-            preparation.prepare.assert_called_once_with("Latin House", ["Latin House"], 45)
+            preparation.prepare.assert_called_once_with(
+                "Latin House",
+                [{"canonical": "Latin House", "aliases": ["Guaracha"], "count": 9}],
+                45,
+            )
             invalid = client.post("/api/set-builder/prepare-brief", json={"brief": "", "duration_minutes": 1})
             self.assertEqual(invalid.status_code, 422)
 

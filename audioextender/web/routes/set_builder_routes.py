@@ -37,7 +37,7 @@ class SetPlaylistSaveRequest(BaseModel):
 
 class SetIntentionRequest(BaseModel):
     brief: str = Field(min_length=1, max_length=4000)
-    catalog_vocabulary: list[str] = Field(default_factory=list, max_length=2000)
+    catalog_vocabulary: list[str | dict[str, Any]] = Field(default_factory=list, max_length=2000)
 
 
 class SetJourneyRequest(SetIntentionRequest):

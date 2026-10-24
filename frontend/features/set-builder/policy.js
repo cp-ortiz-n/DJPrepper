@@ -111,22 +111,6 @@ export function parseIdentityTerms(value) {
   ];
 }
 
-const SET_GENRE_INTENT_PATTERNS = [
-  [/latin techno/, 'latin techno'],
-  [/latin house/, 'latin house'],
-  [/schranz/, 'schranz'],
-  [/reggaeton|perreo/, 'reggaeton'],
-  [/dembow/, 'dembow'],
-  [/bachata/, 'bachata'],
-  [/cumbia/, 'cumbia'],
-  [/merengue/, 'merengue'],
-  [/salsa/, 'salsa'],
-  [/guaracha/, 'guaracha'],
-  [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'],
-  [/hip[- ]?hop/, 'hip hop'],
-  [/(?:^|\W)rap(?:\W|$)/, 'rap'],
-];
-
 function normalizedIntentPhrase(value) {
   return ` ${String(value || '')
     .toLowerCase()
@@ -158,8 +142,6 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
   const preferred = [];
   const required = [];
   const avoided = [];
-  const requestedGenres = [];
-  const genreSequence = [];
   const rules = [
     [/ecuador|ecuadorian/, 'ecuadorian party'],
     [/colombia|colombian/, 'colombian'],
@@ -189,34 +171,6 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
   rules.forEach(([pattern, term]) => {
     if (pattern.test(lower)) preferred.push(term);
   });
-  SET_GENRE_INTENT_PATTERNS.forEach(([pattern, term]) => {
-    const match = lower.match(pattern);
-    if (match) {
-      requestedGenres.push(term);
-      genreSequence.push({ term, index: match.index ?? Number.MAX_SAFE_INTEGER });
-    }
-  });
-  const normalizedText = normalizedIntentPhrase(text);
-  const genericTerms = new Set(['all', 'any', 'general', 'music', 'other', 'unknown', 'unclassified']);
-  for (const rawTerm of catalogVocabulary) {
-    const term = String(rawTerm || '')
-      .trim()
-      .toLowerCase();
-    const normalized = normalizedIntentPhrase(term).trim();
-    if (normalized.length < 3 || genericTerms.has(normalized)) continue;
-    if (normalizedText.includes(` ${normalized} `)) {
-      preferred.push(term);
-      if (
-        /techno|house|schranz|reggaeton|dembow|bachata|cumbia|merengue|salsa|guaracha|hip hop|r&b|\brap\b/.test(
-          normalized,
-        )
-      ) {
-        requestedGenres.push(term);
-        const index = normalizedText.indexOf(` ${normalized} `);
-        genreSequence.push({ term, index: index < 0 ? Number.MAX_SAFE_INTEGER : index });
-      }
-    }
-  }
   if (/(?:must|required|require)[^.]*spanish/.test(lower)) required.push('spanish vocals');
   if (/(?:must|required|require)[^.]*(?:latin percussion|dembow|latin rhythm)/.test(lower))
     required.push('latin rhythmic identity');
@@ -249,25 +203,13 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
   const opening = /(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)
     ? 'melodic'
     : null;
-  const detectedGenres = [
-    ...new Set([
-      ...requestedGenres,
-      ...genreSequence.sort((left, right) => left.index - right.index).map((item) => item.term),
-    ]),
-  ];
-  const orderedGenres = explicitGenreMentions(text, [...catalogVocabulary, ...detectedGenres]);
-  const authorizedGenres = new Set(orderedGenres);
+  const orderedGenres = explicitGenreMentions(text, catalogVocabulary);
   return {
     text,
     required: parseIdentityTerms(required.join(',')),
     preferred: parseIdentityTerms(preferred.join(',')),
     avoided: parseIdentityTerms(avoided.join(',')),
-    requestedGenres: [
-      ...new Set([
-        ...parseIdentityTerms(requestedGenres.join(',')).filter((genre) => authorizedGenres.has(genre)),
-        ...orderedGenres,
-      ]),
-    ],
+    requestedGenres: [...orderedGenres],
     genreSequence: orderedGenres,
     drift,
     vibe,

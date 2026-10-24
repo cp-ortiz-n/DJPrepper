@@ -31,6 +31,7 @@ import {
 import { createSetBuilderProgressView } from './progress-view.js';
 import { createSetJourneyReview } from './journey-review.js';
 import { reconcileInterpretedGenreAuthority } from './journey-policy.js';
+import { createCatalogGenreVocabulary } from './genre-vocabulary.js';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -122,19 +123,7 @@ export function createSetBuilderFeature({
     }
   }
   function intentionVocabulary() {
-    return [
-      ...new Set(
-        state.library
-          .flatMap((track) => [
-            ...String(track._genre || '')
-              .split('/')
-              .map((value) => value.trim()),
-            ...setTrackDetailedGenres(track),
-            ...(track._descriptors || []).map((item) => item.value),
-          ])
-          .filter(Boolean),
-      ),
-    ];
+    return createCatalogGenreVocabulary(state.library);
   }
   function manualTrackIdentity(track) {
     return identityStore()[setTrackId(track)] || [];

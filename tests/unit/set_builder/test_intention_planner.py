@@ -25,11 +25,17 @@ class IntentionPlannerTests(unittest.TestCase):
 
     def test_planner_returns_strict_positional_interpretation(self) -> None:
         interpretation = {
-            "required": [], "preferred": ["melodic", "warm-up"], "avoided": [],
-            "requestedGenres": ["latin house"], "optionalGenres": ["schranz"],
+            "required": [],
+            "preferred": ["melodic", "warm-up"],
+            "avoided": [],
+            "requestedGenres": ["latin house"],
+            "optionalGenres": ["schranz"],
             "genreSequence": ["latin house", "schranz"],
-            "drift": "moderate", "vibe": "warm-up", "curve": "waves",
-            "opening": "melodic", "ending": None,
+            "drift": "moderate",
+            "vibe": "warm-up",
+            "curve": "waves",
+            "opening": "melodic",
+            "ending": None,
             "explanation": "Open melodically, then move through energy waves.",
         }
         response = Mock()
@@ -54,9 +60,18 @@ class IntentionPlannerTests(unittest.TestCase):
 
     def test_local_ollama_is_primary_and_uses_the_same_schema(self) -> None:
         interpretation = {
-            "required": [], "preferred": ["melodic"], "avoided": [], "requestedGenres": ["latin techno"],
-            "optionalGenres": [], "genreSequence": ["latin techno"], "drift": "low", "vibe": "warm-up", "curve": "rise",
-            "opening": "melodic", "ending": None, "explanation": "Begin melodically.",
+            "required": [],
+            "preferred": ["melodic"],
+            "avoided": [],
+            "requestedGenres": ["latin techno"],
+            "optionalGenres": [],
+            "genreSequence": ["latin techno"],
+            "drift": "low",
+            "vibe": "warm-up",
+            "curve": "rise",
+            "opening": "melodic",
+            "ending": None,
+            "explanation": "Begin melodically.",
         }
         response = Mock()
         response.raise_for_status.return_value = None
@@ -91,8 +106,11 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_inferred_genre_is_removed_from_explicit_journey(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": ["melodic"], "avoided": [],
-                "requestedGenres": ["Latin House", "Cumbia", "Latin Techno"], "optionalGenres": [],
+                "required": [],
+                "preferred": ["melodic"],
+                "avoided": [],
+                "requestedGenres": ["Latin House", "Cumbia", "Latin Techno"],
+                "optionalGenres": [],
                 "genreSequence": ["Latin House", "Cumbia", "Latin Techno"],
             },
             ["Latin House", "Cumbia", "Latin Techno"],
@@ -103,9 +121,13 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_exact_genre_request_disables_unrequested_genre_drift(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": [], "avoided": [],
-                "requestedGenres": ["Latin Techno"], "optionalGenres": [],
-                "genreSequence": ["Latin Techno"], "drift": "moderate",
+                "required": [],
+                "preferred": [],
+                "avoided": [],
+                "requestedGenres": ["Latin Techno"],
+                "optionalGenres": [],
+                "genreSequence": ["Latin Techno"],
+                "drift": "moderate",
             },
             ["Latin Techno", "Latin House", "Amapiano"],
             "Create a Latin Techno set",
@@ -115,7 +137,9 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_exact_genre_request_removes_nested_parent_and_invented_neighbors(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": [], "avoided": [],
+                "required": [],
+                "preferred": [],
+                "avoided": [],
                 "requestedGenres": ["Latin Techno", "Techno"],
                 "optionalGenres": ["Latin House", "Latin Pop", "Latin R&B"],
                 "genreSequence": ["Latin Techno", "Techno", "Latin House"],
@@ -132,9 +156,13 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_separately_named_parent_and_specific_genres_are_both_preserved(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": [], "avoided": [],
-                "requestedGenres": ["Techno", "Latin Techno"], "optionalGenres": [],
-                "genreSequence": ["Techno", "Latin Techno"], "drift": "none",
+                "required": [],
+                "preferred": [],
+                "avoided": [],
+                "requestedGenres": ["Techno", "Latin Techno"],
+                "optionalGenres": [],
+                "genreSequence": ["Techno", "Latin Techno"],
+                "drift": "none",
             },
             ["Latin Techno", "Techno"],
             "Start with Techno, then move into Latin Techno",
@@ -145,11 +173,18 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_common_short_name_maps_to_catalog_genre(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": [], "avoided": [],
-                "requestedGenres": ["Disco & Funk"], "optionalGenres": [],
-                "genreSequence": ["Disco & Funk"], "drift": "none",
+                "required": [],
+                "preferred": [],
+                "avoided": [],
+                "requestedGenres": ["Disco & Funk"],
+                "optionalGenres": [],
+                "genreSequence": ["Disco & Funk"],
+                "drift": "none",
             },
-            ["Disco & Funk", "Techno"],
+            [
+                {"canonical": "Disco & Funk", "aliases": ["Disco"], "count": 24},
+                {"canonical": "Techno", "aliases": ["Techno"], "count": 50},
+            ],
             "Build a disco set",
         )
         self.assertEqual(result["requestedGenres"], ["disco & funk"])
@@ -158,10 +193,15 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_common_short_name_prefers_canonical_parent_over_same_named_detail(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": ["disco"], "avoided": [],
-                "requestedGenres": [], "optionalGenres": [], "genreSequence": [], "drift": "none",
+                "required": [],
+                "preferred": ["disco"],
+                "avoided": [],
+                "requestedGenres": ["disco"],
+                "optionalGenres": [],
+                "genreSequence": ["disco"],
+                "drift": "none",
             },
-            ["Disco & Funk", "disco"],
+            [{"canonical": "Disco & Funk", "aliases": ["disco"], "count": 24}],
             "Create a disco set",
         )
         self.assertEqual(result["requestedGenres"], ["disco & funk"])
@@ -170,9 +210,13 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_related_genre_drift_requires_explicit_authorization(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": [], "avoided": [],
-                "requestedGenres": ["Latin Techno"], "optionalGenres": [],
-                "genreSequence": ["Latin Techno"], "drift": "none",
+                "required": [],
+                "preferred": [],
+                "avoided": [],
+                "requestedGenres": ["Latin Techno"],
+                "optionalGenres": [],
+                "genreSequence": ["Latin Techno"],
+                "drift": "none",
             },
             ["Latin Techno", "Latin House"],
             "Create a Latin Techno set and allow related genres",
@@ -182,8 +226,11 @@ class IntentionPlannerTests(unittest.TestCase):
     def test_positional_descriptor_is_not_treated_as_a_genre(self) -> None:
         result = sanitize_interpretation(
             {
-                "required": [], "preferred": ["melodic"], "avoided": [],
-                "requestedGenres": ["Melodic", "Cumbia"], "optionalGenres": [],
+                "required": [],
+                "preferred": ["melodic"],
+                "avoided": [],
+                "requestedGenres": ["Melodic", "Cumbia"],
+                "optionalGenres": [],
                 "genreSequence": ["Melodic", "Cumbia"],
             },
             ["Melodic", "Cumbia"],
@@ -193,9 +240,18 @@ class IntentionPlannerTests(unittest.TestCase):
 
     def test_auto_provider_falls_back_from_local_to_cloud(self) -> None:
         cloud_result = {
-            "required": [], "preferred": ["smooth"], "avoided": [], "requestedGenres": ["latin house"],
-            "optionalGenres": [], "genreSequence": ["latin house"], "drift": "low", "vibe": "warm-up", "curve": "rise",
-            "opening": "melodic", "ending": "smooth", "explanation": "A gentle warm-up and smooth close.",
+            "required": [],
+            "preferred": ["smooth"],
+            "avoided": [],
+            "requestedGenres": ["latin house"],
+            "optionalGenres": [],
+            "genreSequence": ["latin house"],
+            "drift": "low",
+            "vibe": "warm-up",
+            "curve": "rise",
+            "opening": "melodic",
+            "ending": "smooth",
+            "explanation": "A gentle warm-up and smooth close.",
         }
         cloud_response = Mock()
         cloud_response.raise_for_status.return_value = None

@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any
 
+from audioextender.set_builder.genre_vocabulary import canonical_genres, normalize_genre_vocabulary
 from audioextender.set_builder.intention_planner import (
     INTENTION_SCHEMA,
     PLANNER_INSTRUCTIONS,
@@ -26,7 +27,7 @@ from audioextender.set_builder.journey_planner import (
     sanitize_journey,
 )
 
-BRIEF_PREPARATION_VERSION = 4
+BRIEF_PREPARATION_VERSION = 5
 BRIEF_SCHEMA = {
     **INTENTION_SCHEMA,
     "properties": {**INTENTION_SCHEMA["properties"], "journey": JOURNEY_SCHEMA},
@@ -51,10 +52,10 @@ class BriefPreparationService:
     def prepare(
         self,
         brief: str,
-        catalog_vocabulary: list[str],
+        catalog_vocabulary: list[Any],
         duration_minutes: int,
     ) -> dict[str, Any]:
-        vocabulary = sorted({str(value).strip() for value in catalog_vocabulary if str(value).strip()})[:800]
+        vocabulary = normalize_genre_vocabulary(catalog_vocabulary)[:800]
         key = self._key(brief, vocabulary, duration_minutes)
         now = monotonic()
         with self._lock:
@@ -78,7 +79,7 @@ class BriefPreparationService:
             journey_vocabulary = list(
                 dict.fromkeys(
                     [
-                        *vocabulary,
+                        *canonical_genres(vocabulary),
                         *interpretation.get("genreSequence", []),
                         *interpretation.get("requestedGenres", []),
                         *interpretation.get("optionalGenres", []),
@@ -118,7 +119,7 @@ class BriefPreparationService:
             with self._lock:
                 self._inflight.pop(key, None)
 
-    def _key(self, brief: str, vocabulary: list[str], duration_minutes: int) -> str:
+    def _key(self, brief: str, vocabulary: list[dict[str, Any]], duration_minutes: int) -> str:
         payload = {
             "version": BRIEF_PREPARATION_VERSION,
             "brief": brief.strip(),

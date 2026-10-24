@@ -12,6 +12,13 @@ from typing import Any
 
 import httpx
 
+from audioextender.set_builder.genre_vocabulary import (
+    explicit_genre_mentions,
+    normalize_genre_term,
+    normalize_genre_vocabulary,
+    resolve_catalog_genre,
+)
+
 logger = logging.getLogger("uvicorn.error")
 
 INTENTION_SCHEMA: dict[str, Any] = {
@@ -77,15 +84,8 @@ NON_GENRE_JOURNEY_TERMS = {
     "ambient", "balanced", "closing", "dance party", "dark", "driving", "euphoric", "hypnotic",
     "industrial", "melodic", "peak time", "party ready", "warm up", "vocal safe",
 }
-GENRE_ALIASES = {
-    "disco & funk": ["disco & funk", "disco and funk", "disco"],
-    "r&b": ["r&b", "rnb", "rab", "r and b", "rhythm and blues"],
-    "hip hop": ["hip hop", "hiphop"],
-}
-
-
 def _clean_term(value: Any) -> str:
-    return " ".join(re.sub(r"[^a-z0-9&]+", " ", str(value or "").strip().lower()).split())
+    return normalize_genre_term(value)
 
 
 def _explicit_drift(brief: str) -> str:
@@ -109,46 +109,12 @@ def _explicit_drift(brief: str) -> str:
     return "none"
 
 
-def _explicit_genre_mentions(brief: str, catalog: list[str]) -> list[str]:
+def _explicit_genre_mentions(brief: str, catalog: list[Any]) -> list[str]:
     """Return explicit genres without treating a nested parent term as a second request."""
-    normalized = _clean_term(brief)
-    candidates = list(dict.fromkeys([*GENRE_ALIASES, *catalog]))
-    mentions: list[tuple[int, int, str, bool]] = []
-    for genre in candidates:
-        if genre in NON_GENRE_JOURNEY_TERMS:
-            continue
-        for phrase in GENRE_ALIASES.get(genre, [genre]):
-            pattern = rf"(?<![a-z0-9&]){re.escape(phrase)}(?![a-z0-9&])"
-            mentions.extend(
-                (match.start(), match.end(), genre, genre in GENRE_ALIASES)
-                for match in re.finditer(pattern, normalized)
-            )
-    by_span: dict[tuple[int, int], tuple[int, int, str, bool]] = {}
-    for mention in mentions:
-        span = mention[:2]
-        current = by_span.get(span)
-        if current is None or (mention[3] and not current[3]):
-            by_span[span] = mention
-    unambiguous = list(by_span.values())
-    unnested = [
-        mention
-        for mention in unambiguous
-        if not any(
-            other[2] != mention[2]
-            and other[0] <= mention[0]
-            and other[1] >= mention[1]
-            and other[1] - other[0] > mention[1] - mention[0]
-            for other in unambiguous
-        )
-    ]
-    ordered: list[str] = []
-    for _, _, genre, _ in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
-        if genre not in ordered:
-            ordered.append(genre)
-    return ordered
+    return explicit_genre_mentions(brief, catalog, excluded=NON_GENRE_JOURNEY_TERMS)
 
 
-def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief: str = "") -> dict[str, Any]:
+def sanitize_interpretation(result: dict[str, Any], vocabulary: list[Any], brief: str = "") -> dict[str, Any]:
     """Reject schema-label hallucinations and canonicalize genres against the local catalog."""
     cleaned = dict(result)
     for field in ("required", "preferred", "avoided"):
@@ -156,17 +122,15 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief
             term for term in dict.fromkeys(_clean_term(value) for value in result.get(field, []))
             if term and term not in RESERVED_PLACEHOLDERS
         ]
-    catalog = sorted({_clean_term(value) for value in vocabulary if _clean_term(value)}, key=len, reverse=True)
     for field in ("requestedGenres", "optionalGenres", "genreSequence"):
         genres: list[str] = []
         for value in result.get(field, []):
-            raw = _clean_term(value)
-            match = next((term for term in catalog if term == raw or term in raw), "")
+            match = resolve_catalog_genre(value, vocabulary)
             if match and match not in genres:
                 genres.append(match)
         cleaned[field] = genres
     if brief:
-        explicit_genres = _explicit_genre_mentions(brief, catalog)
+        explicit_genres = _explicit_genre_mentions(brief, vocabulary)
         requested_by_model = set(cleaned["requestedGenres"])
         optional_by_model = set(cleaned["optionalGenres"])
         cleaned["optionalGenres"] = [genre for genre in explicit_genres if genre in optional_by_model]
@@ -223,9 +187,9 @@ class IntentionPlanner:
                 "model": self.ollama_model if local_available else self.model if self.api_key else None,
                 "local_runtime": local_available, "installed_local_models": local_models}
 
-    def interpret(self, brief: str, catalog_vocabulary: list[str], *,
+    def interpret(self, brief: str, catalog_vocabulary: list[Any], *,
                   schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
-        vocabulary = sorted({str(value).strip() for value in catalog_vocabulary if str(value).strip()})[:800]
+        vocabulary = normalize_genre_vocabulary(catalog_vocabulary)[:800]
         errors: list[str] = []
         started = perf_counter()
         if self.provider in {"auto", "ollama"}:
@@ -264,7 +228,7 @@ class IntentionPlanner:
                 logger.warning("Set Builder AI provider failed: provider=openai model=%s error=%s", self.model, error)
         raise RuntimeError("; ".join(errors) or "No local or cloud AI provider is configured")
 
-    def _interpret_ollama(self, brief: str, vocabulary: list[str], *,
+    def _interpret_ollama(self, brief: str, vocabulary: list[dict[str, Any]], *,
                           schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
         response = httpx.post(
             f"{self.ollama_endpoint}/api/chat",
@@ -283,7 +247,7 @@ class IntentionPlanner:
         result.update(provider="ollama", model=self.ollama_model)
         return result
 
-    def _interpret_openai(self, brief: str, vocabulary: list[str], *,
+    def _interpret_openai(self, brief: str, vocabulary: list[dict[str, Any]], *,
                           schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
         response = httpx.post(
             self.endpoint,

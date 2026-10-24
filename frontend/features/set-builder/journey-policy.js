@@ -1,3 +1,5 @@
+import { catalogGenreMentions, normalizeGenre, normalizeGenreVocabulary } from './genre-vocabulary.js';
+
 const NON_GENRE_TERMS = new Set([
   'ambient',
   'balanced',
@@ -15,96 +17,30 @@ const NON_GENRE_TERMS = new Set([
   'vocal safe',
 ]);
 
-const GENRE_ALIASES = Object.freeze({
-  'disco & funk': ['disco & funk', 'disco and funk', 'disco'],
-  'r&b': ['r&b', 'rnb', 'rab', 'r and b', 'rhythm and blues'],
-  'hip hop': ['hip hop', 'hiphop'],
-});
-
 function normalize(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9&]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
+  return normalizeGenre(value);
 }
-
 function unique(values) {
   return [...new Set((values || []).map(normalize).filter(Boolean))];
 }
 
-function phraseOccurrences(text, phrase) {
-  const occurrences = [];
-  let cursor = 0;
-  while (cursor <= text.length - phrase.length) {
-    const index = text.indexOf(phrase, cursor);
-    if (index < 0) break;
-    const before = index === 0 ? ' ' : text[index - 1];
-    const after = index + phrase.length >= text.length ? ' ' : text[index + phrase.length];
-    if (!/[a-z0-9&]/.test(before) && !/[a-z0-9&]/.test(after)) {
-      occurrences.push([index, index + phrase.length]);
-    }
-    cursor = index + 1;
-  }
-  return occurrences;
-}
-
 /** Return explicit catalog genres while suppressing nested matches such as Techno inside Latin Techno. */
 export function explicitGenreMentions(brief, vocabulary = []) {
-  const text = normalize(brief);
-  const candidates = unique([...Object.keys(GENRE_ALIASES), ...vocabulary]).filter(
-    (genre) => !NON_GENRE_TERMS.has(genre),
-  );
-  const mentions = candidates.flatMap((genre) => {
-    const aliases = GENRE_ALIASES[genre] || [genre];
-    return aliases.flatMap((alias) =>
-      phraseOccurrences(text, normalize(alias)).map(([start, end]) => ({
-        genre,
-        start,
-        end,
-        canonicalAlias: Object.hasOwn(GENRE_ALIASES, genre),
-      })),
-    );
-  });
-  const unambiguous = [
-    ...mentions
-      .reduce((bySpan, mention) => {
-        const key = `${mention.start}:${mention.end}`,
-          current = bySpan.get(key);
-        if (!current || (mention.canonicalAlias && !current.canonicalAlias)) bySpan.set(key, mention);
-        return bySpan;
-      }, new Map())
-      .values(),
-  ];
-  const unnested = unambiguous.filter(
-    (mention) =>
-      !unambiguous.some(
-        (other) =>
-          other.genre !== mention.genre &&
-          other.start <= mention.start &&
-          other.end >= mention.end &&
-          other.end - other.start > mention.end - mention.start,
-      ),
-  );
-  return [
-    ...new Map(
-      unnested
-        .sort((left, right) => left.start - right.start || right.end - right.start - (left.end - left.start))
-        .map((mention) => [mention.genre, mention.genre]),
-    ).values(),
-  ];
+  return catalogGenreMentions(brief, vocabulary, NON_GENRE_TERMS);
 }
 
 /** Treat the written brief—not model additions—as the authority for requested genres. */
 export function reconcileInterpretedGenreAuthority(interpreted = {}, vocabulary = [], brief = '') {
   const source = String(brief || interpreted.text || '').trim();
   if (!source) return { ...interpreted };
-  const candidates = unique([
-    ...vocabulary,
-    ...(interpreted.requestedGenres || []),
-    ...(interpreted.optionalGenres || []),
-    ...(interpreted.genreSequence || []),
-  ]);
+  const catalogVocabulary = normalizeGenreVocabulary(vocabulary);
+  const candidates = catalogVocabulary.length
+    ? catalogVocabulary
+    : [
+        ...(interpreted.requestedGenres || []),
+        ...(interpreted.optionalGenres || []),
+        ...(interpreted.genreSequence || []),
+      ];
   const explicit = explicitGenreMentions(source, candidates);
   const requestedByModel = new Set(unique(interpreted.requestedGenres));
   const optionalByModel = new Set(unique(interpreted.optionalGenres));
