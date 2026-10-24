@@ -1,3 +1,5 @@
+import { explicitGenreMentions } from './journey-policy.js';
+
 export const SET_STORAGE_KEY = 'dj-library-studio-sets-v1';
 export const SET_STORAGE_MIGRATION_KEY = 'dj-library-studio-sets-migrated-v2';
 export const SET_IDENTITY_STORAGE_KEY = 'dj-library-track-identities-v1';
@@ -8,12 +10,7 @@ export const DEFAULT_SET_FALLBACK_POLICY = [
   'Neutral bridge tracks that preserve the progression',
   'Pure foundation tracks only when needed for flow and runtime',
 ];
-export {
-  deduplicateSetRecordings,
-  setCatalogTrackId,
-  setRecordingKey,
-  setTrackId,
-} from './recording-identity.js';
+export { deduplicateSetRecordings, setCatalogTrackId, setRecordingKey, setTrackId } from './recording-identity.js';
 
 export function trackMatchesSetGenre(track, genre) {
   return track._genre === genre || track._genre.startsWith(`${genre} / `);
@@ -252,17 +249,25 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
   const opening = /(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)
     ? 'melodic'
     : null;
-  const orderedGenres = [
-    ...new Map(
-      genreSequence.sort((left, right) => left.index - right.index).map((item) => [item.term, item.term]),
-    ).values(),
+  const detectedGenres = [
+    ...new Set([
+      ...requestedGenres,
+      ...genreSequence.sort((left, right) => left.index - right.index).map((item) => item.term),
+    ]),
   ];
+  const orderedGenres = explicitGenreMentions(text, [...catalogVocabulary, ...detectedGenres]);
+  const authorizedGenres = new Set(orderedGenres);
   return {
     text,
     required: parseIdentityTerms(required.join(',')),
     preferred: parseIdentityTerms(preferred.join(',')),
     avoided: parseIdentityTerms(avoided.join(',')),
-    requestedGenres: parseIdentityTerms(requestedGenres.join(',')),
+    requestedGenres: [
+      ...new Set([
+        ...parseIdentityTerms(requestedGenres.join(',')).filter((genre) => authorizedGenres.has(genre)),
+        ...orderedGenres,
+      ]),
+    ],
     genreSequence: orderedGenres,
     drift,
     vibe,

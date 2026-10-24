@@ -30,6 +30,7 @@ import {
 } from './workflow.js';
 import { createSetBuilderProgressView } from './progress-view.js';
 import { createSetJourneyReview } from './journey-review.js';
+import { reconcileInterpretedGenreAuthority } from './journey-policy.js';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -208,6 +209,11 @@ export function createSetBuilderFeature({
     $('#set-fallback-policy').innerHTML = fallbackPolicyMarkup(policy, escapeHtml);
   }
   function applyIntentionInterpretation(interpreted, { announce = true } = {}) {
+    interpreted = reconcileInterpretedGenreAuthority(
+      interpreted,
+      intentionVocabulary(),
+      interpreted.text || $('#set-intention').value,
+    );
     const panel = $('#set-intention-interpretation');
     panel.hidden = false;
     panel.dataset.source = interpreted.text || '';
@@ -1088,12 +1094,7 @@ import { createSetBuilderFeedback } from './feedback.js';
 import { createSetPlanView } from './plan-view.js';
 import { createSetPlanningSession } from './planning-session.js';
 import { createSavedSetController } from './saved-sets.js';
-import {
-  advanceSetPlanRevision,
-  createSetBuilderStore,
-  restoreSetPlan,
-  snapshotSetPlan,
-} from './state.js';
+import { advanceSetPlanRevision, createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './state.js';
 import { createSetTransitionEditor } from './transition-editor.js';
 import { createSetBuilderResetController } from './workspace-reset.js';
 import { useFrontendServices } from '../../core/frontend-services.js';

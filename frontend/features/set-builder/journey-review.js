@@ -1,4 +1,5 @@
 import { SET_BRIEF_MODES } from './workflow.js';
+import { journeyConfirmationState, repairJourneyGenrePolicy, reviewJourneyGenrePolicy } from './journey-policy.js';
 
 /** Owns editable journey rendering, strict genre review, and confirmation state. */
 export function createSetJourneyReview({
@@ -24,18 +25,6 @@ export function createSetJourneyReview({
   function coreGenres() {
     const value = interpreted();
     return [...new Set([...(value.genreSequence || []), ...(value.requestedGenres || [])].filter(Boolean))];
-  }
-  function approvedGenres() {
-    const value = interpreted();
-    return [
-      ...new Set(
-        [
-          ...(value.genreSequence || []),
-          ...(value.requestedGenres || []),
-          ...(value.optionalGenres || []),
-        ].filter(Boolean),
-      ),
-    ];
   }
   function syncBuildAvailability() {
     const root = $('#set-journey-preview'),
@@ -64,10 +53,12 @@ export function createSetJourneyReview({
     const genres = parseIdentityTerms(row.querySelector('.journey-genres input').value),
       start = row.querySelector('.journey-energy-start').value,
       end = row.querySelector('.journey-energy-end').value;
-    row.querySelector('.journey-summary-name').textContent = row.querySelector('.journey-name').value || 'Untitled section';
+    row.querySelector('.journey-summary-name').textContent =
+      row.querySelector('.journey-name').value || 'Untitled section';
     row.querySelector('.journey-summary-purpose').textContent =
       row.querySelector('.journey-purpose input').value || 'No purpose added';
-    row.querySelector('.journey-summary-duration').textContent = `${row.querySelector('.journey-duration').value || 0}%`;
+    row.querySelector('.journey-summary-duration').textContent =
+      `${row.querySelector('.journey-duration').value || 0}%`;
     row.querySelector('.journey-summary-energy').textContent = `${start} → ${end}`;
     row.querySelector('.journey-summary-genres').innerHTML = genres.length
       ? genres.map((genre) => `<span>${escapeHtml(genre)}</span>`).join('')
@@ -104,32 +95,34 @@ export function createSetJourneyReview({
       genrePolicy: {
         mode: $('#set-allow-related-genres').checked ? 'related' : 'strict',
         coreGenres: core,
-        optionalGenres: approvedGenres().filter((genre) => !core.includes(genre)),
+        optionalGenres: interpreted().optionalGenres || [],
       },
       sections,
     };
   }
   function render(journey, { confirmed = journey.confirmed === true } = {}) {
+    const policyRepair = repairJourneyGenrePolicy(journey, interpreted()),
+      viewJourney = policyRepair.journey;
     const root = $('#set-journey-preview'),
       container = $('#set-journey-sections');
     root.hidden = false;
-    root.dataset.journey = JSON.stringify(journey);
-    root.dataset.originalJourney = JSON.stringify(journey);
-    $('#set-journey-summary').textContent = journey.summary || 'Review the planned journey before generating.';
-    $('#set-journey-evidence').textContent = journeyEvidenceLabel(journey);
+    root.dataset.journey = JSON.stringify(viewJourney);
+    root.dataset.originalJourney = JSON.stringify(viewJourney);
+    $('#set-journey-summary').textContent = viewJourney.summary || 'Review the planned journey before generating.';
+    $('#set-journey-evidence').textContent = journeyEvidenceLabel(viewJourney);
     const core = coreGenres();
     $('#set-journey-core-genres').innerHTML = core.length
       ? core.map((genre) => `<span>${escapeHtml(genre)}</span>`).join('')
       : '<span>Use section genres</span>';
-    if (journey.genrePolicy?.mode)
-      $('#set-allow-related-genres').checked = journey.genrePolicy.mode === 'related';
+    if (viewJourney.genrePolicy?.mode)
+      $('#set-allow-related-genres').checked = viewJourney.genrePolicy.mode === 'related';
     $('#set-journey-genre-options').replaceChildren(
       ...intentionVocabulary()
         .slice()
         .sort((left, right) => left.localeCompare(right))
         .map((genre) => option(genre, genre)),
     );
-    container.innerHTML = (journey.sections || [])
+    container.innerHTML = (viewJourney.sections || [])
       .map((section, index) => {
         const [energyStart, energyEnd] = journeyEnergyRange(section);
         const suggestions = (section.suggestedGenres || [])
@@ -138,7 +131,7 @@ export function createSetJourneyReview({
               `<button type="button" data-suggested-genre="${escapeHtml(genre)}">+ ${escapeHtml(genre)}</button>`,
           )
           .join('');
-        return `<details class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"${journey.sections.length === 1 ? ' open' : ''}><summary class="journey-section-summary"><span class="journey-step" aria-hidden="true">${index + 1}</span><span class="journey-summary-title"><strong class="journey-summary-name">${escapeHtml(section.name || `Section ${index + 1}`)}</strong><small class="journey-summary-purpose">${escapeHtml(section.purpose || 'No purpose added')}</small></span><span class="journey-summary-stat"><small>Duration</small><strong class="journey-summary-duration">${Number(section.durationPercent || 0)}%</strong></span><span class="journey-summary-stat"><small>Energy</small><strong class="journey-summary-energy">${energyStart} → ${energyEnd}</strong></span><span class="journey-summary-genres">${(section.genres || []).map((genre) => `<span>${escapeHtml(genre)}</span>`).join('')}</span><span class="journey-summary-edit">Edit</span></summary><div class="journey-editor"><div class="journey-primary"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label class="journey-duration-label">Duration<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"><span>%</span></label><label class="journey-energy">Energy <span class="journey-energy-value">${energyStart} → ${energyEnd}</span><span class="journey-energy-inputs"><input class="journey-energy-start" aria-label="Starting energy" type="number" min="1" max="10" step=".5" value="${energyStart}"><i aria-hidden="true">→</i><input class="journey-energy-end" aria-label="Ending energy" type="number" min="1" max="10" step=".5" value="${energyEnd}"></span></label></div><div class="journey-details"><div class="journey-genres"><label>Genres<input list="set-journey-genre-options" value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres, separated by commas"></label>${suggestions ? `<div class="journey-genre-suggestions"><small>Suggested, not applied</small>${suggestions}</div>` : ''}</div><label>Character<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></div></div></details>`;
+        return `<details class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"${viewJourney.sections.length === 1 ? ' open' : ''}><summary class="journey-section-summary"><span class="journey-step" aria-hidden="true">${index + 1}</span><span class="journey-summary-title"><strong class="journey-summary-name">${escapeHtml(section.name || `Section ${index + 1}`)}</strong><small class="journey-summary-purpose">${escapeHtml(section.purpose || 'No purpose added')}</small></span><span class="journey-summary-stat"><small>Duration</small><strong class="journey-summary-duration">${Number(section.durationPercent || 0)}%</strong></span><span class="journey-summary-stat"><small>Energy</small><strong class="journey-summary-energy">${energyStart} → ${energyEnd}</strong></span><span class="journey-summary-genres">${(section.genres || []).map((genre) => `<span>${escapeHtml(genre)}</span>`).join('')}</span><span class="journey-summary-edit">Edit</span></summary><div class="journey-editor"><div class="journey-primary"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label class="journey-duration-label">Duration<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"><span>%</span></label><label class="journey-energy">Energy <span class="journey-energy-value">${energyStart} → ${energyEnd}</span><span class="journey-energy-inputs"><input class="journey-energy-start" aria-label="Starting energy" type="number" min="1" max="10" step=".5" value="${energyStart}"><i aria-hidden="true">→</i><input class="journey-energy-end" aria-label="Ending energy" type="number" min="1" max="10" step=".5" value="${energyEnd}"></span></label></div><div class="journey-details"><div class="journey-genres"><label>Genres<input list="set-journey-genre-options" value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres, separated by commas"></label>${suggestions ? `<div class="journey-genre-suggestions"><small>Suggested, not applied</small>${suggestions}</div>` : ''}</div><label>Character<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></div></div></details>`;
       })
       .join('');
     const refresh = () => {
@@ -146,9 +139,22 @@ export function createSetJourneyReview({
           (sum, input) => sum + Number(input.value || 0),
           0,
         ),
-        status = $('#set-journey-total');
-      status.textContent = `${journey.sections.length} sections · ${total}% of ${durationMinutes()} minutes · edits drive track placement`;
-      status.classList.toggle('invalid', Math.abs(total - 100) > 0.01);
+        status = $('#set-journey-total'),
+        sections = [...container.querySelectorAll('.set-journey-section')].map((row, index) => ({
+          id: row.dataset.id || `section-${index + 1}`,
+          name: row.querySelector('.journey-name').value.trim() || `Section ${index + 1}`,
+          genres: parseIdentityTerms(row.querySelector('.journey-genres input').value),
+        })),
+        validation = journeyConfirmationState({
+          sections,
+          durationTotal: total,
+          mode: $('#set-allow-related-genres').checked ? 'related' : 'strict',
+          interpreted: interpreted(),
+        });
+      status.textContent = `${viewJourney.sections.length} sections · ${total}% of ${durationMinutes()} minutes · ${validation.reason || 'edits drive track placement'}`;
+      status.classList.toggle('invalid', !validation.valid);
+      $('#set-journey-confirm').disabled = !validation.valid;
+      $('#set-journey-confirm').title = validation.reason;
       container.querySelectorAll('.set-journey-section').forEach((row) => {
         const startInput = row.querySelector('.journey-energy-start'),
           endInput = row.querySelector('.journey-energy-end'),
@@ -157,11 +163,13 @@ export function createSetJourneyReview({
         row.querySelector('.journey-energy-value').textContent = `${values[0]} → ${values[1]}`;
         syncSectionSummary(row);
       });
+      return validation;
     };
     container.querySelectorAll('input').forEach((input) =>
       input.addEventListener('input', () => {
-        refresh();
-        setConfirmed(false, 'Unconfirmed changes');
+        const validation = refresh();
+        setConfirmed(false, validation.valid ? 'Unconfirmed changes' : 'Needs correction');
+        if (!validation.valid) $('#set-builder-message').textContent = validation.reason;
       }),
     );
     container.querySelectorAll('[data-suggested-genre]').forEach((button) => {
@@ -176,9 +184,14 @@ export function createSetJourneyReview({
         input.dispatchEvent(new Event('input', { bubbles: true }));
       };
     });
-    refresh();
+    const validation = refresh();
     syncRelatedStatus();
-    setConfirmed(confirmed);
+    setConfirmed(confirmed && validation.valid, validation.valid ? '' : 'Needs correction');
+    if (policyRepair.repairs.length) {
+      setConfirmed(false, 'Adjusted · review');
+      $('#set-builder-message').textContent =
+        `${policyRepair.repairs.length} section${policyRepair.repairs.length === 1 ? ' was' : 's were'} returned to your requested genres. Unrequested AI ideas remain available as suggestions.`;
+    }
   }
   function bind({ onRegenerate }) {
     $('#set-journey-confirm').onclick = () => {
@@ -191,16 +204,15 @@ export function createSetJourneyReview({
           throw new Error('Every journey section needs at least one genre.');
         }
         if (!$('#set-allow-related-genres').checked) {
-          const approved = new Set(approvedGenres()),
-            unapproved = [
-              ...new Set(journey.sections.flatMap((section) => section.genres).filter((genre) => !approved.has(genre))),
-            ];
-          if (approved.size && unapproved.length) {
+          const policyReview = reviewJourneyGenrePolicy(journey, interpreted());
+          if (!policyReview.valid) {
             const invalidIndex = journey.sections.findIndex((section) =>
-              section.genres.some((genre) => unapproved.includes(genre)),
+              section.genres.some((genre) => policyReview.unapprovedGenres.includes(genre)),
             );
             if (invalidIndex >= 0) container.children[invalidIndex].open = true;
-            throw new Error(`Remove ${unapproved.join(', ')} or turn on Allow related genres before confirming.`);
+            throw new Error(
+              `Remove ${policyReview.unapprovedGenres.join(', ')} or turn on Allow related genres before confirming.`,
+            );
           }
         }
         setConfirmed(true);
@@ -235,6 +247,11 @@ export function createSetJourneyReview({
     $('#set-journey-regenerate').onclick = onRegenerate;
     $('#set-allow-related-genres').onchange = (event) => {
       $('#set-intention-drift').value = event.currentTarget.checked ? 'moderate' : 'none';
+      if (!event.currentTarget.checked) {
+        try {
+          render(current(), { confirmed: false });
+        } catch (_) {}
+      }
       syncRelatedStatus();
       setConfirmed(false, 'Unconfirmed changes');
       $('#set-builder-message').textContent = event.currentTarget.checked

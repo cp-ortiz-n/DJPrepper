@@ -21,18 +21,23 @@ change energy, character, and purpose across sections, but it cannot silently
 become Latin Pop, R&B, House, or Amapiano. Model-proposed catalog neighbors are
 retained only as unselected suggestions. The DJ must enable **Allow related
 genres** and add a suggestion deliberately before it enters the journey.
+Specific catalog names also take precedence over nested parent names: writing
+`Latin Techno` does not independently request `Techno` unless the brief names
+Techno elsewhere. Both the server and the browser reconcile AI output against
+the written brief, so a cached or older proposal cannot bypass this boundary.
 
 AI-created journeys begin in **Needs confirmation** state. Editing a section,
 changing genre expansion, or changing the prompt returns the journey to that
 state. **Confirm journey** validates 100% duration coverage, non-empty genres,
-and the strict genre boundary; only then can track planning begin. Loaded saved
+and the strict genre boundary; the action is disabled and the affected genres
+are named while a correction is required. Only then can track planning begin. Loaded saved
 plans retain their already-reviewed journey for backward compatibility.
 
 Track selection is a separate decision from brief authoring:
 
 | Track selection | What happens                                                                    |
 | --------------- | ------------------------------------------------------------------------------- |
-| AI curated      | AI ranks and orders a bounded candidate pool; deterministic validation follows |
+| AI curated      | AI ranks and orders a bounded candidate pool; deterministic validation follows  |
 | Rules-based     | Local genre, BPM, key, energy, and constraint scoring chooses and orders tracks |
 
 The interface presents these two choices directly. Legacy saved-set values
@@ -41,16 +46,16 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 
 ## Planning owners
 
-| Owner                                                             | Responsibility                                                               |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret, schema-check, and enforce explicit genre expansion authority       |
-| `SetCandidateRetriever`                                           | Apply strict genre policy, availability, mixing, lock, and identity rules     |
-| `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                               |
-| `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks       |
+| Owner                                                             | Responsibility                                                                   |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret, schema-check, and enforce explicit genre expansion authority          |
+| `SetCandidateRetriever`                                           | Apply strict genre policy, availability, mixing, lock, and identity rules        |
+| `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                                   |
+| `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks           |
 | `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity |
-| Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                     |
-| Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                      |
-| `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt           |
+| Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                         |
+| Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                          |
+| `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt               |
 
 ## Revision and regeneration rules
 

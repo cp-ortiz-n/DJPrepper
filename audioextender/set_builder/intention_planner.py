@@ -104,6 +104,39 @@ def _explicit_drift(brief: str) -> str:
     return "none"
 
 
+def _explicit_genre_mentions(brief: str, catalog: list[str]) -> list[str]:
+    """Return explicit genres without treating a nested parent term as a second request."""
+    normalized = _clean_term(brief)
+    aliases = {
+        "disco & funk": ["disco & funk", "disco and funk", "disco"],
+        "r&b": ["r&b", "rnb", "rab", "r and b", "rhythm and blues"],
+        "hip hop": ["hip hop", "hiphop"],
+    }
+    mentions: list[tuple[int, int, str]] = []
+    for genre in catalog:
+        if genre in NON_GENRE_JOURNEY_TERMS:
+            continue
+        for phrase in aliases.get(genre, [genre]):
+            pattern = rf"(?<![a-z0-9&]){re.escape(phrase)}(?![a-z0-9&])"
+            mentions.extend((match.start(), match.end(), genre) for match in re.finditer(pattern, normalized))
+    unnested = [
+        mention
+        for mention in mentions
+        if not any(
+            other[2] != mention[2]
+            and other[0] <= mention[0]
+            and other[1] >= mention[1]
+            and other[1] - other[0] > mention[1] - mention[0]
+            for other in mentions
+        )
+    ]
+    ordered: list[str] = []
+    for _, _, genre in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
+        if genre not in ordered:
+            ordered.append(genre)
+    return ordered
+
+
 def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief: str = "") -> dict[str, Any]:
     """Reject schema-label hallucinations and canonicalize genres against the local catalog."""
     cleaned = dict(result)
@@ -122,14 +155,15 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief
                 genres.append(match)
         cleaned[field] = genres
     if brief:
-        normalized_brief = f" {_clean_term(brief)} "
-        explicit_genres = {
-            genre for genre in [*cleaned["requestedGenres"], *cleaned["optionalGenres"], *cleaned["genreSequence"]]
-            if f" {genre} " in normalized_brief and genre not in NON_GENRE_JOURNEY_TERMS
-        }
-        cleaned["genreSequence"] = sorted(
-            explicit_genres, key=lambda genre: normalized_brief.index(f" {genre} ")
-        )
+        explicit_genres = _explicit_genre_mentions(brief, catalog)
+        requested_by_model = set(cleaned["requestedGenres"])
+        optional_by_model = set(cleaned["optionalGenres"])
+        cleaned["optionalGenres"] = [genre for genre in explicit_genres if genre in optional_by_model]
+        cleaned["requestedGenres"] = [
+            genre for genre in explicit_genres
+            if genre in requested_by_model or genre not in optional_by_model
+        ]
+        cleaned["genreSequence"] = explicit_genres
         cleaned["drift"] = _explicit_drift(brief)
     elif cleaned.get("drift") not in {"none", "low", "moderate", "wide"}:
         cleaned["drift"] = "none"

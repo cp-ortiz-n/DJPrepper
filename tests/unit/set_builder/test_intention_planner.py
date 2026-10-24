@@ -112,6 +112,49 @@ class IntentionPlannerTests(unittest.TestCase):
         )
         self.assertEqual(result["drift"], "none")
 
+    def test_exact_genre_request_removes_nested_parent_and_invented_neighbors(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [], "preferred": [], "avoided": [],
+                "requestedGenres": ["Latin Techno", "Techno"],
+                "optionalGenres": ["Latin House", "Latin Pop", "Latin R&B"],
+                "genreSequence": ["Latin Techno", "Techno", "Latin House"],
+                "drift": "moderate",
+            },
+            ["Latin Techno", "Techno", "Latin House", "Latin Pop", "Latin R&B"],
+            "Create a Latin Techno set",
+        )
+        self.assertEqual(result["requestedGenres"], ["latin techno"])
+        self.assertEqual(result["optionalGenres"], [])
+        self.assertEqual(result["genreSequence"], ["latin techno"])
+        self.assertEqual(result["drift"], "none")
+
+    def test_separately_named_parent_and_specific_genres_are_both_preserved(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [], "preferred": [], "avoided": [],
+                "requestedGenres": ["Techno", "Latin Techno"], "optionalGenres": [],
+                "genreSequence": ["Techno", "Latin Techno"], "drift": "none",
+            },
+            ["Latin Techno", "Techno"],
+            "Start with Techno, then move into Latin Techno",
+        )
+        self.assertEqual(result["requestedGenres"], ["techno", "latin techno"])
+        self.assertEqual(result["genreSequence"], ["techno", "latin techno"])
+
+    def test_common_short_name_maps_to_catalog_genre(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [], "preferred": [], "avoided": [],
+                "requestedGenres": ["Disco & Funk"], "optionalGenres": [],
+                "genreSequence": ["Disco & Funk"], "drift": "none",
+            },
+            ["Disco & Funk", "Techno"],
+            "Build a disco set",
+        )
+        self.assertEqual(result["requestedGenres"], ["disco & funk"])
+        self.assertEqual(result["genreSequence"], ["disco & funk"])
+
     def test_related_genre_drift_requires_explicit_authorization(self) -> None:
         result = sanitize_interpretation(
             {

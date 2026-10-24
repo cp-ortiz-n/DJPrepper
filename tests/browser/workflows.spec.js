@@ -63,45 +63,47 @@ test('persisted settings render after browser refresh', async ({ page }) => {
 });
 
 test('Rekordbox TXT ratings are previewed before exact matches are applied', async ({ page }) => {
-  await page.route((url) => url.pathname === '/api/settings/rekordbox-ratings/preview', (route) =>
-    route.fulfill({
-      json: {
-        token: 'rating-preview-1',
-        filename: 'collection.txt',
-        format: 'txt',
-        total_export_tracks: 4,
-        unrated_tracks: 1,
-        invalid_rows: 0,
-        rated_tracks: 3,
-        matched_tracks: 2,
-        proposed_changes: 1,
-        unchanged_values: 1,
-        ambiguous_rows: 1,
-        unmatched_rows: 0,
-        match_methods: { 'catalog-identity': 2 },
-        matches: [
-          { artist: 'Majestic', title: 'Rasputin', rating: 5, match_method: 'catalog-identity' },
-        ],
-        ambiguous: [{ artist: 'Lipps Inc', title: 'Funkytown', rating: 3 }],
-        unmatched: [],
-        review_truncated: false,
-      },
-    }),
-  );
-  await page.route((url) => url.pathname === '/api/settings/rekordbox-ratings/apply', (route) =>
-    route.fulfill({
-      json: {
-        changed: 1,
-        matched: 2,
-        synced_at: '2026-10-22T12:00:00Z',
-        status: {
-          rated_tracks: 2,
-          ratings: { 5: 1, 3: 1 },
-          last_synced_at: '2026-10-22T12:00:00Z',
-          tracks: [{ artist: 'Majestic', title: 'Rasputin', rating: 5, match_method: 'catalog-identity' }],
+  await page.route(
+    (url) => url.pathname === '/api/settings/rekordbox-ratings/preview',
+    (route) =>
+      route.fulfill({
+        json: {
+          token: 'rating-preview-1',
+          filename: 'collection.txt',
+          format: 'txt',
+          total_export_tracks: 4,
+          unrated_tracks: 1,
+          invalid_rows: 0,
+          rated_tracks: 3,
+          matched_tracks: 2,
+          proposed_changes: 1,
+          unchanged_values: 1,
+          ambiguous_rows: 1,
+          unmatched_rows: 0,
+          match_methods: { 'catalog-identity': 2 },
+          matches: [{ artist: 'Majestic', title: 'Rasputin', rating: 5, match_method: 'catalog-identity' }],
+          ambiguous: [{ artist: 'Lipps Inc', title: 'Funkytown', rating: 3 }],
+          unmatched: [],
+          review_truncated: false,
         },
-      },
-    }),
+      }),
+  );
+  await page.route(
+    (url) => url.pathname === '/api/settings/rekordbox-ratings/apply',
+    (route) =>
+      route.fulfill({
+        json: {
+          changed: 1,
+          matched: 2,
+          synced_at: '2026-10-22T12:00:00Z',
+          status: {
+            rated_tracks: 2,
+            ratings: { 5: 1, 3: 1 },
+            last_synced_at: '2026-10-22T12:00:00Z',
+            tracks: [{ artist: 'Majestic', title: 'Rasputin', rating: 5, match_method: 'catalog-identity' }],
+          },
+        },
+      }),
   );
 
   await openSettings(page);
@@ -258,37 +260,41 @@ test('deleting the active saved set returns Set Builder to a clean draft', async
     excluded: [],
     updatedAt: '2026-10-21T12:00:00.000Z',
   };
-  await page.route((url) => url.pathname === '/api/set-builder/catalog', (route) =>
-    route.fulfill({
-      json: {
-        tracks: [
-          {
-            downloaded_id: 501,
-            recording_code: 'HOU-000501',
-            version_code: 'ORG',
-            genre: 'House',
-            detailed_genre: 'Deep House',
-            descriptors: [],
-            analysis: {
-              source_name: 'Opening.wav',
-              title: 'Opening',
-              artist: 'DJ Test',
-              bpm: 120,
-              key: 'Am',
-              duration_seconds: 180,
-              energy: 0.5,
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/catalog',
+    (route) =>
+      route.fulfill({
+        json: {
+          tracks: [
+            {
+              downloaded_id: 501,
+              recording_code: 'HOU-000501',
+              version_code: 'ORG',
+              genre: 'House',
+              detailed_genre: 'Deep House',
+              descriptors: [],
+              analysis: {
+                source_name: 'Opening.wav',
+                title: 'Opening',
+                artist: 'DJ Test',
+                bpm: 120,
+                key: 'Am',
+                duration_seconds: 180,
+                energy: 0.5,
+              },
+              job: { id: 501, config_json: '{}', library_path: '/tmp/Opening.wav' },
             },
-            job: { id: 501, config_json: '{}', library_path: '/tmp/Opening.wav' },
-          },
-        ],
-      },
-    }),
+          ],
+        },
+      }),
   );
-  await page.route((url) => url.pathname === '/api/set-builder/sets', (route) =>
-    route.fulfill({ json: { version: 2, sets: [savedSet] } }),
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/sets',
+    (route) => route.fulfill({ json: { version: 2, sets: [savedSet] } }),
   );
-  await page.route((url) => url.pathname === '/api/set-builder/sets/active-plan', (route) =>
-    route.fulfill({ json: { deleted: true, id: 'active-plan' } }),
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/sets/active-plan',
+    (route) => route.fulfill({ json: { deleted: true, id: 'active-plan' } }),
   );
   await page.reload();
   await openView(page, 'Set Builder');
@@ -307,9 +313,7 @@ test('deleting the active saved set returns Set Builder to a clean draft', async
   await expect(page.locator('#set-builder-message')).toContainText('Plan deleted');
 });
 
-test('Set Builder compact workspace supports inspection, keyboard navigation, and narrow screens', async ({
-  page,
-}) => {
+test('Set Builder compact workspace supports inspection, keyboard navigation, and narrow screens', async ({ page }) => {
   const tracks = [
     ['Opening.wav', 'DJ Test', 'Deep House', 120, 'Am', 0.45],
     ['Lift.wav', 'DJ Test', 'House', 124, 'C', 0.68],
@@ -337,49 +341,57 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     excluded: [],
   };
   let regenerationRequest;
-  await page.route((url) => url.pathname === '/api/set-builder/catalog', (route) =>
-    route.fulfill({
-      json: {
-        tracks: tracks.map(([source_name, artist, genre, bpm, key, energy], index) => ({
-          downloaded_id: 700 + index,
-          recording_code: `TST-00070${index}`,
-          version_code: 'ORG',
-          genre,
-          detailed_genre: genre,
-          descriptors: [],
-          analysis: { source_name, artist, bpm, key, energy, duration_seconds: 180 },
-          job: { id: 700 + index, config_json: '{}', library_path: `/tmp/${source_name}` },
-        })),
-      },
-    }),
-  );
-  await page.route((url) => url.pathname === '/api/set-builder/sets', (route) =>
-    route.fulfill({ json: { version: 2, sets: [savedSet] } }),
-  );
-  await page.route((url) => url.pathname === '/api/set-builder/plan-tracks', async (route) => {
-    regenerationRequest = route.request().postDataJSON();
-    await route.fulfill({ status: 202, json: { jobId: 'browser-regeneration', status: 'pending' } });
-  });
-  await page.route((url) => url.pathname === '/api/set-builder/plan-tracks/browser-regeneration', (route) =>
-    route.fulfill({
-      json: {
-        status: 'complete',
-        stage: 'Validated running order ready',
-        progress: 100,
-        result: {
-          mode: 'ai-planned',
-          provider: 'ollama',
-          model: 'test-model',
-          summary: 'Regenerated unlocked tracks.',
-          warnings: [],
-          basePlanRevision: savedSet.planRevision,
-          plan: [
-            { id: 'downloaded:700', sectionId: 'section-1' },
-            { id: 'downloaded:702', sectionId: 'section-1' },
-          ],
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/catalog',
+    (route) =>
+      route.fulfill({
+        json: {
+          tracks: tracks.map(([source_name, artist, genre, bpm, key, energy], index) => ({
+            downloaded_id: 700 + index,
+            recording_code: `TST-00070${index}`,
+            version_code: 'ORG',
+            genre,
+            detailed_genre: genre,
+            descriptors: [],
+            analysis: { source_name, artist, bpm, key, energy, duration_seconds: 180 },
+            job: { id: 700 + index, config_json: '{}', library_path: `/tmp/${source_name}` },
+          })),
         },
-      },
-    }),
+      }),
+  );
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/sets',
+    (route) => route.fulfill({ json: { version: 2, sets: [savedSet] } }),
+  );
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/plan-tracks',
+    async (route) => {
+      regenerationRequest = route.request().postDataJSON();
+      await route.fulfill({ status: 202, json: { jobId: 'browser-regeneration', status: 'pending' } });
+    },
+  );
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/plan-tracks/browser-regeneration',
+    (route) =>
+      route.fulfill({
+        json: {
+          status: 'complete',
+          stage: 'Validated running order ready',
+          progress: 100,
+          result: {
+            mode: 'ai-planned',
+            provider: 'ollama',
+            model: 'test-model',
+            summary: 'Regenerated unlocked tracks.',
+            warnings: [],
+            basePlanRevision: savedSet.planRevision,
+            plan: [
+              { id: 'downloaded:700', sectionId: 'section-1' },
+              { id: 'downloaded:702', sectionId: 'section-1' },
+            ],
+          },
+        },
+      }),
   );
   await page.reload();
   await openView(page, 'Set Builder');
@@ -427,9 +439,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(inspector).toBeHidden();
   await rows.first().getByRole('button', { name: 'More' }).click();
   const accessibility = await new AxeBuilder({ page }).include('#set-result').withTags(['wcag2a', 'wcag2aa']).analyze();
-  expect(
-    accessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact)),
-  ).toEqual([]);
+  expect(accessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact))).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(inspector).toBeHidden();
   await expect(rows.first()).toBeFocused();
@@ -637,6 +647,74 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
   await page.locator('.journey-purpose input').fill('Build a different kind of momentum');
   await expect(page.locator('#set-journey-confirmation')).toContainText('Unconfirmed');
   await expect(page.locator('#set-generate')).toBeDisabled();
+});
+
+test('Set Builder repairs strict AI genre drift before journey confirmation', async ({ page }) => {
+  await page.route('**/api/set-builder/prepare-brief', (route) =>
+    route.fulfill({
+      json: {
+        interpretation: {
+          provider: 'ollama',
+          model: 'browser-test',
+          required: [],
+          preferred: [],
+          avoided: [],
+          requestedGenres: ['latin techno', 'techno'],
+          optionalGenres: ['latin house', 'latin pop'],
+          genreSequence: ['latin techno', 'techno'],
+          vibe: 'peak-time',
+          curve: 'rise',
+          drift: 'none',
+        },
+        journey: {
+          evidence: 'ai-planned',
+          model: 'browser-test',
+          genrePolicy: { mode: 'strict' },
+          summary: 'A Latin Techno journey with model-proposed detours.',
+          sections: [
+            {
+              id: 'opening',
+              name: 'Opening',
+              durationPercent: 50,
+              energyStart: 6,
+              energyEnd: 7,
+              genres: ['latin techno'],
+              characteristics: ['driving'],
+              purpose: 'Establish the identity',
+            },
+            {
+              id: 'closing',
+              name: 'Closing',
+              durationPercent: 50,
+              energyStart: 8,
+              energyEnd: 7,
+              genres: ['latin house', 'latin pop'],
+              characteristics: ['melodic'],
+              purpose: 'Broaden the close',
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await openView(page, 'Set Builder');
+  await page.locator('#set-intention').fill('Create a Latin Techno set');
+  await page.locator('#interpret-set-intention').click();
+
+  await expect(page.locator('#set-journey-core-genres span')).toHaveText(['latin techno']);
+  await expect(page.locator('.journey-summary-genres')).toHaveText(['latin techno', 'latin techno']);
+  await expect(page.locator('.journey-genre-suggestions')).toContainText('latin house');
+  await expect(page.locator('.journey-genre-suggestions')).toContainText('latin pop');
+  await expect(page.locator('#set-journey-confirmation')).toContainText('Adjusted');
+  await expect(page.locator('#set-journey-confirm')).toBeEnabled();
+  await page.locator('#set-journey-confirm').click();
+  await expect(page.locator('#set-journey-confirmation')).toHaveText('Confirmed');
+
+  await page.locator('.set-journey-section').nth(1).locator('summary').click();
+  await page.locator('.set-journey-section').nth(1).locator('.journey-genres input').fill('latin techno, latin house');
+  await expect(page.locator('#set-journey-confirm')).toBeDisabled();
+  await expect(page.locator('#set-journey-confirmation')).toHaveText('Needs correction');
+  await expect(page.locator('#set-journey-total')).toContainText('latin house');
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
