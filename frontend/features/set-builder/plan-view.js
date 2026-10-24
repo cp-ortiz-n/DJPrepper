@@ -18,6 +18,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     inferDescriptorEditor,
     bindCompactAudio,
     compactAudioMarkup,
+    stopCompactAudio,
   } = ui;
   const { compatibility, energyBand, formatLibraryKey, LIBRARY_ROLE_INFO, libraryRoles, songEnergy, timingProfile } =
     music;
@@ -249,6 +250,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
   }
   function renderSetPlan() {
     const result = $('#set-result');
+    stopCompactAudio();
     workspaceShell.beforeRender();
     result.hidden = !state.plan.length;
     if (!state.plan.length) return;

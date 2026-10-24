@@ -81,6 +81,9 @@ genre, BPM, key, energy, match score, and visible state chips such as **Locked**
 **Kept**, **Rejected**, or **Changed**. The frequent actions are **Lock**,
 **Replace**, and **More**. Explanations, transition editing, identity tags,
 movement controls, ratings, and advanced metadata belong in the inspector.
+Playback remains directly available in compact mode through the shared preview
+engine, including play/pause, elapsed time, seeking, and mute. Rebuilding the
+running order stops the active preview so detached rows cannot keep playing.
 
 ### 3. Review and export
 
@@ -167,6 +170,10 @@ controls.
 
 Exact genre requests are strict unless the DJ explicitly enables related
 genres. AI suggestions outside that boundary remain visible but unselected.
+Canonical short-name aliases are resolved before trusting model classification;
+when a detailed tag and parent genre share the same phrase, the stable catalog
+parent wins. The one-pass preparation service revalidates that authority and
+repairs an empty model journey before it reaches the confirmation screen.
 New or edited journeys require **Confirm journey** before track selection; the
 confirmation gate checks section genres and total duration and becomes dirty
 again after any edit.

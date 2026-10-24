@@ -52,16 +52,33 @@ function phraseOccurrences(text, phrase) {
 /** Return explicit catalog genres while suppressing nested matches such as Techno inside Latin Techno. */
 export function explicitGenreMentions(brief, vocabulary = []) {
   const text = normalize(brief);
-  const candidates = unique(vocabulary).filter((genre) => !NON_GENRE_TERMS.has(genre));
+  const candidates = unique([...Object.keys(GENRE_ALIASES), ...vocabulary]).filter(
+    (genre) => !NON_GENRE_TERMS.has(genre),
+  );
   const mentions = candidates.flatMap((genre) => {
     const aliases = GENRE_ALIASES[genre] || [genre];
     return aliases.flatMap((alias) =>
-      phraseOccurrences(text, normalize(alias)).map(([start, end]) => ({ genre, start, end })),
+      phraseOccurrences(text, normalize(alias)).map(([start, end]) => ({
+        genre,
+        start,
+        end,
+        canonicalAlias: Object.hasOwn(GENRE_ALIASES, genre),
+      })),
     );
   });
-  const unnested = mentions.filter(
+  const unambiguous = [
+    ...mentions
+      .reduce((bySpan, mention) => {
+        const key = `${mention.start}:${mention.end}`,
+          current = bySpan.get(key);
+        if (!current || (mention.canonicalAlias && !current.canonicalAlias)) bySpan.set(key, mention);
+        return bySpan;
+      }, new Map())
+      .values(),
+  ];
+  const unnested = unambiguous.filter(
     (mention) =>
-      !mentions.some(
+      !unambiguous.some(
         (other) =>
           other.genre !== mention.genre &&
           other.start <= mention.start &&

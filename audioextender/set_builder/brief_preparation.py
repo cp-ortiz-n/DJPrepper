@@ -11,7 +11,12 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any
 
-from audioextender.set_builder.intention_planner import INTENTION_SCHEMA, PLANNER_INSTRUCTIONS, IntentionPlanner
+from audioextender.set_builder.intention_planner import (
+    INTENTION_SCHEMA,
+    PLANNER_INSTRUCTIONS,
+    IntentionPlanner,
+    sanitize_interpretation,
+)
 from audioextender.set_builder.journey_planner import (
     JOURNEY_INSTRUCTIONS,
     JOURNEY_SCHEMA,
@@ -21,7 +26,7 @@ from audioextender.set_builder.journey_planner import (
     sanitize_journey,
 )
 
-BRIEF_PREPARATION_VERSION = 3
+BRIEF_PREPARATION_VERSION = 4
 BRIEF_SCHEMA = {
     **INTENTION_SCHEMA,
     "properties": {**INTENTION_SCHEMA["properties"], "journey": JOURNEY_SCHEMA},
@@ -68,17 +73,28 @@ class BriefPreparationService:
             interpretation = self.intention_planner.interpret(
                 brief, vocabulary, schema=BRIEF_SCHEMA, instructions=BRIEF_INSTRUCTIONS
             )
+            interpretation = sanitize_interpretation(interpretation, vocabulary, brief)
             proposed_journey = interpretation.pop("journey", None)
+            journey_vocabulary = list(
+                dict.fromkeys(
+                    [
+                        *vocabulary,
+                        *interpretation.get("genreSequence", []),
+                        *interpretation.get("requestedGenres", []),
+                        *interpretation.get("optionalGenres", []),
+                    ]
+                )
+            )
             try:
                 if not isinstance(proposed_journey, dict):
                     raise ValueError("Missing journey")
-                journey = sanitize_journey(proposed_journey, vocabulary, duration_minutes)
-                journey = enforce_journey_genre_policy(journey, interpretation, vocabulary)
-                if not _preserves_requested_sequence(journey, interpretation, vocabulary):
+                journey = sanitize_journey(proposed_journey, journey_vocabulary, duration_minutes)
+                journey = enforce_journey_genre_policy(journey, interpretation, journey_vocabulary)
+                if not _preserves_requested_sequence(journey, interpretation, journey_vocabulary):
                     raise ValueError("Journey changed requested genre order")
                 evidence = "ai-planned"
             except (ValueError, TypeError, KeyError):
-                journey = offline_journey(interpretation, vocabulary, duration_minutes)
+                journey = offline_journey(interpretation, journey_vocabulary, duration_minutes)
                 evidence = "ai-interpreted"
             journey.update(
                 provider=interpretation.get("provider", "offline"),

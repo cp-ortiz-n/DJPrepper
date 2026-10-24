@@ -155,6 +155,18 @@ class IntentionPlannerTests(unittest.TestCase):
         self.assertEqual(result["requestedGenres"], ["disco & funk"])
         self.assertEqual(result["genreSequence"], ["disco & funk"])
 
+    def test_common_short_name_prefers_canonical_parent_over_same_named_detail(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [], "preferred": ["disco"], "avoided": [],
+                "requestedGenres": [], "optionalGenres": [], "genreSequence": [], "drift": "none",
+            },
+            ["Disco & Funk", "disco"],
+            "Create a disco set",
+        )
+        self.assertEqual(result["requestedGenres"], ["disco & funk"])
+        self.assertEqual(result["genreSequence"], ["disco & funk"])
+
     def test_related_genre_drift_requires_explicit_authorization(self) -> None:
         result = sanitize_interpretation(
             {

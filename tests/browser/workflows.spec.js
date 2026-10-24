@@ -405,6 +405,9 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(page.locator('#set-workspace-revision')).toHaveText('Revision 2');
   await expect(rows.first().locator('.set-track-summary')).toContainText('120.0 BPM');
   await expect(rows.first().locator('.set-track-chips')).toContainText('Locked');
+  await expect(rows.first().locator('.compact-audio')).toBeVisible();
+  await expect(rows.first().getByRole('button', { name: 'Play track' })).toBeVisible();
+  await expect(rows.first().getByRole('slider', { name: 'Seek through track' })).toBeVisible();
   expect(await page.locator('.set-result-head').evaluate((node) => getComputedStyle(node).position)).toBe('sticky');
 
   await page.getByText('AI curated', { exact: true }).click();
@@ -602,12 +605,12 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
           required: [],
           preferred: ['disco'],
           avoided: [],
-          requestedGenres: ['disco & funk'],
+          requestedGenres: [],
           optionalGenres: [],
-          genreSequence: ['disco & funk'],
+          genreSequence: [],
           vibe: 'dance-party',
           curve: 'rise',
-          drift: 'moderate',
+          drift: 'none',
         },
         journey: {
           evidence: 'ai-planned',
@@ -620,7 +623,7 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
               durationPercent: 100,
               energyStart: 6,
               energyEnd: '?',
-              genres: ['disco & funk'],
+              genres: [],
               characteristics: ['groovy'],
               purpose: 'Build momentum',
             },
@@ -639,6 +642,9 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
   await expect(progress).toBeHidden({ timeout: 5000 });
   await expect(page.locator('.journey-energy-value')).toHaveText('6 → 6');
   await expect(page.locator('.journey-energy-end')).toHaveValue('6');
+  await expect(page.locator('#set-intention-status')).toContainText('Found 1 core genre');
+  await expect(page.locator('#set-journey-core-genres')).toContainText('disco & funk');
+  await expect(page.locator('.journey-genres input')).toHaveValue('disco & funk');
   await expect(page.locator('#set-journey-confirmation')).toHaveText('Needs confirmation');
   await expect(page.locator('#set-generate')).toBeDisabled();
   await page.locator('#set-journey-confirm').click();

@@ -120,7 +120,8 @@
   color: #c1c4bb;
 }
 .set-result.compact-planning .set-track-title .compact-audio {
-  display: none;
+  display: grid;
+  width: min(100%, 320px);
 }
 .set-track-summary {
   display: flex;

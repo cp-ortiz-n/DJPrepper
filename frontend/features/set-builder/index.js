@@ -241,8 +241,9 @@ export function createSetBuilderFeature({
           : interpreted.provider === 'openai'
             ? `Cloud AI${model ? ` · ${model}` : ''}`
             : 'offline rules';
+      const coreGenreCount = (interpreted.requestedGenres || []).length;
       $('#set-intention-status').textContent =
-        `Interpreted with ${source}. Found ${(interpreted.required || []).length} requirement${(interpreted.required || []).length === 1 ? '' : 's'}, ${(interpreted.preferred || []).length} preference${(interpreted.preferred || []).length === 1 ? '' : 's'}, and ${(interpreted.avoided || []).length} limit${(interpreted.avoided || []).length === 1 ? '' : 's'}. Edit anything before generating.`;
+        `Interpreted with ${source}. Found ${coreGenreCount} core genre${coreGenreCount === 1 ? '' : 's'}, ${(interpreted.required || []).length} other requirement${(interpreted.required || []).length === 1 ? '' : 's'}, ${(interpreted.preferred || []).length} preference${(interpreted.preferred || []).length === 1 ? '' : 's'}, and ${(interpreted.avoided || []).length} limit${(interpreted.avoided || []).length === 1 ? '' : 's'}. Edit anything before generating.`;
     }
   }
   function selectedSetGenres() {
@@ -665,6 +666,7 @@ export function createSetBuilderFeature({
       inferDescriptorEditor,
       bindCompactAudio,
       compactAudioMarkup,
+      stopCompactAudio,
     },
     music: {
       compatibility,

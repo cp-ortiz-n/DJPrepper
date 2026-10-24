@@ -64,8 +64,12 @@ provider order is local Ollama, optional OpenAI, and finally deterministic rules
 After reviewing an AI brief, confirm its **Planned journey** before building the
 track list. Exact genre prompts are strict by default: “Create a Latin Techno
 set” keeps Latin Techno in every section while allowing the energy and purpose
-to evolve. The journey starts as compact overview rows; expand only the section
-you want to edit. Use **Use in every section** to apply the core genres at once.
+to evolve. Common short names are canonicalized before journey planning—for
+example, “disco” selects the catalog’s **Disco & Funk** parent instead of being
+left as a soft descriptive preference. The written brief remains authoritative
+even when the AI omits that genre from its structured response. The journey
+starts as compact overview rows; expand only the section you want to edit. Use
+**Use in every section** to apply the core genres at once.
 Related catalog genres proposed by the model appear as unselected suggestions;
 turn on **Allow related genres** and add only the bridges you actually want.
 If Local AI proposes an unrequested genre, Set Builder moves it out of the
@@ -121,7 +125,11 @@ The running order has a visible drag handle beneath each track number. Drag an
 unlocked track before or after another row to reorder it, or focus the handle
 and use the Up/Down arrow keys for precise keyboard movement. Reordering is
 undoable and immediately recalculates the neighboring transition scores. A
-locked track must be unlocked before it can be moved. **More** opens a fixed
+locked track must be unlocked before it can be moved. Every compact track row
+also keeps its audio preview visible: press **Play**, drag the seek bar to sample
+another part of the track, and use the speaker control to mute or unmute it.
+Starting another preview stops the previous track, and changing the running
+order stops the current preview before the rows are rebuilt. **More** opens a fixed
 track inspector whose close control remains visible; click outside the
 inspector or press Escape to dismiss it. Opening **Edit mix** closes the
 inspector first. The transition editor keeps its close control visible while

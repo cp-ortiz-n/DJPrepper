@@ -77,6 +77,11 @@ NON_GENRE_JOURNEY_TERMS = {
     "ambient", "balanced", "closing", "dance party", "dark", "driving", "euphoric", "hypnotic",
     "industrial", "melodic", "peak time", "party ready", "warm up", "vocal safe",
 }
+GENRE_ALIASES = {
+    "disco & funk": ["disco & funk", "disco and funk", "disco"],
+    "r&b": ["r&b", "rnb", "rab", "r and b", "rhythm and blues"],
+    "hip hop": ["hip hop", "hiphop"],
+}
 
 
 def _clean_term(value: Any) -> str:
@@ -107,31 +112,37 @@ def _explicit_drift(brief: str) -> str:
 def _explicit_genre_mentions(brief: str, catalog: list[str]) -> list[str]:
     """Return explicit genres without treating a nested parent term as a second request."""
     normalized = _clean_term(brief)
-    aliases = {
-        "disco & funk": ["disco & funk", "disco and funk", "disco"],
-        "r&b": ["r&b", "rnb", "rab", "r and b", "rhythm and blues"],
-        "hip hop": ["hip hop", "hiphop"],
-    }
-    mentions: list[tuple[int, int, str]] = []
-    for genre in catalog:
+    candidates = list(dict.fromkeys([*GENRE_ALIASES, *catalog]))
+    mentions: list[tuple[int, int, str, bool]] = []
+    for genre in candidates:
         if genre in NON_GENRE_JOURNEY_TERMS:
             continue
-        for phrase in aliases.get(genre, [genre]):
+        for phrase in GENRE_ALIASES.get(genre, [genre]):
             pattern = rf"(?<![a-z0-9&]){re.escape(phrase)}(?![a-z0-9&])"
-            mentions.extend((match.start(), match.end(), genre) for match in re.finditer(pattern, normalized))
+            mentions.extend(
+                (match.start(), match.end(), genre, genre in GENRE_ALIASES)
+                for match in re.finditer(pattern, normalized)
+            )
+    by_span: dict[tuple[int, int], tuple[int, int, str, bool]] = {}
+    for mention in mentions:
+        span = mention[:2]
+        current = by_span.get(span)
+        if current is None or (mention[3] and not current[3]):
+            by_span[span] = mention
+    unambiguous = list(by_span.values())
     unnested = [
         mention
-        for mention in mentions
+        for mention in unambiguous
         if not any(
             other[2] != mention[2]
             and other[0] <= mention[0]
             and other[1] >= mention[1]
             and other[1] - other[0] > mention[1] - mention[0]
-            for other in mentions
+            for other in unambiguous
         )
     ]
     ordered: list[str] = []
-    for _, _, genre in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
+    for _, _, genre, _ in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
         if genre not in ordered:
             ordered.append(genre)
     return ordered

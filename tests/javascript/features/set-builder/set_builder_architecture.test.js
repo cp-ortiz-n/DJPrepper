@@ -402,6 +402,28 @@ test('written genre brief removes nested parents and unrequested AI neighbors', 
   assert.deepEqual(interpreted.genreSequence, ['latin techno']);
 });
 
+test('written disco brief restores one canonical core genre from an empty model interpretation', () => {
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a disco set',
+      requestedGenres: [],
+      optionalGenres: [],
+      genreSequence: [],
+    },
+    ['Disco & Funk', 'disco'],
+  );
+  assert.deepEqual(interpreted.requestedGenres, ['disco & funk']);
+  assert.deepEqual(interpreted.optionalGenres, []);
+  assert.deepEqual(interpreted.genreSequence, ['disco & funk']);
+  assert.deepEqual(
+    reconcileInterpretedGenreAuthority(
+      { text: 'Create a disco set', requestedGenres: [], optionalGenres: [], genreSequence: [] },
+      [],
+    ).requestedGenres,
+    ['disco & funk'],
+  );
+});
+
 test('strict journey policy repairs AI genre drift and retains it only as suggestions', () => {
   const interpreted = {
     requestedGenres: ['latin techno'],
@@ -1628,6 +1650,7 @@ test('plan view renders required and excluded rules through its focused boundary
       inferDescriptorEditor() {},
       bindCompactAudio() {},
       compactAudioMarkup() {},
+      stopCompactAudio() {},
     },
     music: {
       compatibility() {},

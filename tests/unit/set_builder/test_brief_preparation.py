@@ -47,6 +47,44 @@ class BriefPreparationServiceTests(unittest.TestCase):
         self.assertEqual(result["journey"]["sections"][0]["genres"], ["latin house"])
         self.assertFalse(result["cache"]["hit"])
 
+    def test_explicit_disco_repairs_empty_model_genres_before_journey_review(self) -> None:
+        planner = Mock(provider="ollama", ollama_model="test-local", model="cloud-test")
+        planner.interpret.return_value = {
+            "required": [],
+            "preferred": ["disco"],
+            "avoided": [],
+            "requestedGenres": [],
+            "optionalGenres": [],
+            "genreSequence": [],
+            "drift": "none",
+            "vibe": "dance-party",
+            "curve": "steady",
+            "opening": None,
+            "ending": None,
+            "explanation": "Keep a steady disco groove.",
+            "provider": "ollama",
+            "model": "test-local",
+            "journey": {
+                "summary": "A continuous disco set.",
+                "sections": [
+                    {
+                        "name": "Main Body",
+                        "purpose": "Core dance performance",
+                        "durationPercent": 100,
+                        "genres": [],
+                        "characteristics": ["groovy"],
+                        "energyStart": 7,
+                        "energyEnd": 8,
+                    }
+                ],
+            },
+        }
+        result = BriefPreparationService(planner).prepare("Create a disco set", ["Disco & Funk", "disco"], 60)
+        self.assertEqual(result["interpretation"]["requestedGenres"], ["disco & funk"])
+        self.assertEqual(result["interpretation"]["genreSequence"], ["disco & funk"])
+        self.assertEqual(result["journey"]["sections"][0]["genres"], ["disco & funk"])
+        self.assertEqual(result["journey"]["genrePolicy"]["mode"], "strict")
+
     def test_reuses_versioned_result_for_identical_request(self) -> None:
         planner = Mock(provider="ollama", ollama_model="test-local", model="cloud-test")
         planner.interpret.return_value = self.interpretation()
