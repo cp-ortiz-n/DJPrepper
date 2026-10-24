@@ -17,6 +17,16 @@ def _contains_phrase(value: str, phrase: str) -> bool:
     return bool(re.search(rf"(?<![a-z0-9&]){re.escape(phrase)}(?![a-z0-9&])", value))
 
 
+def _canonical_alias_affinity(canonical: str, alias: str) -> int:
+    if _contains_phrase(canonical, alias):
+        return 2
+    canonical_tokens = [token for token in canonical.split() if len(token) >= 4]
+    alias_tokens = [token for token in alias.split() if len(token) >= 4]
+    return int(
+        any(left.startswith(right) or right.startswith(left) for left in canonical_tokens for right in alias_tokens)
+    )
+
+
 @dataclass(frozen=True)
 class GenreVocabularyEntry:
     """One catalog genre and the names actually associated with it."""
@@ -24,6 +34,7 @@ class GenreVocabularyEntry:
     canonical: str
     aliases: tuple[str, ...]
     count: int = 0
+    alias_counts: tuple[tuple[str, int], ...] = ()
 
 
 def _mapping(value: Any) -> Mapping[str, Any] | None:
@@ -47,8 +58,19 @@ def normalize_genre_vocabulary(values: Sequence[Any]) -> list[dict[str, Any]]:
         aliases = item.get("aliases", []) if item else []
         normalized_aliases = {alias for alias in (normalize_genre_term(alias) for alias in aliases) if alias}
         normalized_aliases.add(canonical)
-        current = merged.setdefault(canonical, {"canonical": canonical, "aliases": set(), "count": 0})
+        current = merged.setdefault(
+            canonical,
+            {"canonical": canonical, "aliases": set(), "alias_counts": {}, "count": 0},
+        )
         current["aliases"].update(normalized_aliases)
+        for alias, count in (item.get("aliasCounts", {}) if item else {}).items():
+            normalized = normalize_genre_term(alias)
+            if not normalized:
+                continue
+            try:
+                current["alias_counts"][normalized] = current["alias_counts"].get(normalized, 0) + max(0, int(count))
+            except (TypeError, ValueError):
+                continue
         try:
             current["count"] += max(0, int(item.get("count", 0))) if item else 0
         except (TypeError, ValueError):
@@ -58,6 +80,7 @@ def normalize_genre_vocabulary(values: Sequence[Any]) -> list[dict[str, Any]]:
             "canonical": item["canonical"],
             "aliases": sorted(item["aliases"], key=lambda alias: (-len(alias), alias)),
             "count": item["count"],
+            **({"aliasCounts": item["alias_counts"]} if item["alias_counts"] else {}),
         }
         for item in sorted(merged.values(), key=lambda item: (-item["count"], item["canonical"]))
     ]
@@ -70,6 +93,7 @@ def vocabulary_entries(values: Sequence[Any]) -> list[GenreVocabularyEntry]:
             canonical=item["canonical"],
             aliases=tuple(item["aliases"]),
             count=item["count"],
+            alias_counts=tuple(item.get("aliasCounts", {}).items()),
         )
         for item in normalize_genre_vocabulary(values)
     ]
@@ -85,15 +109,23 @@ def resolve_catalog_genre(value: Any, vocabulary: Sequence[Any]) -> str:
     raw = normalize_genre_term(value)
     if not raw:
         return ""
-    candidates: list[tuple[int, int, int, int, str]] = []
+    candidates: list[tuple[int, int, int, int, int, str]] = []
     for entry in vocabulary_entries(vocabulary):
+        alias_counts = dict(entry.alias_counts)
         for alias in entry.aliases:
             if raw == alias or alias in raw:
-                canonical_affinity = int(_contains_phrase(entry.canonical, alias))
+                canonical_affinity = _canonical_alias_affinity(entry.canonical, alias)
                 candidates.append(
-                    (int(raw == entry.canonical), canonical_affinity, len(alias), entry.count, entry.canonical)
+                    (
+                        int(raw == entry.canonical),
+                        canonical_affinity,
+                        len(alias),
+                        alias_counts.get(alias, entry.count),
+                        entry.count,
+                        entry.canonical,
+                    )
                 )
-    return max(candidates, default=(0, 0, 0, 0, ""))[-1]
+    return max(candidates, default=(0, 0, 0, 0, 0, ""))[-1]
 
 
 def explicit_genre_mentions(
@@ -104,10 +136,11 @@ def explicit_genre_mentions(
 ) -> list[str]:
     """Resolve explicit brief phrases through the current catalog taxonomy."""
     normalized = normalize_genre_term(brief)
-    mentions: list[tuple[int, int, str, bool, int, int]] = []
+    mentions: list[tuple[int, int, str, bool, int, int, int]] = []
     for entry in vocabulary_entries(vocabulary):
         if entry.canonical in excluded:
             continue
+        alias_counts = dict(entry.alias_counts)
         for alias in entry.aliases:
             pattern = rf"(?<![a-z0-9&]){re.escape(alias)}(?![a-z0-9&])"
             mentions.extend(
@@ -116,19 +149,21 @@ def explicit_genre_mentions(
                     match.end(),
                     entry.canonical,
                     alias == entry.canonical,
-                    int(_contains_phrase(entry.canonical, alias)),
+                    _canonical_alias_affinity(entry.canonical, alias),
+                    alias_counts.get(alias, entry.count),
                     entry.count,
                 )
                 for match in re.finditer(pattern, normalized)
             )
-    by_span: dict[tuple[int, int], tuple[int, int, str, bool, int, int]] = {}
+    by_span: dict[tuple[int, int], tuple[int, int, str, bool, int, int, int]] = {}
     for mention in mentions:
         span = mention[:2]
         current = by_span.get(span)
-        if current is None or (mention[3], mention[4], mention[5], len(mention[2])) > (
+        if current is None or (mention[3], mention[4], mention[5], mention[6], len(mention[2])) > (
             current[3],
             current[4],
             current[5],
+            current[6],
             len(current[2]),
         ):
             by_span[span] = mention
@@ -145,7 +180,7 @@ def explicit_genre_mentions(
         )
     ]
     ordered: list[str] = []
-    for _, _, genre, _, _, _ in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
+    for _, _, genre, _, _, _, _ in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
         if genre not in ordered:
             ordered.append(genre)
     return ordered

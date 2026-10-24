@@ -92,6 +92,58 @@ class BriefPreparationServiceTests(unittest.TestCase):
         self.assertEqual(result["journey"]["sections"][0]["genres"], ["disco & funk"])
         self.assertEqual(result["journey"]["genrePolicy"]["mode"], "strict")
 
+    def test_genre_matrix_repairs_empty_model_output_into_complete_journeys(self) -> None:
+        vocabulary = [
+            {"canonical": "House", "aliases": ["House"], "count": 40},
+            {"canonical": "Disco & Funk", "aliases": ["Disco", "Funk"], "count": 20},
+            {"canonical": "Techno", "aliases": ["Techno"], "count": 35},
+            {"canonical": "Hard Techno", "aliases": ["Hard Techno"], "count": 15},
+            {"canonical": "Latin Techno", "aliases": ["Latin Techno"], "count": 8},
+            {"canonical": "Rock & Alternative", "aliases": ["Rock", "Alternative"], "count": 12},
+            {"canonical": "R&B & Soul", "aliases": ["R&B", "Soul"], "count": 10},
+            {
+                "canonical": "Hip-Hop & Rap",
+                "aliases": ["Hip Hop", "Rap", "Afropop"],
+                "count": 50,
+                "aliasCounts": {"Afropop": 1},
+            },
+            {"canonical": "Afro House", "aliases": ["Afropop"], "count": 18, "aliasCounts": {"Afropop": 3}},
+        ]
+        cases = {
+            "House set": "house",
+            "Disco set": "disco & funk",
+            "Funk set": "disco & funk",
+            "Hard Techno set": "hard techno",
+            "Latin Techno set": "latin techno",
+            "Rock set": "rock & alternative",
+            "R&B set": "r&b & soul",
+            "Hip Hop set": "hip hop & rap",
+            "Afropop set": "afro house",
+        }
+        for brief, expected in cases.items():
+            with self.subTest(brief=brief):
+                planner = Mock(provider="ollama", ollama_model="test-local", model="cloud-test")
+                planner.interpret.return_value = {
+                    "required": [],
+                    "preferred": [],
+                    "avoided": [],
+                    "requestedGenres": [],
+                    "optionalGenres": [],
+                    "genreSequence": [],
+                    "drift": "none",
+                    "vibe": "balanced",
+                    "curve": "rise",
+                    "opening": None,
+                    "ending": None,
+                    "explanation": "Catalog-derived fallback.",
+                    "provider": "ollama",
+                    "model": "test-local",
+                }
+                result = BriefPreparationService(planner).prepare(brief, vocabulary, 60)
+                self.assertEqual(result["interpretation"]["requestedGenres"], [expected])
+                self.assertTrue(result["journey"]["sections"])
+                self.assertTrue(all(section["genres"] == [expected] for section in result["journey"]["sections"]))
+
     def test_reuses_versioned_result_for_identical_request(self) -> None:
         planner = Mock(provider="ollama", ollama_model="test-local", model="cloud-test")
         planner.interpret.return_value = self.interpretation()

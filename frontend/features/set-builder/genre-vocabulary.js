@@ -14,12 +14,17 @@ export function normalizeGenreVocabulary(vocabulary = []) {
     const structured = value && typeof value === 'object' && !Array.isArray(value);
     const canonical = normalizeGenre(structured ? value.canonical : value);
     if (!canonical) continue;
-    const current = merged.get(canonical) || { canonical, aliases: new Set(), count: 0 };
+    const current = merged.get(canonical) || { canonical, aliases: new Set(), aliasCounts: new Map(), count: 0 };
     current.aliases.add(canonical);
     if (structured) {
       for (const alias of value.aliases || []) {
         const normalized = normalizeGenre(alias);
         if (normalized) current.aliases.add(normalized);
+      }
+      for (const [alias, count] of Object.entries(value.aliasCounts || {})) {
+        const normalized = normalizeGenre(alias);
+        if (normalized)
+          current.aliasCounts.set(normalized, (current.aliasCounts.get(normalized) || 0) + Math.max(0, Number(count || 0)));
       }
       current.count += Math.max(0, Number(value.count || 0));
     }
@@ -31,6 +36,7 @@ export function normalizeGenreVocabulary(vocabulary = []) {
       canonical: entry.canonical,
       aliases: [...entry.aliases].sort((left, right) => right.length - left.length || left.localeCompare(right)),
       count: entry.count,
+      ...(entry.aliasCounts.size ? { aliasCounts: Object.fromEntries(entry.aliasCounts) } : {}),
     }));
 }
 
@@ -40,7 +46,12 @@ export function canonicalGenreNames(vocabulary = []) {
 }
 
 function canonicalAliasAffinity(canonical, alias) {
-  return phraseOccurrences(canonical, alias).length > 0 ? 1 : 0;
+  if (phraseOccurrences(canonical, alias).length > 0) return 2;
+  const canonicalTokens = canonical.split(' ').filter((token) => token.length >= 4);
+  const aliasTokens = alias.split(' ').filter((token) => token.length >= 4);
+  return canonicalTokens.some((token) => aliasTokens.some((other) => token.startsWith(other) || other.startsWith(token)))
+    ? 1
+    : 0;
 }
 
 /** Derive canonical genres, aliases, and prevalence from catalog track relationships. */
@@ -49,9 +60,13 @@ export function createCatalogGenreVocabulary(tracks = []) {
   const add = (canonicalValue, aliases = []) => {
     const canonical = normalizeGenre(canonicalValue);
     if (!canonical || ['all', 'other', 'unknown', 'unclassified'].includes(canonical)) return;
-    const current = entries.get(canonical) || { canonical, aliases: new Set(), count: 0 };
-    current.aliases.add(canonical);
-    aliases.map(normalizeGenre).filter(Boolean).forEach((alias) => current.aliases.add(alias));
+    const current = entries.get(canonical) || { canonical, aliases: new Set(), aliasCounts: new Map(), count: 0 };
+    const components = String(canonicalValue || '').split(/\s+&\s+/).map(normalizeGenre).filter(Boolean);
+    const trackAliases = new Set([canonical, ...components, ...aliases.map(normalizeGenre).filter(Boolean)]);
+    trackAliases.forEach((alias) => {
+      current.aliases.add(alias);
+      current.aliasCounts.set(alias, (current.aliasCounts.get(alias) || 0) + 1);
+    });
     current.count += 1;
     entries.set(canonical, current);
   };
@@ -73,6 +88,7 @@ export function createCatalogGenreVocabulary(tracks = []) {
       canonical: entry.canonical,
       aliases: [...entry.aliases],
       count: entry.count,
+      aliasCounts: Object.fromEntries(entry.aliasCounts),
     })),
   );
 }
@@ -105,6 +121,7 @@ export function catalogGenreMentions(brief, vocabulary = [], excluded = new Set(
             end,
             direct: alias === entry.canonical,
             affinity: canonicalAliasAffinity(entry.canonical, alias),
+            aliasCount: entry.aliasCounts?.[alias] ?? entry.count,
             count: entry.count,
           })),
         ),
@@ -120,6 +137,10 @@ export function catalogGenreMentions(brief, vocabulary = [], excluded = new Set(
           (mention.direct === current.direct && mention.affinity > current.affinity) ||
           (mention.direct === current.direct &&
             mention.affinity === current.affinity &&
+            mention.aliasCount > current.aliasCount) ||
+          (mention.direct === current.direct &&
+            mention.affinity === current.affinity &&
+            mention.aliasCount === current.aliasCount &&
             mention.count > current.count)
         )
           bySpan.set(key, mention);

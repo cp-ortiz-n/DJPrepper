@@ -633,8 +633,13 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   await page.route('**/api/set-builder/prepare-brief', async (route) => {
     expect(route.request().postDataJSON().catalog_vocabulary).toEqual([
-      { canonical: 'house', aliases: ['disco', 'house'], count: 2 },
-      { canonical: 'disco & funk', aliases: ['disco & funk', 'disco'], count: 1 },
+      { canonical: 'house', aliases: ['disco', 'house'], count: 2, aliasCounts: { house: 2, disco: 2 } },
+      {
+        canonical: 'disco & funk',
+        aliases: ['disco & funk', 'disco', 'funk'],
+        count: 1,
+        aliasCounts: { 'disco & funk': 1, disco: 1, funk: 1 },
+      },
     ]);
     await new Promise((resolve) => setTimeout(resolve, 300));
     await route.fulfill({

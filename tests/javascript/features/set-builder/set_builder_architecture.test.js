@@ -425,7 +425,12 @@ test('written disco brief restores one canonical core genre from an empty model 
   assert.deepEqual(interpreted.optionalGenres, []);
   assert.deepEqual(interpreted.genreSequence, ['disco & funk']);
   assert.deepEqual(vocabulary, [
-    { canonical: 'disco & funk', aliases: ['disco & funk', 'nu disco', 'disco'], count: 2 },
+    {
+      canonical: 'disco & funk',
+      aliases: ['disco & funk', 'nu disco', 'disco', 'funk'],
+      count: 2,
+      aliasCounts: { 'disco & funk': 2, disco: 2, funk: 2, 'nu disco': 1 },
+    },
   ]);
   assert.deepEqual(
     reconcileInterpretedGenreAuthority(
@@ -443,6 +448,37 @@ test('catalog genre matching prefers the canonical family over an unrelated prev
   ];
   assert.deepEqual(catalogGenreMentions('Disco set', vocabulary), ['disco & funk']);
   assert.deepEqual(canonicalGenreNames(vocabulary), ['house', 'disco & funk']);
+});
+
+test('catalog genre matrix resolves families, detailed aliases, nesting, and requested order', () => {
+  const tracks = [
+    { _genre: 'Disco & Funk', _detailedGenre: 'Disco, Funk' },
+    { _genre: 'Electronic / House / House', _detailedGenre: 'Disco' },
+    { _genre: 'Electronic / House / House', _detailedGenre: 'Disco' },
+    { _genre: 'Rock & Alternative', _detailedGenre: 'Alternative' },
+    { _genre: 'Hip-Hop & Rap', _detailedGenre: 'Rock, Afropop' },
+    { _genre: 'Electronic / House / Afro House', _detailedGenre: 'Afropop' },
+    { _genre: 'Electronic / House / Afro House', _detailedGenre: 'Afropop' },
+    { _genre: 'Afro & Amapiano', _detailedGenre: 'Afropop' },
+    { _genre: 'Electronic / Techno / Techno', _detailedGenre: 'Techno' },
+    { _genre: 'Electronic / Techno / Hard Techno', _detailedGenre: 'Hard Techno' },
+    { _genre: 'Other', _detailedGenre: 'Latin Techno' },
+  ];
+  const vocabulary = createCatalogGenreVocabulary(tracks);
+  const cases = new Map([
+    ['Disco set', ['disco & funk']],
+    ['Funk set', ['disco & funk']],
+    ['Rock set', ['rock & alternative']],
+    ['Alternative set', ['rock & alternative']],
+    ['Afropop set', ['afro house']],
+    ['Techno set', ['techno']],
+    ['Hard Techno set', ['hard techno']],
+    ['Latin Techno set', ['latin techno']],
+    ['Start with house, move to disco, finish with hard techno', ['house', 'disco & funk', 'hard techno']],
+  ]);
+  for (const [brief, expected] of cases) assert.deepEqual(catalogGenreMentions(brief, vocabulary), expected, brief);
+  for (const canonical of canonicalGenreNames(vocabulary))
+    assert.deepEqual(catalogGenreMentions(`${canonical} set`, vocabulary), [canonical], canonical);
 });
 
 test('strict journey policy repairs AI genre drift and retains it only as suggestions', () => {
