@@ -9,7 +9,11 @@ import {
 } from '../../../../frontend/features/set-builder/classic-planner.js';
 import { createSetEditCommands } from '../../../../frontend/features/set-builder/commands.js';
 import { createSetBuilderFeedback } from '../../../../frontend/features/set-builder/feedback.js';
-import { createCatalogGenreVocabulary } from '../../../../frontend/features/set-builder/genre-vocabulary.js';
+import {
+  canonicalGenreNames,
+  catalogGenreMentions,
+  createCatalogGenreVocabulary,
+} from '../../../../frontend/features/set-builder/genre-vocabulary.js';
 import {
   reconcileInterpretedGenreAuthority,
   repairJourneyGenrePolicy,
@@ -430,6 +434,15 @@ test('written disco brief restores one canonical core genre from an empty model 
     ).requestedGenres,
     [],
   );
+});
+
+test('catalog genre matching prefers the canonical family over an unrelated prevalent parent', () => {
+  const vocabulary = [
+    { canonical: 'house', aliases: ['house', 'disco'], count: 500 },
+    { canonical: 'disco & funk', aliases: ['disco & funk', 'disco'], count: 20 },
+  ];
+  assert.deepEqual(catalogGenreMentions('Disco set', vocabulary), ['disco & funk']);
+  assert.deepEqual(canonicalGenreNames(vocabulary), ['house', 'disco & funk']);
 });
 
 test('strict journey policy repairs AI genre drift and retains it only as suggestions', () => {

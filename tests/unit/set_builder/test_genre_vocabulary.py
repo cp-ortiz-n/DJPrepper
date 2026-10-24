@@ -41,6 +41,14 @@ class GenreVocabularyTests(unittest.TestCase):
             ],
         )
 
+    def test_canonical_name_affinity_beats_unrelated_parent_prevalence(self) -> None:
+        vocabulary = [
+            {"canonical": "House", "aliases": ["Disco"], "count": 500},
+            {"canonical": "Disco & Funk", "aliases": ["Disco"], "count": 20},
+        ]
+        self.assertEqual(explicit_genre_mentions("Disco set", vocabulary), ["disco & funk"])
+        self.assertEqual(resolve_catalog_genre("Disco", vocabulary), "disco & funk")
+
 
 if __name__ == "__main__":
     unittest.main()

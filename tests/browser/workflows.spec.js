@@ -609,6 +609,22 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
               analysis: { source_name: 'Catalog Disco.wav', artist: 'Fixture', bpm: 124, key: 'Am', energy: 0.7 },
               job: { id: 91, config_json: '{}', library_path: '/tmp/Catalog Disco.wav' },
             },
+            {
+              downloaded_id: 92,
+              genre: 'House',
+              detailed_genre: 'Disco',
+              descriptors: [],
+              analysis: { source_name: 'House One.wav', artist: 'Fixture', bpm: 124, key: 'Am', energy: 0.7 },
+              job: { id: 92, config_json: '{}', library_path: '/tmp/House One.wav' },
+            },
+            {
+              downloaded_id: 93,
+              genre: 'House',
+              detailed_genre: 'Disco',
+              descriptors: [],
+              analysis: { source_name: 'House Two.wav', artist: 'Fixture', bpm: 124, key: 'Am', energy: 0.7 },
+              job: { id: 93, config_json: '{}', library_path: '/tmp/House Two.wav' },
+            },
           ],
         },
       }),
@@ -617,6 +633,7 @@ test('Set Builder explains journey planning and normalizes incomplete energy ran
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();
   await page.route('**/api/set-builder/prepare-brief', async (route) => {
     expect(route.request().postDataJSON().catalog_vocabulary).toEqual([
+      { canonical: 'house', aliases: ['disco', 'house'], count: 2 },
       { canonical: 'disco & funk', aliases: ['disco & funk', 'disco'], count: 1 },
     ]);
     await new Promise((resolve) => setTimeout(resolve, 300));

@@ -13,6 +13,10 @@ def normalize_genre_term(value: Any) -> str:
     return " ".join(re.sub(r"[^a-z0-9&]+", " ", str(value or "").strip().lower()).split())
 
 
+def _contains_phrase(value: str, phrase: str) -> bool:
+    return bool(re.search(rf"(?<![a-z0-9&]){re.escape(phrase)}(?![a-z0-9&])", value))
+
+
 @dataclass(frozen=True)
 class GenreVocabularyEntry:
     """One catalog genre and the names actually associated with it."""
@@ -81,12 +85,15 @@ def resolve_catalog_genre(value: Any, vocabulary: Sequence[Any]) -> str:
     raw = normalize_genre_term(value)
     if not raw:
         return ""
-    candidates: list[tuple[int, int, int, str]] = []
+    candidates: list[tuple[int, int, int, int, str]] = []
     for entry in vocabulary_entries(vocabulary):
         for alias in entry.aliases:
             if raw == alias or alias in raw:
-                candidates.append((int(raw == entry.canonical), len(alias), entry.count, entry.canonical))
-    return max(candidates, default=(0, 0, 0, ""))[-1]
+                canonical_affinity = int(_contains_phrase(entry.canonical, alias))
+                candidates.append(
+                    (int(raw == entry.canonical), canonical_affinity, len(alias), entry.count, entry.canonical)
+                )
+    return max(candidates, default=(0, 0, 0, 0, ""))[-1]
 
 
 def explicit_genre_mentions(
@@ -97,23 +104,31 @@ def explicit_genre_mentions(
 ) -> list[str]:
     """Resolve explicit brief phrases through the current catalog taxonomy."""
     normalized = normalize_genre_term(brief)
-    mentions: list[tuple[int, int, str, bool, int]] = []
+    mentions: list[tuple[int, int, str, bool, int, int]] = []
     for entry in vocabulary_entries(vocabulary):
         if entry.canonical in excluded:
             continue
         for alias in entry.aliases:
             pattern = rf"(?<![a-z0-9&]){re.escape(alias)}(?![a-z0-9&])"
             mentions.extend(
-                (match.start(), match.end(), entry.canonical, alias == entry.canonical, entry.count)
+                (
+                    match.start(),
+                    match.end(),
+                    entry.canonical,
+                    alias == entry.canonical,
+                    int(_contains_phrase(entry.canonical, alias)),
+                    entry.count,
+                )
                 for match in re.finditer(pattern, normalized)
             )
-    by_span: dict[tuple[int, int], tuple[int, int, str, bool, int]] = {}
+    by_span: dict[tuple[int, int], tuple[int, int, str, bool, int, int]] = {}
     for mention in mentions:
         span = mention[:2]
         current = by_span.get(span)
-        if current is None or (mention[3], mention[4], len(mention[2])) > (
+        if current is None or (mention[3], mention[4], mention[5], len(mention[2])) > (
             current[3],
             current[4],
+            current[5],
             len(current[2]),
         ):
             by_span[span] = mention
@@ -130,7 +145,7 @@ def explicit_genre_mentions(
         )
     ]
     ordered: list[str] = []
-    for _, _, genre, _, _ in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
+    for _, _, genre, _, _, _ in sorted(unnested, key=lambda item: (item[0], -(item[1] - item[0]))):
         if genre not in ordered:
             ordered.append(genre)
     return ordered

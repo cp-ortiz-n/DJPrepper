@@ -34,6 +34,15 @@ export function normalizeGenreVocabulary(vocabulary = []) {
     }));
 }
 
+/** Return displayable canonical names from either structured or legacy vocabulary. */
+export function canonicalGenreNames(vocabulary = []) {
+  return normalizeGenreVocabulary(vocabulary).map((entry) => entry.canonical);
+}
+
+function canonicalAliasAffinity(canonical, alias) {
+  return phraseOccurrences(canonical, alias).length > 0 ? 1 : 0;
+}
+
 /** Derive canonical genres, aliases, and prevalence from catalog track relationships. */
 export function createCatalogGenreVocabulary(tracks = []) {
   const entries = new Map();
@@ -95,6 +104,7 @@ export function catalogGenreMentions(brief, vocabulary = [], excluded = new Set(
             start,
             end,
             direct: alias === entry.canonical,
+            affinity: canonicalAliasAffinity(entry.canonical, alias),
             count: entry.count,
           })),
         ),
@@ -107,7 +117,10 @@ export function catalogGenreMentions(brief, vocabulary = [], excluded = new Set(
         if (
           !current ||
           Number(mention.direct) > Number(current.direct) ||
-          (mention.direct === current.direct && mention.count > current.count)
+          (mention.direct === current.direct && mention.affinity > current.affinity) ||
+          (mention.direct === current.direct &&
+            mention.affinity === current.affinity &&
+            mention.count > current.count)
         )
           bySpan.set(key, mention);
         return bySpan;

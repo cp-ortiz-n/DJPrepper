@@ -1,4 +1,5 @@
 import { SET_BRIEF_MODES } from './workflow.js';
+import { canonicalGenreNames } from './genre-vocabulary.js';
 import { journeyConfirmationState, repairJourneyGenrePolicy, reviewJourneyGenrePolicy } from './journey-policy.js';
 
 /** Owns editable journey rendering, strict genre review, and confirmation state. */
@@ -117,7 +118,7 @@ export function createSetJourneyReview({
     if (viewJourney.genrePolicy?.mode)
       $('#set-allow-related-genres').checked = viewJourney.genrePolicy.mode === 'related';
     $('#set-journey-genre-options').replaceChildren(
-      ...intentionVocabulary()
+      ...canonicalGenreNames(intentionVocabulary())
         .slice()
         .sort((left, right) => left.localeCompare(right))
         .map((genre) => option(genre, genre)),

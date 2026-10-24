@@ -66,7 +66,9 @@ track list. Exact genre prompts are strict by default: “Create a Latin Techno
 set” keeps Latin Techno in every section while allowing the energy and purpose
 to evolve. Short names are canonicalized from relationships in your current
 catalog: Set Builder groups each organized genre with the detailed genre names
-found on its tracks and uses catalog prevalence to resolve ambiguous aliases.
+found on its tracks. When one detailed name appears under several organized
+genres, Set Builder first prefers the canonical family whose name contains that
+phrase, then uses catalog prevalence only as a tie-breaker.
 For example, “disco” selects **Disco & Funk** when Disco is a detailed genre on
 tracks organized there. No global list of genre exceptions is required, so new
 genres become available as the library evolves. The written brief remains
