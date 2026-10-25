@@ -481,6 +481,18 @@ test('catalog genre matrix resolves families, detailed aliases, nesting, and req
     assert.deepEqual(catalogGenreMentions(`${canonical} set`, vocabulary), [canonical], canonical);
 });
 
+test('catalog vocabulary exposes playlist-supported musical identities', () => {
+  const vocabulary = createCatalogGenreVocabulary([
+    {
+      _genre: 'Latin / Reggaeton',
+      _detailedGenre: 'Neoperreo',
+      _playlistIdentity: [{ value: 'latin techno', source: 'Latin Techno crate' }],
+    },
+  ]);
+
+  assert.deepEqual(catalogGenreMentions('Build a Latin Techno set', vocabulary), ['latin techno']);
+});
+
 test('strict journey policy repairs AI genre drift and retains it only as suggestions', () => {
   const interpreted = {
     requestedGenres: ['latin techno'],
@@ -1495,7 +1507,16 @@ test('planning session retains a validated deterministic safety fallback from th
       warnings: ['AI plan rejected'],
       fallbackReason: 'quality threshold',
       plan: [
-        { id: 1, technicalScore: 81 },
+        {
+          id: 1,
+          technicalScore: 81,
+          reasons: [
+            {
+              evidence: 'estimated',
+              text: 'Playlist/crate identity matches: latin techno from LATIN_bounce_TECHNO_Rave_Edition.',
+            },
+          ],
+        },
         { id: 2, technicalScore: 79 },
       ],
     }),
@@ -1509,6 +1530,7 @@ test('planning session retains a validated deterministic safety fallback from th
   assert.deepEqual(state.plan.map(trackId), ['a', 'b']);
   assert.equal(session.receipt().mode, 'deterministic-fallback');
   assert.equal(session.receipt().fallbackReason, 'quality threshold');
+  assert.match(state.plan[0]._candidateReasons[0].text, /LATIN_bounce_TECHNO_Rave_Edition/);
   assert.match(elements.get('#set-builder-message').textContent, /deterministic safety fallback/);
 });
 

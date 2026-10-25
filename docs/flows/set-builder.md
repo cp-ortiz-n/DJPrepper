@@ -26,6 +26,14 @@ Specific catalog names also take precedence over nested parent names: writing
 Techno elsewhere. Both the server and the browser reconcile AI output against
 the written brief, so a cached or older proposal cannot bypass this boundary.
 
+Playlist names contribute lower-confidence musical-identity tags without
+rewriting canonical genres. These tags are derived from the catalog's current
+genre vocabulary rather than a fixed alias list. For example, a track whose
+canonical genre remains Reggaeton can qualify as an identity match for `Latin
+Techno` when it belongs to a crate such as `LATIN_bounce_TECHNO_Rave_Edition`.
+Direct genre matches rank first; playlist-supported matches are labeled as
+identity evidence and name the source playlist in the planning explanation.
+
 AI-created journeys begin in **Needs confirmation** state. Editing a section,
 changing genre expansion, or changing the prompt returns the journey to that
 state. **Confirm journey** validates 100% duration coverage, non-empty genres,
@@ -46,16 +54,16 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 
 ## Planning owners
 
-| Owner                                                             | Responsibility                                                                   |
-| ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret, schema-check, and enforce explicit genre expansion authority          |
-| `SetCandidateRetriever`                                           | Apply strict genre policy, availability, mixing, lock, and identity rules        |
-| `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                                   |
-| `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks           |
-| `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity |
-| Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                         |
-| Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                          |
-| `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt               |
+| Owner                                                             | Responsibility                                                                    |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret, schema-check, and enforce explicit genre expansion authority           |
+| `SetCandidateRetriever`                                           | Apply genre, availability, mixing, lock, descriptor, and playlist-identity rules  |
+| `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                                    |
+| `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks            |
+| `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity  |
+| Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                          |
+| Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                           |
+| `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt                |
 
 ## Revision and regeneration rules
 

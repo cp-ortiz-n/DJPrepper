@@ -237,6 +237,32 @@ class JobRepositoryTests(unittest.TestCase):
                 },
             )
 
+    def test_library_signature_changes_when_playlist_membership_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog = JobRepository(root / "jobs.sqlite3")
+            track = root / "Track.wav"
+            track.touch()
+            catalog.upsert_downloaded_track(
+                title="Track",
+                artist="DJ",
+                file_path=track,
+                playlist_name="Imported Singles",
+            )
+            before = json.loads(catalog.library_index_source_signature())
+
+            catalog.upsert_downloaded_track(
+                title="Track",
+                artist="DJ",
+                file_path=track,
+                playlist_name="Latin Techno",
+            )
+            after = json.loads(catalog.library_index_source_signature())
+
+            self.assertEqual(before["tracks"][0], after["tracks"][0])
+            self.assertEqual(before["playlists"][0] + 1, after["playlists"][0])
+            self.assertNotEqual(before, after)
+
     def test_integrity_scan_reports_without_changing_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

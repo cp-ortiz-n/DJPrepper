@@ -109,6 +109,11 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     const matchingDetailed = (brief.detailedGenres || []).filter((genre) => trackMatchesSetDetailedGenre(track, genre));
     if (track._aiSelectionReason?.text)
       reasons.push({ kind: track._aiSelectionReason.evidence || 'ai-suggested', text: track._aiSelectionReason.text });
+    const playlistReason = (track._candidateReasons || []).find((reason) =>
+      String(reason?.text || '').startsWith('Playlist/crate identity matches:'),
+    );
+    if (playlistReason?.text && playlistReason.text !== track._aiSelectionReason?.text)
+      reasons.push({ kind: playlistReason.evidence || 'estimated', text: playlistReason.text });
     if (state.requiredIds.has(id))
       reasons.push({ kind: 'required', text: 'Selected because it is a must-play track.' });
     const intention = intentionEvaluation(track, brief);

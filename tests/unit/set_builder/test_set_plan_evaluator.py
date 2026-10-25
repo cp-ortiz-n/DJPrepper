@@ -70,6 +70,29 @@ class SetPlanEvaluatorTests(unittest.TestCase):
         self.assertEqual(result["journeyCoverage"], {"covered": 0, "total": 1})
         self.assertEqual(result["duration"]["actualMinutes"], 0)
 
+    def test_playlist_identity_counts_as_requested_genre_coverage(self) -> None:
+        track = {
+            "id": "playlist-track",
+            "artist": "DJ",
+            "genre": "Latin / Reggaeton",
+            "detailedGenres": ["Neoperreo"],
+            "durationSeconds": 240,
+            "sectionId": "peak",
+            "matchTier": "identity",
+            "descriptors": [],
+            "playlistIdentity": [{"value": "Latin Techno", "source": "Latin Techno Crate"}],
+        }
+
+        result = SetPlanEvaluator().evaluate(
+            [track],
+            {"sections": [{"id": "peak", "genres": ["Latin Techno"]}]},
+            [],
+            target_duration_minutes=4,
+        )
+
+        self.assertEqual(result["requestedGenreCoverage"]["ratio"], 1)
+        self.assertEqual(result["requestedGenreCoverage"]["missing"], [])
+
     def test_discloses_missing_genre_only_when_candidate_pool_proves_scarcity(self) -> None:
         plan = [
             {

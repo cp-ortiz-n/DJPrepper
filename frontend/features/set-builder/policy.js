@@ -239,7 +239,12 @@ export function intendedGenreForPosition(identity, index, count) {
 export function inferredTrackIdentity(track, manual = []) {
   const source =
     `${track.source_name || ''} ${track.title || ''} ${track.artist || ''} ${track._genre || track.genre || ''} ${track._detailedGenre || track.detailed_genre || ''}`.toLowerCase();
-  const tags = [...manual.map((value) => String(value).toLowerCase())];
+  const tags = [
+    ...manual.map((value) => String(value).toLowerCase()),
+    ...(track?._playlistIdentity || track?.playlist_identity || [])
+      .map((tag) => String(tag?.value || tag || '').trim().toLowerCase())
+      .filter(Boolean),
+  ];
   const add = (term, pattern) => {
     if (pattern.test(source)) tags.push(term);
   };

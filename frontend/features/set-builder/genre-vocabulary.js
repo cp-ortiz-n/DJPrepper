@@ -82,6 +82,7 @@ export function createCatalogGenreVocabulary(tracks = []) {
     const category = categoryParts.at(-1) || '';
     if (normalizeGenre(category) === 'other' && details.length) details.forEach((detail) => add(detail));
     else add(category, details);
+    for (const tag of track?._playlistIdentity || track?.playlist_identity || []) add(tag?.value || tag);
   }
   return normalizeGenreVocabulary(
     [...entries.values()].map((entry) => ({

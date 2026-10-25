@@ -28,6 +28,7 @@ def catalog_track(
     key: str = "8A",
     vocals: str = "mixed",
     descriptors: list[dict] | None = None,
+    playlist_identity: list[dict] | None = None,
     title: str | None = None,
     recording_code: str = "",
     version_code: str = "ORG",
@@ -38,6 +39,7 @@ def catalog_track(
         "genre": genre,
         "detailed_genre": detail,
         "descriptors": descriptors or [],
+        "playlist_identity": playlist_identity or [],
         "recording_code": recording_code,
         "version_code": version_code,
         "external_rating": {"source": "rekordbox", "rating": external_rating} if external_rating else None,
@@ -175,6 +177,42 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         result = SetCandidateRetriever().retrieve(tracks, strict_journey, section_limit=4)
         self.assertEqual([candidate["id"] for candidate in result["sections"][0]["candidates"]], ["downloaded:1"])
         self.assertEqual(result["genrePolicy"], "strict")
+
+    def test_strict_journey_accepts_playlist_supported_identity_without_retagging_track(self) -> None:
+        playlist_track = catalog_track(
+            1,
+            Path("/missing/playlist-track.wav"),
+            genre="Latin / Reggaeton",
+            detail="Neoperreo, Guaracha",
+            playlist_identity=[
+                {
+                    "value": "latin techno",
+                    "source": "LATIN_bounce_TECHNO_Rave_Edition",
+                    "provenance": "playlist",
+                    "confidence": 0.78,
+                }
+            ],
+        )
+        unrelated = catalog_track(
+            2,
+            Path("/missing/unrelated.wav"),
+            genre="Latin / Reggaeton",
+            detail="Reggaeton",
+            descriptors=[{"category": "sound", "value": "melodic", "confidence": 0.9}],
+        )
+        strict_journey = journey("Latin Techno")
+        strict_journey["genrePolicy"] = {"mode": "strict", "coreGenres": ["latin techno"]}
+
+        result = SetCandidateRetriever().retrieve([playlist_track, unrelated], strict_journey, section_limit=4)
+
+        candidates = result["sections"][0]["candidates"]
+        self.assertEqual([candidate["id"] for candidate in candidates], ["downloaded:1"])
+        self.assertEqual(candidates[0]["genre"], "Latin / Reggaeton")
+        self.assertEqual(candidates[0]["matchTier"], "identity")
+        self.assertTrue(
+            any("LATIN_bounce_TECHNO_Rave_Edition" in reason["text"] for reason in candidates[0]["reasons"])
+        )
+        self.assertEqual(result["sections"][0]["scarcity"]["identity"], 1)
 
     def test_caps_pool_and_limits_repeated_artists(self) -> None:
         tracks = [catalog_track(index, Path(f"/missing/{index}.wav"), artist="Same") for index in range(1, 7)]

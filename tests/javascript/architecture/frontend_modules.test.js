@@ -292,6 +292,25 @@ test('Set Builder derives identity separately from catalog genre', () => {
   assert.ok(tags.includes('ecuadorian party'));
 });
 
+test('Set Builder accepts playlist-derived compound identity without changing catalog genre', () => {
+  const track = {
+    _genre: 'Latin / Reggaeton',
+    _detailedGenre: 'Neoperreo, Guaracha',
+    _playlistIdentity: [
+      {
+        value: 'latin techno',
+        source: 'LATIN_bounce_TECHNO_Rave_Edition',
+        provenance: 'playlist',
+        confidence: 0.78,
+      },
+    ],
+  };
+
+  assert.equal(setBuilder.trackMatchesIntendedGenre(track, 'latin techno'), true);
+  assert.equal(setBuilder.trackMatchesIntendedGenre(track, 'latin house'), false);
+  assert.ok(setBuilder.inferredTrackIdentity(track).includes('latin techno'));
+});
+
 test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {
   const result = setBuilder.interpretSetIntention(
     'Build a latin reggaeton and dembow mix that also includes some rab/rap, hip hop for a chill party, kickback. Some dancing will take place as well. Add something melodic in the beginning.',

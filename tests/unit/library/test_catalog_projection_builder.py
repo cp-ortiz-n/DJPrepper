@@ -28,6 +28,7 @@ class ProjectionRepository:
                 "recording_code": "HOU-000003",
                 "version_code": "ORG",
                 "descriptors_json": "not-json",
+                "playlists_json": '["Deep_House_Late_Night"]',
                 "set_analysis_json": '{"bpm":124}',
                 "title": "Track",
                 "artist": "Artist",
@@ -51,7 +52,7 @@ class CatalogProjectionBuilderTests(unittest.TestCase):
             builder.write_catalog_cache()
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(7, payload["version"])
+        self.assertEqual(8, payload["version"])
         self.assertEqual(1, payload["total"])
         self.assertEqual([], payload["tracks"][0]["descriptors"])
         self.assertEqual("8A", payload["tracks"][0]["analysis"]["_camelot"])
@@ -59,6 +60,16 @@ class CatalogProjectionBuilderTests(unittest.TestCase):
         self.assertEqual("HOU-000003", payload["tracks"][0]["recording_code"])
         self.assertEqual("ORG", payload["tracks"][0]["version_code"])
         self.assertIsNone(payload["tracks"][0]["external_rating"])
+        self.assertEqual(["Deep_House_Late_Night"], payload["tracks"][0]["playlists"])
+        self.assertIn(
+            {
+                "value": "deep house",
+                "source": "Deep_House_Late_Night",
+                "provenance": "playlist",
+                "confidence": 0.78,
+            },
+            payload["tracks"][0]["playlist_identity"],
+        )
 
 
 if __name__ == "__main__":

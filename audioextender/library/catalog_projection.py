@@ -20,7 +20,7 @@ class CatalogProjectionPublisher:
     catalog_path: Callable[[], Path]
     memory_cache: dict[str, Any]
     memory_cache_lock: Any
-    schema_version: int = 7
+    schema_version: int = 8
     _publication_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
     def signature(self) -> tuple[tuple[tuple[int, int], tuple[int, int]], str]:

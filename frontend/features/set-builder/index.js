@@ -792,11 +792,13 @@ export function createSetBuilderFeature({
         _recordingCode: item.recording_code || '',
         _versionCode: item.version_code || '',
         _descriptors: item.descriptors || [],
+        _playlistIdentity: item.playlist_identity || [],
         _externalRating: item.external_rating || null,
       };
       track._manualIdentity = [
         ...new Set([
           ...(track._descriptors || []).map((descriptor) => descriptor.value),
+          ...(track._playlistIdentity || []).map((tag) => tag.value),
           ...(identities[setTrackId(track)] || []),
         ]),
       ];

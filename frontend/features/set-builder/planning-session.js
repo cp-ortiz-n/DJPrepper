@@ -15,7 +15,6 @@ import {
   shortlistJourneyPool,
 } from './journey-allocation.js';
 import { createSetRegenerationCommand } from './regeneration.js';
-
 export function createSetPlanningSession({ state, dom, clients, policy, transitions, lifecycle, view, progress = {} }) {
   const { $, escapeHtml, notify } = dom;
   const { planningClient, classicPlanner } = clients;
@@ -339,6 +338,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       const track = byCatalogId.get(item.id);
       if (!track) throw new Error(`Validated catalog track ${item.id} is not loaded in the browser.`);
       track._aiSelectionReason = item.selectionReason;
+      track._candidateReasons = Array.isArray(item.reasons) ? item.reasons : [];
       track._planSectionId = item.sectionId;
       track._candidateMetrics = {
         technicalScore: item.technicalScore || 0,
