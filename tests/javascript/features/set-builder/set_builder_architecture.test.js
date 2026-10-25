@@ -15,10 +15,12 @@ import {
   createCatalogGenreVocabulary,
 } from '../../../../frontend/features/set-builder/genre-vocabulary.js';
 import {
+  excludedGenreMentions,
   reconcileInterpretedGenreAuthority,
   repairJourneyGenrePolicy,
   reviewJourneyGenrePolicy,
 } from '../../../../frontend/features/set-builder/journey-policy.js';
+import { interpretSetIntention } from '../../../../frontend/features/set-builder/policy.js';
 import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
 import {
@@ -491,6 +493,54 @@ test('catalog vocabulary exposes playlist-supported musical identities', () => {
   ]);
 
   assert.deepEqual(catalogGenreMentions('Build a Latin Techno set', vocabulary), ['latin techno']);
+});
+
+test('catalog vocabulary exposes inferred cultural identities without rewriting genre', () => {
+  const vocabulary = createCatalogGenreVocabulary([
+    {
+      _genre: 'International / Bollywood',
+      _descriptors: [{ category: 'cultural', value: 'Indian / South Asian' }],
+    },
+  ]);
+  assert.deepEqual(catalogGenreMentions('Build an Indian party set', vocabulary), ['indian south asian']);
+});
+
+test('brief policy handles negation, warmup order, and sustained energy across a prompt matrix', () => {
+  const vocabulary = [
+    { canonical: 'disco & funk', aliases: ['disco', 'funk'] },
+    'latin techno',
+    'latin house',
+    { canonical: 'indian south asian', aliases: ['indian', 'south asian'] },
+    { canonical: 'hip hop & rap', aliases: ['hip hop', 'rap'] },
+    'afro house',
+    'schranz',
+    'techno',
+  ];
+  const cases = [
+    ['Create a latin disco set, high energy.', ['disco & funk'], [], 'peak-time'],
+    ['Create a latin techno set, latin house to warmup', ['latin house', 'latin techno'], [], 'warm-up'],
+    [
+      'Create an indian party song set, high energy all around. No rap',
+      ['indian south asian'],
+      ['hip hop & rap'],
+      'peak-time',
+    ],
+    ['Create a disco set without techno', ['disco & funk'], ['techno'], null],
+    ['Start with Afro House, then Techno', ['afro house', 'techno'], [], null],
+    ['Build a Latin House set, no Schranz', ['latin house'], ['schranz'], null],
+  ];
+  for (const [brief, sequence, excluded, vibe] of cases) {
+    const interpreted = interpretSetIntention(brief, vocabulary);
+    assert.deepEqual(interpreted.genreSequence, sequence, brief);
+    assert.deepEqual(interpreted.excludedGenres, excluded, brief);
+    assert.equal(interpreted.vibe, vibe, brief);
+  }
+  assert.deepEqual(excludedGenreMentions('House without techno or schranz', vocabulary), ['techno', 'schranz']);
+
+  const journey = offlineJourneyFromInterpretation(
+    interpretSetIntention('Indian party set, high energy throughout. No rap', vocabulary),
+  );
+  assert.ok(journey.sections.every((section) => section.energyStart >= 8 && section.energyEnd >= 8));
 });
 
 test('strict journey policy repairs AI genre drift and retains it only as suggestions', () => {

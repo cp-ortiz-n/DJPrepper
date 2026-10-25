@@ -9,6 +9,7 @@ from typing import Any
 
 from audioextender.library.musical_profile import MUSICAL_PROFILE_VERSION
 from audioextender.library.recording_identity import recording_dedupe_key
+from audioextender.set_builder.genre_vocabulary import normalize_genre_term
 from audioextender.set_builder.preference_learning import PersonalizedCandidateRanker
 
 SET_BUILDER_CATALOG_VERSION = 8
@@ -97,7 +98,12 @@ def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
 
 def _match_score(track: dict[str, Any], section: dict[str, Any]) -> tuple[float, str, list[dict[str, str]], bool]:
     genres = set(_terms(track["genre"]) + track["detailedGenres"])
-    descriptor_values = {str(item["value"]).casefold() for item in track["descriptors"]}
+    descriptor_values = {
+        normalized
+        for item in track["descriptors"]
+        for raw in [str(item["value"]), *_terms(item["value"])]
+        if (normalized := normalize_genre_term(raw))
+    }
     playlist_values = {str(item["value"]).casefold() for item in track["playlistIdentity"]}
     requested_genres = set(_terms(section.get("genres", [])))
     characteristics = set(_terms(section.get("characteristics", [])))
@@ -156,11 +162,15 @@ def _matches_constraints(track: dict[str, Any], constraints: dict[str, Any]) -> 
     required_details = set(_terms(constraints.get("detailedGenres", [])))
     if required_details and not detailed.intersection(required_details):
         return False
-    genre = str(track.get("genre") or "").strip().casefold()
+    genre = normalize_genre_term(track.get("genre"))
+    genre_terms = {normalize_genre_term(term) for term in _terms(track.get("genre"))}
     excluded_genres = {
-        str(value).strip().casefold() for value in constraints.get("excludedGenres", []) if str(value).strip()
+        normalized
+        for value in constraints.get("excludedGenres", [])
+        for raw in [value, _terms(value)[-1] if _terms(value) else ""]
+        if (normalized := normalize_genre_term(raw))
     }
-    return not any(genre == excluded or genre.startswith(f"{excluded} /") for excluded in excluded_genres)
+    return genre not in excluded_genres and genre_terms.isdisjoint(excluded_genres)
 
 
 @dataclass(frozen=True)

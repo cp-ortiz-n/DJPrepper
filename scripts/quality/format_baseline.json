@@ -1,13 +1,9 @@
 {
   "python": [
-    "audioextender/set_builder/intention_planner.py",
-    "audioextender/set_builder/journey_planner.py",
     "audioextender/set_builder/plan_comparator.py",
     "audioextender/set_builder/plan_validator.py",
     "audioextender/set_builder/preference_learning.py",
     "audioextender/set_builder/transition_optimizer.py",
-    "tests/unit/set_builder/test_journey_planner.py",
-    "tests/integration/set_builder/test_local_intention_acceptance.py",
     "tests/unit/set_builder/test_plan_comparator.py",
     "tests/unit/set_builder/test_proposal_repairer.py",
     "tests/unit/set_builder/test_transition_optimizer.py"

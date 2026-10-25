@@ -183,6 +183,7 @@ export function createSetBuilderFeature({
       required: parseIdentityTerms($('#set-intention-required').value),
       preferred: parseIdentityTerms($('#set-intention-preferred').value),
       avoided: parseIdentityTerms($('#set-intention-avoided').value),
+      excludedGenres: interpreted.excludedGenres || parsed.excludedGenres || [],
       requestedGenres: interpreted.requestedGenres || parsed.requestedGenres || [],
       optionalGenres: interpreted.optionalGenres || [],
       genreSequence: journeySequence.length ? journeySequence : interpreted.genreSequence || parsed.genreSequence || [],
@@ -340,6 +341,7 @@ export function createSetBuilderFeature({
   }
   function setBrief() {
     const authoringMode = workflow.briefMode();
+    const identity = currentIntention();
     const structuredGenres = resolveStructuredGenreFilters(authoringMode, {
       genres: selectedSetGenres(),
       detailedGenres: selectedSetDetailedGenres(),
@@ -358,7 +360,8 @@ export function createSetBuilderFeature({
       length: Number($('#set-length').value),
       genres: structuredGenres.genres,
       detailedGenres: structuredGenres.detailedGenres,
-      excludedGenres: structuredGenres.excludedGenres,
+      excludedGenres:
+        authoringMode === SET_BRIEF_MODES.AI ? [...(identity.excludedGenres || [])] : structuredGenres.excludedGenres,
       genreWeights: structuredGenres.weights,
       genreFlow: $('#set-genre-flow').value,
       vibe: $('#set-vibe').value,
@@ -370,7 +373,7 @@ export function createSetBuilderFeature({
       timing: $('#set-timing').value,
       edits: $('#set-edits').value,
       minimumHealth: Number($('#set-minimum-health').value || 65),
-      identity: currentIntention(),
+      identity,
     };
   }
   function setCandidateScore(

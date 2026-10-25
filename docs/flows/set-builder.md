@@ -33,6 +33,18 @@ canonical genre remains Reggaeton can qualify as an identity match for `Latin
 Techno` when it belongs to a crate such as `LATIN_bounce_TECHNO_Rave_Edition`.
 Direct genre matches rank first; playlist-supported matches are labeled as
 identity evidence and name the source playlist in the planning explanation.
+Catalog-derived cultural descriptors are also available as planning identities.
+For example, an `Indian / South Asian` descriptor lets an Indian party brief
+find suitable tracks even when their canonical genre is Bollywood, Bhangra, or
+another catalog label. This does not rewrite the track's genre.
+
+Negative and positional language is enforced after AI interpretation. A phrase
+such as `No rap` becomes a hard catalog exclusion and is removed from requested
+genres, while `Latin House to warm up` moves Latin House before the remaining
+genre sequence. Explicit `high energy` language establishes a minimum energy
+floor; `throughout`, `all around`, or `start to finish` applies the stronger
+floor to every journey section. These rules resolve through the current catalog
+vocabulary and are not hard-coded to individual genre names.
 
 AI-created journeys begin in **Needs confirmation** state. Editing a section,
 changing genre expansion, or changing the prompt returns the journey to that
@@ -54,16 +66,16 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 
 ## Planning owners
 
-| Owner                                                             | Responsibility                                                                    |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret, schema-check, and enforce explicit genre expansion authority           |
-| `SetCandidateRetriever`                                           | Apply genre, availability, mixing, lock, descriptor, and playlist-identity rules  |
-| `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                                    |
-| `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks            |
-| `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity  |
-| Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                          |
-| Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                           |
-| `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt                |
+| Owner                                                             | Responsibility                                                                   |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `BriefPreparationService` / `IntentionPlanner` / `JourneyPlanner` | Interpret, schema-check, and enforce explicit genre expansion authority          |
+| `SetCandidateRetriever`                                           | Apply genre, availability, mixing, lock, descriptor, and playlist-identity rules |
+| `AITrackPlanner`                                                  | Produce bounded AI and deterministic proposals                                   |
+| `SetPlanValidator`                                                | Reject invented, duplicate, unavailable, excluded, or misplaced tracks           |
+| `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity |
+| Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                         |
+| Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                          |
+| `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt               |
 
 ## Revision and regeneration rules
 

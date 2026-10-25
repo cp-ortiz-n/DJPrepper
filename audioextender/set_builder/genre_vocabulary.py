@@ -184,3 +184,38 @@ def explicit_genre_mentions(
         if genre not in ordered:
             ordered.append(genre)
     return ordered
+
+
+_NEGATIVE_GENRE_CUE = re.compile(
+    r"\b(?:no|not|without|avoid(?:ing)?|exclude(?:d|s|ing)?|free of|do not play|don t play)\b"
+)
+_NEGATIVE_GENRE_STOP = re.compile(r"\b(?:but|however|instead|except|only)\b")
+_OPENING_CUE = re.compile(r"\b(?:warm ?up|opening|start|begin|first)\b")
+
+
+def excluded_genre_mentions(brief: str, vocabulary: Sequence[Any]) -> list[str]:
+    """Return catalog identities rejected by generic negative language."""
+    rejected: list[str] = []
+    for clause in re.split(r"[.!?;,]", brief):
+        normalized = normalize_genre_term(clause)
+        cue = _NEGATIVE_GENRE_CUE.search(normalized)
+        if cue is None:
+            continue
+        tail = _NEGATIVE_GENRE_STOP.split(normalized[cue.end() :], maxsplit=1)[0]
+        for genre in explicit_genre_mentions(tail, vocabulary):
+            if genre not in rejected:
+                rejected.append(genre)
+    return rejected
+
+
+def opening_genre_mentions(brief: str, vocabulary: Sequence[Any]) -> list[str]:
+    """Return catalog identities explicitly assigned to the opening or warm-up."""
+    opening: list[str] = []
+    for clause in re.split(r"[.!?;,]|\bthen\b|\bfrom there\b", brief, flags=re.IGNORECASE):
+        normalized = normalize_genre_term(clause)
+        if not _OPENING_CUE.search(normalized):
+            continue
+        for genre in explicit_genre_mentions(clause, vocabulary):
+            if genre not in opening:
+                opening.append(genre)
+    return opening

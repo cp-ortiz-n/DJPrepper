@@ -223,6 +223,78 @@ class IntentionPlannerTests(unittest.TestCase):
         )
         self.assertEqual(result["drift"], "moderate")
 
+    def test_negated_catalog_genre_is_excluded_instead_of_requested(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [],
+                "preferred": ["high energy", "rap"],
+                "avoided": [],
+                "requestedGenres": ["Indian / South Asian", "Hip-Hop & Rap"],
+                "optionalGenres": [],
+                "genreSequence": ["Indian / South Asian", "Hip-Hop & Rap"],
+                "drift": "none",
+            },
+            [
+                {"canonical": "Indian / South Asian", "aliases": ["Indian", "South Asian"]},
+                {"canonical": "Hip-Hop & Rap", "aliases": ["Hip Hop", "Rap"]},
+            ],
+            "Create an Indian party song set, high energy all around. No rap",
+        )
+        self.assertEqual(result["requestedGenres"], ["indian south asian"])
+        self.assertEqual(result["genreSequence"], ["indian south asian"])
+        self.assertEqual(result["excludedGenres"], ["hip hop & rap"])
+        self.assertIn("hip hop & rap", result["avoided"])
+        self.assertNotIn("rap", result["preferred"])
+
+    def test_warmup_assignment_controls_sequence_instead_of_text_order(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [],
+                "preferred": [],
+                "avoided": [],
+                "requestedGenres": ["Latin Techno", "Latin House"],
+                "optionalGenres": [],
+                "genreSequence": ["Latin Techno", "Latin House"],
+                "drift": "none",
+            },
+            ["Latin Techno", "Latin House"],
+            "Create a Latin Techno set, Latin House to warmup",
+        )
+        self.assertEqual(result["requestedGenres"], ["latin techno", "latin house"])
+        self.assertEqual(result["genreSequence"], ["latin house", "latin techno"])
+
+    def test_prompt_policy_matrix_handles_unseen_genres_generically(self) -> None:
+        vocabulary = [
+            {"canonical": "Disco & Funk", "aliases": ["Disco", "Funk"]},
+            "Techno",
+            "House",
+            "Afro House",
+            "Schranz",
+            "Latin House",
+        ]
+        cases = [
+            ("Create a disco set without techno", ["disco & funk"], ["techno"]),
+            ("Start with Afro House, then Techno", ["afro house", "techno"], []),
+            ("Build a Latin House set, no Schranz", ["latin house"], ["schranz"]),
+        ]
+        for brief, sequence, excluded in cases:
+            with self.subTest(brief=brief):
+                result = sanitize_interpretation(
+                    {
+                        "required": [],
+                        "preferred": [],
+                        "avoided": [],
+                        "requestedGenres": vocabulary,
+                        "optionalGenres": [],
+                        "genreSequence": vocabulary,
+                        "drift": "none",
+                    },
+                    vocabulary,
+                    brief,
+                )
+                self.assertEqual(result["genreSequence"], sequence)
+                self.assertEqual(result["excludedGenres"], excluded)
+
     def test_positional_descriptor_is_not_treated_as_a_genre(self) -> None:
         result = sanitize_interpretation(
             {

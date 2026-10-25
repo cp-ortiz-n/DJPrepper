@@ -23,10 +23,57 @@ function normalize(value) {
 function unique(values) {
   return [...new Set((values || []).map(normalize).filter(Boolean))];
 }
+function uniqueIdentityTerms(values) {
+  return [
+    ...new Set(
+      (values || [])
+        .map((value) =>
+          String(value || '')
+            .trim()
+            .toLowerCase(),
+        )
+        .filter(Boolean),
+    ),
+  ];
+}
 
-/** Return explicit catalog genres while suppressing nested matches such as Techno inside Latin Techno. */
+const NEGATIVE_GENRE_CUE = /\b(?:no|not|without|avoid(?:ing)?|exclude(?:d|s|ing)?|free of|do not play|don t play)\b/;
+const NEGATIVE_GENRE_STOP = /\b(?:but|however|instead|except|only)\b/;
+const OPENING_CUE = /\b(?:warm ?up|opening|start|begin|first)\b/;
+
+function briefClauses(brief) {
+  return String(brief || '').split(/[.!?;,]|\bthen\b|\bfrom there\b/i);
+}
+
+/** Return catalog identities rejected by generic negative language. */
+export function excludedGenreMentions(brief, vocabulary = []) {
+  const rejected = [];
+  for (const clause of briefClauses(brief)) {
+    const normalized = normalize(clause);
+    const cue = NEGATIVE_GENRE_CUE.exec(normalized);
+    if (!cue) continue;
+    const tail = normalized.slice(cue.index + cue[0].length).split(NEGATIVE_GENRE_STOP, 1)[0];
+    for (const genre of catalogGenreMentions(tail, vocabulary, NON_GENRE_TERMS))
+      if (!rejected.includes(genre)) rejected.push(genre);
+  }
+  return rejected;
+}
+
+/** Return genres explicitly assigned to an opening or warm-up clause. */
+export function openingGenreMentions(brief, vocabulary = []) {
+  const opening = [];
+  for (const clause of briefClauses(brief)) {
+    if (!OPENING_CUE.test(normalize(clause))) continue;
+    for (const genre of catalogGenreMentions(clause, vocabulary, NON_GENRE_TERMS))
+      if (!opening.includes(genre)) opening.push(genre);
+  }
+  return opening;
+}
+
+/** Return positive catalog genres while suppressing nested and explicitly rejected matches. */
 export function explicitGenreMentions(brief, vocabulary = []) {
-  return catalogGenreMentions(brief, vocabulary, NON_GENRE_TERMS);
+  const rejected = new Set(excludedGenreMentions(brief, vocabulary));
+  return catalogGenreMentions(brief, vocabulary, NON_GENRE_TERMS).filter((genre) => !rejected.has(genre));
 }
 
 /** Treat the written brief—not model additions—as the authority for requested genres. */
@@ -42,15 +89,27 @@ export function reconcileInterpretedGenreAuthority(interpreted = {}, vocabulary 
         ...(interpreted.genreSequence || []),
       ];
   const explicit = explicitGenreMentions(source, candidates);
+  const excludedGenres = excludedGenreMentions(source, candidates);
+  const openingGenres = openingGenreMentions(source, candidates).filter((genre) => explicit.includes(genre));
+  const genreSequence = [...openingGenres, ...explicit.filter((genre) => !openingGenres.includes(genre))];
   const requestedByModel = new Set(unique(interpreted.requestedGenres));
   const optionalByModel = new Set(unique(interpreted.optionalGenres));
   const optionalGenres = explicit.filter((genre) => optionalByModel.has(genre));
   const requestedGenres = explicit.filter((genre) => requestedByModel.has(genre) || !optionalByModel.has(genre));
   return {
     ...interpreted,
+    text: source,
+    required: uniqueIdentityTerms(interpreted.required).filter(
+      (term) => !excludedGenres.some((genre) => genre.includes(normalize(term))),
+    ),
+    preferred: uniqueIdentityTerms(interpreted.preferred).filter(
+      (term) => !excludedGenres.some((genre) => genre.includes(normalize(term))),
+    ),
+    avoided: uniqueIdentityTerms([...(interpreted.avoided || []), ...excludedGenres]),
     requestedGenres,
     optionalGenres,
-    genreSequence: [...explicit],
+    genreSequence,
+    excludedGenres,
   };
 }
 

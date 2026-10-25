@@ -24,7 +24,10 @@ export function normalizeGenreVocabulary(vocabulary = []) {
       for (const [alias, count] of Object.entries(value.aliasCounts || {})) {
         const normalized = normalizeGenre(alias);
         if (normalized)
-          current.aliasCounts.set(normalized, (current.aliasCounts.get(normalized) || 0) + Math.max(0, Number(count || 0)));
+          current.aliasCounts.set(
+            normalized,
+            (current.aliasCounts.get(normalized) || 0) + Math.max(0, Number(count || 0)),
+          );
       }
       current.count += Math.max(0, Number(value.count || 0));
     }
@@ -49,7 +52,9 @@ function canonicalAliasAffinity(canonical, alias) {
   if (phraseOccurrences(canonical, alias).length > 0) return 2;
   const canonicalTokens = canonical.split(' ').filter((token) => token.length >= 4);
   const aliasTokens = alias.split(' ').filter((token) => token.length >= 4);
-  return canonicalTokens.some((token) => aliasTokens.some((other) => token.startsWith(other) || other.startsWith(token)))
+  return canonicalTokens.some((token) =>
+    aliasTokens.some((other) => token.startsWith(other) || other.startsWith(token)),
+  )
     ? 1
     : 0;
 }
@@ -61,7 +66,10 @@ export function createCatalogGenreVocabulary(tracks = []) {
     const canonical = normalizeGenre(canonicalValue);
     if (!canonical || ['all', 'other', 'unknown', 'unclassified'].includes(canonical)) return;
     const current = entries.get(canonical) || { canonical, aliases: new Set(), aliasCounts: new Map(), count: 0 };
-    const components = String(canonicalValue || '').split(/\s+&\s+/).map(normalizeGenre).filter(Boolean);
+    const components = String(canonicalValue || '')
+      .split(/\s+&\s+/)
+      .map(normalizeGenre)
+      .filter(Boolean);
     const trackAliases = new Set([canonical, ...components, ...aliases.map(normalizeGenre).filter(Boolean)]);
     trackAliases.forEach((alias) => {
       current.aliases.add(alias);
@@ -83,6 +91,11 @@ export function createCatalogGenreVocabulary(tracks = []) {
     if (normalizeGenre(category) === 'other' && details.length) details.forEach((detail) => add(detail));
     else add(category, details);
     for (const tag of track?._playlistIdentity || track?.playlist_identity || []) add(tag?.value || tag);
+    for (const descriptor of track?._descriptors || track?.descriptors || []) {
+      if (normalizeGenre(descriptor?.category) !== 'cultural') continue;
+      const value = descriptor?.value || '';
+      add(value, String(value).split('/'));
+    }
   }
   return normalizeGenreVocabulary(
     [...entries.values()].map((entry) => ({

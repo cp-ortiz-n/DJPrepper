@@ -48,12 +48,19 @@ export function offlineJourneyFromInterpretation(interpreted = {}, durationMinut
     ),
   ];
   const core = genres.length ? genres : ['other'];
+  const energyTerms = [interpreted.text || '', ...(interpreted.required || []), ...(interpreted.preferred || [])]
+    .join(' ')
+    .toLowerCase();
+  const highEnergy = /\b(?:high energy|peak[- ]?time|driving energy)\b/.test(energyTerms);
+  const sustainedEnergy =
+    /\b(?:all around|throughout|whole set|entire set|start to finish|all night|consistently)\b/.test(energyTerms);
+  const energyFloor = highEnergy ? (sustainedEnergy ? 8 : 7) : 1;
   const section = (id, name, durationPercent, energyStart, energyEnd, index, purpose) => ({
     id,
     name,
     durationPercent,
-    energyStart,
-    energyEnd,
+    energyStart: Math.max(energyFloor, energyStart),
+    energyEnd: Math.max(energyFloor, energyEnd),
     genres: [core[Math.min(core.length - 1, index)]],
     characteristics: index === 0 && interpreted.opening ? [interpreted.opening] : [],
     purpose,
@@ -65,6 +72,7 @@ export function offlineJourneyFromInterpretation(interpreted = {}, durationMinut
     evidence: 'deterministic-fallback',
     provider: 'offline',
     model: null,
+    ...(highEnergy ? { energyPolicy: { minimum: energyFloor, sustained: sustainedEnergy } } : {}),
     genrePolicy: {
       mode: interpreted.drift === 'none' ? 'strict' : 'related',
       coreGenres: [...new Set([...(interpreted.genreSequence || []), ...(interpreted.requestedGenres || [])])],
@@ -103,12 +111,7 @@ export function allowsCandidateGenre({
   drift,
   preferredIdentityMatches,
 }) {
-  if (
-    authoringMode === SET_BRIEF_MODES.AI &&
-    hasInterpretedIdentity &&
-    drift === 'none'
-  )
-    return requestedGenreMatch;
+  if (authoringMode === SET_BRIEF_MODES.AI && hasInterpretedIdentity && drift === 'none') return requestedGenreMatch;
   if (!requiresStrictGenreEligibility(authoringMode)) return true;
   return (
     (directGenre && requestedGenreMatch) || (hasInterpretedIdentity && drift === 'wide' && preferredIdentityMatches > 0)

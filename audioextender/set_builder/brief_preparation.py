@@ -22,12 +22,13 @@ from audioextender.set_builder.journey_planner import (
     JOURNEY_INSTRUCTIONS,
     JOURNEY_SCHEMA,
     _preserves_requested_sequence,
+    enforce_journey_energy_policy,
     enforce_journey_genre_policy,
     offline_journey,
     sanitize_journey,
 )
 
-BRIEF_PREPARATION_VERSION = 6
+BRIEF_PREPARATION_VERSION = 7
 BRIEF_SCHEMA = {
     **INTENTION_SCHEMA,
     "properties": {**INTENTION_SCHEMA["properties"], "journey": JOURNEY_SCHEMA},
@@ -91,6 +92,7 @@ class BriefPreparationService:
                     raise ValueError("Missing journey")
                 journey = sanitize_journey(proposed_journey, journey_vocabulary, duration_minutes)
                 journey = enforce_journey_genre_policy(journey, interpretation, journey_vocabulary)
+                journey = enforce_journey_energy_policy(journey, interpretation)
                 if not _preserves_requested_sequence(journey, interpretation, journey_vocabulary):
                     raise ValueError("Journey changed requested genre order")
                 evidence = "ai-planned"

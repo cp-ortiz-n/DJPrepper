@@ -1,4 +1,4 @@
-import { explicitGenreMentions } from './journey-policy.js';
+import { reconcileInterpretedGenreAuthority } from './journey-policy.js';
 
 export const SET_STORAGE_KEY = 'dj-library-studio-sets-v1';
 export const SET_STORAGE_MIGRATION_KEY = 'dj-library-studio-sets-migrated-v2';
@@ -189,8 +189,9 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
           : 'none';
   const chill = /(?:chill|kickback|laid[- ]?back|low[- ]?key)/.test(lower);
   const dance = /(?:party|danc(?:e|ing))/.test(lower);
-  const vibe =
-    chill && dance
+  const vibe = /peak[- ]?time|high energy/.test(lower)
+    ? 'peak-time'
+    : chill && dance
       ? 'balanced'
       : /warm[- ]?up/.test(lower)
         ? 'warm-up'
@@ -199,24 +200,31 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
           : chill
             ? 'warm-up'
             : null;
-  const curve = /varying waves|energy waves|wave(?:s|d)? of energy/.test(lower) ? 'waves' : null;
+  const curve = /varying waves|energy waves|wave(?:s|d)? of energy/.test(lower)
+    ? 'waves'
+    : /all around|throughout|whole set|entire set|start to finish|all night|consistently/.test(lower)
+      ? 'steady'
+      : null;
   const opening = /(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)
     ? 'melodic'
     : null;
-  const orderedGenres = explicitGenreMentions(text, catalogVocabulary);
-  return {
+  return reconcileInterpretedGenreAuthority(
+    {
+      text,
+      required: parseIdentityTerms(required.join(',')),
+      preferred: parseIdentityTerms(preferred.join(',')),
+      avoided: parseIdentityTerms(avoided.join(',')),
+      requestedGenres: [],
+      genreSequence: [],
+      drift,
+      vibe,
+      curve,
+      opening,
+      fallbackPolicy: [...DEFAULT_SET_FALLBACK_POLICY],
+    },
+    catalogVocabulary,
     text,
-    required: parseIdentityTerms(required.join(',')),
-    preferred: parseIdentityTerms(preferred.join(',')),
-    avoided: parseIdentityTerms(avoided.join(',')),
-    requestedGenres: [...orderedGenres],
-    genreSequence: orderedGenres,
-    drift,
-    vibe,
-    curve,
-    opening,
-    fallbackPolicy: [...DEFAULT_SET_FALLBACK_POLICY],
-  };
+  );
 }
 
 export function intendedGenreForPosition(identity, index, count) {
@@ -242,7 +250,11 @@ export function inferredTrackIdentity(track, manual = []) {
   const tags = [
     ...manual.map((value) => String(value).toLowerCase()),
     ...(track?._playlistIdentity || track?.playlist_identity || [])
-      .map((tag) => String(tag?.value || tag || '').trim().toLowerCase())
+      .map((tag) =>
+        String(tag?.value || tag || '')
+          .trim()
+          .toLowerCase(),
+      )
       .filter(Boolean),
   ];
   const add = (term, pattern) => {

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import unittest
 
+from audioextender.set_builder.brief_preparation import BriefPreparationService
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.plan_validator import SetPlanValidator
 from audioextender.set_builder.track_planner import AITrackPlanner, SetPlanningModelClient
@@ -21,9 +22,83 @@ class LocalIntentionAcceptanceTests(unittest.TestCase):
     def interpret(self, brief: str) -> dict:
         return self.planner.interpret(
             brief,
-            ["Reggaeton", "Dembow", "R&B", "Hip Hop", "Latin House", "Latin Techno", "Schranz",
-             "Afro House", "Bachata", "Cumbia", "Merengue", "Salsa", "House", "Techno"],
+            [
+                "Reggaeton",
+                "Dembow",
+                "R&B",
+                "Latin House",
+                "Latin Techno",
+                "Schranz",
+                "Afro House",
+                "Bachata",
+                "Cumbia",
+                "Merengue",
+                "Salsa",
+                "House",
+                "Techno",
+                {"canonical": "Disco & Funk", "aliases": ["Disco", "Funk"]},
+                {"canonical": "Hip-Hop & Rap", "aliases": ["Hip Hop", "Rap"]},
+                {"canonical": "Indian / South Asian", "aliases": ["Indian", "South Asian"]},
+            ],
         )
+
+    def prepare(self, brief: str) -> dict:
+        return BriefPreparationService(self.planner).prepare(
+            brief,
+            [
+                "Reggaeton",
+                "Dembow",
+                "R&B",
+                "Latin House",
+                "Latin Techno",
+                "Schranz",
+                "Afro House",
+                "Bachata",
+                "Cumbia",
+                "Merengue",
+                "Salsa",
+                "House",
+                "Techno",
+                {"canonical": "Disco & Funk", "aliases": ["Disco", "Funk"]},
+                {"canonical": "Hip-Hop & Rap", "aliases": ["Hip Hop", "Rap"]},
+                {"canonical": "Indian / South Asian", "aliases": ["Indian", "South Asian"]},
+            ],
+            60,
+        )
+
+    def test_prompt_matrix_preserves_positive_negative_positional_and_energy_intent(self) -> None:
+        cases = [
+            ("Create a latin disco set, high energy.", ["disco & funk"], []),
+            ("Create a latin techno set, latin house to warmup", ["latin house", "latin techno"], []),
+            (
+                "Create an indian party song set, high energy all around. No rap",
+                ["indian south asian"],
+                ["hip hop & rap"],
+            ),
+            ("Create a disco set without techno", ["disco & funk"], ["techno"]),
+            ("Start with Afro House, then Techno", ["afro house", "techno"], []),
+            ("Build a Latin House set, no Schranz", ["latin house"], ["schranz"]),
+        ]
+        for brief, sequence, excluded in cases:
+            with self.subTest(brief=brief):
+                result = self.prepare(brief)
+                interpretation = result["interpretation"]
+                self.assertEqual(interpretation["genreSequence"], sequence)
+                self.assertEqual(interpretation["excludedGenres"], excluded)
+                planned = [genre for section in result["journey"]["sections"] for genre in section["genres"]]
+                cursor = 0
+                for genre in planned:
+                    if cursor < len(sequence) and genre == sequence[cursor]:
+                        cursor += 1
+                self.assertEqual(cursor, len(sequence))
+                self.assertFalse(set(planned).intersection(excluded))
+                if "high energy all around" in brief.casefold():
+                    self.assertTrue(
+                        all(
+                            section["energyStart"] >= 8 and section["energyEnd"] >= 8
+                            for section in result["journey"]["sections"]
+                        )
+                    )
 
     def test_chill_latin_kickback_with_melodic_beginning(self) -> None:
         result = self.interpret(
@@ -76,26 +151,52 @@ class LocalIntentionAcceptanceTests(unittest.TestCase):
     def test_local_model_selects_only_supplied_track_ids(self) -> None:
         def candidate(identifier: str, section: str, genre: str) -> dict:
             return {
-                "id": identifier, "title": identifier, "artist": "Test Artist", "genre": genre,
-                "detailedGenres": [genre], "descriptors": [], "bpm": 122, "key": "8A", "camelot": "8A",
-                "energy": 0.6, "durationSeconds": 240, "vocals": "mixed", "timing": "steady",
-                "roles": [], "available": True, "matchTier": "direct", "relevanceScore": 90,
-                "required": False, "locked": False, "eligibleSectionIds": [section], "reasons": [],
+                "id": identifier,
+                "title": identifier,
+                "artist": "Test Artist",
+                "genre": genre,
+                "detailedGenres": [genre],
+                "descriptors": [],
+                "bpm": 122,
+                "key": "8A",
+                "camelot": "8A",
+                "energy": 0.6,
+                "durationSeconds": 240,
+                "vocals": "mixed",
+                "timing": "steady",
+                "roles": [],
+                "available": True,
+                "matchTier": "direct",
+                "relevanceScore": 90,
+                "required": False,
+                "locked": False,
+                "eligibleSectionIds": [section],
+                "reasons": [],
             }
-        journey = {"sections": [
-            {"id": "opening", "name": "Opening", "durationPercent": 50, "genres": ["Reggaeton"]},
-            {"id": "peak", "name": "Peak", "durationPercent": 50, "genres": ["Latin Techno"]},
-        ]}
-        pool = {"sections": [
-            {"sectionId": "opening", "candidates": [candidate("downloaded:1", "opening", "Reggaeton")]},
-            {"sectionId": "peak", "candidates": [candidate("downloaded:2", "peak", "Latin Techno")]},
-        ]}
+
+        journey = {
+            "sections": [
+                {"id": "opening", "name": "Opening", "durationPercent": 50, "genres": ["Reggaeton"]},
+                {"id": "peak", "name": "Peak", "durationPercent": 50, "genres": ["Latin Techno"]},
+            ]
+        }
+        pool = {
+            "sections": [
+                {"sectionId": "opening", "candidates": [candidate("downloaded:1", "opening", "Reggaeton")]},
+                {"sectionId": "peak", "candidates": [candidate("downloaded:2", "peak", "Latin Techno")]},
+            ]
+        }
         result = AITrackPlanner(
             SetPlanningModelClient(self.planner), SetPlanValidator(duration_tolerance=0.5), timeout_seconds=90
         ).plan(
             brief={"identity": {"text": "Open with Reggaeton and finish with Latin Techno."}},
-            journey=journey, candidate_pool=pool, target_track_count=2, target_duration_minutes=8,
-            required_ids=set(), excluded_ids=set(), locked_ids=set(),
+            journey=journey,
+            candidate_pool=pool,
+            target_track_count=2,
+            target_duration_minutes=8,
+            required_ids=set(),
+            excluded_ids=set(),
+            locked_ids=set(),
         )
         self.assertIn(result["mode"], {"ai-planned", "deterministic-fallback"})
         self.assertIsNotNone(result["comparison"])

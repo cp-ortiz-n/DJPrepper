@@ -212,6 +212,27 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertTrue(
             any("LATIN_bounce_TECHNO_Rave_Edition" in reason["text"] for reason in candidates[0]["reasons"])
         )
+
+    def test_cultural_identity_matches_strict_sections_and_normalized_exclusions(self) -> None:
+        indian = catalog_track(
+            1,
+            Path("/missing/indian.wav"),
+            genre="International / Bollywood",
+            descriptors=[{"category": "cultural", "value": "Indian / South Asian", "confidence": 0.9}],
+        )
+        rap = catalog_track(2, Path("/missing/rap.wav"), genre="Hip-Hop & Rap", detail="Rap")
+        strict_journey = journey("Indian South Asian")
+        strict_journey["genrePolicy"] = {"mode": "strict"}
+
+        result = SetCandidateRetriever().retrieve(
+            [indian, rap],
+            strict_journey,
+            constraints={"excludedGenres": ["hip hop & rap"]},
+        )
+
+        candidates = result["sections"][0]["candidates"]
+        self.assertEqual([candidate["id"] for candidate in candidates], ["downloaded:1"])
+        self.assertEqual(candidates[0]["matchTier"], "identity")
         self.assertEqual(result["sections"][0]["scarcity"]["identity"], 1)
 
     def test_caps_pool_and_limits_repeated_artists(self) -> None:
