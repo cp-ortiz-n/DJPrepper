@@ -102,9 +102,46 @@ class SavedSetService:
         record["id"] = set_id
         record["name"] = name
         record["tracks"] = [str(track) for track in tracks]
+        SavedSetService._enforce_recording_family_uniqueness(record)
         record["schemaVersion"] = SAVED_SET_SCHEMA_VERSION
         try:
             json.dumps(record)
         except (TypeError, ValueError) as error:
             raise ValueError("Saved set contains unsupported values") from error
         return record
+
+    @staticmethod
+    def _enforce_recording_family_uniqueness(record: dict[str, Any]) -> None:
+        """Normalize new and legacy aggregates when recording evidence is available."""
+        raw_details = record.get("trackDetails")
+        details = [item for item in raw_details if isinstance(item, Mapping)] if isinstance(raw_details, list) else []
+        recording_keys = {
+            str(item.get("id") or ""): str(item.get("recordingKey") or "").strip() for item in details if item.get("id")
+        }
+        locked_value = record.get("locked")
+        required_value = record.get("required")
+        raw_locked: list[Any] = locked_value if isinstance(locked_value, list) else []
+        raw_required: list[Any] = required_value if isinstance(required_value, list) else []
+        locked = {str(track_id) for track_id in raw_locked if track_id is not None}
+        required = {str(track_id) for track_id in raw_required if track_id is not None}
+
+        winners: dict[str, tuple[int, str, int]] = {}
+        for index, track_id in enumerate(record["tracks"]):
+            family = recording_keys.get(track_id) or f"track:{track_id}"
+            priority = 2 if track_id in locked else 1 if track_id in required else 0
+            current = winners.get(family)
+            if current is None or priority > current[2]:
+                winners[family] = (index, track_id, priority)
+
+        retained_indices = {index for index, _track_id, _priority in winners.values()}
+        retained_tracks = [track_id for index, track_id in enumerate(record["tracks"]) if index in retained_indices]
+        retained_ids = set(retained_tracks)
+        record["tracks"] = retained_tracks
+        if details:
+            record["trackDetails"] = [
+                copy.deepcopy(dict(item)) for item in details if str(item.get("id") or "") in retained_ids
+            ]
+        if isinstance(record.get("locked"), list):
+            record["locked"] = [str(track_id) for track_id in record["locked"] if str(track_id) in retained_ids]
+        if isinstance(record.get("required"), list):
+            record["required"] = [str(track_id) for track_id in record["required"] if str(track_id) in retained_ids]

@@ -1,3 +1,5 @@
+import { reconcileSetRecordingFamilies } from './recording-identity.js';
+
 export function createSetBuilderId(prefix = 'set') {
   const value = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${value}`;
@@ -40,15 +42,21 @@ export function snapshotSetPlan(store, trackId) {
   };
 }
 
-export function restoreSetPlan(store, snapshot, library, trackId) {
+export function restoreSetPlan(store, snapshot, library, trackId, recordingKey = trackId) {
   const byId = new Map(library.map((track) => [trackId(track), track]));
-  store.plan = (snapshot?.tracks || []).map((id) => byId.get(id)).filter(Boolean);
+  const resolved = (snapshot?.tracks || []).map((id) => byId.get(id)).filter(Boolean);
+  store.plan = reconcileSetRecordingFamilies(resolved, {
+    preferredTrackIds: new Set(snapshot?.locked || []),
+    trackId,
+    recordingKey,
+  }).plan;
   if (snapshot && Object.hasOwn(snapshot, 'sections')) {
     store.plan.forEach((track) => {
       track._planSectionId = snapshot.sections?.[trackId(track)] || null;
     });
   }
-  store.lockedIds = new Set(snapshot?.locked || []);
+  const retained = new Set(store.plan.map(trackId));
+  store.lockedIds = new Set((snapshot?.locked || []).filter((id) => retained.has(id)));
   store.transitionSettings = structuredClone(snapshot?.transitions || {});
   if (snapshot && Object.hasOwn(snapshot, 'revision')) {
     store.planRevision = snapshot.revision ? structuredClone(snapshot.revision) : null;

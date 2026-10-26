@@ -150,7 +150,13 @@ validator. Track uniqueness is enforced by permanent recording family, not by
 filename: an original, remix, alternate import, or spelling/spacing variant of
 the same song can contribute at most one track to a set. This rule applies to
 AI planning, deterministic planning, saved-set recovery, and manual add or
-replace actions. **Alternatives** on a recommended track still shows every
+replace actions. Saving, undo/redo restoration, regeneration, CSV export, and
+M3U8 export pass through the same recording-family invariant as a final safety
+boundary. A protected version wins over an unprotected version; when two
+locked or required tracks are versions of the same song, planning stops and
+asks you to keep one instead of silently breaking a lock. Legacy saved sets are
+reconciled when loaded, with unavailable tracks recovered separately so a
+duplicate version is never replaced by an unrelated song. **Alternatives** on a recommended track still shows every
 analyzed version in that recording family—such as the original, remix, extended
 mix, or live version—before suggesting different songs. Choosing one replaces
 the current version, so you can compare versions without creating a duplicate.

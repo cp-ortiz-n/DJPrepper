@@ -279,6 +279,21 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertEqual(result["duplicateRecordingsCollapsed"], 1)
         self.assertEqual(result["collapsedTrackIds"], ["downloaded:2"])
 
+    def test_reports_a_conflict_when_multiple_protected_tracks_share_one_recording(self) -> None:
+        tracks = [
+            catalog_track(1, Path("/missing/original.wav"), recording_code="DSC-000001", version_code="ORG"),
+            catalog_track(2, Path("/missing/remix.wav"), recording_code="DSC-000001", version_code="RMX01"),
+        ]
+
+        result = SetCandidateRetriever().retrieve(
+            tracks,
+            journey("Reggaeton"),
+            locked_ids={"downloaded:1", "downloaded:2"},
+        )
+
+        self.assertEqual(len(result["duplicateProtectedIds"]), 1)
+        self.assertTrue(set(result["duplicateProtectedIds"]).issubset({"downloaded:1", "downloaded:2"}))
+
     def test_collapses_safe_metadata_variants_without_persisted_family(self) -> None:
         tracks = [
             catalog_track(1, Path("/missing/one.wav"), artist="Lipps Inc", title="Funkytown"),

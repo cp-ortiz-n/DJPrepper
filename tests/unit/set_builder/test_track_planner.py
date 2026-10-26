@@ -428,6 +428,28 @@ class SetPlanningJobServiceTests(unittest.TestCase):
         self.assertEqual(state["status"], "complete")
         self.assertEqual(state["result"]["mode"], "deterministic-fallback")
 
+    def test_job_rejects_two_locked_versions_of_one_recording_with_actionable_error(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tracks = [
+                catalog_track(1, root / "original.wav", recording_code="DSC-000001"),
+                catalog_track(2, root / "remix.wav", recording_code="DSC-000001"),
+            ]
+            for track in tracks:
+                Path(track["job"]["library_path"]).touch()
+            planner = AITrackPlanner(FakeModel([], available=False), SetPlanValidator())
+            service = SetPlanningJobService(
+                lambda: tracks, SetCandidateRetriever(), planner, thread_factory=ImmediateThread
+            )
+            request = self.request()
+            request["locked_track_ids"] = ["downloaded:1", "downloaded:2"]
+
+            state = service.start(request)
+
+        self.assertEqual(state["status"], "failed")
+        self.assertIn("multiple versions of the same song", state["error"])
+        self.assertIn("Keep one version", state["error"])
+
     def test_new_job_cancels_stale_inflight_job_and_retry_is_guarded(self) -> None:
         DeferredThread.started = []
         planner = AITrackPlanner(FakeModel([], available=False), SetPlanValidator())

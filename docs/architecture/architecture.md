@@ -234,7 +234,7 @@ fuzzy merging or splits an established family. Explicit **Keep separate** and
 manual family links are inference-locked. The Set Builder catalog projection
 serializes both codes, and `recordingKey` is the hard uniqueness key shared by
 candidate retrieval, proposal repair, deterministic fallback, validation, saved
-set recovery, and browser track editing.
+set recovery, browser track editing, durable persistence, and export.
 
 Candidate retrieval sends one representative per recording family to the model,
 so model context cannot contain two versions of the same song. The browser keeps
@@ -242,7 +242,10 @@ the complete catalog separately. `recording-identity.js` resolves the selected
 track's family and `plan-view.js` presents the remaining family members as
 explicit version substitutions ahead of different-song recommendations. A
 version choice replaces the current row atomically; it never appends a second
-family member to the running order.
+family member to the running order. `plan-integrity.js` is the pure browser
+policy boundary used by planning, manual edits, snapshot restoration, legacy
+saved-set recovery, and export; coordinators do not reimplement its selection
+rules.
 
 The route surface is:
 

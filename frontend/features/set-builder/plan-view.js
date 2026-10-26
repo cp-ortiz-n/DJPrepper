@@ -7,6 +7,7 @@ import {
   searchVersionAwareReplacements,
 } from './version-alternatives.js';
 import { bindTrackReordering } from './track-reordering.js';
+import { applyExplicitSetPlanChoice } from './plan-integrity.js';
 import { compactTrackSummaryMarkup, createSetBuilderWorkspaceShell } from './workspace-shell.js';
 
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
@@ -568,6 +569,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
             if (!choice) return;
             pushSetHistory();
             state.plan.splice(Math.min(insertIndex, state.plan.length), 0, choice.track);
+            applyExplicitSetPlanChoice(state, choice.track);
             void recordPreference('replace-in', choice.track);
             renderSetPlan();
           }),
@@ -644,6 +646,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
             const replaced = state.plan[index];
             state.lockedIds.delete(setTrackId(replaced));
             state.plan[index] = choice.track;
+            applyExplicitSetPlanChoice(state, choice.track);
             void recordPreference('replace-out', replaced);
             void recordPreference('replace-in', choice.track);
             renderSetPlan();

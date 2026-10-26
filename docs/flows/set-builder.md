@@ -91,6 +91,12 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 - Ollama being unavailable does not disable deterministic planning.
 - Invalid or weaker AI output is replaced by the validated deterministic plan.
 - Recording-family duplicates cannot occupy two set positions.
+- The same pure recording-family policy guards browser planning, manual edits,
+  snapshot restoration, saved-set loading, durable persistence, regeneration,
+  and both playlist export formats.
+- Explicitly locked or required versions outrank unprotected versions. Two
+  protected versions in one family are reported as a rule conflict so the DJ
+  can choose which version remains.
 - Other versions of a recording may be shown as explicit alternatives.
 - Exact genre requests never expand through scarcity fallback; the DJ is asked
   to allow related genres explicitly instead.

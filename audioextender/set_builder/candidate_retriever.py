@@ -299,6 +299,7 @@ class SetCandidateRetriever:
             "candidateCount": len(emitted),
             "duplicateRecordingsCollapsed": len(collapsed_ids),
             "collapsedTrackIds": sorted(collapsed_ids),
+            "duplicateProtectedIds": sorted(collapsed_ids & (required | locked)),
             "missingRequiredIds": sorted(required - known_ids),
             "unavailableRequiredIds": sorted((required & known_ids) - available_ids),
             "limits": {"perSection": limit, "total": total_cap},

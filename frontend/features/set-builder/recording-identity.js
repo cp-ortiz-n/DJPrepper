@@ -45,20 +45,66 @@ export function setRecordingKey(track) {
   if (code) return `recording:${code}`;
   const artist = normalizeRecordingText(track?.artist);
   const title = canonicalRecordingTitle(track?.title || track?.source_name, track?.artist);
+  if (!artist && !title) {
+    const catalogId = setCatalogTrackId(track);
+    const trackId = setTrackId(track);
+    return `track:${catalogId || trackId}`;
+  }
   return `metadata:${artist}|${title}`;
 }
 
-export function deduplicateSetRecordings(tracks, preferredTrackIds = new Set()) {
-  const groups = new Map();
-  (tracks || []).forEach((track) => {
-    const key = setRecordingKey(track) || `track:${setTrackId(track)}`;
-    const current = groups.get(key);
-    if (!current || (!preferredTrackIds.has(setTrackId(current)) && preferredTrackIds.has(setTrackId(track)))) {
-      groups.set(key, track);
+/**
+ * Select one stable representative for every recording family.
+ *
+ * The function is deliberately pure so planning, editing, recovery, and export
+ * can share exactly the same invariant. Explicitly preferred tracks win over an
+ * earlier family member; otherwise the original plan order is preserved.
+ */
+export function reconcileSetRecordingFamilies(
+  tracks,
+  {
+    preferredTrackIds = new Set(),
+    trackId = setTrackId,
+    recordingKey = setRecordingKey,
+  } = {},
+) {
+  const source = Array.isArray(tracks) ? tracks.filter(Boolean) : [];
+  const winners = new Map();
+  const duplicateFamilies = new Map();
+  source.forEach((track, index) => {
+    const id = String(trackId(track) || '');
+    const family = String(recordingKey(track) || `track:${id}`);
+    const contender = { track, id, family, index, preferred: preferredTrackIds.has(id) };
+    const current = winners.get(family);
+    if (!current) {
+      winners.set(family, contender);
+      return;
     }
+    const duplicates = duplicateFamilies.get(family) || [current];
+    duplicates.push(contender);
+    duplicateFamilies.set(family, duplicates);
+    if (!current.preferred && contender.preferred) winners.set(family, contender);
   });
-  const selected = new Set(groups.values());
-  return (tracks || []).filter((track) => selected.has(track));
+  const selected = new Set([...winners.values()].map(({ track }) => track));
+  const plan = source.filter((track) => selected.has(track));
+  const removed = source.filter((track) => !selected.has(track));
+  return {
+    plan,
+    removed,
+    duplicateFamilies: [...duplicateFamilies.entries()].map(([recordingKeyValue, members]) => ({
+      recordingKey: recordingKeyValue,
+      keptTrackId: winners.get(recordingKeyValue)?.id || '',
+      removedTrackIds: members
+        .filter(({ track }) => !selected.has(track))
+        .map(({ id }) => id),
+      preferredTrackIds: members.filter(({ preferred }) => preferred).map(({ id }) => id),
+    })),
+    valid: removed.length === 0,
+  };
+}
+
+export function deduplicateSetRecordings(tracks, preferredTrackIds = new Set()) {
+  return reconcileSetRecordingFamilies(tracks, { preferredTrackIds }).plan;
 }
 
 export function recordingVersionAlternatives(track, tracks) {

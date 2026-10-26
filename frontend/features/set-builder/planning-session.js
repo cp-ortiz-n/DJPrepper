@@ -36,6 +36,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
     advancePlanRevision = () => null,
     eligibleSetTracks,
     pushSetHistory,
+    requireUniquePlan,
     renderSetPlan,
     resetSetReviewDraft,
     restoreSetSnapshot,
@@ -47,7 +48,6 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
   let activePlanningJobId = '';
   let planningController = null;
   let planningReceipt = null;
-
   async function generateDeterministicSetPlan() {
     progress.showEligibilityScan?.();
     const brief = setBrief();
@@ -208,7 +208,7 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
         setTrackId,
       });
       assignPlanSections(nextPlan, journey, state.lockedIds, setTrackId);
-      return failed ? [] : nextPlan;
+      return failed ? [] : requireUniquePlan(nextPlan, 'Rules-based planning');
     };
     const result = await classicPlanner.generate({
       count,
@@ -350,8 +350,9 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       };
       return track;
     });
+    const uniqueSelection = requireUniquePlan(selected, 'Validated planning');
     if (state.plan.length) pushSetHistory();
-    state.plan = improveSetOrder(selected, brief);
+    state.plan = improveSetOrder(uniqueSelection, brief);
     resetSetReviewDraft();
     state.proposals = [];
     state.activeProposal = '';
@@ -458,7 +459,6 @@ export function createSetPlanningSession({ state, dom, clients, policy, transiti
       planningReceipt = receipt;
     },
   });
-
   return Object.freeze({
     cancelAITrackPlan,
     generateAITrackPlan,

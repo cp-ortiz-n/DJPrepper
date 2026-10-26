@@ -22,6 +22,11 @@ import {
 } from '../../../../frontend/features/set-builder/journey-policy.js';
 import { interpretSetIntention } from '../../../../frontend/features/set-builder/policy.js';
 import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
+import {
+  applyExplicitSetPlanChoice,
+  recoverSavedSetPlan,
+  requireUniqueSetPlan,
+} from '../../../../frontend/features/set-builder/plan-integrity.js';
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
 import {
   assignPlanSections,
@@ -35,6 +40,7 @@ import {
 } from '../../../../frontend/features/set-builder/regeneration.js';
 import {
   deduplicateSetRecordings,
+  reconcileSetRecordingFamilies,
   recordingVersionAlternatives,
   recordingVersionLabel,
   setRecordingKey,
@@ -213,6 +219,13 @@ function planningSessionFor({ state, elements, planningClient, classicPlanner, o
     lifecycle: {
       eligibleSetTracks: () => state.library,
       pushSetHistory() {},
+      requireUniquePlan: (plan, source) =>
+        requireUniqueSetPlan(plan, {
+          preferredTrackIds: new Set([...state.lockedIds, ...state.requiredIds]),
+          trackId,
+          recordingKey: (track) => track.recordingKey || `track:${track.id}`,
+          source,
+        }),
       renderSetPlan() {},
       resetSetReviewDraft() {},
       restoreSetSnapshot(snapshot) {
@@ -282,6 +295,74 @@ test('recording deduplication honors an explicitly preferred catalog entry', () 
   const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
   const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
   assert.deepEqual(deduplicateSetRecordings([original, remix], new Set(['funkytown remix.wav'])), [remix]);
+});
+
+test('recording-family reconciliation reports removals and keeps the explicitly protected version in plan order', () => {
+  const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
+  const bridge = { source_name: 'Born to Be Alive.wav', _recordingCode: 'DSC-000002' };
+  const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
+
+  const result = reconcileSetRecordingFamilies([original, bridge, remix], {
+    preferredTrackIds: new Set(['funkytown remix.wav']),
+  });
+
+  assert.deepEqual(result.plan, [bridge, remix]);
+  assert.deepEqual(result.removed, [original]);
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.duplicateFamilies, [
+    {
+      recordingKey: 'recording:DSC-000001',
+      keptTrackId: 'funkytown remix.wav',
+      removedTrackIds: ['funkytown.wav'],
+      preferredTrackIds: ['funkytown remix.wav'],
+    },
+  ]);
+});
+
+test('recording-family reconciliation is stable for conflicting preferences and incomplete metadata', () => {
+  const firstLocked = { source_name: 'Rasputin.wav', artist: 'Majestic' };
+  const secondLocked = { source_name: 'Rasputin Remix.wav', artist: 'Majestic' };
+  const unknownOne = { _downloadedId: 10 };
+  const unknownTwo = { _downloadedId: 11 };
+
+  const result = reconcileSetRecordingFamilies([firstLocked, secondLocked, unknownOne, unknownTwo], {
+    preferredTrackIds: new Set(['rasputin.wav', 'rasputin remix.wav']),
+  });
+
+  assert.deepEqual(result.plan, [firstLocked, unknownOne, unknownTwo]);
+  assert.deepEqual(result.duplicateFamilies[0].preferredTrackIds, ['rasputin.wav', 'rasputin remix.wav']);
+  assert.notEqual(setRecordingKey(unknownOne), setRecordingKey(unknownTwo));
+  assert.notEqual(
+    setRecordingKey({ source_name: 'One More Time.wav', artist: 'Daft Punk' }),
+    setRecordingKey({ source_name: 'One More Time.wav', artist: 'Another Artist' }),
+  );
+});
+
+test('manual Add or Replace keeps the chosen version unless another version is protected', () => {
+  const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
+  const bridge = { source_name: 'Born to Be Alive.wav', _recordingCode: 'DSC-000002' };
+  const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
+  const editable = {
+    plan: [original, bridge, remix],
+    lockedIds: new Set(),
+    requiredIds: new Set(),
+  };
+
+  const chosen = applyExplicitSetPlanChoice(editable, remix);
+
+  assert.deepEqual(editable.plan, [bridge, remix]);
+  assert.deepEqual(chosen.removed, [original]);
+
+  const protectedPlan = {
+    plan: [original, bridge, remix],
+    lockedIds: new Set(['funkytown.wav']),
+    requiredIds: new Set(),
+  };
+  const protectedResult = applyExplicitSetPlanChoice(protectedPlan, remix);
+
+  assert.deepEqual(protectedPlan.plan, [original, bridge]);
+  assert.deepEqual(protectedResult.removed, [remix]);
+  assert.deepEqual([...protectedPlan.lockedIds], ['funkytown.wav']);
 });
 
 test('recording families retain alternate versions for explicit substitution', () => {
@@ -623,6 +704,24 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
     store.plan.map((track) => track._planSectionId),
     ['opening', 'closing'],
   );
+});
+
+test('restoring a legacy snapshot keeps one recording version and honors its locked preference', () => {
+  const store = createSetBuilderStore({ storage: { getItem: () => null } });
+  const original = { id: 'original', family: 'family-1' };
+  const bridge = { id: 'bridge', family: 'family-2' };
+  const remix = { id: 'remix', family: 'family-1' };
+
+  restoreSetPlan(
+    store,
+    { tracks: ['original', 'bridge', 'remix'], locked: ['remix'], transitions: {} },
+    [original, bridge, remix],
+    trackId,
+    (track) => track.family,
+  );
+
+  assert.deepEqual(store.plan, [bridge, remix]);
+  assert.deepEqual([...store.lockedIds], ['remix']);
 });
 
 test('Set Builder keeps stable draft and plan revision identities until an explicit reset', () => {
@@ -1584,6 +1683,45 @@ test('planning session retains a validated deterministic safety fallback from th
   assert.match(elements.get('#set-builder-message').textContent, /deterministic safety fallback/);
 });
 
+test('planning session refuses a supposedly validated plan containing two versions of one song', async () => {
+  const stable = { id: 'stable', catalogId: 3, recordingKey: 'recording:stable' };
+  const state = {
+    library: [
+      { id: 'original', catalogId: 1, recordingKey: 'recording:duplicate' },
+      { id: 'remix', catalogId: 2, recordingKey: 'recording:duplicate' },
+      stable,
+    ],
+    plan: [stable],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-cancel-planning', { hidden: true }],
+  ]);
+  const planningClient = {
+    start: async () => ({ jobId: 'job-duplicate' }),
+    wait: async () => ({
+      mode: 'ai-planned',
+      provider: 'ollama',
+      model: 'qwen3.5:4b',
+      summary: 'Invalid duplicate family.',
+      plan: [{ id: 1 }, { id: 2 }],
+    }),
+    cancel: async () => {},
+  };
+  const { session } = planningSessionFor({ state, elements, planningClient, classicPlanner: {} });
+
+  await assert.rejects(session.generateAITrackPlan(), /duplicate song version/);
+
+  assert.deepEqual(state.plan, [stable]);
+  assert.equal(elements.get('#set-cancel-planning').hidden, true);
+});
+
 test('AI regeneration request carries its base revision and section-aware locked-track contract', async () => {
   const state = {
     library: [
@@ -1867,6 +2005,55 @@ test('saved-set export serializers preserve transition and playlist details', ()
     { track: { source_name: 'Intro.wav', artist: 'DJ One', duration_seconds: 121.6 }, path: '/music/Intro.wav' },
   ]);
   assert.equal(m3u, '#EXTM3U\r\n#EXTINF:122,DJ One - Intro\r\n/music/Intro.wav');
+});
+
+test('saved-set export serializers never emit two versions of one recording family', () => {
+  const original = {
+    source_name: 'Funkytown.wav',
+    artist: 'Lipps Inc',
+    _recordingCode: 'DSC-1',
+    _genre: 'Disco',
+  };
+  const remix = {
+    source_name: 'Funkytown Remix.wav',
+    artist: 'Lipps Inc',
+    _recordingCode: 'DSC-1',
+    _genre: 'Disco',
+  };
+  const csv = buildSetCsv({
+    plan: [original, remix],
+    compatibility: () => ({ score: 80 }),
+    transitionSettings: () => ({}),
+    camelotKey: () => '',
+    energyBand: () => '',
+    songEnergy: () => 0.5,
+    libraryRoles: () => [],
+  });
+  const m3u = buildSetM3u([
+    { track: original, path: '/music/Funkytown.wav' },
+    { track: remix, path: '/music/Funkytown Remix.wav' },
+  ]);
+
+  assert.equal(csv.match(/Funkytown/g)?.length, 1);
+  assert.equal(m3u.match(/Funkytown/g)?.length, 2);
+  assert.doesNotMatch(m3u, /Remix/);
+});
+
+test('legacy saved-set reconciliation drops duplicate versions and retains the locked version', () => {
+  const original = { id: 'original', family: 'recording:DSC-1' };
+  const bridge = { id: 'bridge', family: 'recording:DSC-2' };
+  const remix = { id: 'remix', family: 'recording:DSC-1' };
+
+  const result = recoverSavedSetPlan({
+    record: { tracks: ['original', 'bridge', 'missing', 'remix'], locked: ['remix'], trackDetails: [] },
+    library: [original, bridge, remix],
+    trackId,
+    recordingKey: (track) => track.family,
+    recoveryScore: () => 0,
+  });
+
+  assert.deepEqual(result.plan, [bridge, remix]);
+  assert.equal(result.duplicatesRemoved, 1);
 });
 
 test('saved-set controller loads durable records and falls back to the browser recovery cache', async () => {

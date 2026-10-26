@@ -10,7 +10,13 @@ export const DEFAULT_SET_FALLBACK_POLICY = [
   'Neutral bridge tracks that preserve the progression',
   'Pure foundation tracks only when needed for flow and runtime',
 ];
-export { deduplicateSetRecordings, setCatalogTrackId, setRecordingKey, setTrackId } from './recording-identity.js';
+export {
+  deduplicateSetRecordings,
+  reconcileSetRecordingFamilies,
+  setCatalogTrackId,
+  setRecordingKey,
+  setTrackId,
+} from './recording-identity.js';
 
 export function trackMatchesSetGenre(track, genre) {
   return track._genre === genre || track._genre.startsWith(`${genre} / `);

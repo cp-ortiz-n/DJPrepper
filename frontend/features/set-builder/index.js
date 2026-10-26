@@ -9,6 +9,7 @@ import {
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
+  reconcileSetRecordingFamilies,
   setCatalogTrackId,
   setRecordingKey,
   setTrackDetailedGenres,
@@ -44,6 +45,7 @@ export {
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
+  reconcileSetRecordingFamilies,
   setCatalogTrackId,
   setRecordingKey,
   setTrackDetailedGenres,
@@ -518,7 +520,7 @@ export function createSetBuilderFeature({
     return { ...snapshotSetPlan(state, setTrackId), planningReceipt: planningSession?.receipt() || null };
   }
   function restoreSetSnapshot(snapshot, render = true) {
-    restoreSetPlan(state, snapshot, state.library, setTrackId);
+    restoreSetPlan(state, snapshot, state.library, setTrackId, setRecordingKey);
     if (Object.hasOwn(snapshot || {}, 'planningReceipt')) planningSession?.setReceipt(snapshot.planningReceipt);
     if (render) renderSetPlan();
   }
@@ -620,6 +622,7 @@ export function createSetBuilderFeature({
       intentionEvaluation,
       setCandidateScore,
       setCatalogTrackId,
+      setRecordingKey,
       setTrackId,
       songEnergy,
       targetSetEnergy,
@@ -631,6 +634,13 @@ export function createSetBuilderFeature({
       advancePlanRevision: () => advanceSetPlanRevision(state),
       eligibleSetTracks,
       pushSetHistory,
+      requireUniquePlan: (plan, source) =>
+        requireUniqueSetPlan(plan, {
+          preferredTrackIds: new Set([...state.lockedIds, ...state.requiredIds]),
+          trackId: setTrackId,
+          recordingKey: setRecordingKey,
+          source,
+        }),
       renderSetPlan: () => renderSetPlan(),
       resetSetReviewDraft,
       restoreSetSnapshot,
@@ -1089,6 +1099,7 @@ import { createSetEditCommands } from './commands.js';
 import { createSetBuilderFeedback } from './feedback.js';
 import { createSetPlanView } from './plan-view.js';
 import { createSetPlanningSession } from './planning-session.js';
+import { requireUniqueSetPlan } from './plan-integrity.js';
 import { createSavedSetController } from './saved-sets.js';
 import { advanceSetPlanRevision, createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './state.js';
 import { createSetTransitionEditor } from './transition-editor.js';
