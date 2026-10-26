@@ -63,7 +63,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     setPlanSnapshot,
     updateSetHistoryButtons,
   } = lifecycle;
-  const { trackReviewDraft, transitionReviewDraft } = review;
+  const { bindTrackReview, hasUnresolvedRejections, trackReviewMarkup, transitionReviewDraft } = review;
   const workspaceShell = createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regenerateUnlocked });
 
   function renderSetRules() {
@@ -287,23 +287,26 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     exportStatus.innerHTML = '<span>Rekordbox paths will be checked before export.</span>';
     const health = setHealth();
     const healthThreshold = brief.minimumHealth;
-    const healthAccepted = health.score >= healthThreshold;
+    const unresolvedRejection = hasUnresolvedRejections();
+    const healthAccepted = health.score >= healthThreshold && !unresolvedRejection;
     const weak = health.transitions.filter((item) => item.score < healthThreshold).sort((a, b) => a.score - b.score);
-    const healthDetail = weak.length
-      ? weak
+    const healthDetail = unresolvedRejection
+      ? '<p>A rejected track still needs a valid replacement. Open its details to retry after relaxing a rule.</p>'
+      : weak.length
+        ? weak
           .slice(0, 8)
           .map(
             (item) =>
               `<button type="button" data-transition="${item.to}"><b>${item.from + 1} → ${item.to + 1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`,
           )
           .join('')
-      : healthAccepted
-        ? `<p>Health target met. No transitions fall below ${healthThreshold}.</p>`
-        : `<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes === 1 ? ' is' : 's are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;
+        : healthAccepted
+          ? `<p>Health target met. No transitions fall below ${healthThreshold}.</p>`
+          : `<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes === 1 ? ' is' : 's are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;
     $('#set-health').className =
       `set-health ${healthAccepted ? 'good' : health.score >= healthThreshold - 10 ? 'fair' : 'weak'}`;
     $('#set-health').innerHTML =
-      `<summary><strong>${health.score}</strong><span><b>Mix health</b><em>${healthAccepted ? 'Performance-ready' : 'Draft · repair needed'}</em></span><small>Target ${healthThreshold} · ${weak.length} transition${weak.length === 1 ? '' : 's'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}</small></summary><div>${healthDetail}</div>`;
+      `<summary><strong>${health.score}</strong><span><b>Mix health</b><em>${healthAccepted ? 'Performance-ready' : 'Draft · repair needed'}</em></span><small>Target ${healthThreshold} · ${weak.length} transition${weak.length === 1 ? '' : 's'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}${unresolvedRejection ? ' · rejected track unresolved' : ''}</small></summary><div>${healthDetail}</div>`;
     $('#set-health')
       .querySelectorAll('[data-transition]')
       .forEach(
@@ -316,7 +319,11 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     ['#save-set', '#export-set-csv', '#export-set-m3u'].forEach((selector) => {
       const button = $(selector);
       button.disabled = !healthAccepted;
-      button.title = healthAccepted ? '' : `Set health must reach ${healthThreshold} before saving or exporting.`;
+      button.title = healthAccepted
+        ? ''
+        : unresolvedRejection
+          ? 'Resolve rejected tracks before saving or exporting.'
+          : `Set health must reach ${healthThreshold} before saving or exporting.`;
     });
     $('#set-track-list').innerHTML = state.plan
       .map((track, index) => {
@@ -327,7 +334,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         const preview = track._job?.id
           ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
           : '';
-        const review = trackReviewDraft.get(id) || {},
+        const review = state.trackReviews.get(id) || {},
           metrics = track._candidateMetrics || {};
         const alternateVersionCount = recordingVersionCount(track, state.library);
         const pairId = index ? `${setCatalogTrackId(state.plan[index - 1])}→${setCatalogTrackId(track)}` : '';
@@ -347,7 +354,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           })
           .join(
             '',
-          )}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision === 'accept' ? 'active' : ''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision === 'reject' ? 'active' : ''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="set-identity">Identity tags</button></div><div class="set-track-quick-actions"><button type="button" class="set-quick-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-quick-alternative">Replace</button><button type="button" class="set-inspect-track">More</button></div></article>`;
+          )}</ul></details>${trackReviewMarkup(track)}</div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="set-identity">Identity tags</button></div><div class="set-track-quick-actions"><button type="button" class="set-quick-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-quick-alternative">Replace</button><button type="button" class="set-inspect-track">More</button></div></article>`;
       })
       .join('');
     bindSetRows();
@@ -424,26 +431,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       card.querySelector('.set-alternative').onclick = () => replaceSetTrack(index);
       card.querySelector('.set-quick-alternative').onclick = () => replaceSetTrack(index);
       card.querySelector('.set-identity').onclick = () => openTrackIdentityEditor(index, card);
-      card.querySelectorAll('[data-track-review]').forEach(
-        (button) =>
-          (button.onclick = () => {
-            const track = state.plan[index],
-              reason = card.querySelector('.set-reject-reason').value;
-            trackReviewDraft.set(setTrackId(track), {
-              decision: button.dataset.trackReview,
-              reason: button.dataset.trackReview === 'reject' ? reason : '',
-            });
-            renderSetPlan();
-          }),
-      );
-      const rejectReason = card.querySelector('.set-reject-reason');
-      rejectReason.value = trackReviewDraft.get(setTrackId(state.plan[index]))?.reason || '';
-      rejectReason.onchange = (event) => {
-        const track = state.plan[index],
-          current = trackReviewDraft.get(setTrackId(track));
-        if (current?.decision === 'reject')
-          trackReviewDraft.set(setTrackId(track), { ...current, reason: event.currentTarget.value });
-      };
+      bindTrackReview(card, index);
       const rating = card.querySelector('.set-transition-rating select');
       if (rating) {
         rating.value = String(transitionReviewDraft.get(rating.dataset.pairId) || 3);

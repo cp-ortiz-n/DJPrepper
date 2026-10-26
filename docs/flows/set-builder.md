@@ -86,6 +86,35 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 - Undo/redo operates on atomic plan snapshots.
 - Export preflight verifies every local audio path before writing a playlist.
 
+## Track decisions and replacement
+
+The compact row exposes listening and quick structural actions. Detailed track
+feedback lives in the fixed inspector so the running order remains scannable.
+
+1. **Keep** writes one idempotent `keep` preference event and displays a saved
+   receipt. It does not lock the track.
+2. **Reject & replace** collects an optional reason and a required scope:
+   version-only or the complete recording family.
+3. `track-decision-store.js` persists the event before the running order is
+   mutated. The event carries the track, recording family, set, revision,
+   context, reason, and feature evidence.
+4. `track-rejection.js` excludes the selected scope, searches the existing
+   hard-eligible pool, rejects occupied recording families, and ranks remaining
+   candidates using the current section and adjacent transition policy.
+5. The workspace inserts the validated replacement into the same journey
+   section, clears affected transition overrides, advances the revision, and
+   shows **Replaced** plus a saved-feedback receipt.
+6. Undo restores the complete snapshot and calls
+   `DELETE /api/set-builder/preferences/events/{event_id}`. Redo records the same
+   stable event again. Reconciliation is serialized so rapid Undo/Redo cannot
+   reorder the durable writes.
+
+Locked or required tracks cannot enter this workflow until their protection is
+removed. When no valid replacement exists, the rejected track stays visible
+with a retry action and blocks Save/Export. This is an explicit unresolved state,
+not a silently accepted track or a fake catalog placeholder. A no-candidate
+retry does not create another event or empty revision; it reuses the saved scope.
+
 ## Trust and fallback
 
 - Ollama being unavailable does not disable deterministic planning.

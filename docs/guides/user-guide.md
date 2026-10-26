@@ -143,6 +143,23 @@ inspector or press Escape to dismiss it. Opening **Edit mix** closes the
 inspector first. The transition editor keeps its close control visible while
 scrolling, also provides **Done editing** at the bottom, and accepts Escape.
 
+Track feedback is available from **More** without crowding the compact row.
+**Keep** saves a preference immediately and shows **Kept · saved**; it does not
+lock the position. **Reject & replace** opens a short guided dialog where the
+reason is optional and the scope is explicit: reject only that version, or the
+song's complete recording family. Set Builder saves the feedback before
+changing the running order, then chooses the strongest eligible replacement
+for the same journey section. The replacement must pass the current hard rules,
+must not duplicate another recording family, and is labeled **Replaced**. Undo
+restores the prior track and retracts the saved rejection; Redo reapplies both.
+Locked and required tracks explain why they must be unprotected before they can
+be rejected. If no valid replacement exists, the original remains visibly
+**Rejected · feedback saved**, Save and Export stay unavailable, and **Retry
+replacement** becomes available after rules are relaxed. This prevents a
+rejected track or a silent gap from being exported accidentally. Retry keeps
+the already-saved reason and scope; use Undo first if the decision itself needs
+to change.
+
 Phase 2D compares every validated AI proposal with an independently generated
 deterministic baseline. AI wins only when it improves the deterministic quality
 score, preserves requested-genre coverage, and still passes every hard
@@ -168,7 +185,7 @@ scores, the winner, the reason, and any repair count.
 
 Phase 2E adds local, explainable preference learning without retraining or
 granting the model control over safety rules. Locking, removing, replacing,
-adding, saving, and exporting tracks record small catalog-feature signals in a
+adding, keeping, rejecting, saving, and exporting tracks record small catalog-feature signals in a
 local JSON store. A signal must be supported by at least three distinct tracks
 before it changes candidate ordering, the combined adjustment is capped at
 eight points, and broad signals are damped so they do not hide distinctive

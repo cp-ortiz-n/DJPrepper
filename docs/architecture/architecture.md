@@ -261,6 +261,8 @@ The route surface is:
 - `GET /api/set-builder/ai-observability` for aggregate local outcomes, latency, repairs, and fallbacks.
 - `GET /api/set-builder/preferences` to inspect active and pending local signals.
 - `POST /api/set-builder/preferences/events` to record accepted or rejected track choices.
+- `DELETE /api/set-builder/preferences/events/{event_id}` to retract one
+  idempotent decision when workspace Undo restores the previous revision.
 - `PUT /api/set-builder/preferences/enabled` to pause or resume personalization.
 - `DELETE /api/set-builder/preferences` to reset signals without changing catalog data.
 - `GET /api/set-builder/reviews` for context-specific acceptance and calibration reports.
@@ -498,6 +500,9 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `set-builder-feedback.js`        | Learned preferences, calibration reporting, personalization controls, and set-review submission               |
 | `set-builder-transition-editor.js` | Transition scoring, cue optimization, preview playback, and transition-editor lifecycle                    |
 | `set-builder-plan-view.js`       | Generated-plan rendering plus track rules, alternatives, identity edits, and row interactions                 |
+| `features/set-builder/track-decisions.js` | Focused composition boundary for per-track decision persistence and replacement behavior               |
+| `features/set-builder/track-decision-store.js` | Idempotent Keep/Reject events and serialized durable Undo/Redo reconciliation                   |
+| `features/set-builder/track-rejection.js` | Guided rejection scope, eligible replacement selection, and unresolved-state presentation             |
 | `set-builder-saved-sets.js`      | Durable saved-set recovery, persistence, loading, and CSV/M3U8 export                                         |
 | `set-builder-view-model.js`      | Escaped proposal, fallback-policy, journey-energy normalization, and AI-observability presentation models     |
 | `settings.js`                    | Settings forms, library health, relocation, backups, storage, and refresh coordination                        |

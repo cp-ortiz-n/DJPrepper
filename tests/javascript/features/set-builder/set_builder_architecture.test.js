@@ -68,6 +68,8 @@ import {
   snapshotSetPlan,
 } from '../../../../frontend/features/set-builder/state.js';
 import { createSetTransitionEditor } from '../../../../frontend/features/set-builder/transition-editor.js';
+import { createTrackDecisionStore } from '../../../../frontend/features/set-builder/track-decision-store.js';
+import { selectValidatedReplacement } from '../../../../frontend/features/set-builder/track-rejection.js';
 import {
   bindTrackReordering,
   dropDestinationIndex,
@@ -363,6 +365,153 @@ test('manual Add or Replace keeps the chosen version unless another version is p
   assert.deepEqual(protectedPlan.plan, [original, bridge]);
   assert.deepEqual(protectedResult.removed, [remix]);
   assert.deepEqual([...protectedPlan.lockedIds], ['funkytown.wav']);
+});
+
+test('reject replacement respects exclusions, occupied families, and adjacent transition fit', () => {
+  const current = { id: 'current', family: 'family-current' };
+  const occupied = { id: 'occupied', family: 'family-used' };
+  const duplicate = { id: 'duplicate', family: 'family-used', fit: 100 };
+  const excluded = { id: 'excluded', family: 'family-free-1', fit: 90 };
+  const selected = { id: 'selected', family: 'family-free-2', fit: 70 };
+  const result = selectValidatedReplacement({
+    state: { plan: [occupied, current] },
+    index: 1,
+    candidates: [duplicate, excluded, selected],
+    excludedIds: new Set(['excluded']),
+    setTrackId: (track) => track.id,
+    setRecordingKey: (track) => track.family,
+    setCandidateScore: (track) => track.fit,
+    compatibility: () => ({ score: 0 }),
+    brief: {},
+  });
+
+  assert.equal(result, selected);
+});
+
+test('reject replacement preserves strict journey-section genre authority', () => {
+  const current = { id: 'current', family: 'current', _planSectionId: 'warmup' };
+  const latinHouse = { id: 'latin-house', family: 'house', genre: 'Latin House', fit: 30 };
+  const peakTechno = { id: 'peak-techno', family: 'techno', genre: 'Techno', fit: 100 };
+  const result = selectValidatedReplacement({
+    state: { plan: [current] },
+    index: 0,
+    candidates: [peakTechno, latinHouse],
+    excludedIds: new Set(),
+    setTrackId: (track) => track.id,
+    setRecordingKey: (track) => track.family,
+    trackMatchesIntendedGenre: (track, genre) => track.genre === genre,
+    setCandidateScore: (track) => track.fit,
+    compatibility: () => ({ score: 0 }),
+    brief: {
+      identity: {
+        journey: {
+          genrePolicy: { mode: 'strict' },
+          sections: [{ id: 'warmup', genres: ['Latin House'] }],
+        },
+      },
+    },
+  });
+
+  assert.equal(result, latinHouse);
+  assert.equal(
+    selectValidatedReplacement({
+      state: { plan: [current] },
+      index: 0,
+      candidates: [peakTechno],
+      excludedIds: new Set(),
+      setTrackId: (track) => track.id,
+      setRecordingKey: (track) => track.family,
+      trackMatchesIntendedGenre: (track, genre) => track.genre === genre,
+      setCandidateScore: (track) => track.fit,
+      compatibility: () => ({ score: 0 }),
+      brief: {
+        identity: {
+          journey: {
+            genrePolicy: { mode: 'strict' },
+            sections: [{ id: 'warmup', genres: ['Latin House'] }],
+          },
+        },
+      },
+    }),
+    undefined,
+  );
+});
+
+test('durable track decisions reuse event IDs and reconcile Undo and Redo idempotently', async () => {
+  const calls = [];
+  const api = {
+    recordPreference: async (events) => {
+      calls.push(['record', events]);
+      return { profile: {} };
+    },
+    deletePreferenceEvent: async (id) => calls.push(['delete', id]),
+  };
+  const store = createTrackDecisionStore({
+    api,
+    context: () => 'peak-time',
+    features: () => ({ genre: ['Disco'] }),
+    trackId: (track) => track.id,
+    recordingKey: (track) => track.family,
+    setIdentity: () => ({ setId: 'set-1', revisionId: 'revision-2' }),
+    refresh: async () => {},
+  });
+  const track = { id: 'track-1', family: 'recording:one' };
+  const review = await store.record(track, {
+    decision: 'reject',
+    reason: 'wrong-energy',
+    scope: 'recording-family',
+    eventId: 'decision-1',
+  });
+
+  await store.reconcile(new Map([['track-1', review]]), new Map());
+  await store.reconcile(new Map(), new Map([['track-1', review]]));
+
+  assert.equal(review.eventId, 'decision-1');
+  assert.deepEqual(calls.map(([action]) => action), ['record', 'delete', 'record']);
+  assert.equal(calls[0][1][0].recordingKey, 'recording:one');
+  assert.equal(calls[0][1][0].scope, 'recording-family');
+});
+
+test('Keep remains durable preference feedback without becoming a structural lock', async () => {
+  const calls = [];
+  const store = createTrackDecisionStore({
+    api: {
+      recordPreference: async (events) => calls.push(events),
+      deletePreferenceEvent: async () => {},
+    },
+    context: () => 'warm-up',
+    features: () => ({ genre: ['House'] }),
+    trackId: (track) => track.id,
+    recordingKey: (track) => track.family,
+    setIdentity: () => ({ setId: 'set-keep', revisionId: 'revision-4' }),
+    refresh: async () => {},
+  });
+
+  const review = await store.record(
+    { id: 'track-kept', family: 'recording:kept' },
+    { decision: 'accept', eventId: 'keep-1' },
+  );
+
+  assert.deepEqual(review, {
+    decision: 'accept',
+    reason: '',
+    scope: 'version',
+    saved: true,
+    eventId: 'keep-1',
+    eventPayload: calls[0][0],
+  });
+  assert.deepEqual(calls[0][0], {
+    id: 'keep-1',
+    action: 'keep',
+    trackId: 'track-kept',
+    context: 'warm-up',
+    features: { genre: ['House'] },
+    reason: '',
+    scope: 'version',
+    recordingKey: 'recording:kept',
+    setId: 'set-keep',
+    revisionId: 'revision-4',
+  });
 });
 
 test('recording families retain alternate versions for explicit substitution', () => {
@@ -2212,6 +2361,9 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     lockedIds: new Set(['track-1']),
     requiredIds: new Set(),
     excludedIds: new Set(),
+    trackReviews: new Map([
+      ['track-1', { decision: 'accept', saved: true, eventId: 'decision-1' }],
+    ]),
   };
   const controller = savedSetControllerFor({
     state,
@@ -2232,6 +2384,7 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     assert.deepEqual(controller.savedSets()[0].tracks, ['track-1']);
     assert.equal(controller.savedSets()[0].draftId, 'draft-1');
     assert.deepEqual(controller.savedSets()[0].planRevision, state.planRevision);
+    assert.equal(controller.savedSets()[0].trackReviews['track-1'].eventId, 'decision-1');
     assert.equal(state.activeSavedSetId, 'draft-1');
     assert.equal(JSON.parse(storage.get('sets')).length, 1);
     assert.equal(calls[1][1].tracks[0].path, '/music/Opening.wav');

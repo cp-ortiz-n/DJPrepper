@@ -1,5 +1,4 @@
 /** Durable saved-set loading, recovery, persistence, and export ownership. */
-
 import {
   createSavedSetLifecycle,
   restoreSavedSetIdentity,
@@ -61,7 +60,6 @@ export function buildSetCsv({
   });
   return rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
 }
-
 export function buildSetM3u(entries) {
   const uniqueEntries = reconcileSetRecordingFamilies(
     (entries || []).map(({ track }) => track),
@@ -174,6 +172,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
       locked: [...state.lockedIds],
       required: [...state.requiredIds],
       excluded: [...state.excludedIds],
+      trackReviews: Object.fromEntries(state.trackReviews || []),
       updatedAt: new Date().toISOString(),
     };
     button.disabled = true;
@@ -282,6 +281,8 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     state.lockedIds = new Set((record.locked || []).filter((id) => retained.has(id)));
     state.requiredIds = new Set((record.required || []).filter((id) => retained.has(id)));
     state.excludedIds = new Set(record.excluded || []);
+    (state.trackReviews ||= new Map()).clear();
+    Object.entries(record.trackReviews || {}).forEach(([id, review]) => state.trackReviews.set(id, review));
     state.transitionSettings = record.transitions || {};
     state.proposals = [];
     state.activeProposal = '';

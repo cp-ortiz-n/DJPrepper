@@ -15,6 +15,7 @@ export function trackStateChips({ locked, decision, changed = false }) {
     locked ? { kind: 'locked', label: 'Locked' } : null,
     decision === 'accept' ? { kind: 'kept', label: 'Kept' } : null,
     decision === 'reject' ? { kind: 'rejected', label: 'Rejected' } : null,
+    decision === 'replaced' ? { kind: 'changed', label: 'Replaced' } : null,
     changed ? { kind: 'changed', label: 'Changed' } : null,
   ].filter(Boolean);
 }

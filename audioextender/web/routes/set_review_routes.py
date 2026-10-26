@@ -59,7 +59,7 @@ def create_set_review_router(
         result = reviews.record(payload)
         feedback = [
             {
-                "action": "keep" if track.decision == "accept" else "remove",
+                "action": "keep" if track.decision == "accept" else "reject",
                 "trackId": track.track_id,
                 "context": request.context,
                 "features": track.features,

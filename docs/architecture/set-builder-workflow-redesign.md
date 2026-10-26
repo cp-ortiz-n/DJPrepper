@@ -143,19 +143,22 @@ Replace the ambiguous draft-only controls with a complete action:
 
 1. Selecting **Reject** opens a small confirmation panel with an optional
    reason and scope: this version or this recording family.
-2. The primary action is **Reject & replace**. A secondary **Reject and leave a
-   gap** action remains available under More.
+2. The primary action is **Reject & replace**. It stays inside the focused track
+   inspector rather than expanding every compact row.
 3. Persist the rejection with an idempotent event ID before mutating the plan.
 4. Mark the selected version/family unavailable for this plan revision and
    future reruns according to the chosen scope.
 5. Insert the highest-ranked validated alternative for the same section and
    recalculate adjacent transitions.
-6. Show **Rejected and replaced · feedback saved** with an Undo action.
+6. Show **Rejected and replaced · feedback saved** and use the workspace Undo
+   and Redo controls for the atomic plan-and-feedback decision.
 
 The replacement row should briefly label what changed. If no valid alternative
-exists, keep a visible empty slot with a useful explanation; do not silently
-restore the rejected track. If persistence or replacement fails, retain the
-original track and show a retryable error.
+exists, retain the original only as an explicit unresolved **Rejected · feedback
+saved** row, block Save/Export, and offer **Retry replacement** after constraints
+change. This is safer than introducing a fake empty-track object into scoring,
+transition, and export code. If persistence fails, retain the original track and
+show a retryable error.
 
 **Keep** becomes an immediate durable preference event and adds a visible Kept
 chip. It does not lock the track automatically: preference and plan structure
@@ -327,10 +330,24 @@ entire prior revision with Undo. Musical scoring weights were not changed.
 
 ### Slice D — durable reject-and-replace
 
-- Add idempotent per-track review persistence.
-- Add reason/scope confirmation, validated replacement, visible saved state,
-  retry, and Undo.
-- Keep overall review and transition learning as the optional final step.
+- **Status: complete (2026-10-26).**
+- [x] Add idempotent per-track Keep/Reject persistence with stable event IDs.
+- [x] Add an accessible, responsive reason/scope dialog in the focused track
+  inspector without expanding compact rows.
+- [x] Select a same-section replacement from the existing hard-eligible pool,
+  preserve recording-family uniqueness, and recalculate affected transitions.
+- [x] Persist review state in saved plans and expose Kept, Replaced, and
+  unresolved Rejected receipts after rerender and reload.
+- [x] Retract and restore the durable preference event through serialized
+  Undo/Redo reconciliation.
+- [x] Guard locked and required tracks, and block Save/Export while a rejection
+  has no valid replacement.
+- [x] Keep overall review and transition learning as the optional final step.
+
+Verification covers candidate exclusions and occupied recording families,
+idempotent persistence and retraction, Keep-versus-Lock separation, saved-set
+round trips, locked-track guidance, responsive presentation, WCAG 2A/2AA serious
+issues, automatic replacement, and Undo/Redo in the browser workflow.
 
 ### Slice E — editable direction lifecycle
 

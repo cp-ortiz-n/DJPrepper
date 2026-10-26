@@ -409,6 +409,16 @@
         <div id="set-warnings" class="set-warnings"></div>
         <nav class="set-workspace-action-bar" aria-label="Set workspace actions"><div><strong>Shape this revision</strong><span>Lock what works, then regenerate only the remaining tracks.</span></div><button id="set-compact" type="button" class="button secondary">Compact rows</button><button id="add-set-track" type="button" class="button secondary">+ Add track</button><button id="regenerate-set" type="button" class="button secondary">Regenerate unlocked</button><button id="review-set-action" type="button">Review set</button></nav>
       </section>
+      <dialog id="set-track-decision-dialog" class="app-dialog set-track-decision-dialog" aria-labelledby="set-track-decision-title">
+        <form method="dialog">
+          <header><span class="dialog-icon" aria-hidden="true">×</span><div><p class="eyebrow">TRACK FEEDBACK</p><strong id="set-track-decision-title">Reject and replace this track?</strong><p><span class="set-decision-track"></span><span class="set-decision-artist"></span></p></div></header>
+          <label class="set-decision-reason"><span>Why does it not fit? <small>Optional</small></span><select name="set-reject-reason"><option value="">No reason selected</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Something else</option></select></label>
+          <fieldset class="set-decision-scope"><legend>What should Set Builder avoid?</legend><label><input type="radio" name="set-reject-scope" value="version" checked><span><b>Only this version</b><small>A remix or alternate version of the same song may still be suggested.</small></span></label><label><input type="radio" name="set-reject-scope" value="recording-family"><span><b>This song and every version</b><small>Exclude the original, remixes, edits, and alternate imports from this set.</small></span></label></fieldset>
+          <p class="set-decision-guidance">Feedback is saved first. The replacement must fit the same journey, pass every hard rule, and cannot duplicate another song in the set.</p>
+          <p class="set-decision-error" role="alert" aria-live="polite"></p>
+          <footer><button type="button" class="button tertiary cancel-track-rejection">Cancel</button><button type="button" class="confirm-track-rejection" data-tone="danger">Reject &amp; replace</button></footer>
+        </form>
+      </dialog>
     </section>
 
     <section id="review-view" class="view page-view">

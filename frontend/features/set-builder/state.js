@@ -26,6 +26,7 @@ export function createSetBuilderStore({ storage = globalThis.localStorage, creat
     future: [],
     compactMode: storage?.getItem('set-builder-compact') === 'true',
     transitionSettings: {},
+    trackReviews: new Map(),
   };
 }
 
@@ -39,6 +40,10 @@ export function snapshotSetPlan(store, trackId) {
     transitions: structuredClone(store.transitionSettings),
     revision: store.planRevision ? structuredClone(store.planRevision) : null,
     comparison: store.revisionComparison ? structuredClone(store.revisionComparison) : null,
+    excluded: [...store.excludedIds],
+    trackReviews: Object.fromEntries(
+      [...(store.trackReviews || [])].map(([id, review]) => [id, structuredClone(review)]),
+    ),
   };
 }
 
@@ -58,6 +63,11 @@ export function restoreSetPlan(store, snapshot, library, trackId, recordingKey =
   const retained = new Set(store.plan.map(trackId));
   store.lockedIds = new Set((snapshot?.locked || []).filter((id) => retained.has(id)));
   store.transitionSettings = structuredClone(snapshot?.transitions || {});
+  if (snapshot && Object.hasOwn(snapshot, 'excluded')) store.excludedIds = new Set(snapshot.excluded || []);
+  if (snapshot && Object.hasOwn(snapshot, 'trackReviews')) {
+    (store.trackReviews ||= new Map()).clear();
+    Object.entries(snapshot.trackReviews || {}).forEach(([id, review]) => store.trackReviews.set(id, review));
+  }
   if (snapshot && Object.hasOwn(snapshot, 'revision')) {
     store.planRevision = snapshot.revision ? structuredClone(snapshot.revision) : null;
   }
@@ -98,5 +108,6 @@ export function resetSetBuilderWorkspace(store, { createId = createSetBuilderId 
   store.history = [];
   store.future = [];
   store.transitionSettings = {};
+  store.trackReviews?.clear();
   return store;
 }

@@ -318,6 +318,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     ['Opening.wav', 'DJ Test', 'Deep House', 120, 'Am', 0.45],
     ['Lift.wav', 'DJ Test', 'House', 124, 'C', 0.68],
     ['Peak.wav', 'DJ Test', 'Techno', 128, 'Gm', 0.84],
+    ['Fresh Lift.wav', 'DJ Alternate', 'House', 125, 'Dm', 0.7],
   ];
   const savedSet = {
     id: 'workspace-shell-plan',
@@ -327,8 +328,8 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     brief: { name: 'Workspace Shell Plan', authoringMode: 'manual', minimumHealth: 55 },
     planningMode: 'classic',
     planningReceipt: { provider: 'offline', validated: true },
-    tracks: tracks.map(([name]) => name.toLowerCase()),
-    trackDetails: tracks.map(([source_name, artist, genre, bpm]) => ({
+    tracks: tracks.slice(0, 3).map(([name]) => name.toLowerCase()),
+    trackDetails: tracks.slice(0, 3).map(([source_name, artist, genre, bpm]) => ({
       id: source_name.toLowerCase(),
       source_name,
       artist,
@@ -341,6 +342,8 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     excluded: [],
   };
   let regenerationRequest;
+  const preferenceEvents = [];
+  const deletedPreferenceEvents = [];
   await page.route(
     (url) => url.pathname === '/api/set-builder/catalog',
     (route) =>
@@ -362,6 +365,20 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await page.route(
     (url) => url.pathname === '/api/set-builder/sets',
     (route) => route.fulfill({ json: { version: 2, sets: [savedSet] } }),
+  );
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/preferences/events',
+    async (route) => {
+      preferenceEvents.push(...route.request().postDataJSON().events);
+      await route.fulfill({ json: { recorded: true, count: preferenceEvents.length } });
+    },
+  );
+  await page.route(
+    (url) => url.pathname.startsWith('/api/set-builder/preferences/events/'),
+    async (route) => {
+      deletedPreferenceEvents.push(decodeURIComponent(route.request().url().split('/').pop()));
+      await route.fulfill({ json: { deleted: true } });
+    },
   );
   await page.route(
     (url) => url.pathname === '/api/set-builder/plan-tracks',
@@ -438,6 +455,12 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(inspector.locator('.set-row-actions')).toBeVisible();
   await expect(inspector.getByRole('button', { name: 'Close track inspector' })).toBeFocused();
   expect(await inspector.evaluate((node) => getComputedStyle(node).position)).toBe('fixed');
+  await inspector.getByRole('button', { name: 'Reject & replace' }).click();
+  const lockedRejectionDialog = page.locator('#set-track-decision-dialog');
+  await expect(lockedRejectionDialog).toBeVisible();
+  await expect(lockedRejectionDialog.getByRole('alert')).toContainText('Unlock this track');
+  await expect(lockedRejectionDialog.getByRole('button', { name: 'Reject & replace' })).toBeDisabled();
+  await lockedRejectionDialog.getByRole('button', { name: 'Cancel' }).click();
   await page.locator('#set-workspace-state').click();
   await expect(inspector).toBeHidden();
   await rows.first().getByRole('button', { name: 'More' }).click();
@@ -446,6 +469,40 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await page.keyboard.press('Escape');
   await expect(inspector).toBeHidden();
   await expect(rows.first()).toBeFocused();
+
+  await rows.nth(1).getByRole('button', { name: 'More' }).click();
+  await inspector.getByRole('button', { name: 'Reject & replace' }).click();
+  const rejectionDialog = page.locator('#set-track-decision-dialog');
+  await expect(rejectionDialog).toBeVisible();
+  await expect(rejectionDialog.getByText('Lift', { exact: true })).toBeVisible();
+  await rejectionDialog.locator('[name="set-reject-reason"]').selectOption('wrong-energy');
+  await rejectionDialog.getByText('This song and every version', { exact: true }).click();
+  const rejectionAccessibility = await new AxeBuilder({ page })
+    .include('#set-track-decision-dialog')
+    .withTags(['wcag2a', 'wcag2aa'])
+    .analyze();
+  expect(rejectionAccessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact))).toEqual(
+    [],
+  );
+  await rejectionDialog.getByRole('button', { name: 'Reject & replace' }).click();
+  await expect(rejectionDialog).toBeHidden();
+  await expect(rows.nth(1)).toContainText('Fresh Lift');
+  await expect(rows.nth(1).locator('.set-track-chips')).toContainText('Replaced');
+  await expect(page.locator('#set-builder-message')).toContainText('feedback saved');
+  await expect.poll(() => preferenceEvents.length).toBe(1);
+  expect(preferenceEvents[0]).toMatchObject({
+    action: 'reject',
+    reason: 'wrong-energy',
+    scope: 'recording-family',
+    trackId: 'lift.wav',
+  });
+
+  await page.locator('#set-undo').click();
+  await expect(rows.nth(1)).toContainText('Lift');
+  await expect.poll(() => deletedPreferenceEvents).toContain(preferenceEvents[0].id);
+  await page.locator('#set-redo').click();
+  await expect(rows.nth(1)).toContainText('Fresh Lift');
+  await expect.poll(() => preferenceEvents.length).toBe(2);
 
   await rows.nth(1).getByRole('button', { name: 'More' }).click();
   await inspector.getByRole('button', { name: 'Edit mix' }).click();

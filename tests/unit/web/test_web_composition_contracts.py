@@ -43,6 +43,7 @@ class WebCompositionContractTests(unittest.TestCase):
     def test_public_route_inventory_is_compatible(self) -> None:
         inventory = public_route_inventory()
         self.assertIn(("POST", "/api/set-builder/prepare-brief"), inventory)
+        self.assertIn(("DELETE", "/api/set-builder/preferences/events/{event_id}"), inventory)
         self.assertIn(("GET", "/api/settings/rekordbox-ratings"), inventory)
         self.assertIn(("POST", "/api/settings/rekordbox-ratings/preview"), inventory)
         self.assertIn(("POST", "/api/settings/rekordbox-ratings/apply"), inventory)
@@ -50,10 +51,10 @@ class WebCompositionContractTests(unittest.TestCase):
         inventory.remove(("POST", "/api/set-builder/prepare-brief"))
         encoded = json.dumps(inventory, separators=(",", ":")).encode()
 
-        self.assertEqual(len(inventory), 163)
+        self.assertEqual(len(inventory), 164)
         self.assertEqual(
             hashlib.sha256(encoded).hexdigest(),
-            "5c25b9bf629277326253d22ddc20b8f665ad28e9b86b13184a6902282d83d209",
+            "2b4371cacf61e86727ffdf90fc9d3a3c49c7ccbc24fe7c253a139ee9e06d2fe0",
             "Public route inventory changed:\n" + json.dumps(inventory, indent=2),
         )
 

@@ -81,7 +81,7 @@ export function createSetBuilderFeature({
     useFrontendServices(services);
   const state = createSetBuilderStore();
   const workflow = createSetWorkflowController({ $, $$ });
-  const trackReviewDraft = new Map();
+  const trackReviewDraft = state.trackReviews;
   const transitionReviewDraft = new Map();
   const setBuilderApi = createSetBuilderApi({ api });
   const intentionController = createSetIntentionController({
@@ -479,7 +479,7 @@ export function createSetBuilderFeature({
   function setVocalProfile(track) {
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
   }
-  function eligibleSetTracks(brief) {
+  function eligibleSetTracks(brief, { deduplicate = true } = {}) {
     const eligible = state.library.filter((track) => {
       const bpm = Number(track.bpm || 0);
       const id = setTrackId(track);
@@ -514,13 +514,15 @@ export function createSetBuilderFeature({
         timingEligible: brief.timing === 'all' || timingProfile(track) === brief.timing,
       });
     });
-    return deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds]));
+    return deduplicate ? deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds])) : eligible;
   }
   function setPlanSnapshot() {
     return { ...snapshotSetPlan(state, setTrackId), planningReceipt: planningSession?.receipt() || null };
   }
   function restoreSetSnapshot(snapshot, render = true) {
+    const previousReviews = new Map(state.trackReviews);
     restoreSetPlan(state, snapshot, state.library, setTrackId, setRecordingKey);
+    void trackDecisions?.reconcile(previousReviews, state.trackReviews);
     if (Object.hasOwn(snapshot || {}, 'planningReceipt')) planningSession?.setReceipt(snapshot.planningReceipt);
     if (render) renderSetPlan();
   }
@@ -540,8 +542,8 @@ export function createSetBuilderFeature({
   function redoSetEdit() {
     if (editCommands.redo()) updateSetHistoryButtons();
   }
-  let transitionEditor;
-  let planningSession;
+  let transitionEditor, planningSession, planView, trackDecisions;
+  const renderSetPlan = () => planView?.renderSetPlan();
   const feedbackController = createSetBuilderFeedback({
     state,
     dom: { $, $$, escapeHtml },
@@ -658,7 +660,29 @@ export function createSetBuilderFeature({
     regenerateUnlocked,
     renderSetProposals,
   } = planningSession;
-  const planView = createSetPlanView({
+  trackDecisions = createTrackDecisionWorkflow({
+    state,
+    api: setBuilderApi,
+    dom: { $, escapeHtml },
+    music: { compatibility, setTrackId, setRecordingKey, trackMatchesIntendedGenre },
+    policy: {
+      eligibleSetTracks: (brief) => eligibleSetTracks(brief, { deduplicate: false }),
+      setCandidateScore,
+    },
+    lifecycle: {
+      advancePlanRevision: () => advanceSetPlanRevision(state),
+      pushSetHistory,
+      renderSetPlan,
+      setBrief,
+    },
+    preference: {
+      context: () => $('#set-vibe')?.value || 'balanced',
+      features: feedbackController.preferenceFeatures,
+      setIdentity: () => ({ setId: state.activeSavedSetId || state.draftId, revisionId: state.planRevision?.id || '' }),
+      refresh: loadPreferenceProfile,
+    },
+  });
+  planView = createSetPlanView({
     state,
     dom: { $, $$, escapeHtml },
     ui: {
@@ -711,9 +735,9 @@ export function createSetBuilderFeature({
       setPlanSnapshot,
       updateSetHistoryButtons,
     },
-    review: { trackReviewDraft, transitionReviewDraft },
+    review: { ...trackDecisions, transitionReviewDraft },
   });
-  const { addSetTrack, renderSetPlan, renderSetRules } = planView;
+  const { addSetTrack, renderSetRules } = planView;
   const savedSetController = createSavedSetController({
     state,
     dom: { $, $$, option, escapeHtml, notify },
@@ -1102,6 +1126,7 @@ import { createSetPlanningSession } from './planning-session.js';
 import { requireUniqueSetPlan } from './plan-integrity.js';
 import { createSavedSetController } from './saved-sets.js';
 import { advanceSetPlanRevision, createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './state.js';
+import { createTrackDecisionWorkflow } from './track-decisions.js';
 import { createSetTransitionEditor } from './transition-editor.js';
 import { createSetBuilderResetController } from './workspace-reset.js';
 import { useFrontendServices } from '../../core/frontend-services.js';
