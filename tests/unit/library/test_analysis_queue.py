@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -98,7 +100,8 @@ class DownloadedTrackAnalysisQueueTests(unittest.TestCase):
             remix = root / "remix.wav"
             original.write_bytes(b"RIFF-original")
             remix.write_bytes(b"RIFF-remix")
-            repository = JobRepository(root / "catalog.sqlite3")
+            database = root / "catalog.sqlite3"
+            repository = JobRepository(database)
             original_id = repository.upsert_downloaded_track(
                 title="Yes Sir, I Can Boogie",
                 artist="Baccara",
@@ -109,6 +112,13 @@ class DownloadedTrackAnalysisQueueTests(unittest.TestCase):
                 artist="GBX, Baccara",
                 file_path=remix,
             )
+            with closing(sqlite3.connect(database)) as connection, connection:
+                connection.execute(
+                    """UPDATE downloaded_tracks SET recording_code='OTH-999999',
+                    version_code='RMX01',identity_confidence='migrated',
+                    identity_reason='Legacy catalog assignment' WHERE id=?""",
+                    (remix_id,),
+                )
             before_original = repository.get_downloaded_track(original_id)
             before_remix = repository.get_downloaded_track(remix_id)
             assert before_original is not None and before_remix is not None

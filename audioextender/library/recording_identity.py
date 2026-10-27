@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 
 _VERSION_PATTERNS = (
@@ -21,6 +22,15 @@ _ARTIST_CREDIT_SEPARATOR = re.compile(
     r"\s*(?:,|;|/|\b(?:feat(?:uring)?|ft|vs)\.?\b)\s*",
     re.I,
 )
+
+
+@dataclass(frozen=True)
+class RecordingFamilyInference:
+    """Conservative evidence that two catalog rows describe one song family."""
+
+    confidence: str
+    reason: str
+    strength: int
 
 
 def normalize_identity_text(value: str) -> str:
@@ -41,7 +51,8 @@ def base_title(title: str) -> str:
         r"\([^)]*\)|\[[^]]*\]",
         lambda match: (
             " "
-            if version_kind(match.group(0)) != "ORG" or re.search(r"\b(?:version|edit)\b", match.group(0), re.I)
+            if version_kind(match.group(0)) != "ORG"
+            or re.search(r"\b(?:version|edit|feat(?:uring)?|ft)\.?\b", match.group(0), re.I)
             else match.group(0)
         ),
         title,
@@ -104,6 +115,36 @@ def artists_share_credit(left: str, right: str) -> bool:
     if left_full == right_full:
         return True
     return any(len(credit.replace(" ", "")) >= 4 for credit in artist_credit_keys(left) & artist_credit_keys(right))
+
+
+def infer_recording_family(
+    left_artist: str,
+    left_title: str,
+    right_artist: str,
+    right_title: str,
+) -> RecordingFamilyInference | None:
+    """Infer a shared song family from structured metadata, never fuzzy titles.
+
+    Version words, bracketed remix/feature credits, harmless spacing, and
+    diacritics are normalized before comparison. A shared named artist credit
+    is still required so unrelated covers with the same title remain separate.
+    """
+    left_title_key = canonical_title_key(left_title, left_artist)
+    right_title_key = canonical_title_key(right_title, right_artist)
+    if not left_title_key or left_title_key != right_title_key:
+        return None
+    if not artists_share_credit(left_artist, right_artist):
+        return None
+    exact_artist = normalize_identity_text(left_artist) == normalize_identity_text(right_artist)
+    return RecordingFamilyInference(
+        confidence="review",
+        reason=(
+            "Matched canonical song title and artist"
+            if exact_artist
+            else "Matched canonical song title and shared artist credit"
+        ),
+        strength=2 if exact_artist else 1,
+    )
 
 
 def identity_key(artist: str, title: str) -> str:

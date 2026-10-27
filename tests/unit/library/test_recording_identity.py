@@ -12,6 +12,7 @@ from audioextender.library.recording_identity import (
     canonical_title_key,
     genre_family_code,
     identity_key,
+    infer_recording_family,
     version_kind,
 )
 from audioextender.persistence.facade import JobRepository
@@ -151,8 +152,23 @@ class RecordingIdentityTests(unittest.TestCase):
 
     def test_title_normalization_keeps_version_meaning_out_of_family_name(self) -> None:
         self.assertEqual(base_title("Song (Extended Mix)"), "song")
+        self.assertEqual(base_title("Song (feat. Guest Artist)"), "song")
         self.assertEqual(version_kind("Song (Live at Home)"), "LIVE")
         self.assertEqual(version_kind("Song - Radio Edit"), "RADIO")
+
+    def test_family_inference_requires_canonical_title_and_shared_artist(self) -> None:
+        inferred = infer_recording_family(
+            "Lipps Inc.",
+            "Funky Town",
+            "Lipps Inc., Domy R",
+            "Funkytown - Domy R Informal Remix",
+        )
+        self.assertIsNotNone(inferred)
+        assert inferred is not None
+        self.assertEqual(inferred.confidence, "review")
+        self.assertIn("shared artist credit", inferred.reason)
+        self.assertIsNone(infer_recording_family("ACRAZE", "Funky Town", "Lipps Inc.", "Funkytown"))
+        self.assertIsNone(infer_recording_family("Lipps Inc.", "Funky Town", "Lipps Inc.", "Designer Music"))
 
     def test_canonical_title_key_handles_spacing_and_trailing_artist_version_credit(self) -> None:
         self.assertEqual(canonical_title_key("Funkytown", "Lipps Inc"), "funkytown")
@@ -237,6 +253,30 @@ class RecordingIdentityTests(unittest.TestCase):
             self.assertEqual(first_track["recording_code"], second_track["recording_code"])
             self.assertNotEqual(first_track["version_code"], second_track["version_code"])
 
+    def test_credited_remix_receives_the_original_song_family_during_import(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repository = JobRepository(root / "catalog.sqlite3")
+            original = root / "Funky Town.wav"
+            remix = root / "Funkytown remix.wav"
+            original.write_bytes(b"RIFF-original")
+            remix.write_bytes(b"RIFF-remix")
+            original_id = repository.upsert_downloaded_track(
+                title="Funky Town", artist="Lipps Inc.", file_path=original
+            )
+            remix_id = repository.upsert_downloaded_track(
+                title="Funkytown - Domy R Informal Remix",
+                artist="Lipps Inc., Domy R",
+                file_path=remix,
+            )
+
+            original_track = repository.get_downloaded_track(original_id)
+            remix_track = repository.get_downloaded_track(remix_id)
+            assert original_track is not None and remix_track is not None
+            self.assertEqual(original_track["recording_code"], remix_track["recording_code"])
+            self.assertEqual(remix_track["version_code"], "RMX01")
+            self.assertEqual(remix_track["identity_confidence"], "review")
+
     def test_rescan_relinks_corrected_metadata_to_an_existing_family(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -275,6 +315,7 @@ class RecordingIdentityTests(unittest.TestCase):
                     (second_id,),
                 )
                 connection.execute("DELETE FROM system_state WHERE key='canonical_recording_identity_keys'")
+                connection.execute("DELETE FROM system_state WHERE key='inferred_recording_song_families'")
 
             migrated = JobRepository(database)
             first_track = migrated.get_downloaded_track(first_id)
@@ -298,6 +339,7 @@ class RecordingIdentityTests(unittest.TestCase):
             separated = repository.separate_recording(second_id)
             with closing(sqlite3.connect(database)) as connection, connection:
                 connection.execute("DELETE FROM system_state WHERE key='canonical_recording_identity_keys'")
+                connection.execute("DELETE FROM system_state WHERE key='inferred_recording_song_families'")
 
             migrated = JobRepository(database)
             first_track = migrated.get_downloaded_track(first_id)
@@ -306,6 +348,46 @@ class RecordingIdentityTests(unittest.TestCase):
             self.assertNotEqual(first_track["recording_code"], second_track["recording_code"])
             self.assertEqual(second_track["recording_code"], separated["recording_code"])
             self.assertTrue(second_track["identity_inference_locked"])
+
+    def test_existing_catalog_migration_infers_versions_but_not_unrelated_covers(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "catalog.sqlite3"
+            repository = JobRepository(database)
+            original = root / "lipps-original.wav"
+            remix = root / "lipps-remix.wav"
+            cover = root / "acraze-cover.wav"
+            for path, audio in (
+                (original, b"RIFF-original"),
+                (remix, b"RIFF-remix"),
+                (cover, b"RIFF-cover"),
+            ):
+                path.write_bytes(audio)
+            original_id = repository.upsert_downloaded_track(
+                title="Funky Town", artist="Lipps Inc.", file_path=original
+            )
+            remix_id = repository.upsert_downloaded_track(
+                title="Funkytown - Domy R Informal Remix",
+                artist="Lipps Inc., Domy R",
+                file_path=remix,
+            )
+            cover_id = repository.upsert_downloaded_track(title="Funky Town", artist="ACRAZE", file_path=cover)
+            with closing(sqlite3.connect(database)) as connection, connection:
+                connection.execute(
+                    """UPDATE downloaded_tracks SET recording_code='DSC-999999',
+                    version_code='RMX01',identity_confidence='migrated' WHERE id=?""",
+                    (remix_id,),
+                )
+                connection.execute("DELETE FROM system_state WHERE key='inferred_recording_song_families'")
+
+            migrated = JobRepository(database)
+            original_track = migrated.get_downloaded_track(original_id)
+            remix_track = migrated.get_downloaded_track(remix_id)
+            cover_track = migrated.get_downloaded_track(cover_id)
+            assert original_track is not None and remix_track is not None and cover_track is not None
+            self.assertEqual(original_track["recording_code"], remix_track["recording_code"])
+            self.assertNotEqual(original_track["recording_code"], cover_track["recording_code"])
+            self.assertIn("Inferred same song family", remix_track["identity_reason"])
 
     def test_parent_genres_receive_readable_three_letter_codes(self) -> None:
         self.assertEqual(genre_family_code("Electronic / House / Afro House"), "HOU")

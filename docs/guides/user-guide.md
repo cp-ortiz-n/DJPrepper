@@ -370,11 +370,15 @@ Every Music Files recording has a permanent readable identity such as
 three-letter prefix identifies the parent genre and suffixes identify
 the original, extended edit, remix, radio edit, live recording, remaster,
 instrumental, or acapella. Manually confirmed IDs survive renames, genre moves,
-reanalysis, and library relocation. Reanalysis may repair an unlocked legacy
-family ID when another catalog row has the exact canonical song title and a
-shared named artist credit—for example, an original and a credited remix. It
-does not use broad fuzzy title similarity, and **Keep as separate recording** or
-a manual family link prevents future automatic reassignment. **Collection
+reanalysis, and library relocation. Catalog startup, import, metadata
+correction, and reanalysis may repair an unlocked legacy family ID when another
+catalog row has the same inferred song identity—for example, an original and a
+credited remix. The generic inference uses canonical titles, explicit version
+and feature labels, stable source IDs, exact audio fingerprints, and shared
+named artist credits; it does not contain song-specific aliases or use broad
+fuzzy title similarity. An unrelated cover with the same title remains a
+separate family. **Keep as separate recording** or a manual family link prevents
+future automatic reassignment. **Collection
 integrity** presents conservative duplicate
 matches for review; merging combines catalog references while deliberately
 leaving the unused WAV on disk, and **Keep as separate recording** assigns a new

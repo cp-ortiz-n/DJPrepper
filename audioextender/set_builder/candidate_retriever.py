@@ -12,7 +12,7 @@ from audioextender.library.recording_identity import recording_dedupe_key
 from audioextender.set_builder.genre_vocabulary import normalize_genre_term
 from audioextender.set_builder.preference_learning import PersonalizedCandidateRanker
 
-SET_BUILDER_CATALOG_VERSION = 9
+SET_BUILDER_CATALOG_VERSION = 10
 
 
 def _terms(value: Any) -> list[str]:

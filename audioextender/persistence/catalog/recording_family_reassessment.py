@@ -7,11 +7,9 @@ from contextlib import closing
 from typing import Any
 
 from audioextender.library.recording_identity import (
-    artists_share_credit,
-    canonical_title_key,
     identity_key,
+    infer_recording_family,
     next_version_code,
-    normalize_identity_text,
     version_kind,
 )
 from audioextender.persistence.base import RepositoryMixinBase
@@ -41,9 +39,6 @@ class RecordingFamilyReassessmentRepositoryMixin(RepositoryMixinBase):
             if family_size > 1:
                 return dict(source)
 
-            title_key = canonical_title_key(str(source["title"] or ""), str(source["artist"] or ""))
-            if not title_key:
-                return dict(source)
             candidates = connection.execute(
                 """SELECT * FROM downloaded_tracks
                 WHERE id!=? AND recording_code!=?
@@ -54,20 +49,20 @@ class RecordingFamilyReassessmentRepositoryMixin(RepositoryMixinBase):
             for candidate in candidates:
                 if str(candidate["identity_reason"] or "") == "Kept separate by user":
                     continue
-                candidate_title_key = canonical_title_key(str(candidate["title"] or ""), str(candidate["artist"] or ""))
                 shared_source = any(
                     str(source[field] or "") and str(source[field] or "") == str(candidate[field] or "")
                     for field in ("spotify_uri", "youtube_id", "audio_fingerprint")
                 )
-                shared_metadata = title_key == candidate_title_key and artists_share_credit(
-                    str(source["artist"] or ""), str(candidate["artist"] or "")
+                metadata_inference = infer_recording_family(
+                    str(source["artist"] or ""),
+                    str(source["title"] or ""),
+                    str(candidate["artist"] or ""),
+                    str(candidate["title"] or ""),
                 )
-                if not shared_source and not shared_metadata:
+                if not shared_source and metadata_inference is None:
                     continue
-                exact_artist = normalize_identity_text(str(source["artist"] or "")) == normalize_identity_text(
-                    str(candidate["artist"] or "")
-                )
-                matches.append((2 if shared_source else 1 + int(exact_artist), candidate))
+                match_strength = 3 if shared_source else (metadata_inference.strength if metadata_inference else 0)
+                matches.append((match_strength, candidate))
             if not matches:
                 return dict(source)
 
@@ -88,7 +83,7 @@ class RecordingFamilyReassessmentRepositoryMixin(RepositoryMixinBase):
                     recording_code,
                     version_code,
                     identity_key(str(source["artist"] or ""), str(source["title"] or "")),
-                    f"Reanalysis matched canonical title and artist credit to {recording_code}",
+                    f"Reanalysis matched inferred song family {recording_code}",
                     _now(),
                     track_id,
                 ),

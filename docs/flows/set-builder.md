@@ -129,6 +129,13 @@ retry does not create another event or empty revision; it reuses the saved scope
   protected versions in one family are reported as a rule conflict so the DJ
   can choose which version remains.
 - Other versions of a recording may be shown as explicit alternatives.
+- Song-family inference is catalog-wide and metadata-driven: canonical titles,
+  explicit version/feature labels, stable source IDs, exact audio fingerprints,
+  and shared named artist credits converge originals, edits, and remixes without
+  a song-specific alias list. Unrelated covers with the same title stay separate.
+- App startup safely repairs unlocked legacy family assignments, so this identity
+  improvement does not require rerunning audio analysis. Manual links and
+  **Keep as separate recording** remain authoritative.
 - Exact genre requests never expand through scarcity fallback; the DJ is asked
   to allow related genres explicitly instead.
 - Rules-based planning selects against the genre list for the position's
