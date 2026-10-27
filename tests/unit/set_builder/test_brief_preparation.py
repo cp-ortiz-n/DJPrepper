@@ -155,6 +155,35 @@ class BriefPreparationServiceTests(unittest.TestCase):
         planner.interpret.assert_called_once()
         self.assertTrue(cached["cache"]["hit"])
 
+    def test_latin_house_warmup_is_ordered_before_latin_techno(self) -> None:
+        planner = Mock(provider="ollama", ollama_model="test-local", model="cloud-test")
+        planner.interpret.return_value = {
+            "required": [],
+            "preferred": [],
+            "avoided": [],
+            "requestedGenres": [],
+            "optionalGenres": [],
+            "genreSequence": [],
+            "drift": "none",
+            "vibe": "dance-party",
+            "curve": "rise",
+            "opening": None,
+            "ending": None,
+            "explanation": "Start with Latin House and move into Latin Techno.",
+            "provider": "ollama",
+            "model": "test-local",
+        }
+        result = BriefPreparationService(planner).prepare(
+            "Create a latin techno set, latin house to warmup",
+            ["latin techno", "latin house"],
+            60,
+        )
+
+        self.assertEqual(result["interpretation"]["requestedGenres"], ["latin techno", "latin house"])
+        self.assertEqual(result["interpretation"]["genreSequence"], ["latin house", "latin techno"])
+        self.assertEqual(result["journey"]["sections"][0]["genres"], ["latin house"])
+        self.assertEqual(result["journey"]["sections"][-1]["genres"], ["latin techno"])
+
     def test_combined_ollama_response_preserves_ai_journey_in_one_call(self) -> None:
         import json
 
@@ -239,11 +268,51 @@ class BriefPreparationServiceTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             preparation.prepare.assert_called_once_with(
                 "Latin House",
-                [{"canonical": "Latin House", "aliases": ["Guaracha"], "count": 9}],
+                [{"canonical": "latin house", "aliases": ["latin house", "guaracha"], "count": 9}],
                 45,
             )
             invalid = client.post("/api/set-builder/prepare-brief", json={"brief": "", "duration_minutes": 1})
             self.assertEqual(invalid.status_code, 422)
+
+    def test_route_replaces_stale_browser_vocabulary_with_server_catalog(self) -> None:
+        with TemporaryDirectory() as temporary:
+            catalog_path = Path(temporary) / "catalog.json"
+            catalog_path.write_text(
+                '{"version":11,"tracks":[],"genre_vocabulary":['
+                '{"canonical":"latin techno","aliases":["latin techno"],"count":12},'
+                '{"canonical":"latin house","aliases":["latin house"],"count":9}]}'
+            )
+            preparation = Mock()
+            preparation.prepare.return_value = {"interpretation": {}, "journey": {"sections": []}}
+            app = FastAPI()
+            app.include_router(
+                create_set_builder_router(
+                    SetBuilderRouteDependencies(
+                        catalog_cache_path=catalog_path,
+                        ensure_catalog_current=lambda: None,
+                        write_catalog_cache=lambda: None,
+                        music_library_root=lambda: Path(temporary),
+                        safe_folder_name=lambda value: value,
+                        intention_planner=Mock(),
+                        journey_planner=Mock(),
+                        saved_sets=Mock(),
+                        brief_preparation=preparation,
+                    )
+                )
+            )
+
+            response = TestClient(app).post(
+                "/api/set-builder/prepare-brief",
+                json={
+                    "brief": "Create a latin techno set, latin house to warmup",
+                    "catalog_vocabulary": ["house"],
+                    "duration_minutes": 60,
+                },
+            )
+
+            self.assertEqual(response.status_code, 200)
+            vocabulary = preparation.prepare.call_args.args[1]
+            self.assertEqual([item["canonical"] for item in vocabulary], ["latin techno", "latin house"])
 
     def test_deduplicates_concurrent_identical_requests(self) -> None:
         planner = Mock(provider="ollama", ollama_model="test-local", model="cloud-test")

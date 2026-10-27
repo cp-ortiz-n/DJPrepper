@@ -236,6 +236,14 @@ serializes both codes, and `recordingKey` is the hard uniqueness key shared by
 candidate retrieval, proposal repair, deterministic fallback, validation, saved
 set recovery, browser track editing, durable persistence, and export.
 
+The projection also serializes one authoritative `genre_vocabulary` assembled
+from canonical genres, detailed aliases, playlist identity, and cultural
+descriptors. Intention and journey routes reload that server-owned vocabulary
+before sanitizing a brief, so an older browser catalog cannot erase a newly
+available identity and leave journey sections empty. The browser retains this
+vocabulary as explicit Set Builder state and merges it with track-derived terms;
+catalog and brief-preparation schema revisions invalidate older cached results.
+
 Candidate retrieval sends one representative per recording family to the model,
 so model context cannot contain two versions of the same song. The browser keeps
 the complete catalog separately. `recording-identity.js` resolves the selected

@@ -4,8 +4,10 @@ import unittest
 
 from audioextender.set_builder.genre_vocabulary import (
     canonical_genres,
+    catalog_projection_vocabulary,
     explicit_genre_mentions,
     normalize_genre_vocabulary,
+    opening_genre_mentions,
     resolve_catalog_genre,
 )
 
@@ -84,6 +86,39 @@ class GenreVocabularyTests(unittest.TestCase):
             explicit_genre_mentions("Start with House, move to Disco, finish with Hard Techno", vocabulary),
             ["house", "disco & funk", "hard techno"],
         )
+
+    def test_projection_vocabulary_includes_playlist_and_cultural_identity(self) -> None:
+        result = catalog_projection_vocabulary(
+            [
+                {
+                    "genre": "Electronic / Techno / Techno",
+                    "detailed_genre": "Peak-Time Techno",
+                    "playlist_identity": [{"value": "Latin Techno", "source": "Latin Techno"}],
+                    "descriptors": [{"category": "cultural", "value": "Indian / South Asian"}],
+                },
+                {
+                    "genre": "Other",
+                    "detailed_genre": "Latin House",
+                    "playlist_identity": [],
+                    "descriptors": [],
+                },
+            ]
+        )
+        canonical = {item["canonical"]: item for item in result}
+        self.assertIn("techno", canonical)
+        self.assertIn("latin techno", canonical)
+        self.assertIn("latin house", canonical)
+        self.assertEqual(
+            {"indian", "indian south asian", "south asian"},
+            set(canonical["indian south asian"]["aliases"]),
+        )
+
+    def test_trailing_warmup_cue_assigns_only_the_nearest_genre(self) -> None:
+        vocabulary = ["latin techno", "latin house"]
+        brief = "Create a latin techno set, latin house to warmup"
+        self.assertEqual(explicit_genre_mentions(brief, vocabulary), ["latin techno", "latin house"])
+        self.assertEqual(opening_genre_mentions(brief, vocabulary), ["latin house"])
+        self.assertEqual(opening_genre_mentions("Warm up with latin house", vocabulary), ["latin house"])
 
 
 if __name__ == "__main__":

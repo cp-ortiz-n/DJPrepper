@@ -63,8 +63,12 @@ export function excludedGenreMentions(brief, vocabulary = []) {
 export function openingGenreMentions(brief, vocabulary = []) {
   const opening = [];
   for (const clause of briefClauses(brief)) {
-    if (!OPENING_CUE.test(normalize(clause))) continue;
-    for (const genre of catalogGenreMentions(clause, vocabulary, NON_GENRE_TERMS))
+    const normalized = normalize(clause);
+    const cue = OPENING_CUE.exec(normalized);
+    if (!cue) continue;
+    const after = catalogGenreMentions(normalized.slice(cue.index + cue[0].length), vocabulary, NON_GENRE_TERMS);
+    const before = catalogGenreMentions(normalized.slice(0, cue.index), vocabulary, NON_GENRE_TERMS);
+    for (const genre of after.length ? after : before.slice(-1))
       if (!opening.includes(genre)) opening.push(genre);
   }
   return opening;
@@ -81,13 +85,18 @@ export function reconcileInterpretedGenreAuthority(interpreted = {}, vocabulary 
   const source = String(brief || interpreted.text || '').trim();
   if (!source) return { ...interpreted };
   const catalogVocabulary = normalizeGenreVocabulary(vocabulary);
-  const candidates = catalogVocabulary.length
-    ? catalogVocabulary
-    : [
-        ...(interpreted.requestedGenres || []),
-        ...(interpreted.optionalGenres || []),
-        ...(interpreted.genreSequence || []),
-      ];
+  const interpretedGenres = [
+    ...(interpreted.requestedGenres || []),
+    ...(interpreted.optionalGenres || []),
+    ...(interpreted.genreSequence || []),
+  ];
+  const unresolvedInterpretedGenres = interpretedGenres.filter(
+    (genre) => {
+      const normalized = normalize(genre);
+      return !catalogVocabulary.some((entry) => entry.aliases.includes(normalized));
+    },
+  );
+  const candidates = normalizeGenreVocabulary([...catalogVocabulary, ...unresolvedInterpretedGenres]);
   const explicit = explicitGenreMentions(source, candidates);
   const excludedGenres = excludedGenreMentions(source, candidates);
   const openingGenres = openingGenreMentions(source, candidates).filter((genre) => explicit.includes(genre));

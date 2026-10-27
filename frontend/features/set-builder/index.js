@@ -32,7 +32,7 @@ import {
 import { createSetBuilderProgressView } from './progress-view.js';
 import { createSetJourneyReview } from './journey-review.js';
 import { reconcileInterpretedGenreAuthority } from './journey-policy.js';
-import { createCatalogGenreVocabulary } from './genre-vocabulary.js';
+import { mergeCatalogGenreVocabulary } from './genre-vocabulary.js';
 
 export {
   DEFAULT_SET_FALLBACK_POLICY,
@@ -125,7 +125,7 @@ export function createSetBuilderFeature({
     }
   }
   function intentionVocabulary() {
-    return createCatalogGenreVocabulary(state.library);
+    return mergeCatalogGenreVocabulary(state.catalogVocabulary, state.library);
   }
   function manualTrackIdentity(track) {
     return identityStore()[setTrackId(track)] || [];
@@ -186,8 +186,8 @@ export function createSetBuilderFeature({
       preferred: parseIdentityTerms($('#set-intention-preferred').value),
       avoided: parseIdentityTerms($('#set-intention-avoided').value),
       excludedGenres: interpreted.excludedGenres || parsed.excludedGenres || [],
-      requestedGenres: interpreted.requestedGenres || parsed.requestedGenres || [],
-      optionalGenres: interpreted.optionalGenres || [],
+      requestedGenres: interpreted.requestedGenres?.length ? interpreted.requestedGenres : parsed.requestedGenres || [],
+      optionalGenres: interpreted.optionalGenres?.length ? interpreted.optionalGenres : parsed.optionalGenres || [],
       genreSequence: journeySequence.length ? journeySequence : interpreted.genreSequence || parsed.genreSequence || [],
       journey,
       opening: interpreted.opening || parsed.opening || null,
@@ -810,6 +810,7 @@ export function createSetBuilderFeature({
     await loadSetReviewReport();
     await loadAIObservability();
     const catalog = await setBuilderApi.catalog();
+    state.catalogVocabulary = catalog.genre_vocabulary || [];
     const identities = identityStore();
     state.library = (catalog.tracks || []).map((item) => {
       const song = item.analysis || {};

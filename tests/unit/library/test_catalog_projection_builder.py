@@ -52,7 +52,7 @@ class CatalogProjectionBuilderTests(unittest.TestCase):
             builder.write_catalog_cache()
             payload = json.loads(path.read_text(encoding="utf-8"))
 
-        self.assertEqual(10, payload["version"])
+        self.assertEqual(11, payload["version"])
         self.assertEqual(1, payload["total"])
         self.assertEqual([], payload["tracks"][0]["descriptors"])
         self.assertEqual("8A", payload["tracks"][0]["analysis"]["_camelot"])
@@ -70,6 +70,9 @@ class CatalogProjectionBuilderTests(unittest.TestCase):
             },
             payload["tracks"][0]["playlist_identity"],
         )
+        vocabulary = {item["canonical"]: item for item in payload["genre_vocabulary"]}
+        self.assertIn("house", vocabulary)
+        self.assertIn("deep house", vocabulary["house"]["aliases"])
 
 
 if __name__ == "__main__":

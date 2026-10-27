@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from audioextender.set_builder.brief_preparation import BriefPreparationService
-from audioextender.set_builder.candidate_retriever import SET_BUILDER_CATALOG_VERSION
+from audioextender.set_builder.catalog_cache import authoritative_catalog_vocabulary, current_catalog_payload
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
 from audioextender.set_builder.saved_sets import SavedSetService
@@ -129,20 +128,18 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
     """Create the Set Builder router with explicit application dependencies."""
     router = APIRouter(prefix="/api/set-builder", tags=["set-builder"])
 
+    def catalog_vocabulary(requested: list[Any]) -> list[dict[str, Any]]:
+        return authoritative_catalog_vocabulary(
+            deps.catalog_cache_path,
+            deps.ensure_catalog_current,
+            deps.write_catalog_cache,
+            requested,
+        )
+
     @router.get("/catalog", response_model=None)
     def catalog() -> FileResponse | dict:
         """Return all latest analyzed tracks without loading full job history."""
-        deps.ensure_catalog_current()
-        cache_current = False
-        try:
-            cache_current = (
-                json.loads(deps.catalog_cache_path.read_text(encoding="utf-8")).get("version")
-                == SET_BUILDER_CATALOG_VERSION
-            )
-        except (OSError, ValueError):
-            pass
-        if not cache_current:
-            deps.write_catalog_cache()
+        current_catalog_payload(deps.catalog_cache_path, deps.ensure_catalog_current, deps.write_catalog_cache)
         return FileResponse(
             deps.catalog_cache_path,
             media_type="application/json",
@@ -187,7 +184,10 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
     @router.post("/interpret-intention")
     def interpret_intention(request: SetIntentionRequest) -> dict:
         try:
-            return deps.intention_planner.interpret(request.brief, request.catalog_vocabulary)
+            return deps.intention_planner.interpret(
+                request.brief,
+                catalog_vocabulary(request.catalog_vocabulary),
+            )
         except (httpx.HTTPError, ValueError, RuntimeError) as error:
             raise HTTPException(502, f"AI interpretation failed: {error}") from error
 
@@ -198,7 +198,7 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
         try:
             return deps.brief_preparation.prepare(
                 request.brief,
-                request.catalog_vocabulary,
+                catalog_vocabulary(request.catalog_vocabulary),
                 request.duration_minutes,
             )
         except (httpx.HTTPError, ValueError, RuntimeError, TimeoutError) as error:
@@ -209,7 +209,7 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
         return deps.journey_planner.plan(
             request.brief,
             request.interpreted_intention,
-            request.catalog_vocabulary,
+            catalog_vocabulary(request.catalog_vocabulary),
             request.duration_minutes,
         )
 

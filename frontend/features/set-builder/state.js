@@ -8,6 +8,7 @@ export function createSetBuilderId(prefix = 'set') {
 export function createSetBuilderStore({ storage = globalThis.localStorage, createId = createSetBuilderId } = {}) {
   return {
     library: [],
+    catalogVocabulary: [],
     plan: [],
     draftId: createId('draft'),
     activeSavedSetId: '',

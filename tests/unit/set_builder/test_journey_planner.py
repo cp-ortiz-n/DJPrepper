@@ -241,7 +241,13 @@ class JourneyPlannerTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["durationMinutes"], 45)
         planner.plan.assert_called_once_with(
-            "Cumbia then Salsa", {"genreSequence": ["Cumbia", "Salsa"]}, ["Cumbia", "Salsa"], 45
+            "Cumbia then Salsa",
+            {"genreSequence": ["Cumbia", "Salsa"]},
+            [
+                {"canonical": "cumbia", "aliases": ["cumbia"], "count": 0},
+                {"canonical": "salsa", "aliases": ["salsa"], "count": 0},
+            ],
+            45,
         )
 
 

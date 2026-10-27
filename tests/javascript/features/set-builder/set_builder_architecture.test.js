@@ -13,6 +13,7 @@ import {
   canonicalGenreNames,
   catalogGenreMentions,
   createCatalogGenreVocabulary,
+  mergeCatalogGenreVocabulary,
 } from '../../../../frontend/features/set-builder/genre-vocabulary.js';
 import {
   excludedGenreMentions,
@@ -723,6 +724,43 @@ test('catalog vocabulary exposes playlist-supported musical identities', () => {
   ]);
 
   assert.deepEqual(catalogGenreMentions('Build a Latin Techno set', vocabulary), ['latin techno']);
+});
+
+test('server catalog vocabulary remains authoritative over stale loaded tracks', () => {
+  const vocabulary = mergeCatalogGenreVocabulary(
+    [{ canonical: 'latin techno', aliases: ['latin techno'], count: 12 }],
+    [{ _genre: 'House' }],
+  );
+  assert.deepEqual(canonicalGenreNames(vocabulary), ['latin techno']);
+});
+
+test('server interpretation survives a stale non-empty browser vocabulary', () => {
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a latin techno set, latin house to warmup',
+      requestedGenres: ['latin techno', 'latin house'],
+      optionalGenres: [],
+      genreSequence: ['latin house', 'latin techno'],
+    },
+    ['house'],
+  );
+
+  assert.deepEqual(interpreted.requestedGenres, ['latin techno', 'latin house']);
+  assert.deepEqual(interpreted.genreSequence, ['latin house', 'latin techno']);
+});
+
+test('trailing warmup cue assigns only the nearest preceding genre', () => {
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a latin techno set, latin house to warmup',
+      requestedGenres: ['latin techno', 'latin house'],
+      optionalGenres: [],
+      genreSequence: ['latin techno', 'latin house'],
+    },
+    ['latin techno', 'latin house'],
+  );
+
+  assert.deepEqual(interpreted.genreSequence, ['latin house', 'latin techno']);
 });
 
 test('catalog vocabulary exposes inferred cultural identities without rewriting genre', () => {

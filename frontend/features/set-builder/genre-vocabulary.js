@@ -107,6 +107,13 @@ export function createCatalogGenreVocabulary(tracks = []) {
   );
 }
 
+/** Merge the server-owned vocabulary with identities visible in loaded tracks. */
+export function mergeCatalogGenreVocabulary(serverVocabulary = [], tracks = []) {
+  const server = normalizeGenreVocabulary(serverVocabulary);
+  if (server.length) return server;
+  return createCatalogGenreVocabulary(tracks);
+}
+
 function phraseOccurrences(text, phrase) {
   const occurrences = [];
   let cursor = 0;

@@ -11,6 +11,7 @@ from typing import Any
 from audioextender.library.musical_corrections import MusicalCorrectionIndex
 from audioextender.library.musical_profile import musical_profile
 from audioextender.library.playlist_identity import catalog_genre_terms, playlist_identity_projection
+from audioextender.set_builder.catalog_cache import build_catalog_payload
 
 
 class CatalogProjectionBuilder:
@@ -123,7 +124,7 @@ class CatalogProjectionBuilder:
                     },
                 }
             )
-        return {"version": 10, "tracks": tracks, "total": len(tracks)}
+        return build_catalog_payload(tracks)
 
     def write_catalog_cache(self) -> None:
         payload = self.build_catalog_payload()

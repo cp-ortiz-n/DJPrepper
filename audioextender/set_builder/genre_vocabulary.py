@@ -7,6 +7,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+_IGNORED_GENRES = {"all", "other", "unknown", "unclassified"}
+
 
 def normalize_genre_term(value: Any) -> str:
     """Normalize a genre or alias for deterministic comparison."""
@@ -84,6 +86,70 @@ def normalize_genre_vocabulary(values: Sequence[Any]) -> list[dict[str, Any]]:
         }
         for item in sorted(merged.values(), key=lambda item: (-item["count"], item["canonical"]))
     ]
+
+
+def catalog_projection_vocabulary(tracks: Sequence[Any]) -> list[dict[str, Any]]:
+    """Derive the authoritative Set Builder vocabulary from catalog projections.
+
+    The projection includes canonical library genres plus lower-confidence
+    playlist and cultural identities. Keeping this derivation on the server
+    lets brief preparation recover when a browser still has an older catalog.
+    """
+    entries: dict[str, dict[str, Any]] = {}
+
+    def add(canonical_value: Any, aliases: Sequence[Any] = ()) -> None:
+        canonical = normalize_genre_term(canonical_value)
+        if not canonical or canonical in _IGNORED_GENRES:
+            return
+        current = entries.setdefault(
+            canonical,
+            {"canonical": canonical, "aliases": set(), "aliasCounts": {}, "count": 0},
+        )
+        components = [
+            normalize_genre_term(value)
+            for value in re.split(r"\s+&\s+", str(canonical_value or ""), flags=re.IGNORECASE)
+        ]
+        track_aliases = {
+            value for value in [canonical, *components, *(normalize_genre_term(alias) for alias in aliases)] if value
+        }
+        for alias in track_aliases:
+            current["aliases"].add(alias)
+            current["aliasCounts"][alias] = current["aliasCounts"].get(alias, 0) + 1
+        current["count"] += 1
+
+    for raw_track in tracks:
+        track = _mapping(raw_track)
+        if track is None:
+            continue
+        category_parts = [part.strip() for part in str(track.get("genre") or "").split("/") if part.strip()]
+        details = [part.strip() for part in str(track.get("detailed_genre") or "").split(",") if part.strip()]
+        category = category_parts[-1] if category_parts else ""
+        if normalize_genre_term(category) == "other" and details:
+            for detail in details:
+                add(detail)
+        else:
+            add(category, details)
+        for tag in track.get("playlist_identity") or []:
+            item = _mapping(tag)
+            add(item.get("value") if item else tag)
+        for descriptor in track.get("descriptors") or []:
+            item = _mapping(descriptor)
+            if item is None or normalize_genre_term(item.get("category")) != "cultural":
+                continue
+            value = item.get("value") or ""
+            add(value, str(value).split("/"))
+
+    return normalize_genre_vocabulary(
+        [
+            {
+                "canonical": item["canonical"],
+                "aliases": sorted(item["aliases"]),
+                "count": item["count"],
+                "aliasCounts": item["aliasCounts"],
+            }
+            for item in entries.values()
+        ]
+    )
 
 
 def vocabulary_entries(values: Sequence[Any]) -> list[GenreVocabularyEntry]:
@@ -213,9 +279,12 @@ def opening_genre_mentions(brief: str, vocabulary: Sequence[Any]) -> list[str]:
     opening: list[str] = []
     for clause in re.split(r"[.!?;,]|\bthen\b|\bfrom there\b", brief, flags=re.IGNORECASE):
         normalized = normalize_genre_term(clause)
-        if not _OPENING_CUE.search(normalized):
+        cue = _OPENING_CUE.search(normalized)
+        if cue is None:
             continue
-        for genre in explicit_genre_mentions(clause, vocabulary):
+        after = explicit_genre_mentions(normalized[cue.end() :], vocabulary)
+        before = explicit_genre_mentions(normalized[: cue.start()], vocabulary)
+        for genre in after or before[-1:]:
             if genre not in opening:
                 opening.append(genre)
     return opening

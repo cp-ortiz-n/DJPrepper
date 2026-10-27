@@ -15,6 +15,12 @@ identity, required tracks, and final validation remain deterministic authority.
 
 Both paths produce the same planning request. The browser never sends the full
 database to a model; it sends a bounded set of validated catalog candidates.
+The catalog response also carries a server-built genre vocabulary covering
+canonical genres, detailed aliases, playlist identities, and cultural
+descriptors. Brief endpoints prefer this current server vocabulary over a stale
+browser copy, and the browser merges the same authority into its local policy.
+Restarting after a catalog-schema revision rebuilds this projection
+automatically; audio analysis does not need to be rerun.
 
 An exact genre request is strict by default. For example, `Latin Techno` may
 change energy, character, and purpose across sections, but it cannot silently
@@ -42,8 +48,10 @@ another catalog label. This does not rewrite the track's genre.
 
 Negative and positional language is enforced after AI interpretation. A phrase
 such as `No rap` becomes a hard catalog exclusion and is removed from requested
-genres, while `Latin House to warm up` moves Latin House before the remaining
-genre sequence. Explicit `high energy` language establishes a minimum energy
+genres, while `Latin House to warm up` assigns the nearest preceding genre to
+the opening and moves it before the remaining genre sequence. `Warm up with
+Latin House` applies the same rule to the genres following the cue. Explicit
+`high energy` language establishes a minimum energy
 floor; `throughout`, `all around`, or `start to finish` applies the stronger
 floor to every journey section. These rules resolve through the current catalog
 vocabulary and are not hard-coded to individual genre names.

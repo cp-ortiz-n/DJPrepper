@@ -28,7 +28,7 @@ from audioextender.set_builder.journey_planner import (
     sanitize_journey,
 )
 
-BRIEF_PREPARATION_VERSION = 7
+BRIEF_PREPARATION_VERSION = 8
 BRIEF_SCHEMA = {
     **INTENTION_SCHEMA,
     "properties": {**INTENTION_SCHEMA["properties"], "journey": JOURNEY_SCHEMA},
