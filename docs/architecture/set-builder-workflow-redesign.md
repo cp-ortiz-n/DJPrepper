@@ -91,6 +91,10 @@ Keep overall listening notes and transition ratings as an optional final
 **Review & teach Set Builder** step. Track-level Keep/Reject actions must no
 longer depend on finding this final form. Export remains unavailable when the
 existing hard validation or mix-health release policy says the plan is unsafe.
+Draft persistence is independent from that release gate: every non-empty plan
+can be saved and resumed even when its health is low or a rejected track still
+needs replacement. The UI must explain that the draft was saved while export
+remains unavailable.
 
 ## Required behavior changes
 
@@ -340,8 +344,8 @@ entire prior revision with Undo. Musical scoring weights were not changed.
   unresolved Rejected receipts after rerender and reload.
 - [x] Retract and restore the durable preference event through serialized
   Undo/Redo reconciliation.
-- [x] Guard locked and required tracks, and block Save/Export while a rejection
-  has no valid replacement.
+- [x] Guard locked and required tracks, allow incomplete drafts to be saved, and
+  block Export while a rejection has no valid replacement.
 - [x] Keep overall review and transition learning as the optional final step.
 
 Verification covers candidate exclusions and occupied recording families,

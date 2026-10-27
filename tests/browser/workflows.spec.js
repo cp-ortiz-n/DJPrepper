@@ -325,7 +325,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     draftId: 'draft-workspace-shell',
     planRevision: { id: 'revision-shell-2', number: 2, parentId: 'revision-shell-1' },
     name: 'Workspace Shell Plan',
-    brief: { name: 'Workspace Shell Plan', authoringMode: 'manual', minimumHealth: 55 },
+    brief: { name: 'Workspace Shell Plan', authoringMode: 'manual', minimumHealth: 100 },
     planningMode: 'classic',
     planningReceipt: { provider: 'offline', validated: true },
     tracks: tracks.slice(0, 3).map(([name]) => name.toLowerCase()),
@@ -342,6 +342,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     excluded: [],
   };
   let regenerationRequest;
+  let savedRecord;
   let failRegeneration = false;
   const preferenceEvents = [];
   const deletedPreferenceEvents = [];
@@ -366,6 +367,17 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await page.route(
     (url) => url.pathname === '/api/set-builder/sets',
     (route) => route.fulfill({ json: { version: 2, sets: [savedSet] } }),
+  );
+  await page.route(
+    (url) => url.pathname === `/api/set-builder/sets/${savedSet.id}`,
+    async (route) => {
+      savedRecord = route.request().postDataJSON().record;
+      await route.fulfill({ json: { saved: true, set: savedRecord, survives_restart: true } });
+    },
+  );
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/save-playlist',
+    (route) => route.fulfill({ json: { saved: true, path: '/tmp/Workspace Shell Plan.m3u8' } }),
   );
   await page.route(
     (url) => url.pathname === '/api/set-builder/preferences/events',
@@ -430,6 +442,13 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(rows.first().locator('.compact-audio')).toBeVisible();
   await expect(rows.first().getByRole('button', { name: 'Play track' })).toBeVisible();
   await expect(rows.first().getByRole('slider', { name: 'Seek through track' })).toBeVisible();
+  await expect(page.locator('#set-health')).not.toHaveClass(/good/);
+  await expect(page.locator('#save-set')).toBeEnabled();
+  await expect(page.locator('#export-set-csv')).toBeDisabled();
+  await expect(page.locator('#set-export-status')).toContainText('Draft saving is available');
+  await page.locator('#save-set').click();
+  await expect.poll(() => savedRecord?.tracks?.length).toBe(3);
+  await expect(page.locator('#set-builder-message')).toContainText('Set saved durably');
   expect(await page.locator('.set-result-head').evaluate((node) => getComputedStyle(node).position)).toBe('sticky');
 
   await page.getByText('AI curated', { exact: true }).click();
@@ -500,8 +519,9 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(rows.nth(1)).toContainText('Fresh Lift');
   await expect(rows.nth(1).locator('.set-track-chips')).toContainText('Replaced');
   await expect(page.locator('#set-builder-message')).toContainText('feedback saved');
-  await expect.poll(() => preferenceEvents.length).toBe(1);
-  expect(preferenceEvents[0]).toMatchObject({
+  await expect.poll(() => preferenceEvents.filter((event) => event.action === 'reject').length).toBe(1);
+  const rejectionEvent = preferenceEvents.find((event) => event.action === 'reject');
+  expect(rejectionEvent).toMatchObject({
     action: 'reject',
     reason: 'wrong-energy',
     scope: 'recording-family',
@@ -510,10 +530,10 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
 
   await page.locator('#set-undo').click();
   await expect(rows.nth(1)).toContainText('Lift');
-  await expect.poll(() => deletedPreferenceEvents).toContain(preferenceEvents[0].id);
+  await expect.poll(() => deletedPreferenceEvents).toContain(rejectionEvent.id);
   await page.locator('#set-redo').click();
   await expect(rows.nth(1)).toContainText('Fresh Lift');
-  await expect.poll(() => preferenceEvents.length).toBe(2);
+  await expect.poll(() => preferenceEvents.filter((event) => event.action === 'reject').length).toBe(2);
 
   await rows.nth(1).getByRole('button', { name: 'More' }).click();
   await inspector.getByRole('button', { name: 'Edit mix' }).click();

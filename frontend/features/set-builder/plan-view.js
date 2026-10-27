@@ -10,6 +10,7 @@ import { bindTrackReordering } from './track-reordering.js';
 import { applyExplicitSetPlanChoice } from './plan-integrity.js';
 import { compactTrackSummaryMarkup, createSetBuilderWorkspaceShell } from './workspace-shell.js';
 import { beginButtonAction } from './ui-state.js';
+import { planActionAvailability } from './view-model.js';
 
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
   const { $, $$, escapeHtml } = dom;
@@ -317,15 +318,24 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
               .querySelector(`.set-track-card[data-index="${button.dataset.transition}"]`)
               ?.scrollIntoView({ behavior: 'smooth', block: 'center' })),
       );
-    ['#save-set', '#export-set-csv', '#export-set-m3u'].forEach((selector) => {
-      const button = $(selector);
-      button.disabled = !healthAccepted;
-      button.title = healthAccepted
-        ? ''
-        : unresolvedRejection
-          ? 'Resolve rejected tracks before saving or exporting.'
-          : `Set health must reach ${healthThreshold} before saving or exporting.`;
+    const actionAvailability = planActionAvailability({
+      planLength: state.plan.length,
+      healthAccepted,
+      unresolvedRejection,
+      healthThreshold,
     });
+    const saveButton = $('#save-set');
+    saveButton.disabled = actionAvailability.saveDisabled;
+    saveButton.title = actionAvailability.saveTitle;
+    ['#export-set-csv', '#export-set-m3u'].forEach((selector) => {
+      const button = $(selector);
+      button.disabled = actionAvailability.exportDisabled;
+      button.title = actionAvailability.exportTitle;
+    });
+    if (!healthAccepted) {
+      exportStatus.className = 'set-export-status warning';
+      exportStatus.innerHTML = `<strong>Draft saving is available</strong><span>${escapeHtml(actionAvailability.exportReason)}</span>`;
+    }
     $('#set-track-list').innerHTML = state.plan
       .map((track, index) => {
         const transition = transitionExplanation(state.plan[index - 1], track);

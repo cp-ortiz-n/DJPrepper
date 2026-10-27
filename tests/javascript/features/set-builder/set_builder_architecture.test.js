@@ -86,6 +86,7 @@ import {
   intentionProviderView,
   journeyEnergyRange,
   journeyEvidenceLabel,
+  planActionAvailability,
   setProposalMarkup,
 } from '../../../../frontend/features/set-builder/view-model.js';
 import {
@@ -979,6 +980,27 @@ test('compact workspace presentation exposes plan identity and concise track sta
   assert.match(markup, /58% match/);
   assert.match(markup, /class="warning"/);
   assert.match(markup, /Kept/);
+});
+
+test('draft persistence stays available when release checks block export', () => {
+  assert.deepEqual(planActionAvailability({ planLength: 17, healthAccepted: false, healthThreshold: 65 }), {
+    saveDisabled: false,
+    saveTitle: 'Save this draft. Export will remain unavailable until release checks pass.',
+    exportDisabled: true,
+    exportTitle: 'Save this draft now, then raise mix health to 65 before exporting.',
+    exportReason: 'Save this draft now, then raise mix health to 65 before exporting.',
+  });
+  assert.match(
+    planActionAvailability({
+      planLength: 17,
+      healthAccepted: false,
+      unresolvedRejection: true,
+      healthThreshold: 65,
+    }).exportReason,
+    /resolve rejected tracks/,
+  );
+  assert.equal(planActionAvailability({ planLength: 17, healthAccepted: true }).exportDisabled, false);
+  assert.equal(planActionAvailability().saveDisabled, true);
 });
 
 test('planning requests derive stable journey sections and preserve explicit locked placements', () => {
@@ -2385,6 +2407,8 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     ['#set-builder-message', message],
   ]);
   const calls = [];
+  let failPlaylist = false;
+  let failSave = false;
   const state = {
     draftId: 'draft-1',
     activeSavedSetId: '',
@@ -2413,8 +2437,12 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     state,
     elements,
     api: {
-      saveSet: async (record) => calls.push(['set', record]),
+      saveSet: async (record) => {
+        if (failSave) throw new Error('database unavailable');
+        calls.push(['set', record]);
+      },
       savePlaylist: async (payload) => {
+        if (failPlaylist) throw new Error('playlist folder unavailable');
         calls.push(['playlist', payload]);
         return { path: '/playlists/Night Set.m3u8' };
       },
@@ -2434,6 +2462,19 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     assert.equal(calls[1][1].tracks[0].path, '/music/Opening.wav');
     assert.match(message.textContent, /playlist written to \/playlists\/Night Set\.m3u8/);
     assert.equal(selected.value, controller.savedSets()[0].id);
+
+    failPlaylist = true;
+    await controller.saveCurrentSet();
+    assert.match(message.textContent, /Set saved durably and will survive restart/);
+    assert.match(message.textContent, /playlist folder unavailable/);
+
+    failSave = true;
+    await controller.saveCurrentSet();
+    assert.match(message.textContent, /Set was not saved: database unavailable/);
+    assert.equal(elements.get('#save-set').disabled, false);
+    assert.equal(elements.get('#save-set').textContent, 'Save set');
+    assert.equal(elements.get('#save-set')['aria-busy'], undefined);
+    assert.equal(controller.savedSets().length, 1);
   } finally {
     globalThis.localStorage = originalStorage;
   }
