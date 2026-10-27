@@ -170,6 +170,28 @@ class IntentionPlannerTests(unittest.TestCase):
         self.assertEqual(result["requestedGenres"], ["techno", "latin techno"])
         self.assertEqual(result["genreSequence"], ["techno", "latin techno"])
 
+    def test_high_energy_disco_techno_and_latin_techno_keeps_every_explicit_genre(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [],
+                "preferred": ["high energy"],
+                "avoided": [],
+                "requestedGenres": [],
+                "optionalGenres": [],
+                "genreSequence": [],
+                "drift": "none",
+            },
+            [
+                {"canonical": "Disco & Funk", "aliases": ["Disco", "Funk"]},
+                "Techno",
+                "Latin Techno",
+            ],
+            "Implement a high energy disco techno, latin techno set",
+        )
+
+        self.assertEqual(result["requestedGenres"], ["disco & funk", "techno", "latin techno"])
+        self.assertEqual(result["genreSequence"], ["disco & funk", "techno", "latin techno"])
+
     def test_common_short_name_maps_to_catalog_genre(self) -> None:
         result = sanitize_interpretation(
             {

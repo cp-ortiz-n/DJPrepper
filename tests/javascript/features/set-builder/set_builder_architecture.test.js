@@ -750,6 +750,12 @@ test('brief policy handles negation, warmup order, and sustained energy across a
     ['Create a latin disco set, high energy.', ['disco & funk'], [], 'peak-time'],
     ['Create a latin techno set, latin house to warmup', ['latin house', 'latin techno'], [], 'warm-up'],
     [
+      'Implement a high energy disco techno, latin techno set',
+      ['disco & funk', 'techno', 'latin techno'],
+      [],
+      'peak-time',
+    ],
+    [
       'Create an indian party song set, high energy all around. No rap',
       ['indian south asian'],
       ['hip hop & rap'],

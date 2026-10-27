@@ -28,9 +28,11 @@ the written brief, so a cached or older proposal cannot bypass this boundary.
 
 Playlist names contribute lower-confidence musical-identity tags without
 rewriting canonical genres. These tags are derived from the catalog's current
-genre vocabulary rather than a fixed alias list. For example, a track whose
-canonical genre remains Reggaeton can qualify as an identity match for `Latin
-Techno` when it belongs to a crate such as `LATIN_bounce_TECHNO_Rave_Edition`.
+genre vocabulary rather than a fixed alias list. Compound catalog identities
+match playlist words in any order and accept only conservative one-letter word
+variants, so both `LATIN_bounce_TECHNO_Rave_Edition` and `Techno_Latino` can
+support the catalog identity `Latin Techno`. A track's canonical genre may
+remain Reggaeton while it qualifies through that playlist evidence.
 Direct genre matches rank first; playlist-supported matches are labeled as
 identity evidence and name the source playlist in the planning explanation.
 Catalog-derived cultural descriptors are also available as planning identities.

@@ -34,6 +34,32 @@ class PlaylistIdentityTests(unittest.TestCase):
 
         self.assertEqual([], tags)
 
+    def test_catalog_identity_matches_reordered_playlist_words_and_conservative_inflections(self) -> None:
+        tags = playlist_genre_identity_tags(
+            ["💽🌶️Techno_Latino"],
+            ["latin", "techno", "latin techno"],
+        )
+
+        by_value = {tag["value"]: tag for tag in tags}
+        self.assertIn("latin techno", by_value)
+        self.assertEqual(by_value["latin techno"]["source"], "💽🌶️Techno_Latino")
+
+    def test_catalog_identity_requires_every_compound_word(self) -> None:
+        tags = playlist_genre_identity_tags(
+            ["Techno Rave"],
+            ["latin techno"],
+        )
+
+        self.assertEqual([], tags)
+
+    def test_catalog_identity_does_not_apply_broad_stemming(self) -> None:
+        tags = playlist_genre_identity_tags(
+            ["Technology Showcase"],
+            ["techno"],
+        )
+
+        self.assertEqual([], tags)
+
     def test_projection_ignores_valid_json_that_is_not_a_playlist_list(self) -> None:
         projection = playlist_identity_projection('{"playlist": "Latin Techno"}', ["latin", "techno"])
 

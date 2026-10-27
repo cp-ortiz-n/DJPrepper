@@ -123,7 +123,7 @@ class CatalogProjectionBuilder:
                     },
                 }
             )
-        return {"version": 8, "tracks": tracks, "total": len(tracks)}
+        return {"version": 9, "tracks": tracks, "total": len(tracks)}
 
     def write_catalog_cache(self) -> None:
         payload = self.build_catalog_payload()

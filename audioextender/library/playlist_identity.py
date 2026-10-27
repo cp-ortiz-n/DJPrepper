@@ -15,6 +15,42 @@ def _normalize(value: Any) -> str:
     return " ".join(re.sub(r"[^a-z0-9&]+", " ", str(value or "").casefold()).split())
 
 
+def _identity_tokens(value: str) -> list[str]:
+    """Return comparable words while ignoring punctuation-only joiners."""
+    return re.findall(r"[a-z0-9]+", value)
+
+
+def _tokens_match(left: str, right: str) -> bool:
+    """Match exact words plus conservative one-letter inflections.
+
+    This keeps playlist interpretation catalog-driven while allowing common
+    variants such as ``latin``/``latino`` and ``funk``/``funky``. Broader
+    stemming would make short or unrelated playlist words unsafe evidence.
+    """
+    if left == right:
+        return True
+    shorter, longer = sorted((left, right), key=len)
+    return len(shorter) >= 4 and len(longer) == len(shorter) + 1 and longer.startswith(shorter)
+
+
+def _contains_vocabulary_term(playlist: str, term: str) -> bool:
+    """Return whether all words of a catalog term occur in any order."""
+    playlist_tokens = _identity_tokens(playlist)
+    term_tokens = _identity_tokens(term)
+    if not playlist_tokens or not term_tokens:
+        return False
+    unused = set(range(len(playlist_tokens)))
+    for term_token in term_tokens:
+        match = next(
+            (index for index in unused if _tokens_match(term_token, playlist_tokens[index])),
+            None,
+        )
+        if match is None:
+            return False
+        unused.remove(match)
+    return True
+
+
 def catalog_genre_terms(records: Iterable[Mapping[str, Any]]) -> list[str]:
     """Return the genre vocabulary already evidenced by catalog records."""
     terms: set[str] = set()
@@ -57,7 +93,8 @@ def playlist_genre_identity_tags(playlists: Iterable[str], genre_terms: Iterable
             pattern = rf"(?<![a-z0-9&]){re.escape(term)}(?![a-z0-9&])"
             matches.extend((match.start(), match.end(), term) for match in re.finditer(pattern, normalized_playlist))
         ordered = sorted(set(matches), key=lambda item: (item[0], item[1], item[2]))
-        candidates: set[str] = {term for _, _, term in ordered}
+        candidates: set[str] = {term for term in vocabulary if _contains_vocabulary_term(normalized_playlist, term)}
+        candidates.update(term for _, _, term in ordered)
         for size in range(2, min(3, len(ordered)) + 1):
             for selected in combinations(ordered, size):
                 if any(left[1] > right[0] for left, right in zip(selected, selected[1:], strict=False)):
