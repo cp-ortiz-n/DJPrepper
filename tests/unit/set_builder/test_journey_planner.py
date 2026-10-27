@@ -71,28 +71,37 @@ class JourneyPlannerTests(unittest.TestCase):
         self.assertIn("melodic", journey["sections"][0]["characteristics"])
         self.assertEqual(sum(section["durationPercent"] for section in journey["sections"]), 100)
 
-    def test_offline_journey_scopes_house_to_warmup_and_keeps_latin_techno_majority(self) -> None:
-        journey = offline_journey(
-            {
-                "text": (
-                    "Create a latin techno set, with house just for the warmup, but more than half will be latin techno"
-                ),
-                "genreSequence": ["house", "latin techno"],
-                "requestedGenres": ["house", "latin techno"],
-                "openingGenres": ["house"],
-                "optionalGenres": [],
-                "drift": "none",
-            },
-            ["House", "Latin Techno"],
-            60,
-        )
+    def test_offline_journey_scopes_any_warmup_genre_to_the_opening(self) -> None:
+        for opening, core in [
+            ("Bachata", "Salsa"),
+            ("Amapiano", "Afro House"),
+            ("Disco & Funk", "Drum & Bass"),
+        ]:
+            with self.subTest(opening=opening, core=core):
+                opening_key = opening.casefold()
+                core_key = core.casefold()
+                journey = offline_journey(
+                    {
+                        "text": (
+                            f"Create a {core} set, with {opening} just for the warmup, "
+                            f"but more than half will be {core}"
+                        ),
+                        "genreSequence": [opening, core],
+                        "requestedGenres": [opening, core],
+                        "openingGenres": [opening],
+                        "optionalGenres": [],
+                        "drift": "none",
+                    },
+                    [opening, core],
+                    60,
+                )
 
-        self.assertEqual(
-            [(section["durationPercent"], section["genres"]) for section in journey["sections"]],
-            [(25, ["house"]), (45, ["latin techno"]), (30, ["latin techno"])],
-        )
-        self.assertEqual(journey["genrePolicy"]["coreGenres"], ["latin techno"])
-        self.assertEqual(journey["genrePolicy"]["openingGenres"], ["house"])
+                self.assertEqual(
+                    [(section["durationPercent"], section["genres"]) for section in journey["sections"]],
+                    [(25, [opening_key]), (45, [core_key]), (30, [core_key])],
+                )
+                self.assertEqual(journey["genrePolicy"]["coreGenres"], [core_key])
+                self.assertEqual(journey["genrePolicy"]["openingGenres"], [opening_key])
 
     def test_strict_policy_repairs_opening_only_genre_out_of_later_sections(self) -> None:
         journey = sanitize_journey(

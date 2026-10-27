@@ -325,6 +325,34 @@ test('Set Builder accepts playlist-derived compound identity without changing ca
   );
 });
 
+test('Set Builder playlist evidence works for unrelated catalog identities', () => {
+  for (const scenario of [
+    { identity: 'afro house', source: 'Cape Town Afro House Crate' },
+    { identity: 'salsa dura', source: 'Classic Salsa Dura Playlist' },
+    { identity: 'drum & bass', source: 'Drum and Bass Favorites' },
+  ]) {
+    const track = {
+      _genre: 'Other',
+      _detailedGenre: 'Unclassified',
+      _playlistIdentity: [
+        {
+          value: scenario.identity,
+          source: scenario.source,
+          provenance: 'playlist',
+          confidence: 0.78,
+        },
+      ],
+    };
+
+    assert.equal(setBuilder.trackMatchesIntendedGenre(track, scenario.identity), true, scenario.identity);
+    assert.deepEqual(trackGenreMatchEvidence(track, scenario.identity), {
+      kind: 'estimated',
+      source: 'playlist',
+      text: `Playlist/crate identity: ${scenario.identity} from ${scenario.source}.`,
+    });
+  }
+});
+
 test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {
   const result = setBuilder.interpretSetIntention(
     'Build a latin reggaeton and dembow mix that also includes some rab/rap, hip hop for a chill party, kickback. Some dancing will take place as well. Add something melodic in the beginning.',

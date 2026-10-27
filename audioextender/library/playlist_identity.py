@@ -74,8 +74,8 @@ def playlist_genre_identity_tags(playlists: Iterable[str], genre_terms: Iterable
     """Build lower-confidence genre identity tags from meaningful playlist words.
 
     Tags are derived from the current catalog vocabulary, not a fixed alias map.
-    Compound combinations let a crate such as ``Latin Bounce Techno`` support a
-    ``Latin Techno`` request while leaving the track's canonical genre intact.
+    Compound playlist words may support any compound catalog identity while
+    leaving the track's canonical genre intact.
     """
     vocabulary = {
         normalized

@@ -178,40 +178,44 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertEqual([candidate["id"] for candidate in result["sections"][0]["candidates"]], ["downloaded:1"])
         self.assertEqual(result["genrePolicy"], "strict")
 
-    def test_strict_journey_accepts_playlist_supported_identity_without_retagging_track(self) -> None:
-        playlist_track = catalog_track(
-            1,
-            Path("/missing/playlist-track.wav"),
-            genre="Latin / Reggaeton",
-            detail="Neoperreo, Guaracha",
-            playlist_identity=[
-                {
-                    "value": "latin techno",
-                    "source": "LATIN_bounce_TECHNO_Rave_Edition",
-                    "provenance": "playlist",
-                    "confidence": 0.78,
-                }
-            ],
-        )
-        unrelated = catalog_track(
-            2,
-            Path("/missing/unrelated.wav"),
-            genre="Latin / Reggaeton",
-            detail="Reggaeton",
-            descriptors=[{"category": "sound", "value": "melodic", "confidence": 0.9}],
-        )
-        strict_journey = journey("Latin Techno")
-        strict_journey["genrePolicy"] = {"mode": "strict", "coreGenres": ["latin techno"]}
+    def test_strict_journey_accepts_any_playlist_supported_identity_without_retagging_track(self) -> None:
+        for target, source in [
+            ("Afro House", "Cape Town Afro House Crate"),
+            ("Salsa Dura", "Classic Salsa Dura Playlist"),
+            ("Drum & Bass", "Drum and Bass Favorites"),
+        ]:
+            with self.subTest(target=target):
+                playlist_track = catalog_track(
+                    1,
+                    Path("/missing/playlist-track.wav"),
+                    genre="Electronic / Breaks",
+                    detail="Breaks",
+                    playlist_identity=[
+                        {
+                            "value": target.casefold(),
+                            "source": source,
+                            "provenance": "playlist",
+                            "confidence": 0.78,
+                        }
+                    ],
+                )
+                unrelated = catalog_track(
+                    2,
+                    Path("/missing/unrelated.wav"),
+                    genre="Electronic / Breaks",
+                    detail="Breaks",
+                    descriptors=[{"category": "sound", "value": "melodic", "confidence": 0.9}],
+                )
+                strict_journey = journey(target)
+                strict_journey["genrePolicy"] = {"mode": "strict", "coreGenres": [target.casefold()]}
 
-        result = SetCandidateRetriever().retrieve([playlist_track, unrelated], strict_journey, section_limit=4)
+                result = SetCandidateRetriever().retrieve([playlist_track, unrelated], strict_journey, section_limit=4)
 
-        candidates = result["sections"][0]["candidates"]
-        self.assertEqual([candidate["id"] for candidate in candidates], ["downloaded:1"])
-        self.assertEqual(candidates[0]["genre"], "Latin / Reggaeton")
-        self.assertEqual(candidates[0]["matchTier"], "identity")
-        self.assertTrue(
-            any("LATIN_bounce_TECHNO_Rave_Edition" in reason["text"] for reason in candidates[0]["reasons"])
-        )
+                candidates = result["sections"][0]["candidates"]
+                self.assertEqual([candidate["id"] for candidate in candidates], ["downloaded:1"])
+                self.assertEqual(candidates[0]["genre"], "Electronic / Breaks")
+                self.assertEqual(candidates[0]["matchTier"], "identity")
+                self.assertTrue(any(source in reason["text"] for reason in candidates[0]["reasons"]))
 
     def test_cultural_identity_matches_strict_sections_and_normalized_exclusions(self) -> None:
         indian = catalog_track(

@@ -170,23 +170,30 @@ class IntentionPlannerTests(unittest.TestCase):
         self.assertEqual(result["requestedGenres"], ["techno", "latin techno"])
         self.assertEqual(result["genreSequence"], ["techno", "latin techno"])
 
-    def test_warmup_only_genre_is_preserved_as_section_scoped_authority(self) -> None:
-        result = sanitize_interpretation(
-            {
-                "required": [],
-                "preferred": [],
-                "avoided": [],
-                "requestedGenres": ["House", "Latin Techno"],
-                "optionalGenres": [],
-                "genreSequence": ["House", "Latin Techno"],
-                "drift": "none",
-            },
-            ["House", "Latin Techno"],
-            "Create a latin techno set, with house just for the warmup, but more than half will be latin techno",
-        )
+    def test_warmup_only_genre_is_preserved_for_unrelated_catalog_pairs(self) -> None:
+        cases = [
+            ("Bachata", "Salsa"),
+            ("Amapiano", "Afro House"),
+            ("Disco & Funk", "Drum & Bass"),
+        ]
+        for opening, core in cases:
+            with self.subTest(opening=opening, core=core):
+                result = sanitize_interpretation(
+                    {
+                        "required": [],
+                        "preferred": [],
+                        "avoided": [],
+                        "requestedGenres": [opening, core],
+                        "optionalGenres": [],
+                        "genreSequence": [opening, core],
+                        "drift": "none",
+                    },
+                    [opening, core],
+                    f"Create a {core} set, with {opening} just for the warmup, but more than half will be {core}",
+                )
 
-        self.assertEqual(result["genreSequence"], ["house", "latin techno"])
-        self.assertEqual(result["openingGenres"], ["house"])
+                self.assertEqual(result["genreSequence"], [opening.casefold(), core.casefold()])
+                self.assertEqual(result["openingGenres"], [opening.casefold()])
 
     def test_high_energy_disco_techno_and_latin_techno_keeps_every_explicit_genre(self) -> None:
         result = sanitize_interpretation(

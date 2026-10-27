@@ -772,36 +772,57 @@ test('trailing warmup cue assigns only the nearest preceding genre', () => {
   });
 });
 
-test('offline journey keeps warmup-only house out of the Latin Techno majority', () => {
-  const interpreted = reconcileInterpretedGenreAuthority(
+test('offline journey applies opening-only authority across catalog genre pairs', () => {
+  const cases = [
     {
-      text: 'Create a latin techno set, with house just for the warmup, but more than half will be latin techno',
-      requestedGenres: ['house', 'latin techno'],
-      optionalGenres: [],
-      genreSequence: ['house', 'latin techno'],
-      drift: 'none',
+      text: 'Create a salsa set, with bachata just for the warmup, but more than half will be salsa',
+      opening: 'bachata',
+      core: 'salsa',
     },
-    ['house', 'latin techno'],
-  );
-  const journey = offlineJourneyFromInterpretation(interpreted, 60);
+    {
+      text: 'Create an afro house set, with amapiano just for the warmup, but more than half will be afro house',
+      opening: 'amapiano',
+      core: 'afro house',
+    },
+    {
+      text: 'Create a drum & bass set, with disco & funk just for the warmup, but more than half will be drum & bass',
+      opening: 'disco & funk',
+      core: 'drum & bass',
+    },
+  ];
 
-  assert.deepEqual(
-    journey.sections.map((section) => [section.durationPercent, section.genres]),
-    [
-      [25, ['house']],
-      [45, ['latin techno']],
-      [30, ['latin techno']],
-    ],
-  );
-  assert.deepEqual(journey.genrePolicy.coreGenres, ['latin techno']);
-  assert.deepEqual(journey.genrePolicy.openingGenres, ['house']);
+  for (const scenario of cases) {
+    const interpreted = reconcileInterpretedGenreAuthority(
+      {
+        text: scenario.text,
+        requestedGenres: [scenario.opening, scenario.core],
+        optionalGenres: [],
+        genreSequence: [scenario.opening, scenario.core],
+        drift: 'none',
+      },
+      [scenario.opening, scenario.core],
+    );
+    const journey = offlineJourneyFromInterpretation(interpreted, 60);
+
+    assert.deepEqual(
+      journey.sections.map((section) => [section.durationPercent, section.genres]),
+      [
+        [25, [scenario.opening]],
+        [45, [scenario.core]],
+        [30, [scenario.core]],
+      ],
+      scenario.text,
+    );
+    assert.deepEqual(journey.genrePolicy.coreGenres, [scenario.core], scenario.text);
+    assert.deepEqual(journey.genrePolicy.openingGenres, [scenario.opening], scenario.text);
+  }
 });
 
-test('strict journey repair removes an opening-only genre from later sections', () => {
+test('strict journey repair removes any opening-only genre from later sections', () => {
   const interpreted = {
-    requestedGenres: ['house', 'latin techno'],
-    genreSequence: ['house', 'latin techno'],
-    openingGenres: ['house'],
+    requestedGenres: ['amapiano', 'afro house'],
+    genreSequence: ['amapiano', 'afro house'],
+    openingGenres: ['amapiano'],
     optionalGenres: [],
     drift: 'none',
   };
@@ -809,9 +830,9 @@ test('strict journey repair removes an opening-only genre from later sections', 
     {
       genrePolicy: { mode: 'strict' },
       sections: [
-        { id: 'opening', name: 'Opening', genres: ['house'] },
-        { id: 'build', name: 'Build', genres: ['house'] },
-        { id: 'closing', name: 'Closing', genres: ['latin techno'] },
+        { id: 'opening', name: 'Opening', genres: ['amapiano'] },
+        { id: 'build', name: 'Build', genres: ['amapiano'] },
+        { id: 'closing', name: 'Closing', genres: ['afro house'] },
       ],
     },
     interpreted,
@@ -819,7 +840,7 @@ test('strict journey repair removes an opening-only genre from later sections', 
 
   assert.deepEqual(
     result.journey.sections.map((section) => section.genres),
-    [['house'], ['latin techno'], ['latin techno']],
+    [['amapiano'], ['afro house'], ['afro house']],
   );
   assert.deepEqual(result.repairs, ['build']);
   assert.equal(reviewJourneyGenrePolicy(result.journey, interpreted).valid, true);

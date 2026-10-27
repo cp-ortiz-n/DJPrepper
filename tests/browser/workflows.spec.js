@@ -873,15 +873,15 @@ test('Set Builder keeps a warmup-only genre out of the persistent journey', asyn
           required: [],
           preferred: [],
           avoided: [],
-          requestedGenres: ['house', 'latin techno'],
+          requestedGenres: ['bachata', 'salsa'],
           optionalGenres: [],
-          genreSequence: ['house', 'latin techno'],
+          genreSequence: ['bachata', 'salsa'],
           drift: 'none',
         },
         journey: {
           evidence: 'deterministic-fallback',
           genrePolicy: { mode: 'strict' },
-          summary: 'House warmup into a Latin Techno majority.',
+          summary: 'Bachata warmup into a Salsa majority.',
           sections: [
             {
               id: 'opening',
@@ -889,9 +889,9 @@ test('Set Builder keeps a warmup-only genre out of the persistent journey', asyn
               durationPercent: 25,
               energyStart: 4,
               energyEnd: 6,
-              genres: ['house'],
+              genres: ['bachata'],
               characteristics: ['warm-up'],
-              purpose: 'Warm up with House',
+              purpose: 'Warm up with Bachata',
             },
             {
               id: 'build',
@@ -899,7 +899,7 @@ test('Set Builder keeps a warmup-only genre out of the persistent journey', asyn
               durationPercent: 45,
               energyStart: 6,
               energyEnd: 8,
-              genres: ['house'],
+              genres: ['bachata'],
               characteristics: [],
               purpose: 'Build the main direction',
             },
@@ -909,9 +909,9 @@ test('Set Builder keeps a warmup-only genre out of the persistent journey', asyn
               durationPercent: 30,
               energyStart: 8,
               energyEnd: 7,
-              genres: ['latin techno'],
+              genres: ['salsa'],
               characteristics: [],
-              purpose: 'Close with Latin Techno',
+              purpose: 'Close with Salsa',
             },
           ],
         },
@@ -921,12 +921,12 @@ test('Set Builder keeps a warmup-only genre out of the persistent journey', asyn
   await openView(page, 'Set Builder');
   await page
     .locator('#set-intention')
-    .fill('Create a latin techno set, with house just for the warmup, but more than half will be latin techno');
+    .fill('Create a salsa set, with bachata just for the warmup, but more than half will be salsa');
   await page.locator('#interpret-set-intention').click();
 
   await expect(page.locator('#set-intention-status')).toContainText('1 core genre and 1 opening-only genre');
-  await expect(page.locator('#set-journey-core-genres span')).toHaveText(['latin techno']);
-  await expect(page.locator('.journey-summary-genres')).toHaveText(['house', 'latin techno', 'latin techno']);
+  await expect(page.locator('#set-journey-core-genres span')).toHaveText(['salsa']);
+  await expect(page.locator('.journey-summary-genres')).toHaveText(['bachata', 'salsa', 'salsa']);
   await expect(page.locator('#set-journey-confirmation')).toContainText('Adjusted');
   await expect(page.locator('#set-journey-total')).toContainText('100%');
 });
