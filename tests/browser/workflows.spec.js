@@ -864,6 +864,73 @@ test('Set Builder repairs strict AI genre drift before journey confirmation', as
   await expect(page.locator('#set-journey-total')).toContainText('latin house');
 });
 
+test('Set Builder keeps a warmup-only genre out of the persistent journey', async ({ page }) => {
+  await page.route('**/api/set-builder/prepare-brief', (route) =>
+    route.fulfill({
+      json: {
+        interpretation: {
+          provider: 'offline',
+          required: [],
+          preferred: [],
+          avoided: [],
+          requestedGenres: ['house', 'latin techno'],
+          optionalGenres: [],
+          genreSequence: ['house', 'latin techno'],
+          drift: 'none',
+        },
+        journey: {
+          evidence: 'deterministic-fallback',
+          genrePolicy: { mode: 'strict' },
+          summary: 'House warmup into a Latin Techno majority.',
+          sections: [
+            {
+              id: 'opening',
+              name: 'Opening',
+              durationPercent: 25,
+              energyStart: 4,
+              energyEnd: 6,
+              genres: ['house'],
+              characteristics: ['warm-up'],
+              purpose: 'Warm up with House',
+            },
+            {
+              id: 'build',
+              name: 'Build',
+              durationPercent: 45,
+              energyStart: 6,
+              energyEnd: 8,
+              genres: ['house'],
+              characteristics: [],
+              purpose: 'Build the main direction',
+            },
+            {
+              id: 'closing',
+              name: 'Closing',
+              durationPercent: 30,
+              energyStart: 8,
+              energyEnd: 7,
+              genres: ['latin techno'],
+              characteristics: [],
+              purpose: 'Close with Latin Techno',
+            },
+          ],
+        },
+      },
+    }),
+  );
+  await openView(page, 'Set Builder');
+  await page
+    .locator('#set-intention')
+    .fill('Create a latin techno set, with house just for the warmup, but more than half will be latin techno');
+  await page.locator('#interpret-set-intention').click();
+
+  await expect(page.locator('#set-intention-status')).toContainText('1 core genre and 1 opening-only genre');
+  await expect(page.locator('#set-journey-core-genres span')).toHaveText(['latin techno']);
+  await expect(page.locator('.journey-summary-genres')).toHaveText(['house', 'latin techno', 'latin techno']);
+  await expect(page.locator('#set-journey-confirmation')).toContainText('Adjusted');
+  await expect(page.locator('#set-journey-total')).toContainText('100%');
+});
+
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
   await page.route('**/api/downloaded-library?*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 180));

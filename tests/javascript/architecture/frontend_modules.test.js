@@ -32,6 +32,7 @@ globalThis.document = {
 
 const musicFiles = await import('../../../frontend/features/music-files/index.js');
 const setBuilder = await import('../../../frontend/features/set-builder/index.js');
+const { trackGenreMatchEvidence } = await import('../../../frontend/features/set-builder/policy.js');
 const settings = await import('../../../frontend/features/settings/index.js');
 const shared = await import('../../../frontend/shared/shared-components.js');
 const requests = await import('../../../frontend/core/request-state-controller.js');
@@ -310,6 +311,18 @@ test('Set Builder accepts playlist-derived compound identity without changing ca
   assert.equal(setBuilder.trackMatchesIntendedGenre(track, 'latin techno'), true);
   assert.equal(setBuilder.trackMatchesIntendedGenre(track, 'latin house'), false);
   assert.ok(setBuilder.inferredTrackIdentity(track).includes('latin techno'));
+  assert.deepEqual(trackGenreMatchEvidence(track, 'latin techno'), {
+    kind: 'estimated',
+    source: 'playlist',
+    text: 'Playlist/crate identity: latin techno from LATIN_bounce_TECHNO_Rave_Edition.',
+  });
+  assert.equal(
+    trackGenreMatchEvidence(
+      { _genre: 'Electronic / Techno / Techno', _detailedGenre: 'techno, minimal techno' },
+      'latin techno',
+    ),
+    null,
+  );
 });
 
 test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {

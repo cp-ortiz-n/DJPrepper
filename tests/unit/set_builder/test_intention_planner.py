@@ -170,6 +170,24 @@ class IntentionPlannerTests(unittest.TestCase):
         self.assertEqual(result["requestedGenres"], ["techno", "latin techno"])
         self.assertEqual(result["genreSequence"], ["techno", "latin techno"])
 
+    def test_warmup_only_genre_is_preserved_as_section_scoped_authority(self) -> None:
+        result = sanitize_interpretation(
+            {
+                "required": [],
+                "preferred": [],
+                "avoided": [],
+                "requestedGenres": ["House", "Latin Techno"],
+                "optionalGenres": [],
+                "genreSequence": ["House", "Latin Techno"],
+                "drift": "none",
+            },
+            ["House", "Latin Techno"],
+            "Create a latin techno set, with house just for the warmup, but more than half will be latin techno",
+        )
+
+        self.assertEqual(result["genreSequence"], ["house", "latin techno"])
+        self.assertEqual(result["openingGenres"], ["house"])
+
     def test_high_energy_disco_techno_and_latin_techno_keeps_every_explicit_genre(self) -> None:
         result = sanitize_interpretation(
             {

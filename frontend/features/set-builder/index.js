@@ -15,6 +15,7 @@ import {
   setTrackDetailedGenres,
   setTrackId,
   targetSetEnergy,
+  trackGenreMatchEvidence,
   trackMatchesIntendedGenre,
   trackMatchesSetDetailedGenre,
   trackMatchesSetGenre,
@@ -31,7 +32,7 @@ import {
 } from './workflow.js';
 import { createSetBuilderProgressView } from './progress-view.js';
 import { createSetJourneyReview } from './journey-review.js';
-import { reconcileInterpretedGenreAuthority } from './journey-policy.js';
+import { intentionAuthoritySummary, reconcileInterpretedGenreAuthority } from './journey-policy.js';
 import { mergeCatalogGenreVocabulary } from './genre-vocabulary.js';
 import { beginButtonAction } from './ui-state.js';
 export {
@@ -189,6 +190,7 @@ export function createSetBuilderFeature({
       requestedGenres: interpreted.requestedGenres?.length ? interpreted.requestedGenres : parsed.requestedGenres || [],
       optionalGenres: interpreted.optionalGenres?.length ? interpreted.optionalGenres : parsed.optionalGenres || [],
       genreSequence: journeySequence.length ? journeySequence : interpreted.genreSequence || parsed.genreSequence || [],
+      openingGenres: interpreted.openingGenres || parsed.openingGenres || [],
       journey,
       opening: interpreted.opening || parsed.opening || null,
       ending: interpreted.ending || null,
@@ -233,9 +235,7 @@ export function createSetBuilderFeature({
           : interpreted.provider === 'openai'
             ? `Cloud AI${model ? ` · ${model}` : ''}`
             : 'offline rules';
-      const coreGenreCount = (interpreted.requestedGenres || []).length;
-      $('#set-intention-status').textContent =
-        `Interpreted with ${source}. Found ${coreGenreCount} core genre${coreGenreCount === 1 ? '' : 's'}, ${(interpreted.required || []).length} other requirement${(interpreted.required || []).length === 1 ? '' : 's'}, ${(interpreted.preferred || []).length} preference${(interpreted.preferred || []).length === 1 ? '' : 's'}, and ${(interpreted.avoided || []).length} limit${(interpreted.avoided || []).length === 1 ? '' : 's'}. Edit anything before generating.`;
+      $('#set-intention-status').textContent = intentionAuthoritySummary(interpreted, source);
     }
   }
   function selectedSetGenres() {
@@ -722,6 +722,7 @@ export function createSetBuilderFeature({
       setVocalProfile,
       targetSetEnergy,
       trackIdentity,
+      intendedGenreForPosition, trackGenreMatchEvidence,
       trackMatchesSetDetailedGenre,
       trackMatchesSetGenre,
     },
@@ -1114,7 +1115,6 @@ export function createSetBuilderFeature({
       }
     };
   }
-
   return { loadSetBuilder };
 }
 import { SetPlanningCanceled } from './planning-client.js';

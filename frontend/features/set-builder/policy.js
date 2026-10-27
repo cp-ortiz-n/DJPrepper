@@ -126,17 +126,43 @@ function normalizedIntentPhrase(value) {
     .replace(/\s+/g, ' ')} `;
 }
 
-function trackGenreSearchText(track) {
-  return normalizedIntentPhrase(
-    `${track?._genre || track?.genre || ''} ${track?._detailedGenre || track?.detailed_genre || ''}`,
-  ).trim();
+/** Return the inspectable evidence that makes a track eligible for a requested identity. */
+export function trackGenreMatchEvidence(track, term) {
+  const wanted = normalizedIntentPhrase(term).trim();
+  if (!wanted) return null;
+  const direct = [track?._genre || track?.genre, track?._detailedGenre || track?.detailed_genre]
+    .filter(Boolean)
+    .find((value) => normalizedIntentPhrase(value).trim().includes(wanted));
+  if (direct) return { kind: 'verified', source: 'catalog', text: `Catalog genre evidence: ${direct}.` };
+  const descriptor = (track?._descriptors || track?.descriptors || []).find(
+    (item) => normalizedIntentPhrase(item?.value || item).trim() === wanted,
+  );
+  if (descriptor)
+    return {
+      kind: 'verified',
+      source: 'descriptor',
+      text: `Musical identity descriptor: ${descriptor.value || descriptor}.`,
+    };
+  const playlist = (track?._playlistIdentity || track?.playlist_identity || []).find(
+    (item) => normalizedIntentPhrase(item?.value || item).trim() === wanted,
+  );
+  if (playlist)
+    return {
+      kind: 'estimated',
+      source: 'playlist',
+      text: `Playlist/crate identity: ${playlist.value || playlist}${playlist.source ? ` from ${playlist.source}` : ''}.`,
+    };
+  const manual = (track?._manualIdentity || []).find(
+    (value) => normalizedIntentPhrase(value).trim() === wanted,
+  );
+  if (manual) return { kind: 'verified', source: 'identity', text: `Track identity tag: ${manual}.` };
+  return null;
 }
 
 export function trackMatchesIntendedGenre(track, term) {
   const wanted = normalizedIntentPhrase(term).trim();
-  const metadata = trackGenreSearchText(track);
   if (!wanted) return false;
-  if (metadata.includes(wanted)) return true;
+  if (trackGenreMatchEvidence(track, term)) return true;
   return inferredTrackIdentity(track, track?._manualIdentity || []).some(
     (tag) => normalizedIntentPhrase(tag).trim() === wanted,
   );

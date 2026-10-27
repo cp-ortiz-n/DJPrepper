@@ -1,6 +1,9 @@
 import { SET_BRIEF_MODES } from './workflow.js';
 import { canonicalGenreNames } from './genre-vocabulary.js';
-import { journeyConfirmationState, repairJourneyGenrePolicy, reviewJourneyGenrePolicy } from './journey-policy.js';
+import {
+  journeyConfirmationState, journeyGenreAuthority,
+  repairJourneyGenrePolicy, reviewJourneyGenrePolicy,
+} from './journey-policy.js';
 
 /** Owns editable journey rendering, strict genre review, and confirmation state. */
 export function createSetJourneyReview({
@@ -23,10 +26,7 @@ export function createSetJourneyReview({
       return {};
     }
   }
-  function coreGenres() {
-    const value = interpreted();
-    return [...new Set([...(value.genreSequence || []), ...(value.requestedGenres || [])].filter(Boolean))];
-  }
+  const coreGenres = () => journeyGenreAuthority(interpreted()).coreGenres;
   function syncBuildAvailability() {
     const root = $('#set-journey-preview'),
       button = $('#set-generate');
@@ -87,7 +87,7 @@ export function createSetJourneyReview({
     const duration = journeyDurationStatus(sections, durationMinutes());
     if (!duration.valid)
       throw new Error(`Journey section durations total ${duration.total}%. Adjust them to 100% before generating.`);
-    const core = coreGenres();
+    const authority = journeyGenreAuthority(interpreted());
     return {
       version: 1,
       summary: $('#set-journey-summary').textContent,
@@ -95,8 +95,9 @@ export function createSetJourneyReview({
       confirmed: root.dataset.confirmed === 'true',
       genrePolicy: {
         mode: $('#set-allow-related-genres').checked ? 'related' : 'strict',
-        coreGenres: core,
-        optionalGenres: interpreted().optionalGenres || [],
+        coreGenres: authority.coreGenres,
+        openingGenres: authority.openingGenres,
+        optionalGenres: authority.optionalGenres,
       },
       sections,
     };

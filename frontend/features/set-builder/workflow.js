@@ -1,3 +1,5 @@
+import { journeyGenreAuthority } from './journey-policy.js';
+
 export const SET_BRIEF_MODES = Object.freeze({
   AI: 'ai',
   MANUAL: 'manual',
@@ -38,16 +40,13 @@ export function setBriefModeMessage(authoringMode) {
 }
 
 export function offlineJourneyFromInterpretation(interpreted = {}, durationMinutes = 60) {
-  const genres = [
-    ...new Set(
-      [
-        ...(interpreted.genreSequence || []),
-        ...(interpreted.requestedGenres || []),
-        ...(interpreted.optionalGenres || []),
-      ].filter(Boolean),
-    ),
-  ];
-  const core = genres.length ? genres : ['other'];
+  const authority = journeyGenreAuthority(interpreted);
+  const core = authority.coreGenres.length
+    ? authority.coreGenres
+    : authority.optionalGenres.length
+      ? authority.optionalGenres
+      : ['other'];
+  const openingGenres = authority.openingGenres;
   const energyTerms = [interpreted.text || '', ...(interpreted.required || []), ...(interpreted.preferred || [])]
     .join(' ')
     .toLowerCase();
@@ -55,16 +54,19 @@ export function offlineJourneyFromInterpretation(interpreted = {}, durationMinut
   const sustainedEnergy =
     /\b(?:all around|throughout|whole set|entire set|start to finish|all night|consistently)\b/.test(energyTerms);
   const energyFloor = highEnergy ? (sustainedEnergy ? 8 : 7) : 1;
-  const section = (id, name, durationPercent, energyStart, energyEnd, index, purpose) => ({
+  const section = (id, name, durationPercent, energyStart, energyEnd, genres, purpose, characteristics = []) => ({
     id,
     name,
     durationPercent,
     energyStart: Math.max(energyFloor, energyStart),
     energyEnd: Math.max(energyFloor, energyEnd),
-    genres: [core[Math.min(core.length - 1, index)]],
-    characteristics: index === 0 && interpreted.opening ? [interpreted.opening] : [],
+    genres,
+    characteristics,
     purpose,
   });
+  const opening = openingGenres.length ? openingGenres : [core[0]];
+  const build = [core[Math.min(core.length - 1, Math.floor((core.length - 1) / 2))]];
+  const closing = [core.at(-1)];
   return {
     version: 1,
     summary: interpreted.explanation || 'A catalog-safe journey derived from the requested direction.',
@@ -75,14 +77,24 @@ export function offlineJourneyFromInterpretation(interpreted = {}, durationMinut
     ...(highEnergy ? { energyPolicy: { minimum: energyFloor, sustained: sustainedEnergy } } : {}),
     genrePolicy: {
       mode: interpreted.drift === 'none' ? 'strict' : 'related',
-      coreGenres: [...new Set([...(interpreted.genreSequence || []), ...(interpreted.requestedGenres || [])])],
-      optionalGenres: [...(interpreted.optionalGenres || [])],
+      coreGenres: authority.coreGenres,
+      openingGenres,
+      optionalGenres: authority.optionalGenres,
       repairedSections: [],
     },
     sections: [
-      section('opening', 'Opening', 25, 4, 6, 0, 'Establish the requested musical identity.'),
-      section('build', 'Build', 45, 6, 8, Math.floor((core.length - 1) / 2), 'Develop the energy and groove.'),
-      section('closing', 'Closing', 30, 8, 7, core.length - 1, 'Deliver a deliberate finish.'),
+      section(
+        'opening',
+        'Opening',
+        25,
+        4,
+        6,
+        opening,
+        'Establish the requested musical identity.',
+        interpreted.opening ? [interpreted.opening] : [],
+      ),
+      section('build', 'Build', 45, 6, 8, build, 'Develop the energy and groove.'),
+      section('closing', 'Closing', 30, 8, 7, closing, 'Deliver a deliberate finish.'),
     ],
   };
 }

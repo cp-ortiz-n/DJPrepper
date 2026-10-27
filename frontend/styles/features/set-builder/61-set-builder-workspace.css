@@ -973,6 +973,11 @@
   font-size: var(--set-type-caption, 8px);
   line-height: 1.35;
 }
+.set-track-title .set-track-identity-proof {
+  color: #bed477;
+  font-weight: 750;
+  text-transform: capitalize;
+}
 .set-selection-reasons {
   margin-top: 7px;
   padding-top: 6px;

@@ -71,6 +71,84 @@ class JourneyPlannerTests(unittest.TestCase):
         self.assertIn("melodic", journey["sections"][0]["characteristics"])
         self.assertEqual(sum(section["durationPercent"] for section in journey["sections"]), 100)
 
+    def test_offline_journey_scopes_house_to_warmup_and_keeps_latin_techno_majority(self) -> None:
+        journey = offline_journey(
+            {
+                "text": (
+                    "Create a latin techno set, with house just for the warmup, but more than half will be latin techno"
+                ),
+                "genreSequence": ["house", "latin techno"],
+                "requestedGenres": ["house", "latin techno"],
+                "openingGenres": ["house"],
+                "optionalGenres": [],
+                "drift": "none",
+            },
+            ["House", "Latin Techno"],
+            60,
+        )
+
+        self.assertEqual(
+            [(section["durationPercent"], section["genres"]) for section in journey["sections"]],
+            [(25, ["house"]), (45, ["latin techno"]), (30, ["latin techno"])],
+        )
+        self.assertEqual(journey["genrePolicy"]["coreGenres"], ["latin techno"])
+        self.assertEqual(journey["genrePolicy"]["openingGenres"], ["house"])
+
+    def test_strict_policy_repairs_opening_only_genre_out_of_later_sections(self) -> None:
+        journey = sanitize_journey(
+            {
+                "summary": "House warmup into Latin Techno.",
+                "sections": [
+                    {
+                        "name": "Opening",
+                        "purpose": "Warm up",
+                        "durationPercent": 25,
+                        "genres": ["House"],
+                        "characteristics": [],
+                        "energyStart": 4,
+                        "energyEnd": 6,
+                    },
+                    {
+                        "name": "Build",
+                        "purpose": "Build",
+                        "durationPercent": 45,
+                        "genres": ["House"],
+                        "characteristics": [],
+                        "energyStart": 6,
+                        "energyEnd": 8,
+                    },
+                    {
+                        "name": "Closing",
+                        "purpose": "Close",
+                        "durationPercent": 30,
+                        "genres": ["Latin Techno"],
+                        "characteristics": [],
+                        "energyStart": 8,
+                        "energyEnd": 7,
+                    },
+                ],
+            },
+            ["House", "Latin Techno"],
+            60,
+        )
+        repaired = enforce_journey_genre_policy(
+            journey,
+            {
+                "requestedGenres": ["house", "latin techno"],
+                "genreSequence": ["house", "latin techno"],
+                "openingGenres": ["house"],
+                "optionalGenres": [],
+                "drift": "none",
+            },
+            ["House", "Latin Techno"],
+        )
+
+        self.assertEqual(
+            [section["genres"] for section in repaired["sections"]],
+            [["house"], ["latin techno"], ["latin techno"]],
+        )
+        self.assertEqual(repaired["genrePolicy"]["repairedSections"], ["section-2"])
+
     def test_sustained_high_energy_is_enforced_for_every_section(self) -> None:
         interpreted = {
             "text": "Create an Indian party song set, high energy all around. No rap",

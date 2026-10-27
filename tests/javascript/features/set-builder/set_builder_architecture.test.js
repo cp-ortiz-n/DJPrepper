@@ -17,6 +17,7 @@ import {
 } from '../../../../frontend/features/set-builder/genre-vocabulary.js';
 import {
   excludedGenreMentions,
+  journeyGenreAuthority,
   reconcileInterpretedGenreAuthority,
   repairJourneyGenrePolicy,
   reviewJourneyGenrePolicy,
@@ -762,6 +763,66 @@ test('trailing warmup cue assigns only the nearest preceding genre', () => {
   );
 
   assert.deepEqual(interpreted.genreSequence, ['latin house', 'latin techno']);
+  assert.deepEqual(interpreted.openingGenres, ['latin house']);
+  assert.deepEqual(journeyGenreAuthority(interpreted), {
+    coreGenres: ['latin techno'],
+    openingGenres: ['latin house'],
+    optionalGenres: [],
+    allowedGenres: ['latin house', 'latin techno'],
+  });
+});
+
+test('offline journey keeps warmup-only house out of the Latin Techno majority', () => {
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a latin techno set, with house just for the warmup, but more than half will be latin techno',
+      requestedGenres: ['house', 'latin techno'],
+      optionalGenres: [],
+      genreSequence: ['house', 'latin techno'],
+      drift: 'none',
+    },
+    ['house', 'latin techno'],
+  );
+  const journey = offlineJourneyFromInterpretation(interpreted, 60);
+
+  assert.deepEqual(
+    journey.sections.map((section) => [section.durationPercent, section.genres]),
+    [
+      [25, ['house']],
+      [45, ['latin techno']],
+      [30, ['latin techno']],
+    ],
+  );
+  assert.deepEqual(journey.genrePolicy.coreGenres, ['latin techno']);
+  assert.deepEqual(journey.genrePolicy.openingGenres, ['house']);
+});
+
+test('strict journey repair removes an opening-only genre from later sections', () => {
+  const interpreted = {
+    requestedGenres: ['house', 'latin techno'],
+    genreSequence: ['house', 'latin techno'],
+    openingGenres: ['house'],
+    optionalGenres: [],
+    drift: 'none',
+  };
+  const result = repairJourneyGenrePolicy(
+    {
+      genrePolicy: { mode: 'strict' },
+      sections: [
+        { id: 'opening', name: 'Opening', genres: ['house'] },
+        { id: 'build', name: 'Build', genres: ['house'] },
+        { id: 'closing', name: 'Closing', genres: ['latin techno'] },
+      ],
+    },
+    interpreted,
+  );
+
+  assert.deepEqual(
+    result.journey.sections.map((section) => section.genres),
+    [['house'], ['latin techno'], ['latin techno']],
+  );
+  assert.deepEqual(result.repairs, ['build']);
+  assert.equal(reviewJourneyGenrePolicy(result.journey, interpreted).valid, true);
 });
 
 test('catalog vocabulary exposes inferred cultural identities without rewriting genre', () => {

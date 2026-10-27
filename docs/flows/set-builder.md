@@ -49,8 +49,13 @@ another catalog label. This does not rewrite the track's genre.
 Negative and positional language is enforced after AI interpretation. A phrase
 such as `No rap` becomes a hard catalog exclusion and is removed from requested
 genres, while `Latin House to warm up` assigns the nearest preceding genre to
-the opening and moves it before the remaining genre sequence. `Warm up with
-Latin House` applies the same rule to the genres following the cue. Explicit
+the opening and moves it before the remaining genre sequence. The interpretation
+stores that assignment separately as an opening-only genre: it does not become
+a persistent core genre or leak into Build and Closing. For example, House used
+"just for the warmup" receives 25% of the fallback journey while the persistent
+Latin Techno direction receives the remaining 75%. The same positional policy
+repairs AI proposals and validates manual journey edits. `Warm up with Latin
+House` applies the same rule to the genres following the cue. Explicit
 `high energy` language establishes a minimum energy
 floor; `throughout`, `all around`, or `start to finish` applies the stronger
 floor to every journey section. These rules resolve through the current catalog
@@ -149,6 +154,10 @@ retry does not create another event or empty revision; it reuses the saved scope
 - Rules-based planning selects against the genre list for the position's
   confirmed journey section. Transition optimization may reorder tracks only
   inside that section, never across its boundaries.
+- Every selected row shows the evidence class for its section identity. Direct
+  catalog genres and descriptors are verified evidence; playlist/crate identity
+  is labeled as estimated and the source playlist is named under **Why this
+  track**. A generic Techno tag alone does not qualify as Latin Techno.
 - If a strict section does not have enough unique analyzed matches, generation
   stops with the section name, required count, and available count. The existing
   plan remains unchanged.

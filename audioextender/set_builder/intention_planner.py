@@ -228,6 +228,7 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[Any], brief
             genre for genre in explicit_genres if genre in requested_by_model or genre not in optional_by_model
         ]
         cleaned["genreSequence"] = ordered_genres
+        cleaned["openingGenres"] = opening_genres
         cleaned["excludedGenres"] = excluded_genres
         cleaned["avoided"] = list(dict.fromkeys([*cleaned["avoided"], *excluded_genres]))
         for field in ("required", "preferred"):
@@ -242,6 +243,7 @@ def sanitize_interpretation(result: dict[str, Any], vocabulary: list[Any], brief
     elif cleaned.get("drift") not in {"none", "low", "moderate", "wide"}:
         cleaned["drift"] = "none"
     cleaned.setdefault("excludedGenres", [])
+    cleaned.setdefault("openingGenres", [])
     return cleaned
 
 

@@ -139,19 +139,53 @@ def sanitize_journey(result: dict[str, Any], vocabulary: list[str], duration_min
     }
 
 
-def offline_journey(interpreted: dict[str, Any], vocabulary: list[str], duration_minutes: int) -> dict[str, Any]:
-    """Produce a useful journey without an AI provider."""
-    sequence = list(
+def _journey_genre_authority(
+    interpreted: dict[str, Any], vocabulary: list[str]
+) -> tuple[list[str], list[str], list[str]]:
+    """Separate section-scoped opening genres from persistent set genres."""
+    optional = list(
         dict.fromkeys(
-            [
-                *interpreted.get("genreSequence", []),
-                *interpreted.get("requestedGenres", []),
-                *interpreted.get("optionalGenres", []),
-            ]
+            genre for value in interpreted.get("optionalGenres", []) if (genre := _canonical_genre(value, vocabulary))
         )
     )
-    canonical = [genre for value in sequence if (genre := _canonical_genre(value, vocabulary))]
-    groups = [[genre] for genre in canonical] or [[]]
+    requested = list(
+        dict.fromkeys(
+            genre
+            for value in [*interpreted.get("requestedGenres", []), *interpreted.get("genreSequence", [])]
+            if (genre := _canonical_genre(value, vocabulary)) and genre not in optional
+        )
+    )
+    opening = list(
+        dict.fromkeys(
+            genre
+            for value in interpreted.get("openingGenres", [])
+            if (genre := _canonical_genre(value, vocabulary)) and genre in requested
+        )
+    )
+    persistent = [genre for genre in requested if genre not in opening]
+    core = persistent or requested
+    opening_only = [genre for genre in opening if genre not in core] if persistent else []
+    optional = [genre for genre in optional if genre not in core and genre not in opening_only]
+    return core, opening_only, optional
+
+
+def offline_journey(interpreted: dict[str, Any], vocabulary: list[str], duration_minutes: int) -> dict[str, Any]:
+    """Produce a useful journey without an AI provider."""
+    core, opening_genres, optional = _journey_genre_authority(interpreted, vocabulary)
+    if opening_genres and core:
+        persistent_groups = [[genre] for genre in core]
+        if len(persistent_groups) == 1:
+            persistent_groups *= 2
+        groups = [opening_genres, *persistent_groups]
+        durations = (
+            [25, 45, 30]
+            if len(persistent_groups) == 2
+            else [25, *([75 / len(persistent_groups)] * len(persistent_groups))]
+        )
+    else:
+        sequence = [*core, *optional]
+        groups = [[genre] for genre in sequence] or [[]]
+        durations = [100 / len(groups)] * len(groups)
     curve = interpreted.get("curve") or "rise"
     high_energy, sustained_energy = _high_energy_policy(interpreted)
     opening = _clean_term(interpreted.get("opening"))
@@ -189,7 +223,7 @@ def offline_journey(interpreted: dict[str, Any], vocabulary: list[str], duration
                     if index == len(groups) - 1
                     else "Advance the requested genre and energy journey."
                 ),
-                "durationPercent": 100 / len(groups),
+                "durationPercent": durations[index],
                 "genres": genres,
                 "characteristics": characteristics,
                 "energyStart": energy_start,
@@ -201,6 +235,7 @@ def offline_journey(interpreted: dict[str, Any], vocabulary: list[str], duration
         vocabulary,
         duration_minutes,
     )
+    journey = enforce_journey_genre_policy(journey, interpreted, vocabulary)
     return enforce_journey_energy_policy(journey, interpreted)
 
 
@@ -250,25 +285,13 @@ def enforce_journey_genre_policy(
 ) -> dict[str, Any]:
     """Prevent an exact genre brief from silently expanding into catalog neighbors."""
     drift = str(interpreted.get("drift") or "none").strip().lower()
-    core = list(
-        dict.fromkeys(
-            genre
-            for value in [*interpreted.get("genreSequence", []), *interpreted.get("requestedGenres", [])]
-            if (genre := _canonical_genre(value, vocabulary))
-        )
-    )
-    optional = list(
-        dict.fromkeys(
-            genre
-            for value in interpreted.get("optionalGenres", [])
-            if (genre := _canonical_genre(value, vocabulary)) and genre not in core
-        )
-    )
-    allowed = [*core, *optional]
+    core, opening, optional = _journey_genre_authority(interpreted, vocabulary)
+    allowed = [*opening, *core, *optional]
     strict = drift == "none" and bool(allowed)
     policy: dict[str, Any] = {
         "mode": "strict" if strict else "related",
         "coreGenres": core,
+        "openingGenres": opening,
         "optionalGenres": optional,
         "repairedSections": [],
     }
@@ -277,11 +300,13 @@ def enforce_journey_genre_policy(
         return journey
     sections = journey.get("sections", [])
     for index, section in enumerate(sections):
+        positional_allowed = opening if opening and index == 0 else [*core, *optional]
+        positional_allowed = positional_allowed or allowed
         proposed = list(dict.fromkeys(section.get("genres", [])))
-        kept = [genre for genre in proposed if genre in allowed]
-        removed = [genre for genre in proposed if genre not in allowed]
+        kept = [genre for genre in proposed if genre in positional_allowed]
+        removed = [genre for genre in proposed if genre not in positional_allowed]
         if not kept:
-            source = core or optional
+            source = positional_allowed
             position = min(len(source) - 1, int(index * len(source) / max(1, len(sections))))
             kept = [source[position]]
         if removed:

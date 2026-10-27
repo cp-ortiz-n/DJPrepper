@@ -118,14 +118,37 @@ export function reconcileInterpretedGenreAuthority(interpreted = {}, vocabulary 
     requestedGenres,
     optionalGenres,
     genreSequence,
+    openingGenres,
     excludedGenres,
   };
 }
 
 export function journeyGenreAuthority(interpreted = {}) {
-  const coreGenres = unique([...(interpreted.genreSequence || []), ...(interpreted.requestedGenres || [])]);
-  const optionalGenres = unique(interpreted.optionalGenres).filter((genre) => !coreGenres.includes(genre));
-  return { coreGenres, optionalGenres, allowedGenres: [...coreGenres, ...optionalGenres] };
+  const optionalInput = unique(interpreted.optionalGenres);
+  const requested = unique([
+    ...(interpreted.requestedGenres || []),
+    ...(interpreted.genreSequence || []).filter((genre) => !optionalInput.includes(normalize(genre))),
+  ]);
+  const opening = unique(interpreted.openingGenres).filter((genre) => requested.includes(genre));
+  const persistent = requested.filter((genre) => !opening.includes(genre));
+  const coreGenres = persistent.length ? persistent : requested;
+  const openingGenres = persistent.length ? opening.filter((genre) => !coreGenres.includes(genre)) : [];
+  const optionalGenres = optionalInput.filter(
+    (genre) => !coreGenres.includes(genre) && !openingGenres.includes(genre),
+  );
+  return {
+    coreGenres,
+    openingGenres,
+    optionalGenres,
+    allowedGenres: [...openingGenres, ...coreGenres, ...optionalGenres],
+  };
+}
+
+export function intentionAuthoritySummary(interpreted = {}, source = 'offline rules') {
+  const { coreGenres, openingGenres } = journeyGenreAuthority(interpreted);
+  const plural = (values, noun) => `${values.length} ${noun}${values.length === 1 ? '' : 's'}`;
+  const opening = openingGenres.length ? ` and ${plural(openingGenres, 'opening-only genre')}` : '';
+  return `Interpreted with ${source}. Found ${plural(coreGenres, 'core genre')}${opening}, ${plural(interpreted.required || [], 'other requirement')}, ${plural(interpreted.preferred || [], 'preference')}, and ${plural(interpreted.avoided || [], 'limit')}. Edit anything before generating.`;
 }
 
 /** Explain whether an editable journey remains inside its confirmed genre policy. */
@@ -135,13 +158,21 @@ export function reviewJourneyGenrePolicy(journey = {}, interpreted = {}) {
   if (mode !== 'strict' || !authority.allowedGenres.length) {
     return { valid: true, mode, ...authority, violations: [], unapprovedGenres: [] };
   }
-  const allowed = new Set(authority.allowedGenres);
+  const globallyAllowed = new Set(authority.allowedGenres);
   const violations = (journey.sections || [])
-    .map((section, index) => ({
-      id: section.id || `section-${index + 1}`,
-      name: section.name || `Section ${index + 1}`,
-      genres: unique(section.genres).filter((genre) => !allowed.has(genre)),
-    }))
+    .map((section, index) => {
+      const positional =
+        authority.openingGenres.length && index === 0
+          ? new Set(authority.openingGenres)
+          : authority.openingGenres.length
+            ? new Set([...authority.coreGenres, ...authority.optionalGenres])
+            : globallyAllowed;
+      return {
+        id: section.id || `section-${index + 1}`,
+        name: section.name || `Section ${index + 1}`,
+        genres: unique(section.genres).filter((genre) => !positional.has(genre)),
+      };
+    })
     .filter((violation) => violation.genres.length);
   return {
     valid: violations.length === 0,
@@ -175,14 +206,21 @@ export function repairJourneyGenrePolicy(journey = {}, interpreted = {}) {
     ...(source.genrePolicy || {}),
     mode: review.mode,
     coreGenres: review.coreGenres,
+    openingGenres: review.openingGenres,
     optionalGenres: review.optionalGenres,
     repairedSections: [],
   };
   if (review.mode !== 'strict' || !review.allowedGenres.length) return { journey: source, repairs: [] };
-  const allowed = new Set(review.allowedGenres);
-  const fallback = review.coreGenres.length ? review.coreGenres : review.optionalGenres;
   const sections = source.sections || [];
   sections.forEach((section, index) => {
+    const positionalAllowed =
+      review.openingGenres.length && index === 0
+        ? review.openingGenres
+        : review.coreGenres.length
+          ? [...review.coreGenres, ...review.optionalGenres]
+          : review.optionalGenres;
+    const allowed = new Set(positionalAllowed.length ? positionalAllowed : review.allowedGenres);
+    const fallback = positionalAllowed.length ? positionalAllowed : review.allowedGenres;
     const proposed = unique(section.genres);
     const kept = proposed.filter((genre) => allowed.has(genre));
     const removed = proposed.filter((genre) => !allowed.has(genre));
