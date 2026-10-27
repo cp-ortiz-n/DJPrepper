@@ -7,8 +7,10 @@ Directories record ownership; the numeric prefix records global cascade
 position and must remain stable:
 
 - `core/00-*`: tokens, native defaults, shell, and navigation.
-- `shared/10-*`, `shared/21-*`, `shared/80-*`, `shared/81-*`, `shared/82-*`: shared collection or application
-  primitives used by multiple feature modules.
+- `shared/10-*`, `shared/11-*`, `shared/21-*`, `shared/80-*`, `shared/81-*`,
+  `shared/82-*`: shared collection or application primitives used by multiple
+  feature modules. Searchable-select structure and menus belong in `11-*`;
+  feature files may size their host but must not redefine that shared interaction.
 - `features/processing/20-*` through `24-*`: processing, candidate review, and the historical
   collection foundations that must retain their position beside processing.
 - `features/library/30-*` and `features/reporting/70-*`: DJ Library analysis and reporting.
@@ -17,7 +19,8 @@ position and must remain stable:
   rows, compact browse controls, filter disclosures, and catalog-wide maintenance.
   Keep selection-only actions in `50-*`; keep browsing/filter/maintenance
   presentation in `52-*` so their scopes remain visibly distinct.
-- `features/set-builder/60-*` and `61-*`: Set Builder brief, journey, planning, and transitions.
+- `features/set-builder/60-*` through `62-*`: Set Builder brief, journey, planning,
+  transitions, and the compact generated-plan shell.
 
 New feature rules belong in the latest fragment owned by that feature. Shared
 placement requires the same semantic component to be used by at least two

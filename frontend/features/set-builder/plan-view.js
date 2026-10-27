@@ -9,6 +9,7 @@ import {
 import { bindTrackReordering } from './track-reordering.js';
 import { applyExplicitSetPlanChoice } from './plan-integrity.js';
 import { compactTrackSummaryMarkup, createSetBuilderWorkspaceShell } from './workspace-shell.js';
+import { beginButtonAction } from './ui-state.js';
 
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
   const { $, $$, escapeHtml } = dom;
@@ -294,12 +295,12 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       ? '<p>A rejected track still needs a valid replacement. Open its details to retry after relaxing a rule.</p>'
       : weak.length
         ? weak
-          .slice(0, 8)
-          .map(
-            (item) =>
-              `<button type="button" data-transition="${item.to}"><b>${item.from + 1} → ${item.to + 1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`,
-          )
-          .join('')
+            .slice(0, 8)
+            .map(
+              (item) =>
+                `<button type="button" data-transition="${item.to}"><b>${item.from + 1} → ${item.to + 1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`,
+            )
+            .join('')
         : healthAccepted
           ? `<p>Health target met. No transitions fall below ${healthThreshold}.</p>`
           : `<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes === 1 ? ' is' : 's are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;
@@ -339,7 +340,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         const alternateVersionCount = recordingVersionCount(track, state.library);
         const pairId = index ? `${setCatalogTrackId(state.plan[index - 1])}→${setCatalogTrackId(track)}` : '';
         const trackName = track.source_name.replace(/\.[^.]+$/, '');
-        return `<article class="set-track-card${locked ? ' locked' : ''}" data-index="${index}"><span class="set-position"><b>${index + 1}</b><button type="button" class="set-drag-handle" draggable="${locked ? 'false' : 'true'}" ${locked ? 'disabled' : ''} aria-label="${locked ? `Track ${index + 1} is locked; unlock it before reordering` : `Drag track ${index + 1}: ${escapeHtml(trackName)}`}" title="${locked ? 'Unlock this track to reorder it' : 'Drag to reorder · use arrow keys for precise movement'}">⠿</button></span><div class="set-track-title"><strong>${escapeHtml(trackName)}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
+        return `<article class="set-track-card${locked ? ' locked' : ''}" data-index="${index}"><span class="set-position"><b>${index + 1}</b><button type="button" class="button tertiary set-drag-handle" draggable="${locked ? 'false' : 'true'}" ${locked ? 'disabled' : ''} aria-label="${locked ? `Track ${index + 1} is locked; unlock it before reordering` : `Drag track ${index + 1}: ${escapeHtml(trackName)}`}" title="${locked ? 'Unlock this track to reorder it' : 'Drag to reorder · use arrow keys for precise movement'}">⠿</button></span><div class="set-track-title"><strong>${escapeHtml(trackName)}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
           track,
         )
           .map((role) => LIBRARY_ROLE_INFO[role]?.[0] || role)
@@ -354,7 +355,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           })
           .join(
             '',
-          )}</ul></details>${trackReviewMarkup(track)}</div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="set-identity">Identity tags</button></div><div class="set-track-quick-actions"><button type="button" class="set-quick-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-quick-alternative">Replace</button><button type="button" class="set-inspect-track">More</button></div></article>`;
+          )}</ul></details>${trackReviewMarkup(track)}</div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="button secondary set-audition">Mix transition</button><button type="button" class="button secondary edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="button secondary set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="button secondary set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="button secondary set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="button destructive set-remove">Remove</button><button type="button" class="button secondary set-add-after">Add after</button><button type="button" class="button secondary set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="button tertiary set-identity">Identity tags</button></div><div class="set-track-quick-actions"><button type="button" class="button tertiary set-quick-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="button secondary set-quick-alternative">Replace</button><button type="button" class="button tertiary set-inspect-track">More</button></div></article>`;
       })
       .join('');
     bindSetRows();
@@ -466,22 +467,18 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         return;
       }
       const action = event.currentTarget,
-        original = action.textContent;
-      action.disabled = true;
-      action.textContent = 'Inferring…';
+        restoreAction = beginButtonAction(action, 'Inferring identity tags…');
       try {
         await inferDescriptorEditor(editor, [track._downloadedId]);
       } catch (error) {
         notify(error.message, 'danger');
       } finally {
-        action.disabled = false;
-        action.textContent = original;
+        restoreAction();
       }
     };
     editor.querySelector('.save-descriptors').onclick = async (event) => {
       const action = event.currentTarget;
-      action.disabled = true;
-      action.textContent = 'Saving…';
+      const restoreAction = beginButtonAction(action, 'Saving identity tags…');
       try {
         if (track._downloadedId) {
           const result = await saveDescriptorEditor(editor, [track._downloadedId]);
@@ -501,8 +498,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           `Identity tags saved for ${track.source_name.replace(/\.[^.]+$/, '')} in the persistent track catalog.`;
       } catch (error) {
         notify(error.message, 'danger');
-        action.disabled = false;
-        action.textContent = 'Save changes';
+        restoreAction();
       }
     };
     editor.querySelector('input')?.focus();
@@ -527,7 +523,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     const genres = [...new Set(available.map((choice) => choice.track._genre).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b),
     );
-    panel.innerHTML = `<header><div><strong>${insertIndex >= state.plan.length ? 'Add a track to the end' : `Add a track at position ${insertIndex + 1}`}</strong><span>Search any unused song in your DJ Library.</span></div><button type="button" class="close-alternatives" aria-label="Close track browser">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
+    panel.innerHTML = `<header><div><strong>${insertIndex >= state.plan.length ? 'Add a track to the end' : `Add a track at position ${insertIndex + 1}`}</strong><span>Search any unused song in your DJ Library.</span></div><button type="button" class="button tertiary close-alternatives" aria-label="Close track browser">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
     const list = panel.querySelector('.set-alternative-list');
     const status = panel.querySelector('.set-alternative-status');
     const renderChoices = () => {
@@ -546,7 +542,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
               const preview = track._job?.id
                 ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
                 : '';
-              return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">Add to set</button></article>`;
+              return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="button secondary use-alternative">Add to set</button></article>`;
             })
             .join('')
         : '<p class="empty">No unused tracks match that search.</p>';
@@ -596,7 +592,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     card.querySelector('.set-alternative-panel')?.remove();
     const panel = document.createElement('section');
     panel.className = 'set-alternative-panel';
-    panel.innerHTML = `<header><div><strong>Choose an alternative</strong><span>Use another version of this song or replace it with a different recording. Only one version can remain in the set.</span></div><button type="button" class="close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, version, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
+    panel.innerHTML = `<header><div><strong>Choose an alternative</strong><span>Use another version of this song or replace it with a different recording. Only one version can remain in the set.</span></div><button type="button" class="button tertiary close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, version, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
     const list = panel.querySelector('.set-alternative-list');
     const status = panel.querySelector('.set-alternative-status');
     const renderChoices = () => {
@@ -621,7 +617,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
                 !choiceIndex || items[choiceIndex - 1].group !== choice.group
                   ? `<h4>${escapeHtml(choice.group)}</h4>`
                   : '';
-              return `${heading}<article data-choice="${choiceIndex}" class="${choice.sameRecording ? 'same-recording-version' : ''}"><div><em class="set-alternative-kind">${choice.sameRecording ? escapeHtml(choice.versionLabel) : 'Different song'}</em><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">${choice.sameRecording ? 'Use this version' : 'Use this track'}</button></article>`;
+              return `${heading}<article data-choice="${choiceIndex}" class="${choice.sameRecording ? 'same-recording-version' : ''}"><div><em class="set-alternative-kind">${choice.sameRecording ? escapeHtml(choice.versionLabel) : 'Different song'}</em><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="button secondary use-alternative">${choice.sameRecording ? 'Use this version' : 'Use this track'}</button></article>`;
             })
             .join('')
         : '<p class="empty">No unused tracks match that search.</p>';

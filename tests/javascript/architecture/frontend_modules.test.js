@@ -116,6 +116,7 @@ test('stylesheet entry point preserves explicit owner order without dead audit s
   assert.deepEqual(imports, [
     'core/00-base-shell.css',
     'shared/10-shared-collections.css',
+    'shared/11-shared-searchable-select.css',
     'features/processing/20-processing-media.css',
     'shared/21-shared-secondary-actions.css',
     'features/library/30-library-reporting.css',

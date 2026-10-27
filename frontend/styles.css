@@ -1,5 +1,6 @@
 @import url('./styles/core/00-base-shell.css');
 @import url('./styles/shared/10-shared-collections.css');
+@import url('./styles/shared/11-shared-searchable-select.css');
 @import url('./styles/features/processing/20-processing-media.css');
 @import url('./styles/shared/21-shared-secondary-actions.css');
 @import url('./styles/features/library/30-library-reporting.css');

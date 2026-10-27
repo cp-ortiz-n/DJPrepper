@@ -33,7 +33,7 @@ import { createSetBuilderProgressView } from './progress-view.js';
 import { createSetJourneyReview } from './journey-review.js';
 import { reconcileInterpretedGenreAuthority } from './journey-policy.js';
 import { mergeCatalogGenreVocabulary } from './genre-vocabulary.js';
-
+import { beginButtonAction } from './ui-state.js';
 export {
   DEFAULT_SET_FALLBACK_POLICY,
   SET_IDENTITY_STORAGE_KEY,
@@ -514,7 +514,9 @@ export function createSetBuilderFeature({
         timingEligible: brief.timing === 'all' || timingProfile(track) === brief.timing,
       });
     });
-    return deduplicate ? deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds])) : eligible;
+    return deduplicate
+      ? deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds]))
+      : eligible;
   }
   function setPlanSnapshot() {
     return { ...snapshotSetPlan(state, setTrackId), planningReceipt: planningSession?.receipt() || null };
@@ -900,7 +902,7 @@ export function createSetBuilderFeature({
         button = $('#set-generate'),
         briefMode = workflow.briefMode(),
         mode = workflow.syncPlanningMode();
-      button.disabled = true;
+      const restoreAction = beginButtonAction(button, 'Building set…');
       try {
         if (briefMode === SET_BRIEF_MODES.AI && !intentionText) {
           throw new Error('Describe the set you want, or switch to Build manually.');
@@ -944,7 +946,7 @@ export function createSetBuilderFeature({
       } finally {
         progressView.finishJourney();
         progressView.finishTrackPlanning();
-        button.disabled = false;
+        restoreAction();
         workflow.syncPlanningMode();
         journeyReview.syncBuildAvailability();
         $('#set-cancel-planning').hidden = true;
@@ -964,15 +966,13 @@ export function createSetBuilderFeature({
         $('#set-builder-message').textContent = 'Describe the set first, then interpret it.';
         return;
       }
-      button.disabled = true;
-      button.textContent = 'Planning journey…';
+      const restoreAction = beginButtonAction(button, 'Planning journey…');
       progressView.startJourney();
       try {
         applyIntentionInterpretation(await intentionController.interpretAndPlan(text));
       } finally {
         progressView.finishJourney();
-        button.disabled = false;
-        button.textContent = 'Review set direction';
+        restoreAction();
       }
     };
     journeyReview.bind({ onRegenerate: () => $('#interpret-set-intention').click() });

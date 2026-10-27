@@ -1,6 +1,7 @@
 /** Compact Set Builder workspace presentation and selected-track ownership. */
 
 import { revisionComparisonLabel } from './regeneration.js';
+import { beginButtonAction } from './ui-state.js';
 
 export function workspaceIdentity(state) {
   const revision = Number(state.planRevision?.number || 0);
@@ -166,8 +167,7 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regen
   const regenerateAction = $('#regenerate-set');
   if (regenerateAction)
     regenerateAction.onclick = async () => {
-      regenerateAction.disabled = true;
-      regenerateAction.textContent = 'Regenerating…';
+      const restoreAction = beginButtonAction(regenerateAction, 'Regenerating unlocked tracks…');
       $('#set-builder-message').textContent = 'Keeping locked tracks and rebuilding the rest of this revision…';
       try {
         const comparison = await regenerateUnlocked();
@@ -177,8 +177,7 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regen
         $('#set-builder-message').textContent =
           `Regeneration failed: ${error?.message || error}. The previous revision remains available.`;
       } finally {
-        regenerateAction.disabled = false;
-        regenerateAction.textContent = 'Regenerate unlocked';
+        restoreAction();
       }
     };
   inspectorPanel?.addEventListener('keydown', (event) => {

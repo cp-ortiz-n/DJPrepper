@@ -1,6 +1,7 @@
 /** Guided Keep/Reject workflow and validated single-slot replacement. */
 
 import { applyExplicitSetPlanChoice } from './plan-integrity.js';
+import { beginButtonAction } from './ui-state.js';
 
 export function selectValidatedReplacement({
   state,
@@ -57,9 +58,9 @@ export function createTrackRejectionWorkflow({ state, dom, music, policy, lifecy
       return `<div class="set-track-review-status success"><span><b>Replacement ready</b><small>${escapeHtml(current.message || 'Rejected track replaced · feedback saved')}</small></span></div>`;
     }
     if (current.decision === 'reject' && current.saved) {
-      return `<div class="set-track-review-status danger"><span><b>Rejected · feedback saved</b><small>${escapeHtml(current.unresolved ? 'No valid replacement was available. Retry after relaxing a rule.' : 'This track will stay excluded from reruns.')}</small></span>${current.unresolved ? '<button type="button" class="set-retry-replacement">Retry replacement</button>' : ''}</div>`;
+      return `<div class="set-track-review-status danger"><span><b>Rejected · feedback saved</b><small>${escapeHtml(current.unresolved ? 'No valid replacement was available. Retry after relaxing a rule.' : 'This track will stay excluded from reruns.')}</small></span>${current.unresolved ? '<button type="button" class="button secondary set-retry-replacement">Retry replacement</button>' : ''}</div>`;
     }
-    return `<div class="set-track-review"><button type="button" class="set-keep-track ${current.decision === 'accept' ? 'active' : ''}">${current.saved ? '✓ Kept · saved' : '✓ Keep'}</button><button type="button" class="set-reject-track">× Reject & replace</button><small>Keep teaches preference. Lock separately if this position must not change.</small></div>`;
+    return `<div class="set-track-review"><button type="button" class="button secondary set-keep-track ${current.decision === 'accept' ? 'active' : ''}">${current.saved ? '✓ Kept · saved' : '✓ Keep'}</button><button type="button" class="button destructive set-reject-track">× Reject & replace</button><small>Keep teaches preference. Lock separately if this position must not change.</small></div>`;
   }
 
   function exclusionIds(track, scope) {
@@ -111,18 +112,17 @@ export function createTrackRejectionWorkflow({ state, dom, music, policy, lifecy
     const track = state.plan[index];
     if (!track) return;
     const prior = review(track);
-    button.disabled = true;
-    button.textContent = 'Saving…';
+    const restoreAction = beginButtonAction(button, 'Saving track feedback…');
     try {
       state.trackReviews.set(
         setTrackId(track),
         await persistence.record(track, { decision: 'accept', eventId: prior.eventId }),
       );
       renderSetPlan();
-      $('#set-builder-message').textContent = 'Kept · feedback saved. Lock the track separately to preserve its section.';
+      $('#set-builder-message').textContent =
+        'Kept · feedback saved. Lock the track separately to preserve its section.';
     } catch (error) {
-      button.disabled = false;
-      button.textContent = '✓ Keep';
+      restoreAction();
       $('#set-builder-message').textContent = `Keep was not saved: ${error.message || error}. Try again.`;
     }
   }
@@ -135,8 +135,7 @@ export function createTrackRejectionWorkflow({ state, dom, music, policy, lifecy
     const reason = panel.querySelector('[name="set-reject-reason"]').value;
     const scope = panel.querySelector('[name="set-reject-scope"]:checked')?.value || 'version';
     const prior = review(track);
-    action.disabled = true;
-    action.textContent = prior.saved ? 'Finding replacement…' : 'Saving feedback…';
+    const restoreAction = beginButtonAction(action, prior.saved ? 'Finding a replacement…' : 'Saving feedback…');
     panel.querySelector('.set-decision-error').textContent = '';
     try {
       const saved = prior.saved
@@ -186,8 +185,7 @@ export function createTrackRejectionWorkflow({ state, dom, music, policy, lifecy
       panel.querySelector('.set-decision-error').textContent =
         `${error.message || error}. Nothing in the set was changed; try again.`;
     } finally {
-      action.disabled = false;
-      action.textContent = 'Reject & replace';
+      restoreAction();
     }
   }
 

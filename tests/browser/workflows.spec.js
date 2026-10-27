@@ -342,6 +342,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     excluded: [],
   };
   let regenerationRequest;
+  let failRegeneration = false;
   const preferenceEvents = [];
   const deletedPreferenceEvents = [];
   await page.route(
@@ -383,6 +384,10 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await page.route(
     (url) => url.pathname === '/api/set-builder/plan-tracks',
     async (route) => {
+      if (failRegeneration) {
+        await route.fulfill({ status: 503, json: { detail: 'Planner temporarily unavailable' } });
+        return;
+      }
       regenerationRequest = route.request().postDataJSON();
       await route.fulfill({ status: 202, json: { jobId: 'browser-regeneration', status: 'pending' } });
     },
@@ -441,6 +446,14 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(rows.nth(1)).toContainText('Lift');
   await expect(page.locator('#set-workspace-revision')).toHaveText('Revision 2');
 
+  failRegeneration = true;
+  await page.locator('#regenerate-set').click();
+  await expect(page.locator('#set-builder-message')).toContainText('Regeneration failed');
+  await expect(page.locator('#regenerate-set')).toBeEnabled();
+  await expect(page.locator('#regenerate-set')).not.toHaveAttribute('aria-busy');
+  await expect(page.locator('#regenerate-set')).toHaveText('Regenerate unlocked');
+  failRegeneration = false;
+
   await expect(rows.first().locator('.set-drag-handle')).toBeDisabled();
   await rows.nth(1).locator('.set-drag-handle').dragTo(rows.nth(2));
   await expect(rows.nth(1)).toContainText('Peak');
@@ -481,9 +494,7 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
     .include('#set-track-decision-dialog')
     .withTags(['wcag2a', 'wcag2aa'])
     .analyze();
-  expect(rejectionAccessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact))).toEqual(
-    [],
-  );
+  expect(rejectionAccessibility.violations.filter((item) => ['serious', 'critical'].includes(item.impact))).toEqual([]);
   await rejectionDialog.getByRole('button', { name: 'Reject & replace' }).click();
   await expect(rejectionDialog).toBeHidden();
   await expect(rows.nth(1)).toContainText('Fresh Lift');
@@ -521,6 +532,14 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await rows.nth(1).press('Enter');
   await expect(inspector).toBeVisible();
   expect(await result.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  const undersizedActions = await result
+    .locator('button.button:visible')
+    .evaluateAll((buttons) =>
+      buttons
+        .filter((button) => button.getBoundingClientRect().height < 35)
+        .map((button) => ({ text: button.textContent.trim(), height: button.getBoundingClientRect().height })),
+    );
+  expect(undersizedActions).toEqual([]);
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const transitionDuration = await inspector.evaluate((node) => getComputedStyle(node).transitionDuration);

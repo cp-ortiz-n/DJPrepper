@@ -33,7 +33,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: #191c19;
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -55,7 +55,7 @@
   color: var(--ink);
   background: #202320;
   cursor: pointer;
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
   font-weight: 800;
   list-style: none;
 }
@@ -76,7 +76,7 @@
   border-radius: 8px;
   color: #dce7bc;
   background: #182016;
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
   font-weight: 750;
 }
 .set-running-order-workspace {
@@ -129,11 +129,11 @@
   gap: 4px 10px;
   align-items: center;
   color: var(--muted);
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
 }
 .set-track-summary strong {
   color: var(--lime);
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
 }
 .set-track-summary strong.warning {
   color: #ffb45c;
@@ -172,7 +172,7 @@
   border: 1px solid var(--line);
   color: var(--muted);
   background: #202320;
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
 }
 .set-track-inspector {
   position: fixed;
@@ -200,7 +200,7 @@
 }
 .set-track-inspector-position {
   color: var(--lime);
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -212,7 +212,7 @@
 .set-track-inspector header p {
   margin: 3px 0 0;
   color: var(--muted);
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
 }
 .close-set-inspector {
   width: 30px;
@@ -276,11 +276,11 @@
   margin-right: auto;
 }
 .set-workspace-action-bar strong {
-  font-size: 9px;
+  font-size: var(--set-type-body, 9px);
 }
 .set-workspace-action-bar span {
   color: var(--muted);
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
 }
 .set-workspace-action-bar button {
   width: auto;

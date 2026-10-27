@@ -11,6 +11,10 @@
   --bg: #0e100f;
   --control-height: 40px;
   --control-radius: 8px;
+  --type-label: 10px;
+  --type-caption: 11px;
+  --type-body: 12px;
+  --type-title: 13px;
   --status-success: #d6ff44;
   --status-warning: #e5c978;
   --status-danger: #ef9d94;

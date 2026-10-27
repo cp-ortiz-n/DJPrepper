@@ -354,7 +354,7 @@
             <fieldset class="set-track-planner"><legend>Who should choose the tracks?</legend><label><input type="radio" name="set-track-planner" value="ai" checked><span><strong>AI curated</strong><small>AI ranks and orders validated tracks. Compatibility checks still verify the result.</small></span></label><label><input type="radio" name="set-track-planner" value="deterministic"><span><strong>Rules-based</strong><small>Uses genre, BPM, key, energy, and constraints without an AI planning call.</small></span></label></fieldset>
             <input id="set-planning-mode" type="hidden" value="ai-planned">
             <p id="set-planning-summary" class="set-planning-summary">Direction: AI interpreted · Tracks: AI curated</p>
-            <button id="set-generate" type="submit">Build AI-curated set</button>
+            <button id="set-generate" type="submit" class="button primary">Build AI-curated set</button>
             <button id="set-cancel-planning" type="button" class="button secondary" hidden>Cancel planning</button>
             <p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p>
             <section id="set-planning-progress" class="set-builder-progress" role="status" aria-live="polite" hidden></section>
@@ -383,7 +383,7 @@
       <section id="set-result" class="panel set-result" hidden>
         <header class="set-result-head">
           <div class="set-workspace-title"><p class="eyebrow">GENERATED RUNNING ORDER</p><div><input id="set-result-name" class="set-result-name" type="text" maxlength="100" value="New DJ Set" aria-label="Set name" title="Edit the set name"><span id="set-workspace-state" class="set-workspace-state">Draft plan</span><span id="set-workspace-revision" class="set-workspace-revision">Unversioned draft</span></div><p id="set-result-summary"></p></div>
-          <div class="set-result-actions"><label class="set-transition-length">Transition<select id="set-transition-bars"><option value="8">8 bars</option><option value="16" selected>16 bars</option><option value="32">32 bars</option></select></label><button id="set-undo" type="button" class="button secondary" disabled>↶ Undo</button><button id="set-redo" type="button" class="button secondary" disabled>↷ Redo</button><button id="save-set" type="button">Save set</button><details class="set-export-menu"><summary>Export</summary><button id="export-set-csv" type="button" class="button secondary">Export CSV</button><button id="export-set-m3u" type="button" class="button secondary">Export M3U8</button></details></div>
+          <div class="set-result-actions"><label class="set-transition-length">Transition<select id="set-transition-bars"><option value="8">8 bars</option><option value="16" selected>16 bars</option><option value="32">32 bars</option></select></label><button id="set-undo" type="button" class="button secondary" disabled>↶ Undo</button><button id="set-redo" type="button" class="button secondary" disabled>↷ Redo</button><button id="save-set" type="button" class="button primary">Save set</button><details class="set-export-menu"><summary class="button secondary">Export</summary><button id="export-set-csv" type="button" class="button secondary">Export CSV</button><button id="export-set-m3u" type="button" class="button secondary">Export M3U8</button></details></div>
         </header>
         <p id="set-revision-comparison" class="set-revision-comparison" role="status" aria-live="polite" hidden></p>
         <section class="set-proposal-picker" aria-labelledby="set-proposal-heading">
@@ -396,7 +396,7 @@
           <summary><span><strong>Review this set</strong><small>Teach Set Builder what worked after listening.</small></span></summary>
           <div class="set-review-overall" role="group" aria-label="Overall set decision"><button type="button" data-set-decision="accept" class="button secondary">Approve running order</button><button type="button" data-set-decision="reject" class="button secondary">Needs changes</button></div>
           <label>Review notes<textarea id="set-review-notes" rows="2" maxlength="2000" placeholder="What worked, what felt wrong, or what should change next time?"></textarea></label>
-          <div class="set-review-actions"><button id="submit-set-review" type="button">Save review</button><span id="set-review-status" role="status">Review individual tracks and transitions below, then save.</span></div>
+          <div class="set-review-actions"><button id="submit-set-review" type="button" class="button primary">Save review</button><span id="set-review-status" role="status">Review individual tracks and transitions below, then save.</span></div>
           <div id="set-calibration-summary" class="set-calibration-summary"></div>
         </details>
         <div id="set-export-status" class="set-export-status"><span>Rekordbox paths will be checked before export.</span></div>
@@ -407,7 +407,7 @@
           <aside id="set-track-inspector" class="set-track-inspector" aria-labelledby="set-track-inspector-title" hidden><header><div><span class="set-track-inspector-position">Selected track</span><h3 id="set-track-inspector-title" class="set-track-inspector-title">Track details</h3><p class="set-track-inspector-artist"></p></div><button type="button" class="close-set-inspector" aria-label="Close track inspector">×</button></header><div class="set-track-inspector-content"></div></aside>
         </section>
         <div id="set-warnings" class="set-warnings"></div>
-        <nav class="set-workspace-action-bar" aria-label="Set workspace actions"><div><strong>Shape this revision</strong><span>Lock what works, then regenerate only the remaining tracks.</span></div><button id="set-compact" type="button" class="button secondary">Compact rows</button><button id="add-set-track" type="button" class="button secondary">+ Add track</button><button id="regenerate-set" type="button" class="button secondary">Regenerate unlocked</button><button id="review-set-action" type="button">Review set</button></nav>
+        <nav class="set-workspace-action-bar" aria-label="Set workspace actions"><div><strong>Shape this revision</strong><span>Lock what works, then regenerate only the remaining tracks.</span></div><button id="set-compact" type="button" class="button secondary">Compact rows</button><button id="add-set-track" type="button" class="button secondary">+ Add track</button><button id="regenerate-set" type="button" class="button secondary">Regenerate unlocked</button><button id="review-set-action" type="button" class="button primary">Review set</button></nav>
       </section>
       <dialog id="set-track-decision-dialog" class="app-dialog set-track-decision-dialog" aria-labelledby="set-track-decision-title">
         <form method="dialog">
@@ -416,7 +416,7 @@
           <fieldset class="set-decision-scope"><legend>What should Set Builder avoid?</legend><label><input type="radio" name="set-reject-scope" value="version" checked><span><b>Only this version</b><small>A remix or alternate version of the same song may still be suggested.</small></span></label><label><input type="radio" name="set-reject-scope" value="recording-family"><span><b>This song and every version</b><small>Exclude the original, remixes, edits, and alternate imports from this set.</small></span></label></fieldset>
           <p class="set-decision-guidance">Feedback is saved first. The replacement must fit the same journey, pass every hard rule, and cannot duplicate another song in the set.</p>
           <p class="set-decision-error" role="alert" aria-live="polite"></p>
-          <footer><button type="button" class="button tertiary cancel-track-rejection">Cancel</button><button type="button" class="confirm-track-rejection" data-tone="danger">Reject &amp; replace</button></footer>
+          <footer><button type="button" class="button tertiary cancel-track-rejection">Cancel</button><button type="button" class="button destructive confirm-track-rejection">Reject &amp; replace</button></footer>
         </form>
       </dialog>
     </section>

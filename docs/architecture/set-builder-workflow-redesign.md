@@ -368,6 +368,24 @@ issues, automatic replacement, and Undo/Redo in the browser workflow.
 - Compare generation time and interaction count against the current workflow
   before calling the redesign complete.
 
+### Presentation consistency pass — complete (2026-10-27)
+
+- Centralized Set Builder label, caption, body, and title sizing on the shared
+  typography tokens instead of 178 independent micro-type declarations.
+- Applied the shared four-level button hierarchy to authoring, review,
+  regeneration, rejection, alternatives, track actions, and transition editing.
+- Added one reversible async-button state owner so saves, exports, reviews,
+  regeneration, journey planning, identity inference, and transition scoring
+  expose consistent disabled, `aria-busy`, accessible-label, success, and error
+  restoration behavior.
+- Moved searchable-select presentation out of Set Builder and into the shared
+  component layer used by all workspaces.
+- Preserved musical scoring, planning payloads, recording-family enforcement,
+  and saved-set schemas.
+- Added focused unit contracts plus browser coverage for regeneration failure,
+  restored action state, minimum action height, narrow-screen overflow,
+  keyboard focus, reduced motion, dialogs, and WCAG A/AA serious findings.
+
 ## Acceptance scenarios
 
 1. Delete the loaded saved plan; the selector clears and the user returns to a
