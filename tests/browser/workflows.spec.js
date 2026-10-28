@@ -458,6 +458,10 @@ test('Set Builder compact workspace supports inspection, keyboard navigation, an
   await expect(rows).toHaveCount(2);
   await expect(rows.first()).toContainText('Opening');
   await expect(rows.nth(1)).toContainText('Peak');
+  await expect(rows.nth(1).locator('.compact-audio')).toHaveAttribute(
+    'data-src',
+    '/api/downloaded-library/tracks/702/audio',
+  );
   expect(regenerationRequest.base_plan_revision).toEqual(savedSet.planRevision);
   expect(regenerationRequest.locked_track_sections['downloaded:700']).toBeTruthy();
   await page.locator('#set-undo').click();

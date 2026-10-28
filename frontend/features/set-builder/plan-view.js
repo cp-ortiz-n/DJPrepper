@@ -11,6 +11,7 @@ import { applyExplicitSetPlanChoice } from './plan-integrity.js';
 import { compactTrackSummaryMarkup, createSetBuilderWorkspaceShell } from './workspace-shell.js';
 import { beginButtonAction } from './ui-state.js';
 import { planActionAvailability } from './view-model.js';
+import { setTrackAudioUrl } from './track-media.js';
 
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
   const { $, $$, escapeHtml } = dom;
@@ -346,9 +347,8 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         const selectionReasons = setSelectionExplanation(track, index, brief);
         const intendedGenre = intendedGenreForPosition(brief.identity, index, state.plan.length);
         const identityEvidence = trackGenreMatchEvidence(track, intendedGenre);
-        const preview = track._job?.id
-          ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
-          : '';
+        const previewSource = setTrackAudioUrl(track);
+        const preview = previewSource ? compactAudioMarkup(previewSource, track.duration_seconds, true) : '';
         const review = state.trackReviews.get(id) || {},
           metrics = track._candidateMetrics || {};
         const alternateVersionCount = recordingVersionCount(track, state.library);
@@ -553,9 +553,8 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         ? choices
             .map((choice, choiceIndex) => {
               const track = choice.track;
-              const preview = track._job?.id
-                ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
-                : '';
+              const previewSource = setTrackAudioUrl(track);
+              const preview = previewSource ? compactAudioMarkup(previewSource, track.duration_seconds, true) : '';
               return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="button secondary use-alternative">Add to set</button></article>`;
             })
             .join('')
@@ -624,9 +623,8 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         ? choices
             .map((choice, choiceIndex, items) => {
               const track = choice.track;
-              const preview = track._job?.id
-                ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
-                : '';
+              const previewSource = setTrackAudioUrl(track);
+              const preview = previewSource ? compactAudioMarkup(previewSource, track.duration_seconds, true) : '';
               const heading =
                 !choiceIndex || items[choiceIndex - 1].group !== choice.group
                   ? `<h4>${escapeHtml(choice.group)}</h4>`

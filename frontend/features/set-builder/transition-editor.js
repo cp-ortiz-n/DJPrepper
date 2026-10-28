@@ -1,6 +1,7 @@
 /** Transition scoring, preview playback, cue optimization, and editor ownership. */
 
 import { beginButtonAction } from './ui-state.js';
+import { setTrackAudioUrl } from './track-media.js';
 
 export function createSetTransitionEditor({
   state,
@@ -239,7 +240,12 @@ export function createSetTransitionEditor({
     stopTransitionPreview();
     const previous = state.plan[index - 1],
       next = state.plan[index];
-    if (!previous?._job?.id || !next?._job?.id) return;
+    const outgoingSource = setTrackAudioUrl(previous),
+      incomingSource = setTrackAudioUrl(next);
+    if (!outgoingSource || !incomingSource) {
+      notify('Mix preview could not play because one of these tracks has no available audio.', 'danger');
+      return;
+    }
     stopCompactAudio();
     document.querySelectorAll('audio').forEach((audio) => audio.pause());
     const settings = transitionSettings(index);
@@ -248,8 +254,8 @@ export function createSetTransitionEditor({
     const incomingBpm = Math.max(60, Number(next.bpm || outgoingBpm));
     const overlap = (bars * 4 * 60) / outgoingBpm;
     const lead = Math.min(6, overlap * 0.25);
-    const outgoing = new Audio(`/api/jobs/${previous._job.id}/audio/wav`);
-    const incoming = new Audio(`/api/jobs/${next._job.id}/audio/wav`);
+    const outgoing = new Audio(outgoingSource);
+    const incoming = new Audio(incomingSource);
     outgoing.preload = 'auto';
     incoming.preload = 'auto';
     incoming.volume = 0;
