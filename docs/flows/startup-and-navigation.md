@@ -24,6 +24,8 @@ embedders.
 ## Recovery rules
 
 - Startup changes interrupted jobs and operations to a recoverable state.
+- The macOS launcher compares the running Set Builder catalog schema with the
+  current package and restarts a responsive but stale backend before opening it.
 - A module-linking failure leaves the recovery banner visible with diagnostics.
 - A warm-cache reload cannot mix modules from different asset revisions.
 - Feature-load failures use shared notifications without breaking navigation.

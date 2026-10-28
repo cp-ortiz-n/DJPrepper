@@ -22,6 +22,29 @@ from audioextender.web.routes.set_builder_routes import SetBuilderRouteDependenc
 
 
 class JourneyPlannerTests(unittest.TestCase):
+    def test_catalog_version_route_reports_the_required_backend_schema(self) -> None:
+        with TemporaryDirectory() as temporary:
+            app = FastAPI()
+            app.include_router(
+                create_set_builder_router(
+                    SetBuilderRouteDependencies(
+                        catalog_cache_path=Path(temporary) / "catalog.json",
+                        ensure_catalog_current=lambda: None,
+                        write_catalog_cache=lambda: None,
+                        music_library_root=lambda: Path(temporary),
+                        safe_folder_name=lambda value: value,
+                        intention_planner=Mock(),
+                        journey_planner=Mock(),
+                        saved_sets=Mock(),
+                    )
+                )
+            )
+
+            response = TestClient(app).get("/api/set-builder/catalog-version")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"version": 11})
+
     def test_sanitizer_rebalances_sections_and_rejects_unknown_genres(self) -> None:
         result = sanitize_journey(
             {

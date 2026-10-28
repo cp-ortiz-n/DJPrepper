@@ -12,8 +12,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from audioextender.set_builder import catalog_cache as cache
 from audioextender.set_builder.brief_preparation import BriefPreparationService
-from audioextender.set_builder.catalog_cache import authoritative_catalog_vocabulary, current_catalog_payload
 from audioextender.set_builder.intention_planner import IntentionPlanner
 from audioextender.set_builder.journey_planner import JourneyPlanner
 from audioextender.set_builder.saved_sets import SavedSetService
@@ -129,7 +129,7 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
     router = APIRouter(prefix="/api/set-builder", tags=["set-builder"])
 
     def catalog_vocabulary(requested: list[Any]) -> list[dict[str, Any]]:
-        return authoritative_catalog_vocabulary(
+        return cache.authoritative_catalog_vocabulary(
             deps.catalog_cache_path,
             deps.ensure_catalog_current,
             deps.write_catalog_cache,
@@ -139,12 +139,16 @@ def create_set_builder_router(deps: SetBuilderRouteDependencies) -> APIRouter:
     @router.get("/catalog", response_model=None)
     def catalog() -> FileResponse | dict:
         """Return all latest analyzed tracks without loading full job history."""
-        current_catalog_payload(deps.catalog_cache_path, deps.ensure_catalog_current, deps.write_catalog_cache)
+        cache.current_catalog_payload(deps.catalog_cache_path, deps.ensure_catalog_current, deps.write_catalog_cache)
         return FileResponse(
             deps.catalog_cache_path,
             media_type="application/json",
             headers={"Cache-Control": "no-cache"},
         )
+
+    @router.get("/catalog-version")
+    def catalog_version() -> dict[str, int]:
+        return {"version": cache.catalog_schema_version()}
 
     @router.post("/export-preflight")
     def export_preflight(request: SetExportPreflightRequest) -> dict:

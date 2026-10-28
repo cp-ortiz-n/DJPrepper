@@ -10,14 +10,30 @@ MODEL="qwen3.5:4b"
 
 cd "$PROJECT_DIR"
 
+PYTHON="$PROJECT_DIR/.venv/bin/python"
+if [[ ! -x "$PYTHON" ]]; then
+  echo "AudioExtender's Python environment is missing."
+  echo "Create it with: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+  read "?Press Return to close…"
+  exit 1
+fi
+
 export AUDIOEXTENDER_LLM_PROVIDER="ollama"
 export OLLAMA_HOST="$OLLAMA_URL"
 export OLLAMA_SET_BUILDER_MODEL="$MODEL"
 
 if /usr/bin/curl -fsS "$APP_URL/" >/dev/null 2>&1; then
-  echo "AudioExtender is already running. Opening it now."
-  /usr/bin/open "$APP_OPEN_URL"
-  exit 0
+  EXPECTED_CATALOG_VERSION="$("$PYTHON" -c 'from audioextender.set_builder.catalog_cache import catalog_schema_version; print(catalog_schema_version())')"
+  RUNNING_CATALOG_VERSION="$(
+    /usr/bin/curl -fsS "$APP_URL/api/set-builder/catalog-version" 2>/dev/null |
+      "$PYTHON" -c 'import json, sys; print(json.load(sys.stdin).get("version", ""))' 2>/dev/null || true
+  )"
+  if [[ "$RUNNING_CATALOG_VERSION" == "$EXPECTED_CATALOG_VERSION" ]]; then
+    echo "AudioExtender is already running the current backend. Opening it now."
+    /usr/bin/open "$APP_OPEN_URL"
+    exit 0
+  fi
+  echo "AudioExtender is running an outdated backend. Restarting it now."
 fi
 
 # A process from an older checkout can keep the port open while serving a broken
@@ -70,14 +86,6 @@ fi
 if ! "$OLLAMA_BIN" list | /usr/bin/awk 'NR > 1 {print $1}' | /usr/bin/grep -Fxq "$MODEL"; then
   echo "Downloading $MODEL for the first launch…"
   "$OLLAMA_BIN" pull "$MODEL"
-fi
-
-PYTHON="$PROJECT_DIR/.venv/bin/python"
-if [[ ! -x "$PYTHON" ]]; then
-  echo "AudioExtender's Python environment is missing."
-  echo "Create it with: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
-  read "?Press Return to close…"
-  exit 1
 fi
 
 echo "Starting AudioExtender with local AI: $MODEL"

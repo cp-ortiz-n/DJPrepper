@@ -11,6 +11,11 @@ from audioextender.set_builder.candidate_retriever import SET_BUILDER_CATALOG_VE
 from audioextender.set_builder.genre_vocabulary import catalog_projection_vocabulary, normalize_genre_vocabulary
 
 
+def catalog_schema_version() -> int:
+    """Return the schema revision required by the running Set Builder."""
+    return SET_BUILDER_CATALOG_VERSION
+
+
 def build_catalog_payload(tracks: list[dict[str, Any]]) -> dict[str, Any]:
     """Add schema identity and server-owned genre vocabulary to projections."""
     return {

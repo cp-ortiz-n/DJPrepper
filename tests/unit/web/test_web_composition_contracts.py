@@ -43,12 +43,14 @@ class WebCompositionContractTests(unittest.TestCase):
     def test_public_route_inventory_is_compatible(self) -> None:
         inventory = public_route_inventory()
         self.assertIn(("POST", "/api/set-builder/prepare-brief"), inventory)
+        self.assertIn(("GET", "/api/set-builder/catalog-version"), inventory)
         self.assertIn(("DELETE", "/api/set-builder/preferences/events/{event_id}"), inventory)
         self.assertIn(("GET", "/api/settings/rekordbox-ratings"), inventory)
         self.assertIn(("POST", "/api/settings/rekordbox-ratings/preview"), inventory)
         self.assertIn(("POST", "/api/settings/rekordbox-ratings/apply"), inventory)
         self.assertIn(("DELETE", "/api/settings/rekordbox-ratings"), inventory)
         inventory.remove(("POST", "/api/set-builder/prepare-brief"))
+        inventory.remove(("GET", "/api/set-builder/catalog-version"))
         encoded = json.dumps(inventory, separators=(",", ":")).encode()
 
         self.assertEqual(len(inventory), 164)
