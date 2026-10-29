@@ -29,9 +29,11 @@ detailed genres, durable descriptors, playlist/crate identity, roles, vibes,
 key, BPM, energy, vocals, and timing. Multiple keywords are ranked across those
 sources; **Require every keyword** turns the query into a narrow intersection.
 Every result shows the evidence that matched, including the source playlist,
-and retains shared seekable playback. The catalog browser is normal document
-flow—not a fixed overlay—so it cannot cover the running order or workspace
-controls at desktop or mobile widths.
+and retains shared seekable playback. Manual mode reuses the canonical running-
+order editor in a sticky, independently scrollable **Current set** rail beside
+the catalog; it does not create a second plan view. At narrow widths the rail
+moves above the catalog, receives a bounded height, and remains collapsible, so
+it cannot cover the catalog or push search results below an unbounded track list.
 
 Adding a manual result uses the same recording-family boundary as generated
 plans. Once one version occupies the running order, every other original,

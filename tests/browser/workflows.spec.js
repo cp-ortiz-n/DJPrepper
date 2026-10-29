@@ -988,7 +988,20 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   await page.locator('#set-generate').click();
 
   const workspace = page.locator('#set-manual-curation-workspace');
+  const runningOrderPanel = page.locator('#set-manual-running-order-panel');
   await expect(workspace).toBeVisible();
+  await expect(runningOrderPanel).toBeVisible();
+  await expect(page.locator('#set-manual-running-order-count')).toHaveText('0 tracks');
+  await expect(page.locator('#set-manual-running-order-slot .set-running-order-workspace')).toHaveCount(1);
+  const desktopLayout = await page.evaluate(() => {
+    const catalog = document.querySelector('#set-manual-curation-workspace').getBoundingClientRect();
+    const order = document.querySelector('#set-manual-running-order-panel').getBoundingClientRect();
+    return {
+      orderIsSticky: getComputedStyle(document.querySelector('#set-manual-running-order-panel')).position,
+      orderIsBesideCatalog: order.left > catalog.left && Math.abs(order.top - catalog.top) <= 2,
+    };
+  });
+  expect(desktopLayout).toEqual({ orderIsSticky: 'sticky', orderIsBesideCatalog: true });
   await expect(page.locator('#set-generate')).toHaveText('Go to catalog');
   await expect(page.locator('#set-manual-search')).toBeFocused();
   await expect(workspace).toContainText('Your catalog is ready');
@@ -1000,6 +1013,7 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   await workspace.locator('.compact-audio-play').first().click();
   await workspace.getByRole('button', { name: 'Add at 1' }).click();
   await expect(page.locator('#set-track-list')).toContainText('Fuego Ritual');
+  await expect(page.locator('#set-manual-running-order-count')).toHaveText('1 track');
   await expect(workspace.getByRole('button', { name: 'Song already used' })).toBeDisabled();
   await page.locator('#save-set').click();
   await expect(page.locator('#set-builder-message')).toContainText('Set saved durably');
@@ -1014,6 +1028,15 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   await expect(page.locator('#set-track-list')).toContainText('Fuego Ritual');
 
   await page.setViewportSize({ width: 390, height: 844 });
+  const mobileLayout = await page.evaluate(() => {
+    const catalog = document.querySelector('#set-manual-curation-workspace').getBoundingClientRect();
+    const order = document.querySelector('#set-manual-running-order-panel').getBoundingClientRect();
+    const styles = getComputedStyle(document.querySelector('#set-manual-running-order-panel'));
+    return { orderAboveCatalog: order.top < catalog.top, overflow: styles.overflowY, maxHeight: styles.maxHeight };
+  });
+  expect(mobileLayout.orderAboveCatalog).toBe(true);
+  expect(mobileLayout.overflow).toBe('auto');
+  expect(mobileLayout.maxHeight).not.toBe('none');
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   const resultCards = page.locator('#set-manual-curation-workspace .set-manual-result');

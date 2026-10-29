@@ -117,7 +117,27 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     setPlanningReceipt,
   } = lifecycle;
   const host = () => $('#set-manual-curation-workspace');
+  const runningOrder = () => document.querySelector('.set-running-order-workspace');
   let searchTimer = 0;
+
+  function presentRunningOrder(active) {
+    const layout = $('#set-manual-curation-layout');
+    const order = runningOrder();
+    if (!layout || !order) return;
+    if (active) {
+      $('#set-manual-running-order-slot')?.append(order);
+      layout.hidden = false;
+    } else {
+      const anchor = $('#set-running-order-anchor');
+      if (anchor && order.previousElementSibling !== anchor) anchor.after(order);
+      layout.hidden = true;
+    }
+  }
+
+  function refreshRunningOrderCount() {
+    const count = $('#set-manual-running-order-count');
+    if (count) count.textContent = `${state.plan.length} track${state.plan.length === 1 ? '' : 's'}`;
+  }
 
   function searchOptions(track) {
     const energy = energyBand(songEnergy(track));
@@ -281,6 +301,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
 
   function syncPlanShell() {
     const empty = !state.plan.length;
+    refreshRunningOrderCount();
     $('#set-result').classList.toggle('manual-curation-empty', empty);
     const selectors = ['#set-health', '#set-selection-summary', '#set-review-panel', '.set-journey', '#set-export-status'];
     selectors.forEach((selector) => {
@@ -302,6 +323,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     const root = host();
     if (!root) return;
     root.hidden = !state.manualCurationActive;
+    presentRunningOrder(state.manualCurationActive);
     if (root.hidden) {
       $('.set-workspace-title .eyebrow').textContent = 'GENERATED RUNNING ORDER';
       $('.set-workspace-action-bar strong').textContent = 'Shape this revision';

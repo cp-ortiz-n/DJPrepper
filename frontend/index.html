@@ -387,7 +387,13 @@
           <div class="set-result-actions"><label class="set-transition-length">Transition<select id="set-transition-bars"><option value="8">8 bars</option><option value="16" selected>16 bars</option><option value="32">32 bars</option></select></label><button id="set-undo" type="button" class="button secondary" disabled>↶ Undo</button><button id="set-redo" type="button" class="button secondary" disabled>↷ Redo</button><button id="save-set" type="button" class="button primary">Save set</button><details class="set-export-menu"><summary class="button secondary">Export</summary><button id="export-set-csv" type="button" class="button secondary">Export CSV</button><button id="export-set-m3u" type="button" class="button secondary">Export M3U8</button></details></div>
         </header>
         <p id="set-revision-comparison" class="set-revision-comparison" role="status" aria-live="polite" hidden></p>
-        <section id="set-manual-curation-workspace" class="set-manual-curation-workspace" aria-labelledby="set-manual-curation-heading" hidden></section>
+        <div id="set-manual-curation-layout" class="set-manual-curation-layout" hidden>
+          <section id="set-manual-curation-workspace" class="set-manual-curation-workspace" aria-labelledby="set-manual-curation-heading" hidden></section>
+          <details id="set-manual-running-order-panel" class="set-manual-running-order-panel" open>
+            <summary><span><small>CURRENT SET</small><strong>Running order</strong></span><b id="set-manual-running-order-count">0 tracks</b></summary>
+            <div id="set-manual-running-order-slot" class="set-manual-running-order-slot"></div>
+          </details>
+        </div>
         <section class="set-proposal-picker" aria-labelledby="set-proposal-heading">
           <div><p class="eyebrow">THREE DIRECTIONS</p><h3 id="set-proposal-heading">Choose how the set should feel</h3><p>Switching directions keeps edits made to each version.</p></div>
           <div id="set-proposals" class="set-proposals" role="radiogroup" aria-label="Generated set directions"></div>
@@ -404,6 +410,7 @@
         <div id="set-export-status" class="set-export-status"><span>Rekordbox paths will be checked before export.</span></div>
         <div id="set-add-track-panel-host"></div>
         <details class="set-journey" open><summary>Energy and BPM journey</summary><div class="set-curves"><div><span>Energy journey</span><svg id="set-energy-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div><div><span>BPM journey</span><svg id="set-bpm-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div></div></details>
+        <div id="set-running-order-anchor" aria-hidden="true"></div>
         <section class="set-running-order-workspace" aria-label="Set running order editor">
           <div class="set-running-order-main"><div class="set-table-head"><span>Order</span><span>Track</span><span>Genre and tempo</span><span>Transition</span><span>Quick actions</span></div><div id="set-track-list" class="set-track-list" role="list" aria-label="Tracks in running order"></div></div>
           <aside id="set-track-inspector" class="set-track-inspector" aria-labelledby="set-track-inspector-title" hidden><header><div><span class="set-track-inspector-position">Selected track</span><h3 id="set-track-inspector-title" class="set-track-inspector-title">Track details</h3><p class="set-track-inspector-artist"></p></div><button type="button" class="close-set-inspector" aria-label="Close track inspector">×</button></header><div class="set-track-inspector-content"></div></aside>

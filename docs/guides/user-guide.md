@@ -130,6 +130,11 @@ every keyword** for a narrower intersection. Preview any result with the same
 seekable player used in the running order, then add it at the next position.
 **Suggest next** ranks unused tracks against the current last track, while
 **Check transitions** opens mix health after at least two tracks exist.
+The live running order stays in a sticky **Current set** rail beside the catalog,
+so you can preview and add tracks without losing sight of the set you are shaping.
+The rail scrolls independently and can be collapsed. On smaller screens it moves
+above the catalog with a bounded height, keeping both the current set and search
+results close at hand.
 
 Only one version of a song family may occupy the set. After adding an original,
 remix, edit, or duplicate import, other versions are labeled **Song already
