@@ -1235,8 +1235,10 @@ test('brief authoring and track planning remain independent choices', () => {
   assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.AI), 'ai-planned');
   assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.DETERMINISTIC), 'interpreted');
   assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.DETERMINISTIC), 'classic');
+  assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.CURATE, SET_TRACK_PLANNERS.MANUAL), 'manual-curation');
   assert.match(setBriefModeMessage(SET_BRIEF_MODES.AI), /Local AI/);
   assert.match(setBriefModeMessage(SET_BRIEF_MODES.MANUAL), /yourself/);
+  assert.match(setBriefModeMessage(SET_BRIEF_MODES.CURATE), /empty running order/);
 });
 
 test('AI-authored briefs ignore hidden manual genre filters while manual briefs retain them', () => {
@@ -1254,6 +1256,12 @@ test('AI-authored briefs ignore hidden manual genre filters while manual briefs 
     weights: {},
   });
   assert.deepEqual(resolveStructuredGenreFilters(SET_BRIEF_MODES.MANUAL, filters), filters);
+  assert.deepEqual(resolveStructuredGenreFilters(SET_BRIEF_MODES.CURATE, filters), {
+    genres: [],
+    detailedGenres: [],
+    excludedGenres: [],
+    weights: {},
+  });
 });
 
 test('genre eligibility stays consistent across every authoring and planner combination', () => {
@@ -1360,6 +1368,10 @@ test('saved planning modes migrate into the two-part workflow without losing int
     authoringMode: SET_BRIEF_MODES.AI,
     trackPlanner: SET_TRACK_PLANNERS.AI,
   });
+  assert.deepEqual(inferSetWorkflow('manual-curation'), {
+    authoringMode: SET_BRIEF_MODES.CURATE,
+    trackPlanner: SET_TRACK_PLANNERS.MANUAL,
+  });
 });
 
 test('planning presentation keeps brief provenance separate from track selection', () => {
@@ -1371,6 +1383,10 @@ test('planning presentation keeps brief provenance separate from track selection
     actionLabel: 'Build rules-based set',
     summary: 'Direction: Manual brief · Tracks: Rules-based',
   });
+  assert.deepEqual(setPlanningPresentation(SET_BRIEF_MODES.CURATE, SET_TRACK_PLANNERS.MANUAL), {
+    actionLabel: 'Start curating',
+    summary: 'Direction: Track by track · Tracks: Chosen by you',
+  });
 });
 
 test('workflow controller updates mode surfaces without clearing authored values', () => {
@@ -1378,6 +1394,7 @@ test('workflow controller updates mode surfaces without clearing authored values
     ['#set-builder-form', { dataset: {} }],
     ['#set-ai-brief', { hidden: false }],
     ['#set-manual-brief', { hidden: true }],
+    ['#set-track-planner', { hidden: false }],
     ['#set-brief-mode-help', { textContent: '' }],
     ['#set-planning-mode', { value: '' }],
     ['#set-planning-summary', { textContent: '' }],
@@ -1387,6 +1404,7 @@ test('workflow controller updates mode surfaces without clearing authored values
   const briefInputs = [
     { value: 'ai', checked: true },
     { value: 'manual', checked: false },
+    { value: 'curate', checked: false },
   ];
   const plannerInputs = [
     { value: 'ai', checked: true },

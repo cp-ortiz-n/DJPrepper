@@ -63,6 +63,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     pushSetHistory,
     recordPreference,
     regenerateUnlocked,
+    renderManualCuration,
     renderSetProposals,
     setBrief,
     setPlanSnapshot,
@@ -260,25 +261,28 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       `<p class="set-selection-overview">${state.plan.length} songs chosen by allocating the requested genre balance first, then ranking candidates for musical identity, energy shape, BPM and key compatibility, vocal spacing, timing, and transition health.${mustPlays.length ? ` ${mustPlays.length} must-play track${mustPlays.length === 1 ? ' was' : 's were'} preserved.` : ''}</p>${receiptRows}${intentionRows}<div class="set-selection-groups">${genreRows}${fallback}</div><p class="set-selection-note">Open “Why this track” on any song for its position-specific explanation. Counts may differ only when a locked, required, manually added, or unavailable genre track prevents the requested allocation. Any expansion beyond direct matches is disclosed above.</p>`;
   }
   function renderSetPlan() {
-    const result = $('#set-result');
+    const result = $('#set-result'), manualCuration = Boolean(state.manualCurationActive);
     stopCompactAudio();
     workspaceShell.beforeRender();
-    result.hidden = !state.plan.length;
-    if (!state.plan.length) return;
+    result.hidden = !state.plan.length && !manualCuration;
+    result.classList.toggle('manual-curation', manualCuration);
+    if (result.hidden) return;
     closeTransitionEditors();
     result.classList.toggle('compact-planning', state.compactMode);
     $('#set-compact').textContent = state.compactMode ? 'Comfortable view' : 'Compact view';
     updateSetHistoryButtons();
+    renderManualCuration?.();
+    const brief = setBrief();
+    const resultName = $('#set-result-name');
+    if (document.activeElement !== resultName) resultName.value = brief.name;
+    if (!state.plan.length) return;
     const activeProposal = state.proposals.find((proposal) => proposal.id === state.activeProposal);
     if (activeProposal) {
       activeProposal.snapshot = setPlanSnapshot();
       activeProposal.health = setHealth();
     }
     renderSetProposals();
-    const brief = setBrief();
     const runtime = setRuntime();
-    const resultName = $('#set-result-name');
-    if (document.activeElement !== resultName) resultName.value = brief.name;
     const genreSummary = (brief.detailedGenres || []).length
       ? brief.detailedGenres.join(' + ')
       : brief.genres.length

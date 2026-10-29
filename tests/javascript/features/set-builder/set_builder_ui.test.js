@@ -56,6 +56,7 @@ test('Set Builder presentation uses shared action hierarchy and readable type to
     'frontend/styles/features/set-builder/60-set-builder-brief.css',
     'frontend/styles/features/set-builder/61-set-builder-workspace.css',
     'frontend/styles/features/set-builder/62-set-builder-shell.css',
+    'frontend/styles/features/set-builder/63-set-builder-manual-curation.css',
   ].map((path) => readFileSync(path, 'utf8'));
 
   for (const id of ['set-generate', 'save-set', 'submit-set-review', 'review-set-action']) {

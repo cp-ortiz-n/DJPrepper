@@ -64,6 +64,20 @@ drawer. Editing them marks the direction as changed and shows one explicit
 **Update generated set** action. A track rerun must not call intention
 interpretation or journey planning again unless the direction itself changed.
 
+The entry surface also exposes **Curate track by track** as a distinct authoring
+mode. It creates an empty running order and delegates catalog browsing to
+`manual-curation.js`. This mode does not manufacture a journey or overload the
+configured-journey path. `authoringMode` remains independent from generated
+track-planner selection, and durable records identify the path with
+`manual-curation`.
+
+Manual catalog retrieval is evidence-driven instead of genre-only. The search
+index composes title, artist, genres, durable descriptors, playlist identity,
+browser recovery tags, musical roles, and audio profiles. It does not rewrite
+canonical genres or duplicate candidate/recording policy. Explicit insertion
+passes through the shared recording-family integrity boundary before the plan
+is rendered or persisted.
+
 ### 2. Generated-set workspace
 
 After generation, replace the long form with a workspace containing:

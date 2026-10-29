@@ -267,6 +267,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     restoreSavedSetIdentity(state, record);
     $('#saved-set-select').value = record.id;
     const savedWorkflow = inferSetWorkflow(record.planningMode, Boolean(savedIdentity.text));
+    state.manualCurationActive = savedWorkflow.authoringMode === 'curate';
     $$('[name="set-track-planner"]').forEach((input) => {
       input.checked = input.value === savedWorkflow.trackPlanner;
     });

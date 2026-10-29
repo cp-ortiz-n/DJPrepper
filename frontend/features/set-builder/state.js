@@ -28,6 +28,9 @@ export function createSetBuilderStore({ storage = globalThis.localStorage, creat
     compactMode: storage?.getItem('set-builder-compact') === 'true',
     transitionSettings: {},
     trackReviews: new Map(),
+    manualCurationActive: false,
+    manualSearchQuery: '',
+    manualSearchRequireAll: false,
   };
 }
 
@@ -110,5 +113,8 @@ export function resetSetBuilderWorkspace(store, { createId = createSetBuilderId 
   store.future = [];
   store.transitionSettings = {};
   store.trackReviews?.clear();
+  store.manualCurationActive = false;
+  store.manualSearchQuery = '';
+  store.manualSearchRequireAll = false;
   return store;
 }

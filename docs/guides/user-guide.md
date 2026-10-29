@@ -98,9 +98,10 @@ stops and names the scarce section instead of silently filling it with another
 genre. Edit that section, enable related genres, or analyze and retag additional
 matching tracks, then build again.
 
-Set Builder separates two decisions. First, choose **Describe what I want** to
-have Local AI turn natural language into an editable brief, or **Build manually**
-to configure that direction yourself. Then choose **AI curated** to have the
+Set Builder separates direction authoring from track selection. Choose
+**Describe what I want** to have Local AI turn natural language into an editable
+brief, or **Configure the journey** to define genres, energy, flow, and
+constraints yourself. Then choose **AI curated** to have the
 configured model rank and order a bounded catalog shortlist, or **Rules-based**
 to use local genre, BPM, key, energy, and constraint scoring only. The summary
 above the build action always shows both choices. AI-curated results are still
@@ -119,6 +120,23 @@ disclosure, and saved sets retain the planning mode, provider/model, validation
 warnings, evaluation, fallback reason, journey, and per-track selection reasons.
 Planning jobs persist locally; an app restart marks interrupted work as safely
 retryable instead of losing or silently applying it.
+
+Choose **Curate track by track** when you want to build from an empty running
+order. The catalog search is not limited to genre: enter an artist, title,
+playlist/crate name, descriptor, role, vibe, detailed genre, audio profile, or
+several keywords. Results rank all matching identity evidence and show the
+specific playlist, tag, genre, or other source that matched. Turn on **Require
+every keyword** for a narrower intersection. Preview any result with the same
+seekable player used in the running order, then add it at the next position.
+**Suggest next** ranks unused tracks against the current last track, while
+**Check transitions** opens mix health after at least two tracks exist.
+
+Only one version of a song family may occupy the set. After adding an original,
+remix, edit, or duplicate import, other versions are labeled **Song already
+used** in the catalog browser. Use **Alternatives** on the running-order row to
+swap versions without creating a duplicate. Manual sets keep the normal
+drag/reorder, Undo/Redo, transition editing, save/load, review, and export
+behavior.
 
 After a plan exists, use **Lock** on any track that must stay, then choose
 **Regenerate unlocked** in the persistent workspace bar. Set Builder reuses the

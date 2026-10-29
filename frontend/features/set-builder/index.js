@@ -118,25 +118,15 @@ export function createSetBuilderFeature({
     restore: (snapshot) => restoreSetSnapshot(snapshot, false),
     render: () => renderSetPlan(),
   });
-  function identityStore() {
-    try {
-      return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY) || '{}');
-    } catch (_) {
-      return {};
-    }
-  }
+  const identityPersistence = createTrackIdentityStore({
+    storage: localStorage, storageKey: SET_IDENTITY_STORAGE_KEY, trackId: setTrackId, parseTerms: parseIdentityTerms,
+  });
+  const identityStore = identityPersistence.load;
   function intentionVocabulary() {
     return mergeCatalogGenreVocabulary(state.catalogVocabulary, state.library);
   }
-  function manualTrackIdentity(track) {
-    return identityStore()[setTrackId(track)] || [];
-  }
-  function saveManualTrackIdentity(track, terms) {
-    const store = identityStore();
-    store[setTrackId(track)] = parseIdentityTerms(terms);
-    localStorage.setItem(SET_IDENTITY_STORAGE_KEY, JSON.stringify(store));
-    track._manualIdentity = store[setTrackId(track)];
-  }
+  const manualTrackIdentity = identityPersistence.terms;
+  const saveManualTrackIdentity = identityPersistence.save;
   function trackIdentity(track) {
     return inferredTrackIdentity(track, track._manualIdentity || manualTrackIdentity(track));
   }
@@ -544,7 +534,7 @@ export function createSetBuilderFeature({
   function redoSetEdit() {
     if (editCommands.redo()) updateSetHistoryButtons();
   }
-  let transitionEditor, planningSession, planView, trackDecisions;
+  let transitionEditor, planningSession, planView, trackDecisions, manualCuration;
   const renderSetPlan = () => planView?.renderSetPlan();
   const feedbackController = createSetBuilderFeedback({
     state,
@@ -733,6 +723,7 @@ export function createSetBuilderFeature({
       pushSetHistory,
       recordPreference,
       regenerateUnlocked,
+      renderManualCuration: () => manualCuration?.render(),
       renderSetProposals,
       setBrief,
       setPlanSnapshot,
@@ -741,6 +732,12 @@ export function createSetBuilderFeature({
     review: { ...trackDecisions, transitionReviewDraft },
   });
   const { addSetTrack, renderSetRules } = planView;
+  manualCuration = createManualCurationController({
+    state, dom: { $, escapeHtml }, ui: { bindCompactAudio, compactAudioMarkup },
+    music: { energyBand, formatLibraryKey, libraryRoles, songEnergy, timingProfile, vocalProfile: setVocalProfile },
+    policy: { setCandidateScore, setRecordingKey, setTrackId, trackIdentity },
+    lifecycle: { advancePlanRevision: () => advanceSetPlanRevision(state), confirmAction, pushSetHistory, renderSetPlan, resetWorkspace: () => resetSetBuilderWorkspace(state), setBrief, setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt) },
+  });
   const savedSetController = createSavedSetController({
     state,
     dom: { $, $$, option, escapeHtml, notify },
@@ -891,7 +888,7 @@ export function createSetBuilderFeature({
     renderExcludedSetGenres();
     renderSavedSets();
     renderSetRules();
-    if (state.plan.length) renderSetPlan();
+    if (state.plan.length || state.manualCurationActive) renderSetPlan();
   }
   function bindSetBuilder() {
     if (state.bound) return;
@@ -905,8 +902,10 @@ export function createSetBuilderFeature({
         mode = workflow.syncPlanningMode();
       const restoreAction = beginButtonAction(button, 'Building set…');
       try {
+        if (briefMode === SET_BRIEF_MODES.CURATE) return void (await manualCuration.start());
+        state.manualCurationActive = false;
         if (briefMode === SET_BRIEF_MODES.AI && !intentionText) {
-          throw new Error('Describe the set you want, or switch to Build manually.');
+          throw new Error('Describe the set you want, or switch to Configure the journey.');
         }
         if (
           briefMode === SET_BRIEF_MODES.AI &&
@@ -1123,13 +1122,15 @@ import { createClassicSetPlanner, optimizePlanOrder } from './classic-planner.js
 import { createSetEditCommands } from './commands.js';
 import { createSetBuilderFeedback } from './feedback.js';
 import { createSetPlanView } from './plan-view.js';
+import { createManualCurationController } from './manual-curation.js';
 import { createSetPlanningSession } from './planning-session.js';
 import { requireUniqueSetPlan } from './plan-integrity.js';
 import { createSavedSetController } from './saved-sets.js';
-import { advanceSetPlanRevision, createSetBuilderStore, restoreSetPlan, snapshotSetPlan } from './state.js';
+import { advanceSetPlanRevision, createSetBuilderStore, resetSetBuilderWorkspace, restoreSetPlan, snapshotSetPlan } from './state.js';
 import { createTrackDecisionWorkflow } from './track-decisions.js';
 import { createSetTransitionEditor } from './transition-editor.js';
 import { createSetBuilderResetController } from './workspace-reset.js';
+import { createTrackIdentityStore } from './track-identity-store.js';
 import { useFrontendServices } from '../../core/frontend-services.js';
 import {
   SET_PROPOSAL_STRATEGIES,
@@ -1141,10 +1142,5 @@ import {
   journeyEvidenceLabel,
   setProposalMarkup,
 } from './view-model.js';
-export {
-  SET_PROPOSAL_STRATEGIES,
-  intentionProviderView,
-  journeyDurationStatus,
-  journeyEnergyRange,
-} from './view-model.js';
+export { SET_PROPOSAL_STRATEGIES, intentionProviderView, journeyDurationStatus, journeyEnergyRange } from './view-model.js';
 export { createSetBuilderStore, createSetBuilderStore as createSetBuilderState } from './state.js';

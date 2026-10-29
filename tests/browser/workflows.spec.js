@@ -603,7 +603,7 @@ test('Set Builder keeps brief authoring separate from track planning', async ({ 
   expect(plannerWidths.every((width) => width >= 220)).toBe(true);
   await intention.fill('A melodic Latin warm-up that grows into techno.');
 
-  await page.getByText('Build manually', { exact: true }).click();
+  await page.getByText('Configure the journey', { exact: true }).click();
   await expect(page.locator('#set-ai-brief')).toBeHidden();
   await expect(page.locator('#set-manual-brief')).toBeVisible();
   await expect(page.locator('#set-planning-mode')).toHaveValue('ai-planned');
@@ -933,6 +933,88 @@ test('Set Builder keeps a warmup-only genre out of the persistent journey', asyn
   await expect(page.locator('.journey-summary-genres')).toHaveText(['bachata', 'salsa', 'salsa']);
   await expect(page.locator('#set-journey-confirmation')).toContainText('Adjusted');
   await expect(page.locator('#set-journey-total')).toContainText('100%');
+});
+
+test('Set Builder manual curation searches identity evidence and stays responsive', async ({ page }) => {
+  await page.route(
+    (url) => url.pathname === '/api/set-builder/catalog',
+    (route) =>
+      route.fulfill({
+        json: {
+          genre_vocabulary: [],
+          tracks: [
+            {
+              downloaded_id: 801,
+              genre: 'Electronic / Techno',
+              detailed_genre: 'Driving Techno',
+              descriptors: [{ category: 'percussion', value: 'Latin percussion' }],
+              playlist_identity: [{ source: 'rekordbox', value: 'Techno_Latino' }],
+              analysis: {
+                source_name: 'Fuego Ritual.wav',
+                artist: 'Luna Roja',
+                bpm: 128,
+                key: 'Am',
+                energy: 0.82,
+                duration_seconds: 260,
+              },
+              job: { id: 801, config_json: '{}', library_path: '/tmp/Fuego Ritual.wav' },
+            },
+            {
+              downloaded_id: 802,
+              genre: 'Disco & Funk',
+              detailed_genre: 'Classic Disco',
+              descriptors: [{ category: 'mood', value: 'feel good' }],
+              playlist_identity: [{ source: 'rekordbox', value: 'Saturday_Disco' }],
+              analysis: {
+                source_name: 'Mirror Ball.wav',
+                artist: 'Studio Band',
+                bpm: 122,
+                key: 'C',
+                energy: 0.68,
+                duration_seconds: 240,
+              },
+              job: { id: 802, config_json: '{}', library_path: '/tmp/Mirror Ball.wav' },
+            },
+          ],
+        },
+      }),
+  );
+  await page.reload();
+  await openView(page, 'Set Builder');
+  await page.getByText('Curate track by track', { exact: true }).click();
+  await expect(page.locator('#set-track-planner')).toBeHidden();
+  await expect(page.locator('#set-generate')).toHaveText('Start curating');
+  await page.locator('#set-name').fill('Manual Identity Browser Test');
+  await page.locator('#set-generate').click();
+
+  const workspace = page.locator('#set-manual-curation-workspace');
+  await expect(workspace).toBeVisible();
+  await expect(page.locator('#set-track-list')).toContainText('running order is empty');
+  await page.locator('#set-manual-search').fill('techno latino percussion');
+  await expect(workspace).toContainText('Fuego Ritual');
+  await expect(workspace).toContainText('Playlist · Techno_Latino');
+  await expect(workspace).toContainText('Tag · percussion · Latin percussion');
+  await workspace.locator('.compact-audio-play').first().click();
+  await workspace.getByRole('button', { name: 'Add at 1' }).click();
+  await expect(page.locator('#set-track-list')).toContainText('Fuego Ritual');
+  await expect(workspace.getByRole('button', { name: 'Song already used' })).toBeDisabled();
+  await page.locator('#save-set').click();
+  await expect(page.locator('#set-builder-message')).toContainText('Set saved durably');
+  const savedManualId = await page.locator('#saved-set-select').inputValue();
+  await expect(page.locator(`#saved-set-select option[value="${savedManualId}"]`)).toHaveCount(1);
+  await page.locator('#saved-set-select').evaluate((select, value) => {
+    select.value = value;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }, savedManualId);
+  await page.locator('#load-set').click();
+  await expect(page.locator('#set-manual-curation-workspace')).toBeVisible();
+  await expect(page.locator('#set-track-list')).toContainText('Fuego Ritual');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  const resultCards = page.locator('#set-manual-curation-workspace .set-manual-result');
+  await expect(resultCards).toHaveCount(1);
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {

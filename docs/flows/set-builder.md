@@ -1,19 +1,20 @@
 # Set Builder flow
 
-Set Builder turns a natural-language intention or manual constraints into an
-editable, validated running order. AI can propose; catalog safety, recording
-identity, required tracks, and final validation remain deterministic authority.
+Set Builder supports interpreted briefs, configured journeys, and direct
+track-by-track curation. AI can propose; catalog safety, recording identity,
+required tracks, and final validation remain deterministic authority.
 
 ![Set Builder flowchart](diagrams/set-builder.svg)
 
 ## Authoring paths
 
-| Path                 | What the user controls                                 | Planning result                                       |
-| -------------------- | ------------------------------------------------------ | ----------------------------------------------------- |
-| Describe what I want | Intention text, then the interpreted brief and journey | AI-assisted interpretation with editable output       |
-| Build manually       | Genres, energy, journey, constraints, and track rules  | Direct structured brief with the same validation path |
+| Path                  | What the user controls                                     | Planning result                                       |
+| --------------------- | ---------------------------------------------------------- | ----------------------------------------------------- |
+| Describe what I want  | Intention text, then the interpreted brief and journey     | AI-assisted interpretation with editable output       |
+| Configure the journey | Genres, energy, journey, constraints, and track rules      | Direct structured brief with the same validation path |
+| Curate track by track | Every selected track and its position in the running order | Empty workspace filled directly from the catalog      |
 
-Both paths produce the same planning request. The browser never sends the full
+The first two paths produce the same planning request. The browser never sends the full
 database to a model; it sends a bounded set of validated catalog candidates.
 The catalog response also carries a server-built genre vocabulary covering
 canonical genres, detailed aliases, playlist identities, and cultural
@@ -21,6 +22,24 @@ descriptors. Brief endpoints prefer this current server vocabulary over a stale
 browser copy, and the browser merges the same authority into its local policy.
 Restarting after a catalog-schema revision rebuilds this projection
 automatically; audio analysis does not need to be rerun.
+
+Track-by-track curation bypasses plan generation but not plan integrity. Its
+inline catalog searches the complete track identity: title, artist, parent and
+detailed genres, durable descriptors, playlist/crate identity, roles, vibes,
+key, BPM, energy, vocals, and timing. Multiple keywords are ranked across those
+sources; **Require every keyword** turns the query into a narrow intersection.
+Every result shows the evidence that matched, including the source playlist,
+and retains shared seekable playback. The catalog browser is normal document
+flow—not a fixed overlay—so it cannot cover the running order or workspace
+controls at desktop or mobile widths.
+
+Adding a manual result uses the same recording-family boundary as generated
+plans. Once one version occupies the running order, every other original,
+remix, edit, or duplicate import in that song family is marked unavailable.
+Those versions remain reachable through the existing explicit Alternatives
+workflow. Reorder, Undo/Redo, transition health, review, save/load, and export
+continue through their existing owners. The persisted compatibility value is
+`manual-curation`; loading it restores the same authoring workspace.
 
 An exact genre request is strict by default. For example, `Latin Techno` may
 change energy, character, and purpose across sections, but it cannot silently
@@ -76,9 +95,10 @@ Track selection is a separate decision from brief authoring:
 | --------------- | ------------------------------------------------------------------------------- |
 | AI curated      | AI ranks and orders a bounded candidate pool; deterministic validation follows  |
 | Rules-based     | Local genre, BPM, key, energy, and constraint scoring chooses and orders tracks |
+| Chosen by you   | The DJ searches identity evidence, previews audio, and inserts each track         |
 
 The interface presents these two choices directly. Legacy saved-set values
-(`ai-planned`, `interpreted`, and `classic`) remain an internal compatibility
+(`ai-planned`, `interpreted`, `classic`, and `manual-curation`) remain an internal compatibility
 contract and are migrated into the two-part workflow when a plan is loaded.
 
 ## Planning owners
@@ -92,6 +112,8 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 | `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity |
 | Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                         |
 | Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                          |
+| `manual-curation.js`                                              | Search catalog identity evidence and insert explicit track choices               |
+| `track-identity-store.js`                                         | Recover browser-only identity terms without owning catalog descriptors           |
 | `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt               |
 
 ## Revision and regeneration rules
