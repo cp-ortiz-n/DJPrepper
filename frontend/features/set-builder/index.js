@@ -948,6 +948,10 @@ export function createSetBuilderFeature({
         progressView.finishTrackPlanning();
         restoreAction();
         workflow.syncPlanningMode();
+        if (state.manualCurationActive && workflow.briefMode() === SET_BRIEF_MODES.CURATE) {
+          button.textContent = 'Go to catalog';
+          button.setAttribute('aria-label', 'Go to manual catalog');
+        }
         journeyReview.syncBuildAvailability();
         $('#set-cancel-planning').hidden = true;
       }

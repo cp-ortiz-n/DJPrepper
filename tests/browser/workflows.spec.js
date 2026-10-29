@@ -989,6 +989,9 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
 
   const workspace = page.locator('#set-manual-curation-workspace');
   await expect(workspace).toBeVisible();
+  await expect(page.locator('#set-generate')).toHaveText('Go to catalog');
+  await expect(page.locator('#set-manual-search')).toBeFocused();
+  await expect(workspace).toContainText('Your catalog is ready');
   await expect(page.locator('#set-track-list')).toContainText('running order is empty');
   await page.locator('#set-manual-search').fill('techno latino percussion');
   await expect(workspace).toContainText('Fuego Ritual');

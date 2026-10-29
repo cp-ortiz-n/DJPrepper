@@ -13,6 +13,7 @@ const SEARCH_WEIGHTS = Object.freeze({
   role: 14,
   metadata: 8,
 });
+const RESULT_LIMIT = 12;
 
 export function normalizeManualSearchText(value) {
   return String(value || '')
@@ -116,6 +117,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     setPlanningReceipt,
   } = lifecycle;
   const host = () => $('#set-manual-curation-workspace');
+  let searchTimer = 0;
 
   function searchOptions(track) {
     const energy = energyBand(songEnergy(track));
@@ -144,12 +146,25 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
 
   function results() {
     const query = state.manualSearchQuery;
-    return state.library
+    if (!query.trim() && !state.manualSuggestionsRequested) return { idle: true, items: [], total: 0 };
+    const matches = state.library
       .map((track) => ({ ...scoreManualTrackSearch(track, query, searchOptions(track)), track }))
-      .filter((result) => result.matched)
+      .filter((result) => result.matched);
+    const total = matches.length;
+    if (!query.trim()) {
+      const items = matches
+        .map((result) => ({ ...result, fit: recommendationScore(result.track) }))
+        .sort((left, right) => right.fit - left.fit)
+        .slice(0, RESULT_LIMIT);
+      return { idle: false, items, total };
+    }
+    const items = matches
+      .sort((left, right) => right.score - left.score)
+      .slice(0, RESULT_LIMIT * 5)
       .map((result) => ({ ...result, fit: recommendationScore(result.track) }))
       .sort((left, right) => right.score - left.score || right.fit - left.fit)
-      .slice(0, 40);
+      .slice(0, RESULT_LIMIT);
+    return { idle: false, items, total };
   }
 
   function evidenceMarkup(result) {
@@ -184,22 +199,26 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     const list = root.querySelector('.set-manual-results');
     const status = root.querySelector('.set-manual-search-status');
     const usedFamilies = new Set(state.plan.map(setRecordingKey));
-    const matches = results();
-    status.textContent = state.manualSearchQuery
-      ? `${matches.length} best match${matches.length === 1 ? '' : 'es'} across titles, artists, genres, playlists, tags, roles, and audio profiles.`
-      : `Showing ${matches.length} strong starting points. Type any genre, playlist name, tag, artist, mood, or combination of keywords.`;
-    list.innerHTML = matches.length
-      ? matches
-          .map((result, index) => {
-            const { track } = result;
-            const used = usedFamilies.has(setRecordingKey(track));
-            const source = setTrackAudioUrl(track);
-            const preview = source ? compactAudioMarkup(source, track.duration_seconds, true) : '';
-            const name = String(track.source_name || track.title || 'Untitled').replace(/\.[^.]+$/, '');
-            return `<article class="set-manual-result${used ? ' is-used' : ''}" data-result-index="${index}"><header><div><strong>${escapeHtml(name)}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre || 'Unclassified')}</span></div><em>${Math.round(result.fit)} fit</em></header><p>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${escapeHtml(energyBand(songEnergy(track)))} energy</p><div class="set-manual-evidence">${evidenceMarkup(result)}</div><footer>${preview || '<span class="set-manual-no-preview">Preview unavailable</span>'}<button type="button" class="button ${used ? 'tertiary' : 'secondary'} add-manual-track" ${used ? 'disabled' : ''}>${used ? 'Song already used' : `Add at ${state.plan.length + 1}`}</button></footer></article>`;
-          })
-          .join('')
-      : '<div class="set-manual-empty"><strong>No tracks match those keywords.</strong><p>Try fewer terms, turn off “Require every keyword,” or search a playlist, artist, role, mood, or descriptor.</p></div>';
+    const { idle, items: matches, total } = results();
+    status.textContent = idle
+      ? 'Search your catalog by any identity signal, or ask for compatibility-ranked suggestions.'
+      : state.manualSearchQuery
+        ? `Showing ${matches.length} of ${total} match${total === 1 ? '' : 'es'} across titles, artists, genres, playlists, tags, roles, and audio profiles.`
+        : `Showing ${matches.length} compatibility-ranked suggestion${matches.length === 1 ? '' : 's'} for the next position.`;
+    list.innerHTML = idle
+      ? '<div class="set-manual-empty"><strong>Your catalog is ready.</strong><p>Type any genre, playlist, tag, artist, mood, or keyword combination—or choose “Suggest next.”</p></div>'
+      : matches.length
+        ? matches
+            .map((result, index) => {
+              const { track } = result;
+              const used = usedFamilies.has(setRecordingKey(track));
+              const source = setTrackAudioUrl(track);
+              const preview = source ? compactAudioMarkup(source, track.duration_seconds, true) : '';
+              const name = String(track.source_name || track.title || 'Untitled').replace(/\.[^.]+$/, '');
+              return `<article class="set-manual-result${used ? ' is-used' : ''}" data-result-index="${index}"><header><div><strong>${escapeHtml(name)}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre || 'Unclassified')}</span></div><em>${Math.round(result.fit)} fit</em></header><p>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${escapeHtml(energyBand(songEnergy(track)))} energy</p><div class="set-manual-evidence">${evidenceMarkup(result)}</div><footer>${preview || '<span class="set-manual-no-preview">Preview unavailable</span>'}<button type="button" class="button ${used ? 'tertiary' : 'secondary'} add-manual-track" ${used ? 'disabled' : ''}>${used ? 'Song already used' : `Add at ${state.plan.length + 1}`}</button></footer></article>`;
+            })
+            .join('')
+        : '<div class="set-manual-empty"><strong>No tracks match those keywords.</strong><p>Try fewer terms, turn off “Require every keyword,” or search a playlist, artist, role, mood, or descriptor.</p></div>';
     list.querySelectorAll('.add-manual-track:not(:disabled)').forEach((button) => {
       button.onclick = () => addTrack(matches[Number(button.closest('article').dataset.resultIndex)]?.track);
     });
@@ -215,7 +234,12 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     input.value = state.manualSearchQuery;
     input.oninput = () => {
       state.manualSearchQuery = input.value;
-      renderResults();
+      state.manualSuggestionsRequested = false;
+      clearTimeout(searchTimer);
+      root.querySelector('.set-manual-search-status').textContent = input.value.trim()
+        ? 'Searching titles, artists, playlists, tags, roles, and audio profiles…'
+        : 'Search your catalog by any identity signal, or ask for compatibility-ranked suggestions.';
+      searchTimer = setTimeout(renderResults, 120);
     };
     $('#set-manual-match-all').checked = state.manualSearchRequireAll;
     $('#set-manual-match-all').onchange = (event) => {
@@ -224,15 +248,20 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     };
     root.querySelector('.clear-manual-search').onclick = () => {
       state.manualSearchQuery = '';
+      state.manualSuggestionsRequested = false;
       input.value = '';
       renderResults();
       input.focus();
     };
     root.querySelector('.suggest-manual-track').onclick = () => {
       state.manualSearchQuery = '';
+      state.manualSuggestionsRequested = true;
       input.value = '';
-      renderResults();
-      listFirstResult(root)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      root.querySelector('.set-manual-search-status').textContent = 'Finding the strongest next-track options…';
+      requestAnimationFrame(() => {
+        renderResults();
+        listFirstResult(root)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
     };
     root.querySelector('.check-manual-transitions').onclick = () => {
       const health = $('#set-health');
@@ -294,6 +323,12 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
   }
 
   async function start() {
+    if (state.manualCurationActive) {
+      host()?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      $('#set-manual-search')?.focus({ preventScroll: true });
+      $('#set-builder-message').textContent = 'Manual catalog is open and ready to search.';
+      return true;
+    }
     if (state.plan.length && !state.manualCurationActive) {
       const replace = await confirmAction(
         'Start a new track-by-track set? The current unsaved running order will be replaced.',
@@ -308,8 +343,11 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
       provider: 'manual',
       summary: 'Tracks selected directly from the catalog by the DJ.',
     });
+    $('#set-builder-message').textContent = 'Opening the manual catalog…';
     renderSetPlan();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     host()?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    $('#set-manual-search')?.focus({ preventScroll: true });
     $('#set-builder-message').textContent =
       'Manual catalog ready. Search any genre, playlist, tag, artist, role, vibe, or combination of keywords.';
     return true;

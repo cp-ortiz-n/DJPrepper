@@ -31,6 +31,7 @@ export function createSetBuilderStore({ storage = globalThis.localStorage, creat
     manualCurationActive: false,
     manualSearchQuery: '',
     manualSearchRequireAll: false,
+    manualSuggestionsRequested: false,
   };
 }
 
@@ -116,5 +117,6 @@ export function resetSetBuilderWorkspace(store, { createId = createSetBuilderId 
   store.manualCurationActive = false;
   store.manualSearchQuery = '';
   store.manualSearchRequireAll = false;
+  store.manualSuggestionsRequested = false;
   return store;
 }
