@@ -34,6 +34,11 @@ order editor in a sticky, independently scrollable **Current set** rail beside
 the catalog; it does not create a second plan view. At narrow widths the rail
 moves above the catalog, receives a bounded height, and remains collapsible, so
 it cannot cover the catalog or push search results below an unbounded track list.
+The rail's Set Coach delegates order proposals to the shared transition/energy
+optimizer and next-track proposals to the shared candidate scorer. Order advice
+is preview-only until explicitly applied, respects locks and journey sections,
+and creates one undoable revision. Next-track advice retains the normal catalog
+evidence and playback workflow rather than inserting a song automatically.
 
 Adding a manual result uses the same recording-family boundary as generated
 plans. Once one version occupies the running order, every other original,

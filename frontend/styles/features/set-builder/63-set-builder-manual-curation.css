@@ -116,6 +116,119 @@
   padding: 10px;
 }
 
+.set-manual-coach {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, var(--lime) 8%);
+}
+
+.set-manual-coach > header,
+.set-manual-coach > header div,
+.set-manual-coach > header small,
+.set-manual-coach > header strong {
+  display: block;
+}
+
+.set-manual-coach > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.set-manual-coach > header small {
+  margin-bottom: 3px;
+  color: var(--lime);
+  font-size: var(--set-type-label);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.set-manual-coach > p,
+.set-manual-coach-status p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--set-type-caption);
+  line-height: 1.45;
+}
+
+.set-manual-coach-health {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid #53632f;
+  border-radius: 999px;
+  color: var(--lime);
+  font-size: var(--set-type-label);
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.set-manual-coach-actions,
+.set-manual-order-proposal > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.set-manual-coach-actions .button,
+.set-manual-order-proposal .button {
+  width: 100%;
+  min-width: 0;
+}
+
+.set-manual-coach-status:empty {
+  display: none;
+}
+
+.set-manual-coach-status {
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.set-manual-order-proposal {
+  display: grid;
+  gap: 9px;
+}
+
+.set-manual-order-proposal p strong,
+.set-manual-order-proposal p span {
+  display: block;
+}
+
+.set-manual-order-proposal p strong {
+  color: var(--ink);
+}
+
+.set-manual-order-proposal ol {
+  display: grid;
+  gap: 5px;
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.set-manual-order-proposal li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow-wrap: anywhere;
+  background: var(--panel-2);
+  font-size: var(--set-type-caption);
+}
+
+.set-manual-order-proposal li b {
+  color: var(--lime);
+  text-align: center;
+}
+
 .set-manual-running-order-slot .set-table-head {
   display: none;
 }

@@ -7,6 +7,7 @@ import {
   normalizeManualSearchText,
   scoreManualTrackSearch,
   searchManualCatalog,
+  suggestManualPlanOrder,
 } from '../../../../frontend/features/set-builder/manual-curation.js';
 import { createTrackIdentityStore } from '../../../../frontend/features/set-builder/track-identity-store.js';
 
@@ -81,6 +82,35 @@ test('manual catalog search is stable for empty and missing identity metadata', 
   assert.deepEqual(results.map((result) => result.track.id), ['disco', 'latin-techno']);
   assert.deepEqual(manualTrackSearchEvidence(null), []);
   assert.equal(scoreManualTrackSearch({}, '', {}).matched, true);
+});
+
+test('manual order suggestion previews an improved order without mutating the current plan', () => {
+  const original = [{ id: 'high' }, { id: 'low' }];
+  const result = suggestManualPlanOrder(original, {
+    brief: { curve: 'rise' },
+    improveOrder: (plan) => [...plan].reverse(),
+    health: (plan) => ({ score: plan[0].id === 'low' ? 86 : 64 }),
+    trackId: (track) => track.id,
+  });
+  assert.equal(result.changed, true);
+  assert.equal(result.currentHealth, 64);
+  assert.equal(result.suggestedHealth, 86);
+  assert.deepEqual(result.suggested.map((track) => track.id), ['low', 'high']);
+  assert.deepEqual(original.map((track) => track.id), ['high', 'low']);
+});
+
+test('manual order suggestion handles short and already-optimal plans', () => {
+  const trackId = (track) => track.id;
+  const health = () => ({ score: 80 });
+  assert.equal(suggestManualPlanOrder([{ id: 'only' }], { brief: {}, improveOrder: (plan) => plan, health, trackId }), null);
+  const result = suggestManualPlanOrder([{ id: 'a' }, { id: 'b' }], {
+    brief: {},
+    improveOrder: (plan) => plan,
+    health,
+    trackId,
+  });
+  assert.equal(result.changed, false);
+  assert.equal(result.currentFingerprint, 'a|b');
 });
 
 test('manual identity recovery storage tolerates corruption and persists normalized terms', () => {

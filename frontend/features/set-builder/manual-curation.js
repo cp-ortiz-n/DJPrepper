@@ -102,7 +102,22 @@ export function searchManualCatalog(tracks, query, options = {}) {
     );
 }
 
-export function createManualCurationController({ state, dom, ui, music, policy, lifecycle }) {
+export function suggestManualPlanOrder(plan, { brief, improveOrder, health, trackId }) {
+  const current = [...(plan || [])];
+  if (current.length < 2) return null;
+  const suggested = improveOrder(current, brief);
+  const currentIds = current.map(trackId);
+  const suggestedIds = suggested.map(trackId);
+  return {
+    currentHealth: health(current).score,
+    suggestedHealth: health(suggested).score,
+    changed: currentIds.some((id, index) => id !== suggestedIds[index]),
+    currentFingerprint: currentIds.join('|'),
+    suggested,
+  };
+}
+
+export function createManualCurationController({ state, dom, ui, music, policy, transitions, lifecycle }) {
   const { $, escapeHtml } = dom;
   const { bindCompactAudio, compactAudioMarkup } = ui;
   const { energyBand, formatLibraryKey, libraryRoles, songEnergy, timingProfile, vocalProfile } = music;
@@ -116,9 +131,11 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     setBrief,
     setPlanningReceipt,
   } = lifecycle;
+  const { improveSetOrder, setHealth } = transitions;
   const host = () => $('#set-manual-curation-workspace');
   const runningOrder = () => document.querySelector('.set-running-order-workspace');
   let searchTimer = 0;
+  let orderSuggestion = null;
 
   function presentRunningOrder(active) {
     const layout = $('#set-manual-curation-layout');
@@ -137,6 +154,81 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
   function refreshRunningOrderCount() {
     const count = $('#set-manual-running-order-count');
     if (count) count.textContent = `${state.plan.length} track${state.plan.length === 1 ? '' : 's'}`;
+  }
+
+  function planFingerprint() {
+    return state.plan.map(setTrackId).join('|');
+  }
+
+  function trackName(track) {
+    return String(track?.source_name || track?.title || 'Untitled').replace(/\.[^.]+$/, '');
+  }
+
+  function renderCoach() {
+    const root = $('#set-manual-coach');
+    if (!root) return;
+    if (orderSuggestion && orderSuggestion.currentFingerprint !== planFingerprint()) orderSuggestion = null;
+    const health = state.plan.length > 1 ? setHealth(state.plan).score : null;
+    root.querySelector('.set-manual-coach-health').textContent =
+      health == null ? `${state.plan.length} track${state.plan.length === 1 ? '' : 's'}` : `${health}/100 mix health`;
+    const status = $('#set-manual-coach-status');
+    if (!orderSuggestion) {
+      status.innerHTML =
+        state.plan.length < 2
+          ? '<p>Add at least two tracks to compare possible running orders. Next-track suggestions are available now.</p>'
+          : '<p>Your current order is ready to evaluate. Locked tracks and journey sections will stay in place.</p>';
+      return;
+    }
+    if (!orderSuggestion.changed) {
+      status.innerHTML = `<p><strong>Current order looks strongest.</strong> Mix health is ${orderSuggestion.currentHealth}/100. Try next-track suggestions if you want another direction.</p>`;
+      return;
+    }
+    const names = orderSuggestion.suggested.map((track, index) => `<li><b>${index + 1}</b>${escapeHtml(trackName(track))}</li>`).join('');
+    const delta = orderSuggestion.suggestedHealth - orderSuggestion.currentHealth;
+    const explanation =
+      delta > 0
+        ? `Mix health improves by ${delta} point${delta === 1 ? '' : 's'}.`
+        : 'Mix health is preserved while energy and genre placement improve.';
+    status.innerHTML = `<div class="set-manual-order-proposal"><p><strong>Suggested order</strong><span>${orderSuggestion.currentHealth} → ${orderSuggestion.suggestedHealth} mix health · ${explanation}</span></p><ol>${names}</ol><div><button type="button" class="button tertiary dismiss-manual-order">Dismiss</button><button type="button" class="button primary apply-manual-order">Apply order</button></div></div>`;
+    status.querySelector('.dismiss-manual-order').onclick = () => {
+      orderSuggestion = null;
+      renderCoach();
+    };
+    status.querySelector('.apply-manual-order').onclick = () => {
+      pushSetHistory();
+      state.plan = [...orderSuggestion.suggested];
+      orderSuggestion = null;
+      advancePlanRevision();
+      renderSetPlan();
+      $('#set-builder-message').textContent = 'Suggested running order applied. Undo is available if you prefer the previous order.';
+    };
+  }
+
+  function suggestOrder() {
+    if (state.plan.length < 2) {
+      $('#set-builder-message').textContent = 'Add at least two tracks before asking Set Coach to compare orders.';
+      renderCoach();
+      return;
+    }
+    orderSuggestion = suggestManualPlanOrder(state.plan, {
+      brief: setBrief(),
+      improveOrder: improveSetOrder,
+      health: setHealth,
+      trackId: setTrackId,
+    });
+    renderCoach();
+  }
+
+  function showNextSuggestions() {
+    const root = host();
+    state.manualSearchQuery = '';
+    state.manualSuggestionsRequested = true;
+    $('#set-manual-search').value = '';
+    root.querySelector('.set-manual-search-status').textContent = 'Finding the strongest next-track options…';
+    requestAnimationFrame(() => {
+      renderResults();
+      root.querySelector('.set-manual-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   function searchOptions(track) {
@@ -205,6 +297,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
       return;
     }
     pushSetHistory();
+    orderSuggestion = null;
     state.plan.push(track);
     applyExplicitSetPlanChoice(state, track);
     advancePlanRevision();
@@ -249,7 +342,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     const root = host();
     if (root.dataset.mounted === 'true') return;
     root.dataset.mounted = 'true';
-    root.innerHTML = `<header><div><p class="eyebrow">YOUR CATALOG</p><h3 id="set-manual-curation-heading">Find the next track</h3><p>Search the full identity of your music—not only its genre. Results explain whether a title, artist, playlist, tag, role, vibe, or audio profile matched.</p></div><div class="set-manual-tools"><button type="button" class="button secondary suggest-manual-track">Suggest next</button><button type="button" class="button secondary check-manual-transitions">Check transitions</button></div></header><div class="set-manual-search-row"><label><span>Genre, playlist, tag, artist, mood, or keywords</span><input id="set-manual-search" type="search" autocomplete="off" placeholder="Try: latin techno percussion, Disco_Rave, vocal peak-time…"></label><label class="set-manual-match-all"><input id="set-manual-match-all" type="checkbox"><span><strong>Require every keyword</strong><small>Useful when a broad search returns too many tracks.</small></span></label></div><div class="set-manual-search-meta"><p class="set-manual-search-status" role="status" aria-live="polite"></p><button type="button" class="button tertiary clear-manual-search">Clear search</button></div><div class="set-manual-results"></div>`;
+    root.innerHTML = `<header><div><p class="eyebrow">YOUR CATALOG</p><h3 id="set-manual-curation-heading">Find the next track</h3><p>Search the full identity of your music—not only its genre. Results explain whether a title, artist, playlist, tag, role, vibe, or audio profile matched.</p></div><div class="set-manual-tools"><button type="button" class="button secondary check-manual-transitions">Check transitions</button></div></header><div class="set-manual-search-row"><label><span>Genre, playlist, tag, artist, mood, or keywords</span><input id="set-manual-search" type="search" autocomplete="off" placeholder="Try: latin techno percussion, Disco_Rave, vocal peak-time…"></label><label class="set-manual-match-all"><input id="set-manual-match-all" type="checkbox"><span><strong>Require every keyword</strong><small>Useful when a broad search returns too many tracks.</small></span></label></div><div class="set-manual-search-meta"><p class="set-manual-search-status" role="status" aria-live="polite"></p><button type="button" class="button tertiary clear-manual-search">Clear search</button></div><div class="set-manual-results"></div>`;
     const input = $('#set-manual-search');
     input.value = state.manualSearchQuery;
     input.oninput = () => {
@@ -273,16 +366,8 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
       renderResults();
       input.focus();
     };
-    root.querySelector('.suggest-manual-track').onclick = () => {
-      state.manualSearchQuery = '';
-      state.manualSuggestionsRequested = true;
-      input.value = '';
-      root.querySelector('.set-manual-search-status').textContent = 'Finding the strongest next-track options…';
-      requestAnimationFrame(() => {
-        renderResults();
-        listFirstResult(root)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      });
-    };
+    $('#set-manual-coach').querySelector('.suggest-manual-order').onclick = suggestOrder;
+    $('#set-manual-coach').querySelector('.suggest-manual-next').onclick = showNextSuggestions;
     root.querySelector('.check-manual-transitions').onclick = () => {
       const health = $('#set-health');
       if (state.plan.length < 2) {
@@ -295,13 +380,10 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     };
   }
 
-  function listFirstResult(root) {
-    return root.querySelector('.set-manual-result');
-  }
-
   function syncPlanShell() {
     const empty = !state.plan.length;
     refreshRunningOrderCount();
+    renderCoach();
     $('#set-result').classList.toggle('manual-curation-empty', empty);
     const selectors = ['#set-health', '#set-selection-summary', '#set-review-panel', '.set-journey', '#set-export-status'];
     selectors.forEach((selector) => {

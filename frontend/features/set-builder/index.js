@@ -733,7 +733,7 @@ export function createSetBuilderFeature({
   });
   const { addSetTrack, renderSetRules } = planView;
   manualCuration = createManualCurationController({
-    state, dom: { $, escapeHtml }, ui: { bindCompactAudio, compactAudioMarkup },
+    state, dom: { $, escapeHtml }, ui: { bindCompactAudio, compactAudioMarkup }, transitions: { improveSetOrder, setHealth },
     music: { energyBand, formatLibraryKey, libraryRoles, songEnergy, timingProfile, vocalProfile: setVocalProfile },
     policy: { setCandidateScore, setRecordingKey, setTrackId, trackIdentity },
     lifecycle: { advancePlanRevision: () => advanceSetPlanRevision(state), confirmAction, pushSetHistory, renderSetPlan, resetWorkspace: () => resetSetBuilderWorkspace(state), setBrief, setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt) },
