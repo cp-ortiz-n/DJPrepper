@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  manualPlanEnergyFit,
   manualSearchTerms,
   manualTrackSearchEvidence,
   nextManualResultLimit,
@@ -98,13 +99,42 @@ test('manual order suggestion previews an improved order without mutating the cu
     brief: { curve: 'rise' },
     improveOrder: (plan) => [...plan].reverse(),
     health: (plan) => ({ score: plan[0].id === 'low' ? 86 : 64 }),
+    energyFit: (plan) => (plan[0].id === 'low' ? 91 : 52),
     trackId: (track) => track.id,
   });
   assert.equal(result.changed, true);
   assert.equal(result.currentHealth, 64);
   assert.equal(result.suggestedHealth, 86);
+  assert.equal(result.currentEnergyFit, 52);
+  assert.equal(result.suggestedEnergyFit, 91);
   assert.deepEqual(result.suggested.map((track) => track.id), ['low', 'high']);
   assert.deepEqual(original.map((track) => track.id), ['high', 'low']);
+});
+
+test('manual energy fit compares every chosen track with the selected journey shape', () => {
+  const plan = [{ energy: 0.2 }, { energy: 0.8 }];
+  assert.equal(
+    manualPlanEnergyFit(plan, { curve: 'rise' }, {
+      songEnergy: (track) => track.energy,
+      targetEnergy: (index) => (index ? 0.8 : 0.2),
+    }),
+    100,
+  );
+  assert.equal(
+    manualPlanEnergyFit(plan, { curve: 'steady' }, {
+      songEnergy: (track) => track.energy,
+      targetEnergy: () => 0.5,
+    }),
+    70,
+  );
+  assert.equal(manualPlanEnergyFit([], {}, { songEnergy: () => 0.5, targetEnergy: () => 0.5 }), 100);
+  assert.equal(
+    manualPlanEnergyFit([{ energy: 0 }, { energy: Number.NaN }], {}, {
+      songEnergy: (track) => track.energy,
+      targetEnergy: () => 0,
+    }),
+    75,
+  );
 });
 
 test('manual order suggestion handles short and already-optimal plans', () => {

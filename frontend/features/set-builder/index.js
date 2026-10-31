@@ -735,7 +735,7 @@ export function createSetBuilderFeature({
   manualCuration = createManualCurationController({
     state, dom: { $, escapeHtml }, ui: { bindCompactAudio, compactAudioMarkup }, transitions: { improveSetOrder, setHealth },
     music: { energyBand, formatLibraryKey, libraryRoles, songEnergy, timingProfile, vocalProfile: setVocalProfile },
-    policy: { setCandidateScore, setRecordingKey, setTrackId, trackIdentity },
+    policy: { setCandidateScore, setRecordingKey, setTrackId, targetSetEnergy, trackIdentity },
     lifecycle: { advancePlanRevision: () => advanceSetPlanRevision(state), confirmAction, pushSetHistory, renderSetPlan, resetWorkspace: () => resetSetBuilderWorkspace(state), setBrief, setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt) },
   });
   const savedSetController = createSavedSetController({

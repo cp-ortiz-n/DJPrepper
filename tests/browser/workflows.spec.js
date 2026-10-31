@@ -1054,8 +1054,14 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   await page.locator('#set-manual-search').fill('Mirror Ball');
   await workspace.getByRole('button', { name: 'Add at 2' }).click();
   await expect(page.locator('#set-manual-running-order-count')).toHaveText('2 tracks');
-  await runningOrderPanel.getByRole('button', { name: 'Suggest best order' }).click();
-  await expect(page.locator('#set-manual-coach-status')).toContainText(/Suggested order|Current order looks strongest/);
+  await runningOrderPanel.locator('.set-manual-energy-shape').selectOption('peak-release');
+  await expect(runningOrderPanel.locator('.set-manual-energy-help')).toContainText('high point late');
+  await expect(page.locator('#set-result-summary')).toContainText('peak release');
+  await runningOrderPanel.getByRole('button', { name: 'Preview best order' }).click();
+  await expect(page.locator('#set-manual-coach-status')).toContainText(
+    /Peak and release preview|Current order already fits peak and release/,
+  );
+  await expect(page.locator('#set-manual-coach-status')).toContainText(/Energy fit|energy fit/);
   const applyOrder = runningOrderPanel.getByRole('button', { name: 'Apply order' });
   if (await applyOrder.isVisible()) {
     await applyOrder.click();

@@ -78,13 +78,13 @@ export function createSetTransitionEditor({
     const score = Math.max(0, Math.min(100, Math.round(average - vocalClashes * 3)));
     return { score, transitions, vocalClashes };
   }
-  function setOrderFitness(plan, brief) {
+  function setOrderFitness(plan, brief, { energyWeight = 3 } = {}) {
     const health = setHealth(plan);
     const energyPenalty =
       plan.reduce(
         (sum, track, index) => sum + Math.abs(songEnergy(track) - targetSetEnergy(index, plan.length, brief)),
         0,
-      ) * 3;
+      ) * energyWeight;
     const journeyFit = plan.reduce((sum, track, index) => {
       const target = intendedGenreForPosition(brief.identity, index, plan.length);
       return sum + (target && trackMatchesIntendedGenre(track, target) ? 16 : 0);
@@ -95,9 +95,9 @@ export function createSetTransitionEditor({
       : 0;
     return health.score * 5 - energyPenalty + journeyFit + openingFit;
   }
-  function improveSetOrder(plan, brief) {
+  function improveSetOrder(plan, brief, options = {}) {
     return optimizePlanOrder(plan, {
-      fitness: (candidate) => setOrderFitness(candidate, brief),
+      fitness: (candidate) => setOrderFitness(candidate, brief, options),
       isFixed: (track) => state.lockedIds.has(setTrackId(track)),
       canSwap: (left, _leftIndex, right) =>
         !left._planSectionId || !right._planSectionId || left._planSectionId === right._planSectionId,

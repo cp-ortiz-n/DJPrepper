@@ -37,8 +37,12 @@ it cannot cover the catalog or push search results below an unbounded track list
 The rail's Set Coach delegates order proposals to the shared transition/energy
 optimizer and next-track proposals to the shared candidate scorer. Order advice
 is preview-only until explicitly applied, respects locks and journey sections,
-and creates one undoable revision. Next-track advice retains the normal catalog
-evidence and playback workflow rather than inserting a song automatically.
+and creates one undoable revision. Manual curation exposes the shared energy
+policy as four compact shapes—gradual build, peak and release, waves, and
+steady—rather than maintaining a separate optimizer. Its preview reports both
+mix health and energy fit before applying the proposed order. Next-track advice
+uses the selected shape and retains the normal catalog evidence and playback
+workflow rather than inserting a song automatically.
 
 Adding a manual result uses the same recording-family boundary as generated
 plans. Once one version occupies the running order, every other original,

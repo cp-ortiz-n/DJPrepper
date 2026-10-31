@@ -138,17 +138,19 @@ The rail scrolls independently and can be collapsed. On smaller screens it moves
 above the catalog with a bounded height, keeping both the current set and search
 results close at hand.
 
-The rail also contains **Set Coach**. **Suggest best order** compares only the
-tracks already in the set, preserving locked positions and journey-section
-boundaries. It previews the proposed order and mix-health change; nothing moves
-until you choose **Apply order**, and the change remains undoable. **Suggest next
-tracks** ranks unused catalog tracks against the current ending, intention,
-energy journey, preferences, and compatibility, then opens those candidates in
-the catalog with their evidence and audio previews.
+The rail also contains **Set Coach**. Choose an **Energy shape**—Gradual build,
+Peak and release, Energy waves, or Hold the level—then select **Preview best
+order**. Set Coach compares only the tracks already in the set, preserving
+locked positions, journey-section boundaries, and set membership. The preview
+shows both mix-health and energy-fit changes plus each proposed track's energy;
+nothing moves until you choose **Apply order**, and the change remains undoable.
+**Suggest next tracks** uses that same energy shape when ranking unused catalog
+tracks against the current ending, intention, preferences, and compatibility,
+then opens those candidates with their evidence and audio previews.
 
 Only one version of a song family may occupy the set. After adding an original,
-remix, edit, or duplicate import, other versions are labeled **Song already
-used** in the catalog browser. Use **Alternatives** on the running-order row to
+remix, edit, or duplicate import, other versions are labeled **Already in set**
+in the catalog browser. Use **Alternatives** on the running-order row to
 swap versions without creating a duplicate. Manual sets keep the normal
 drag/reorder, Undo/Redo, transition editing, save/load, review, and export
 behavior.
