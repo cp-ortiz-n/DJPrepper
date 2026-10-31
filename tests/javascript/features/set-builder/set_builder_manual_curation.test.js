@@ -12,6 +12,7 @@ import {
   searchManualCatalog,
   suggestManualPlanOrder,
 } from '../../../../frontend/features/set-builder/manual-curation.js';
+import { optimizeManualEnergyOrder } from '../../../../frontend/features/set-builder/manual-order-optimizer.js';
 import { createTrackIdentityStore } from '../../../../frontend/features/set-builder/track-identity-store.js';
 
 const catalog = [
@@ -157,6 +158,96 @@ test('manual order suggestion handles short and already-optimal plans', () => {
   });
   assert.equal(result.changed, false);
   assert.equal(result.currentFingerprint, 'a|b');
+});
+
+function energyOrderOptions(overrides = {}) {
+  return {
+    brief: { curve: 'rise', minimumHealth: 65 },
+    health: () => ({ score: 80 }),
+    energyFit: (plan) =>
+      manualPlanEnergyFit(plan, {}, {
+        songEnergy: (track) => track.energy,
+        targetEnergy: (index, length) => (length === 1 ? 0.5 : 0.2 + (index / (length - 1)) * 0.6),
+      }),
+    trackId: (track) => track.id,
+    songEnergy: (track) => track.energy,
+    targetEnergy: (index, length) => (length === 1 ? 0.5 : 0.2 + (index / (length - 1)) * 0.6),
+    ...overrides,
+  };
+}
+
+test('manual energy optimizer reorders existing tracks toward the selected shape', () => {
+  const original = [
+    { id: 'high', energy: 0.8 },
+    { id: 'low', energy: 0.2 },
+    { id: 'middle', energy: 0.5 },
+  ];
+  const result = optimizeManualEnergyOrder(original, energyOrderOptions());
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.suggested.map((track) => track.id), ['low', 'middle', 'high']);
+  assert.ok(result.suggestedEnergyFit > result.currentEnergyFit);
+  assert.equal(result.suggestedHealth, 80);
+  assert.equal(result.healthGuardrail, 75);
+  assert.equal(result.movedCount, 3);
+  assert.deepEqual(original.map((track) => track.id), ['high', 'low', 'middle']);
+});
+
+test('manual energy optimizer preserves locked positions and journey sections', () => {
+  const original = [
+    { id: 'a-high', energy: 0.8, section: 'a' },
+    { id: 'b-low', energy: 0.2, section: 'b' },
+    { id: 'a-low', energy: 0.2, section: 'a' },
+    { id: 'b-high', energy: 0.8, section: 'b' },
+  ];
+  const result = optimizeManualEnergyOrder(
+    original,
+    energyOrderOptions({
+      isFixed: (track) => track.id === 'b-low',
+      sectionId: (track) => track.section,
+    }),
+  );
+  assert.equal(result.changed, true);
+  assert.equal(result.suggested[1].id, 'b-low');
+  assert.deepEqual(result.suggested.map((track) => track.section), ['a', 'b', 'a', 'b']);
+  assert.deepEqual(result.suggested.filter((track) => track.section === 'a').map((track) => track.id), [
+    'a-low',
+    'a-high',
+  ]);
+});
+
+test('manual energy optimizer uses a mix-health guardrail and reports unsafe improvements', () => {
+  const original = [
+    { id: 'high', energy: 0.8 },
+    { id: 'low', energy: 0.2 },
+  ];
+  const result = optimizeManualEnergyOrder(
+    original,
+    energyOrderOptions({
+      health: (plan) => ({ score: plan[0].id === 'high' ? 70 : 40 }),
+    }),
+  );
+  assert.equal(result.changed, false);
+  assert.equal(result.noSafeImprovement, true);
+  assert.equal(result.healthGuardrail, 65);
+  assert.deepEqual(result.suggested.map((track) => track.id), ['high', 'low']);
+});
+
+test('manual energy optimizer may trade a small health change for a safe energy improvement', () => {
+  const original = [
+    { id: 'high', energy: 0.8 },
+    { id: 'low', energy: 0.2 },
+    { id: 'middle', energy: 0.5 },
+  ];
+  const result = optimizeManualEnergyOrder(
+    original,
+    energyOrderOptions({
+      health: (plan) => ({ score: plan[0].id === 'low' && plan[2].id === 'high' ? 65 : 66 }),
+    }),
+  );
+  assert.equal(result.changed, true);
+  assert.equal(result.suggestedHealth, 65);
+  assert.equal(result.healthGuardrail, 65);
+  assert.ok(result.suggestedEnergyFit > result.currentEnergyFit);
 });
 
 test('manual identity recovery storage tolerates corruption and persists normalized terms', () => {

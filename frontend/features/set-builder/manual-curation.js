@@ -1,6 +1,7 @@
 /** Manual, evidence-rich catalog browsing for track-by-track Set Builder authoring. */
 
 import { applyExplicitSetPlanChoice } from './plan-integrity.js';
+import { optimizeManualEnergyOrder } from './manual-order-optimizer.js';
 import { setTrackAudioUrl } from './track-media.js';
 
 const SEARCH_WEIGHTS = Object.freeze({
@@ -14,7 +15,6 @@ const SEARCH_WEIGHTS = Object.freeze({
   metadata: 8,
 });
 const RESULT_LIMIT = 12;
-const MANUAL_ENERGY_WEIGHT = 8;
 const MANUAL_ENERGY_SHAPES = Object.freeze({
   rise: {
     label: 'Gradual build',
@@ -176,7 +176,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     setBrief,
     setPlanningReceipt,
   } = lifecycle;
-  const { improveSetOrder, setHealth } = transitions;
+  const { setHealth } = transitions;
   const host = () => $('#set-manual-curation-workspace');
   const runningOrder = () => document.querySelector('.set-running-order-workspace');
   let searchTimer = 0;
@@ -249,7 +249,10 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
       return;
     }
     if (!orderSuggestion.changed) {
-      status.innerHTML = `<p><strong>Current order already fits ${escapeHtml(shape.label.toLowerCase())}.</strong> Mix health is ${orderSuggestion.currentHealth}/100 and energy fit is ${orderSuggestion.currentEnergyFit}/100. Try next-track suggestions if you want another direction.</p>`;
+      const reason = orderSuggestion.noSafeImprovement
+        ? `A stronger energy curve would lower mix health below the ${orderSuggestion.healthGuardrail}/100 safety floor.`
+        : 'No safe reorder improves this energy shape.';
+      status.innerHTML = `<p><strong>${escapeHtml(shape.label)} checked.</strong> ${escapeHtml(reason)} Current mix health is ${orderSuggestion.currentHealth}/100 and energy fit is ${orderSuggestion.currentEnergyFit}/100.</p>`;
       return;
     }
     const names = orderSuggestion.suggested
@@ -266,7 +269,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
         : delta > 0
           ? `Mix health improves by ${delta} point${delta === 1 ? '' : 's'}.`
           : 'The current balance of energy and transitions is preserved.';
-    status.innerHTML = `<div class="set-manual-order-proposal"><p><strong>${escapeHtml(shape.label)} preview</strong><span>Mix health ${orderSuggestion.currentHealth} → ${orderSuggestion.suggestedHealth} · Energy fit ${orderSuggestion.currentEnergyFit} → ${orderSuggestion.suggestedEnergyFit}. ${explanation}</span></p><ol>${names}</ol><div><button type="button" class="button tertiary dismiss-manual-order">Dismiss</button><button type="button" class="button primary apply-manual-order">Apply order</button></div></div>`;
+    status.innerHTML = `<div class="set-manual-order-proposal"><p><strong>${escapeHtml(shape.label)} preview</strong><span>${orderSuggestion.movedCount} track${orderSuggestion.movedCount === 1 ? '' : 's'} move · Mix health ${orderSuggestion.currentHealth} → ${orderSuggestion.suggestedHealth} (floor ${orderSuggestion.healthGuardrail}) · Energy fit ${orderSuggestion.currentEnergyFit} → ${orderSuggestion.suggestedEnergyFit}. ${explanation}</span></p><ol>${names}</ol><div><button type="button" class="button tertiary dismiss-manual-order">Dismiss</button><button type="button" class="button primary apply-manual-order">Apply order</button></div></div>`;
     status.querySelector('.dismiss-manual-order').onclick = () => {
       orderSuggestion = null;
       renderCoach();
@@ -281,20 +284,30 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     };
   }
 
-  function suggestOrder() {
+  function suggestOrder({ announce = true } = {}) {
     if (state.plan.length < 2) {
       $('#set-builder-message').textContent = 'Add at least two tracks before asking Set Coach to compare orders.';
       renderCoach();
       return;
     }
-    orderSuggestion = suggestManualPlanOrder(state.plan, {
-      brief: setBrief(),
-      improveOrder: (plan, brief) => improveSetOrder(plan, brief, { energyWeight: MANUAL_ENERGY_WEIGHT }),
+    const brief = setBrief();
+    orderSuggestion = optimizeManualEnergyOrder(state.plan, {
+      brief,
       health: setHealth,
       energyFit,
       trackId: setTrackId,
+      songEnergy,
+      targetEnergy: targetSetEnergy,
+      isFixed: (track) => state.lockedIds.has(setTrackId(track)),
+      sectionId: (track) => track?._planSectionId || '',
+      minimumHealth: brief.minimumHealth,
     });
     renderCoach();
+    if (announce) {
+      $('#set-builder-message').textContent = orderSuggestion.changed
+        ? `${energyShape().label} preview ready. Review the proposed order; nothing moves until you apply it.`
+        : `${energyShape().label} checked. The current order remains unchanged.`;
+    }
   }
 
   function showNextSuggestions() {
@@ -490,7 +503,8 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
       $('#set-curve').value = event.currentTarget.value;
       orderSuggestion = null;
       renderSetPlan();
-      $('#set-builder-message').textContent = `${energyShape().label} selected. Preview the best order when you are ready.`;
+      suggestOrder({ announce: false });
+      $('#set-builder-message').textContent = `${energyShape().label} selected. Review the proposed order; nothing moves until you apply it.`;
     };
     root.querySelector('.check-manual-transitions').onclick = () => {
       const health = $('#set-health');

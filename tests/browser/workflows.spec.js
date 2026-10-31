@@ -1063,11 +1063,12 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   await runningOrderPanel.locator('.set-manual-energy-shape').selectOption('peak-release');
   await expect(runningOrderPanel.locator('.set-manual-energy-help')).toContainText('high point late');
   await expect(page.locator('#set-result-summary')).toContainText('peak release');
-  await runningOrderPanel.getByRole('button', { name: 'Preview best order' }).click();
   await expect(page.locator('#set-manual-coach-status')).toContainText(
-    /Peak and release preview|Current order already fits peak and release/,
+    /Peak and release preview|Peak and release checked/,
   );
   await expect(page.locator('#set-manual-coach-status')).toContainText(/Energy fit|energy fit/);
+  await expect(page.locator('#set-builder-message')).toContainText('nothing moves until you apply it');
+  await runningOrderPanel.getByRole('button', { name: 'Refresh order preview' }).click();
   const applyOrder = runningOrderPanel.getByRole('button', { name: 'Apply order' });
   if (await applyOrder.isVisible()) {
     await applyOrder.click();
