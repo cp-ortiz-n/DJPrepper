@@ -128,6 +128,9 @@ several keywords. Results rank all matching identity evidence and show the
 specific playlist, tag, genre, or other source that matched. Turn on **Require
 every keyword** for a narrower intersection. Preview any result with the same
 seekable player used in the running order, then add it at the next position.
+Each result keeps its title, fit, two strongest evidence signals, preview, and
+add state inside one consistent card. Long metadata is shortened visually; its
+full value remains available by hovering the title or evidence signal.
 The catalog initially shows the 12 strongest matches; **Show more** reveals the
 next ranked batch without changing the search or losing the current set.
 **Suggest next** ranks unused tracks against the current last track, while

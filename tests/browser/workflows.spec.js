@@ -998,8 +998,14 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
               descriptors: [{ category: 'mood', value: 'dancefloor groove' }],
               playlist_identity: [{ source: 'rekordbox', value: 'Saturday_Disco' }],
               analysis: {
-                source_name: `Disco Catalog ${index + 1}.wav`,
-                artist: `Catalog Artist ${index + 1}`,
+                source_name:
+                  index === 0
+                    ? 'An Intentionally Very Long Disco Catalog Title Featuring Several Artists and a Full Extended Version Name.wav'
+                    : `Disco Catalog ${index + 1}.wav`,
+                artist:
+                  index === 0
+                    ? 'An Intentionally Long Artist Credit Featuring Multiple Performers'
+                    : `Catalog Artist ${index + 1}`,
                 bpm: 120 + (index % 6),
                 key: 'Dm',
                 energy: 0.55 + index * 0.01,
@@ -1077,6 +1083,33 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   await workspace.getByRole('button', { name: 'Show 3 more' }).click();
   await expect(workspace.locator('.set-manual-result')).toHaveCount(15);
   await expect(workspace.locator('.set-manual-results-more')).toHaveCount(0);
+  const resultLayout = await workspace.locator('.set-manual-results').evaluate((grid) => {
+    const tolerance = 1;
+    const cards = [...grid.querySelectorAll('.set-manual-result')];
+    const contained = (outer, inner) =>
+      inner.left >= outer.left - tolerance &&
+      inner.right <= outer.right + tolerance &&
+      inner.top >= outer.top - tolerance &&
+      inner.bottom <= outer.bottom + tolerance;
+    return {
+      columns: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+      rowHeightDelta: Math.abs(cards[0].getBoundingClientRect().height - cards[1].getBoundingClientRect().height),
+      allContentContained: cards.every((card) => {
+        const bounds = card.getBoundingClientRect();
+        return [...card.querySelectorAll('header, header > div, header em, .set-manual-result-facts, .set-manual-evidence, .set-manual-evidence span, footer, .compact-audio, .add-manual-track')].every(
+          (element) => contained(bounds, element.getBoundingClientRect()),
+        );
+      }),
+    };
+  });
+  expect(resultLayout.columns).toBeGreaterThanOrEqual(1);
+  expect(resultLayout.columns).toBeLessThanOrEqual(2);
+  if (resultLayout.columns === 2) expect(resultLayout.rowHeightDelta).toBeLessThanOrEqual(1);
+  expect(resultLayout.allContentContained).toBe(true);
+  const usedResultButton = workspace.getByRole('button', { name: 'Already in set' });
+  await expect(usedResultButton).toBeVisible();
+  expect(await usedResultButton.evaluate((button) => getComputedStyle(button).opacity)).toBe('1');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
   await page.locator('#save-set').click();
   await expect(page.locator('#set-builder-message')).toContainText('Set saved durably');
   const savedManualId = await page.locator('#saved-set-select').inputValue();
@@ -1103,6 +1136,18 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   expect(overflow).toBeLessThanOrEqual(1);
   const resultCards = page.locator('#set-manual-curation-workspace .set-manual-result');
   await expect(resultCards).toHaveCount(15);
+  const mobileCardsContained = await resultCards.evaluateAll((cards) =>
+    cards.every((card) => {
+      const bounds = card.getBoundingClientRect();
+      return [...card.querySelectorAll('header em, .set-manual-evidence span, footer, .compact-audio, .add-manual-track')].every(
+        (element) => {
+          const child = element.getBoundingClientRect();
+          return child.left >= bounds.left - 1 && child.right <= bounds.right + 1;
+        },
+      );
+    }),
+  );
+  expect(mobileCardsContained).toBe(true);
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {

@@ -29,7 +29,10 @@ detailed genres, durable descriptors, playlist/crate identity, roles, vibes,
 key, BPM, energy, vocals, and timing. Multiple keywords are ranked across those
 sources; **Require every keyword** turns the query into a narrow intersection.
 Every result shows the evidence that matched, including the source playlist,
-and retains shared seekable playback. Manual mode reuses the canonical running-
+and retains shared seekable playback. Result cards expose the two strongest
+signals in a bounded evidence area so long titles, playlist names, and version
+credits cannot cover the adjacent result or its controls; full values remain in
+native hover text. Manual mode reuses the canonical running-
 order editor in a sticky, independently scrollable **Current set** rail beside
 the catalog; it does not create a second plan view. At narrow widths the rail
 moves above the catalog, receives a bounded height, and remains collapsible, so

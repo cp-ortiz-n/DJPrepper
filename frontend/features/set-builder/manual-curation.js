@@ -39,6 +39,11 @@ export function nextManualResultLimit(current, total, batchSize = RESULT_LIMIT) 
   return Math.min(Math.max(0, Number(total) || 0), Math.max(batch, (Number(current) || 0) + batch));
 }
 
+export function formatManualFitScore(value) {
+  const score = Number(value);
+  return Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : 0;
+}
+
 export function normalizeManualSearchText(value) {
   return String(value || '')
     .normalize('NFKD')
@@ -360,7 +365,11 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
           .filter((item) => ['playlist', 'descriptor', 'genre', 'role'].includes(item.source))
           .slice(0, 3);
     return evidence
-      .map((item) => `<span><b>${escapeHtml(item.label)}</b> · ${escapeHtml(item.value)}</span>`)
+      .slice(0, 2)
+      .map(
+        (item) =>
+          `<span title="${escapeHtml(`${item.label}: ${item.value}`)}"><b>${escapeHtml(item.label)}</b> · ${escapeHtml(item.value)}</span>`,
+      )
       .join('');
   }
 
@@ -403,7 +412,29 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
               const source = setTrackAudioUrl(track);
               const preview = source ? compactAudioMarkup(source, track.duration_seconds, true) : '';
               const name = String(track.source_name || track.title || 'Untitled').replace(/\.[^.]+$/, '');
-              return `<article class="set-manual-result${used ? ' is-used' : ''}" data-result-index="${index}" tabindex="-1"><header><div><strong>${escapeHtml(name)}</strong><span class="set-manual-result-artist">${escapeHtml(track.artist || 'Unknown artist')}</span><span class="set-manual-result-genre">${escapeHtml(track._genre || 'Unclassified')}</span></div><em><b>${Math.round(result.fit)}</b><span>fit</span></em></header><ul class="set-manual-result-facts"><li>${Number(track.bpm || 0).toFixed(1)} BPM</li><li>${escapeHtml(formatLibraryKey(track.key))}</li><li>${escapeHtml(energyBand(songEnergy(track)))} energy</li></ul><div class="set-manual-evidence">${evidenceMarkup(result)}</div><footer>${preview || '<span class="set-manual-no-preview">Preview unavailable</span>'}<button type="button" class="button ${used ? 'tertiary' : 'secondary'} add-manual-track" ${used ? 'disabled' : ''}>${used ? 'Already in set' : `Add at ${state.plan.length + 1}`}</button></footer></article>`;
+              const artist = track.artist || 'Unknown artist';
+              const genre = track._genre || 'Unclassified';
+              const fit = formatManualFitScore(result.fit);
+              return `<article class="set-manual-result${used ? ' is-used' : ''}" data-result-index="${index}" tabindex="-1">
+                <header>
+                  <div>
+                    <strong title="${escapeHtml(name)}">${escapeHtml(name)}</strong>
+                    <span class="set-manual-result-artist" title="${escapeHtml(artist)}">${escapeHtml(artist)}</span>
+                    <span class="set-manual-result-genre" title="${escapeHtml(genre)}">${escapeHtml(genre)}</span>
+                  </div>
+                  <em aria-label="${fit} percent fit"><b>${fit}</b><span>fit</span></em>
+                </header>
+                <ul class="set-manual-result-facts">
+                  <li>${Number(track.bpm || 0).toFixed(1)} BPM</li>
+                  <li>${escapeHtml(formatLibraryKey(track.key))}</li>
+                  <li>${escapeHtml(energyBand(songEnergy(track)))} energy</li>
+                </ul>
+                <div class="set-manual-evidence">${evidenceMarkup(result)}</div>
+                <footer>
+                  ${preview || '<span class="set-manual-no-preview">Preview unavailable</span>'}
+                  <button type="button" class="button ${used ? 'tertiary' : 'secondary'} add-manual-track" ${used ? 'disabled' : ''}>${used ? 'Already in set' : `Add at ${state.plan.length + 1}`}</button>
+                </footer>
+              </article>`;
             })
             .join('') +
           (hiddenCount

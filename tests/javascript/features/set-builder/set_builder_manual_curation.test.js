@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  formatManualFitScore,
   manualPlanEnergyFit,
   manualSearchTerms,
   manualTrackSearchEvidence,
@@ -91,6 +92,13 @@ test('manual catalog result batches grow predictably and stop at the match count
   assert.equal(nextManualResultLimit(24, 27), 27);
   assert.equal(nextManualResultLimit(0, 3), 3);
   assert.equal(nextManualResultLimit(12, 1034, 24), 36);
+});
+
+test('manual catalog fit labels stay within their documented percentage range', () => {
+  assert.equal(formatManualFitScore(116.4), 100);
+  assert.equal(formatManualFitScore(-9), 0);
+  assert.equal(formatManualFitScore(58.6), 59);
+  assert.equal(formatManualFitScore(Number.NaN), 0);
 });
 
 test('manual order suggestion previews an improved order without mutating the current plan', () => {
