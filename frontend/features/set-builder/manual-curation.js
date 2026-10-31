@@ -15,6 +15,11 @@ const SEARCH_WEIGHTS = Object.freeze({
 });
 const RESULT_LIMIT = 12;
 
+export function nextManualResultLimit(current, total, batchSize = RESULT_LIMIT) {
+  const batch = Math.max(1, Number(batchSize) || RESULT_LIMIT);
+  return Math.min(Math.max(0, Number(total) || 0), Math.max(batch, (Number(current) || 0) + batch));
+}
+
 export function normalizeManualSearchText(value) {
   return String(value || '')
     .normalize('NFKD')
@@ -136,6 +141,11 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
   const runningOrder = () => document.querySelector('.set-running-order-workspace');
   let searchTimer = 0;
   let orderSuggestion = null;
+  let visibleResultLimit = RESULT_LIMIT;
+
+  function resetVisibleResults() {
+    visibleResultLimit = RESULT_LIMIT;
+  }
 
   function presentRunningOrder(active) {
     const layout = $('#set-manual-curation-layout');
@@ -223,6 +233,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     const root = host();
     state.manualSearchQuery = '';
     state.manualSuggestionsRequested = true;
+    resetVisibleResults();
     $('#set-manual-search').value = '';
     root.querySelector('.set-manual-search-status').textContent = 'Finding the strongest next-track options…';
     requestAnimationFrame(() => {
@@ -267,15 +278,15 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
       const items = matches
         .map((result) => ({ ...result, fit: recommendationScore(result.track) }))
         .sort((left, right) => right.fit - left.fit)
-        .slice(0, RESULT_LIMIT);
+        .slice(0, visibleResultLimit);
       return { idle: false, items, total };
     }
     const items = matches
       .sort((left, right) => right.score - left.score)
-      .slice(0, RESULT_LIMIT * 5)
+      .slice(0, Math.max(RESULT_LIMIT * 5, visibleResultLimit * 3))
       .map((result) => ({ ...result, fit: recommendationScore(result.track) }))
       .sort((left, right) => right.score - left.score || right.fit - left.fit)
-      .slice(0, RESULT_LIMIT);
+      .slice(0, visibleResultLimit);
     return { idle: false, items, total };
   }
 
@@ -313,11 +324,12 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     const status = root.querySelector('.set-manual-search-status');
     const usedFamilies = new Set(state.plan.map(setRecordingKey));
     const { idle, items: matches, total } = results();
+    const hiddenCount = Math.max(0, total - matches.length);
     status.textContent = idle
       ? 'Search your catalog by any identity signal, or ask for compatibility-ranked suggestions.'
       : state.manualSearchQuery
-        ? `Showing ${matches.length} of ${total} match${total === 1 ? '' : 'es'} across titles, artists, genres, playlists, tags, roles, and audio profiles.`
-        : `Showing ${matches.length} compatibility-ranked suggestion${matches.length === 1 ? '' : 's'} for the next position.`;
+        ? `${matches.length} of ${total} results · matched across title, artist, genre, playlist, tags, roles, and audio profile.`
+        : `${matches.length} of ${total} compatibility-ranked suggestions for position ${state.plan.length + 1}.`;
     list.innerHTML = idle
       ? '<div class="set-manual-empty"><strong>Your catalog is ready.</strong><p>Type any genre, playlist, tag, artist, mood, or keyword combination—or choose “Suggest next.”</p></div>'
       : matches.length
@@ -328,12 +340,21 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
               const source = setTrackAudioUrl(track);
               const preview = source ? compactAudioMarkup(source, track.duration_seconds, true) : '';
               const name = String(track.source_name || track.title || 'Untitled').replace(/\.[^.]+$/, '');
-              return `<article class="set-manual-result${used ? ' is-used' : ''}" data-result-index="${index}"><header><div><strong>${escapeHtml(name)}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre || 'Unclassified')}</span></div><em>${Math.round(result.fit)} fit</em></header><p>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${escapeHtml(energyBand(songEnergy(track)))} energy</p><div class="set-manual-evidence">${evidenceMarkup(result)}</div><footer>${preview || '<span class="set-manual-no-preview">Preview unavailable</span>'}<button type="button" class="button ${used ? 'tertiary' : 'secondary'} add-manual-track" ${used ? 'disabled' : ''}>${used ? 'Song already used' : `Add at ${state.plan.length + 1}`}</button></footer></article>`;
+              return `<article class="set-manual-result${used ? ' is-used' : ''}" data-result-index="${index}" tabindex="-1"><header><div><strong>${escapeHtml(name)}</strong><span class="set-manual-result-artist">${escapeHtml(track.artist || 'Unknown artist')}</span><span class="set-manual-result-genre">${escapeHtml(track._genre || 'Unclassified')}</span></div><em><b>${Math.round(result.fit)}</b><span>fit</span></em></header><ul class="set-manual-result-facts"><li>${Number(track.bpm || 0).toFixed(1)} BPM</li><li>${escapeHtml(formatLibraryKey(track.key))}</li><li>${escapeHtml(energyBand(songEnergy(track)))} energy</li></ul><div class="set-manual-evidence">${evidenceMarkup(result)}</div><footer>${preview || '<span class="set-manual-no-preview">Preview unavailable</span>'}<button type="button" class="button ${used ? 'tertiary' : 'secondary'} add-manual-track" ${used ? 'disabled' : ''}>${used ? 'Already in set' : `Add at ${state.plan.length + 1}`}</button></footer></article>`;
             })
-            .join('')
+            .join('') +
+          (hiddenCount
+            ? `<div class="set-manual-results-more"><span><b>${matches.length}</b> visible · ${hiddenCount} more match${hiddenCount === 1 ? '' : 'es'}</span><button type="button" class="button secondary load-more-manual-results">Show ${Math.min(RESULT_LIMIT, hiddenCount)} more</button></div>`
+            : '')
         : '<div class="set-manual-empty"><strong>No tracks match those keywords.</strong><p>Try fewer terms, turn off “Require every keyword,” or search a playlist, artist, role, mood, or descriptor.</p></div>';
     list.querySelectorAll('.add-manual-track:not(:disabled)').forEach((button) => {
       button.onclick = () => addTrack(matches[Number(button.closest('article').dataset.resultIndex)]?.track);
+    });
+    list.querySelector('.load-more-manual-results')?.addEventListener('click', () => {
+      const previousCount = matches.length;
+      visibleResultLimit = nextManualResultLimit(visibleResultLimit, total);
+      renderResults();
+      list.querySelector(`.set-manual-result[data-result-index="${previousCount}"]`)?.focus();
     });
     bindCompactAudio(list);
   }
@@ -348,6 +369,7 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     input.oninput = () => {
       state.manualSearchQuery = input.value;
       state.manualSuggestionsRequested = false;
+      resetVisibleResults();
       clearTimeout(searchTimer);
       root.querySelector('.set-manual-search-status').textContent = input.value.trim()
         ? 'Searching titles, artists, playlists, tags, roles, and audio profiles…'
@@ -357,11 +379,13 @@ export function createManualCurationController({ state, dom, ui, music, policy, 
     $('#set-manual-match-all').checked = state.manualSearchRequireAll;
     $('#set-manual-match-all').onchange = (event) => {
       state.manualSearchRequireAll = event.currentTarget.checked;
+      resetVisibleResults();
       renderResults();
     };
     root.querySelector('.clear-manual-search').onclick = () => {
       state.manualSearchQuery = '';
       state.manualSuggestionsRequested = false;
+      resetVisibleResults();
       input.value = '';
       renderResults();
       input.focus();

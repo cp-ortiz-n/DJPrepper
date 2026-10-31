@@ -128,6 +128,8 @@ several keywords. Results rank all matching identity evidence and show the
 specific playlist, tag, genre, or other source that matched. Turn on **Require
 every keyword** for a narrower intersection. Preview any result with the same
 seekable player used in the running order, then add it at the next position.
+The catalog initially shows the 12 strongest matches; **Show more** reveals the
+next ranked batch without changing the search or losing the current set.
 **Suggest next** ranks unused tracks against the current last track, while
 **Check transitions** opens mix health after at least two tracks exist.
 The live running order stays in a sticky **Current set** rail beside the catalog,

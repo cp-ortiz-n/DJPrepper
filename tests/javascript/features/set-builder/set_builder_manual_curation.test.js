@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   manualSearchTerms,
   manualTrackSearchEvidence,
+  nextManualResultLimit,
   normalizeManualSearchText,
   scoreManualTrackSearch,
   searchManualCatalog,
@@ -82,6 +83,13 @@ test('manual catalog search is stable for empty and missing identity metadata', 
   assert.deepEqual(results.map((result) => result.track.id), ['disco', 'latin-techno']);
   assert.deepEqual(manualTrackSearchEvidence(null), []);
   assert.equal(scoreManualTrackSearch({}, '', {}).matched, true);
+});
+
+test('manual catalog result batches grow predictably and stop at the match count', () => {
+  assert.equal(nextManualResultLimit(12, 1034), 24);
+  assert.equal(nextManualResultLimit(24, 27), 27);
+  assert.equal(nextManualResultLimit(0, 3), 3);
+  assert.equal(nextManualResultLimit(12, 1034, 24), 36);
 });
 
 test('manual order suggestion previews an improved order without mutating the current plan', () => {

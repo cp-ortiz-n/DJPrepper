@@ -119,7 +119,7 @@ contract and are migrated into the two-part workflow when a plan is loaded.
 | `journey-allocation.js`                                           | Reserve browser-planned positions for each confirmed section and detect scarcity |
 | Plan comparator                                                   | Select the strongest safe proposal and disclose fallback                         |
 | Set Builder workspace                                             | Edit, lock, replace, reorder, undo/redo, and regenerate                          |
-| `manual-curation.js`                                              | Search catalog identity evidence and insert explicit track choices               |
+| `manual-curation.js`                                              | Search and progressively reveal catalog evidence, then insert explicit choices   |
 | `track-identity-store.js`                                         | Recover browser-only identity terms without owning catalog descriptors           |
 | `SavedSetService`                                                 | Persist the versioned brief, plan, locks, transitions, and receipt               |
 

@@ -991,6 +991,26 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
               },
               job: { id: 803, config_json: '{}', library_path: '/tmp/Velvet Dawn.wav' },
             },
+            ...Array.from({ length: 13 }, (_, index) => ({
+              downloaded_id: 810 + index,
+              genre: 'Disco & Funk',
+              detailed_genre: 'Nu Disco',
+              descriptors: [{ category: 'mood', value: 'dancefloor groove' }],
+              playlist_identity: [{ source: 'rekordbox', value: 'Saturday_Disco' }],
+              analysis: {
+                source_name: `Disco Catalog ${index + 1}.wav`,
+                artist: `Catalog Artist ${index + 1}`,
+                bpm: 120 + (index % 6),
+                key: 'Dm',
+                energy: 0.55 + index * 0.01,
+                duration_seconds: 220,
+              },
+              job: {
+                id: 810 + index,
+                config_json: '{}',
+                library_path: `/tmp/Disco Catalog ${index + 1}.wav`,
+              },
+            })),
           ],
         },
       }),
@@ -1030,7 +1050,7 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   await workspace.getByRole('button', { name: 'Add at 1' }).click();
   await expect(page.locator('#set-track-list')).toContainText('Fuego Ritual');
   await expect(page.locator('#set-manual-running-order-count')).toHaveText('1 track');
-  await expect(workspace.getByRole('button', { name: 'Song already used' })).toBeDisabled();
+  await expect(workspace.getByRole('button', { name: 'Already in set' })).toBeDisabled();
   await page.locator('#set-manual-search').fill('Mirror Ball');
   await workspace.getByRole('button', { name: 'Add at 2' }).click();
   await expect(page.locator('#set-manual-running-order-count')).toHaveText('2 tracks');
@@ -1044,7 +1064,13 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   }
   await runningOrderPanel.getByRole('button', { name: 'Suggest next tracks' }).click();
   await expect(workspace).toContainText('Velvet Dawn');
-  await expect(workspace.getByRole('button', { name: 'Add at 3' })).toBeEnabled();
+  await expect(workspace.getByRole('button', { name: 'Add at 3' }).first()).toBeEnabled();
+  await page.locator('#set-manual-search').fill('disco');
+  await expect(workspace.locator('.set-manual-result')).toHaveCount(12);
+  await expect(workspace.locator('.set-manual-results-more')).toContainText('3 more matches');
+  await workspace.getByRole('button', { name: 'Show 3 more' }).click();
+  await expect(workspace.locator('.set-manual-result')).toHaveCount(15);
+  await expect(workspace.locator('.set-manual-results-more')).toHaveCount(0);
   await page.locator('#save-set').click();
   await expect(page.locator('#set-builder-message')).toContainText('Set saved durably');
   const savedManualId = await page.locator('#saved-set-select').inputValue();
@@ -1070,7 +1096,7 @@ test('Set Builder manual curation searches identity evidence and stays responsiv
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   const resultCards = page.locator('#set-manual-curation-workspace .set-manual-result');
-  await expect(resultCards).toHaveCount(3);
+  await expect(resultCards).toHaveCount(15);
 });
 
 test('search fields retain the complete query during overlapping requests', async ({ page }) => {
