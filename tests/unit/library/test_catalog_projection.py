@@ -46,12 +46,12 @@ class CatalogProjectionPublisherTests(unittest.TestCase):
 
             signature = publisher.publish()
 
-            self.assertEqual(observations, [({}, False)])
+            self.assertEqual(observations, [({}, True)])
             self.assertEqual(catalog.read_text(encoding="utf-8"), "current")
             self.assertEqual(memory, {"signature": signature})
             self.assertIn("library_search_index_signature", repository.state)
 
-    def test_failed_rebuild_cannot_leave_stale_catalog_visible(self) -> None:
+    def test_failed_rebuild_retains_last_known_good_catalog(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             catalog = Path(temporary) / "set_builder_catalog.json"
             catalog.write_text("stale", encoding="utf-8")
@@ -73,7 +73,7 @@ class CatalogProjectionPublisherTests(unittest.TestCase):
                 publisher.publish()
 
             self.assertEqual(memory, {})
-            self.assertFalse(catalog.exists())
+            self.assertEqual(catalog.read_text(encoding="utf-8"), "stale")
 
 
 if __name__ == "__main__":

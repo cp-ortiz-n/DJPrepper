@@ -34,6 +34,9 @@ from audioextender.core.operation_feedback import operation_receipt
 from audioextender.infrastructure.cache import AnalysisCache
 from audioextender.library.backup import LibraryBackupService
 
+LIBRARY_STATUS_TTL_SECONDS = 300.0
+STORAGE_INVENTORY_TTL_SECONDS = 120.0
+
 
 class WebSettings(BaseModel):
     music_library_path: str = str(Path.home() / "Music" / "AudioExtender Library")
@@ -210,13 +213,30 @@ class SettingsRouteService:
             "storage_scan_ms": round((perf_counter() - scan_started) * 1000, 1),
         }
         with deps.library_status_lock:
-            deps.library_status_cache.update(payload=payload, expires_at=now + 60.0)
+            deps.library_status_cache.update(payload=payload, expires_at=now + LIBRARY_STATUS_TTL_SECONDS)
         return payload
+
+    def cached_storage_inventory(self) -> dict[str, Any]:
+        """Return the latest inventory without starting a filesystem crawl."""
+        deps = self.dependencies
+        now = perf_counter()
+        with deps.storage_inventory_lock:
+            cached = deps.storage_inventory_cache.get("payload")
+            if cached is not None:
+                return dict(cached)
+        saved = self._saved_inventory(self._inventory_signature())
+        if saved is None:
+            return {}
+        with deps.storage_inventory_lock:
+            deps.storage_inventory_cache.update(payload=saved, expires_at=now + STORAGE_INVENTORY_TTL_SECONDS)
+        return saved
 
     def library_health(self, *, refresh: bool = False) -> dict[str, Any]:
         deps = self.dependencies
         status = self.library_status(refresh=refresh)
-        storage = self.public_inventory(self.storage_inventory(refresh=refresh))
+        storage = self.public_inventory(
+            self.storage_inventory(refresh=True) if refresh else self.cached_storage_inventory()
+        )
         active = []
         failed_operations: list[dict[str, Any]] = []
         for kind in ("wav-tags", "artwork", "genre-rescan", "catalog-propagation"):
@@ -329,7 +349,7 @@ class SettingsRouteService:
         signature = self._inventory_signature()
         if not refresh and (saved := self._saved_inventory(signature)) is not None:
             with deps.storage_inventory_lock:
-                deps.storage_inventory_cache.update(payload=saved, expires_at=now + 120.0)
+                deps.storage_inventory_cache.update(payload=saved, expires_at=now + STORAGE_INVENTORY_TTL_SECONDS)
             return saved
         cache_root = (deps.project / deps.cache_folder_name).resolve()
         cache = AnalysisCache(cache_root, enabled=False)
@@ -396,7 +416,7 @@ class SettingsRouteService:
             "_orphaned_outputs": [str(path) for path in orphaned],
         }
         with deps.storage_inventory_lock:
-            deps.storage_inventory_cache.update(payload=payload, expires_at=now + 120.0)
+            deps.storage_inventory_cache.update(payload=payload, expires_at=now + STORAGE_INVENTORY_TTL_SECONDS)
         try:
             deps.storage_snapshot.parent.mkdir(parents=True, exist_ok=True)
             temporary = deps.storage_snapshot.with_suffix(".tmp")

@@ -322,7 +322,6 @@ export function createSettingsFeature({
       const configured = loadConfig().then(() => afterConfig?.());
       loadLibraryStatus();
       loadRelocationState();
-      loadLibraryHealth();
       rekordboxRatings.loadStatus();
       return configured;
     },

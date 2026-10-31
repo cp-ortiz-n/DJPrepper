@@ -123,6 +123,14 @@ a catalog or audio backup.
 
 ## Health and release checks
 
+Routine library status is cached for five minutes, while **Verify library**
+always performs the authoritative filesystem scan. Opening the application no
+longer starts the deeper health and orphaned-storage inventory; those checks are
+loaded when Settings is opened. Waveform previews are generated with one
+sequential audio pass and then served from the revision-aware cache. Catalog
+projection rebuilds retain the last known-good JSON until the atomic replacement
+is complete, so readers do not see a missing file during publication.
+
 For a source checkout, these commands verify the supported runtime and major
 workflows:
 
