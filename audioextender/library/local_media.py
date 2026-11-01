@@ -43,11 +43,12 @@ class LocalMediaService:
         if not artwork_url:
             return ""
         artwork_host = (urlparse(artwork_url).hostname or "").casefold()
-        trusted = artwork_host in {
-            "image-cdn-ak.spotifycdn.com",
-            "i.scdn.co",
-            "i.ytimg.com",
-        } or artwork_host.endswith(".sndcdn.com")
+        trusted = (
+            artwork_host == "i.ytimg.com"
+            or artwork_host.endswith(".spotifycdn.com")
+            or artwork_host.endswith(".scdn.co")
+            or artwork_host.endswith(".sndcdn.com")
+        )
         if not trusted:
             return ""
         try:

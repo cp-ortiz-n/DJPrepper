@@ -101,6 +101,39 @@ class LibraryFoundationTests(unittest.TestCase):
             self.assertEqual(json.loads(sidecar.read_text())["file_path"], str(audio.resolve()))
             self.assertFalse(sidecar.with_suffix(".tmp").exists())
 
+    def test_local_media_accepts_current_spotify_artwork_cdn_hosts(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            audio = root / "Track.wav"
+            audio.touch()
+            response = Mock()
+            response.headers = {"content-type": "image/jpeg"}
+            response.content = b"artwork"
+            response.raise_for_status = Mock()
+            http_get = Mock(return_value=response)
+            embed_artwork = Mock()
+            service = LocalMediaService(lambda: root, lambda: root, embed_artwork, http_get=http_get)
+
+            result = service.cache_artwork(
+                "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02dcb887304895f39e60f1fd6c",
+                audio,
+            )
+
+            self.assertTrue(Path(result).is_file())
+            http_get.assert_called_once()
+            embed_artwork.assert_called_once()
+
+    def test_local_media_rejects_untrusted_artwork_hosts_without_requesting_them(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            audio = root / "Track.wav"
+            audio.touch()
+            http_get = Mock()
+            service = LocalMediaService(lambda: root, lambda: root, Mock(), http_get=http_get)
+
+            self.assertEqual(service.cache_artwork("https://example.com/cover.jpg", audio), "")
+            http_get.assert_not_called()
+
     def test_catalog_payload_hides_storage_fields_and_reports_availability(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "Track.wav"
