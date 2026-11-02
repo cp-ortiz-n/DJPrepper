@@ -23,12 +23,12 @@ export OLLAMA_HOST="$OLLAMA_URL"
 export OLLAMA_SET_BUILDER_MODEL="$MODEL"
 
 if /usr/bin/curl -fsS "$APP_URL/" >/dev/null 2>&1; then
-  EXPECTED_CATALOG_VERSION="$("$PYTHON" -c 'from audioextender.set_builder.catalog_cache import catalog_schema_version; print(catalog_schema_version())')"
-  RUNNING_CATALOG_VERSION="$(
-    /usr/bin/curl -fsS "$APP_URL/api/set-builder/catalog-version" 2>/dev/null |
-      "$PYTHON" -c 'import json, sys; print(json.load(sys.stdin).get("version", ""))' 2>/dev/null || true
+  EXPECTED_RUNTIME_REVISION="$("$PYTHON" -m audioextender.infrastructure.runtime_revision)"
+  RUNNING_RUNTIME_REVISION="$(
+    /usr/bin/curl -fsS "$APP_URL/api/diagnostics/runtime" 2>/dev/null |
+      "$PYTHON" -c 'import json, sys; print(json.load(sys.stdin).get("revision", ""))' 2>/dev/null || true
   )"
-  if [[ "$RUNNING_CATALOG_VERSION" == "$EXPECTED_CATALOG_VERSION" ]]; then
+  if [[ -n "$RUNNING_RUNTIME_REVISION" && "$RUNNING_RUNTIME_REVISION" == "$EXPECTED_RUNTIME_REVISION" ]]; then
     echo "AudioExtender is already running the current backend. Opening it now."
     /usr/bin/open "$APP_OPEN_URL"
     exit 0

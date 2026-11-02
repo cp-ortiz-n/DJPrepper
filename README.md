@@ -59,8 +59,9 @@ Then open [http://localhost:8765](http://localhost:8765).
 
 On macOS, you can instead double-click `Start AudioExtender.command`. The
 launcher can start Ollama, prepare the configured local model, start the web
-application, and open the browser. Closing the browser does not cancel running
-jobs; closing the server process does.
+application, and open the browser. It fingerprints the backend and frontend
+source and restarts an older server before opening the page. Closing the browser
+does not cancel running jobs; closing the server process does.
 
 ## Basic workflows
 

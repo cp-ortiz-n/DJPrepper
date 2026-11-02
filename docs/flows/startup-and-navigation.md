@@ -12,6 +12,7 @@ consistent frontend revision before navigation is marked ready.
 | `ApplicationPaths`             | Resolves workspace, database, reports, backups, library, and frontend roots.    |
 | `ApplicationRuntime`           | Holds the repository, queue, registries, locks, caches, and composed services.  |
 | `create_app()`                 | Installs middleware, error handlers, startup hooks, routers, and static assets. |
+| `RuntimeRevision`              | Captures one immutable hash of backend and frontend source at process startup.  |
 | `FrontendAssetService`         | Validates the manifest and applies one revision to the complete module graph.   |
 | `frontend/app.js`              | Creates shared browser services and feature loaders.                            |
 | `createNavigationController()` | Binds tabs and loads the selected feature.                                      |
@@ -24,8 +25,9 @@ embedders.
 ## Recovery rules
 
 - Startup changes interrupted jobs and operations to a recoverable state.
-- The macOS launcher compares the running Set Builder catalog schema with the
-  current package and restarts a responsive but stale backend before opening it.
+- The macOS launcher compares the running process's captured runtime revision
+  with a fresh hash of the current checkout. Any backend or frontend source
+  change restarts a responsive but stale process before the browser opens.
 - A module-linking failure leaves the recovery banner visible with diagnostics.
 - A warm-cache reload cannot mix modules from different asset revisions.
 - Feature-load failures use shared notifications without breaking navigation.
@@ -34,6 +36,8 @@ embedders.
 
 - Backend composition: `audioextender/web/application.py` and
   `audioextender/web/composition.py`
+- Runtime identity: `audioextender/infrastructure/runtime_revision.py` and
+  `GET /api/diagnostics/runtime`
 - Asset delivery: `audioextender/web/assets/frontend.py`
 - Browser composition: `frontend/app.js`
 - Navigation: `frontend/core/navigation-controller.js`

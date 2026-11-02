@@ -494,6 +494,14 @@ version strings in `app.js`, feature modules, or `index.html`. The macOS launche
 adds a fresh query parameter when opening the app so relaunching does not reuse a
 stale entry page.
 
+The asset revision controls browser cache coherence; it is not the server
+revision. `RuntimeRevision` hashes all Python and frontend source once during
+application composition. `GET /api/diagnostics/runtime` returns that immutable
+startup snapshot, and `Start AudioExtender.command` compares it with the current
+checkout before reusing a responsive server. Do not replace this check with a
+feature schema or a revision recalculated per request: either would allow an old
+Python process to appear current.
+
 When changing module exports, test both a fresh browser and an already-open
 browser with stale cached modules. The browser smoke suite covers a failed entry
 module, fallback navigation, reload recovery, diagnostic capture, and a true
