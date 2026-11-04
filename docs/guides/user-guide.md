@@ -339,8 +339,14 @@ key, vocal, and energy movement. Checked-in scenario thresholds cause the
 evaluation command to fail when quality, coverage, or transition warnings
 regress.
 
-The **Import** tab can convert an individually confirmed, authorized YouTube
-source to WAV. It can also read a Spotify playlist CSV and suggest a likely
+The **Import** tab can convert individually confirmed, authorized YouTube and
+SoundCloud sources to WAV. It also synchronizes available cover artwork into
+the catalog and WAV: matched Spotify art is preferred, followed by SoundCloud
+track art and then the YouTube thumbnail. Completed queue items report whether
+artwork was synchronized. Missing artwork can be retried later with **Music
+Files → More → Sync artwork** without importing the audio again.
+
+The importer can also read a Spotify playlist CSV and suggest a likely
 YouTube URL for every track without Spotify credentials. The importer directly
 recognizes exports with `Track Name`, `Artist Name(s)`, `Duration (ms)`,
 `Genres`, and `Tempo`; only the track and artist columns are required.

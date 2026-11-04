@@ -62,7 +62,8 @@ from audioextender.imports.service import (
     authorized_source_provider,
     scdl_download_command,
 )
-from audioextender.imports.source_matching import SourceMatchError, SourceMatchingService, best_youtube_match
+from audioextender.imports.source_artwork import SourceArtworkService
+from audioextender.imports.source_matching import SourceMatchingService, best_youtube_match
 from audioextender.infrastructure.performance_diagnostics import PerformanceDiagnostics
 from audioextender.library.analysis_queue import DownloadedTrackAnalysisQueue
 from audioextender.library.artwork_thumbnails import ArtworkThumbnailService
@@ -430,22 +431,6 @@ _normalize_genre_category = normalize_genre_category
 _genre_path_parts = genre_path_parts
 _safe_audio_name = safe_audio_name
 _safe_folder_name = safe_folder_name
-
-
-def _spotify_source_metadata(url: str) -> dict:
-    """Compatibility wrapper preserving the historical HTTP error contract."""
-    try:
-        return source_matching_service.spotify_metadata(url)
-    except SourceMatchError as error:
-        raise HTTPException(error.status_code, error.detail) from error
-
-
-def _soundcloud_source_metadata(url: str) -> dict:
-    """Compatibility wrapper preserving the historical HTTP error contract."""
-    try:
-        return source_matching_service.soundcloud_metadata(url)
-    except SourceMatchError as error:
-        raise HTTPException(error.status_code, error.detail) from error
 
 
 def _authorized_source_provider(url: str) -> str | None:
@@ -877,8 +862,7 @@ def _build_library_services() -> dict[str, Any]:
             sync_wav_metadata=sync_wav_metadata,
             read_wav_artwork=read_wav_artwork,
             embed_wav_artwork=embed_wav_artwork,
-            cache_track_artwork=_cache_track_artwork,
-            spotify_source_metadata=_spotify_source_metadata,
+            source_artwork=SourceArtworkService(source_matching_service, _cache_track_artwork),
             generalized_genre=_generalized_genre,
             normalize_genre=_normalize_genre_category,
             genre_directory=_genre_directory,
@@ -984,7 +968,7 @@ def _build_import_services() -> None:
         preset_snapshot=preset_service.snapshot,
         duplicate_lookup=_cataloged_download_by_youtube_id,
         probe_audio=_probe_local_audio,
-        cache_artwork=_cache_track_artwork,
+        source_artwork=SourceArtworkService(source_matching_service, _cache_track_artwork),
         thread_factory=lambda **kwargs: threading.Thread(**kwargs),
     )
     local_import_service = LocalAudioImportService(

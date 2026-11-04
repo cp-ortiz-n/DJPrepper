@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {AuthorizedImportQueue} from '../../../../frontend/features/imports/import-queue.js';
+import {artworkStatusText, AuthorizedImportQueue} from '../../../../frontend/features/imports/import-queue.js';
 
 function environment(saved = null) {
   const values = new Map();
@@ -52,4 +52,14 @@ test('reordering is persisted while a queue is paused', async () => {
   await queue.act(1, 'up');
   const saved = JSON.parse(values.get('audioextender.authorized-import-queue.v1'));
   assert.deepEqual(saved.items.map(item => item.url), ['second', 'first']);
+});
+
+test('completed imports report artwork outcome without mislabeling legacy queue items', () => {
+  assert.equal(
+    artworkStatusText({status:'complete', artwork_synced:true, artwork_source:'soundcloud'}),
+    ' · Artwork synced from soundcloud',
+  );
+  assert.equal(artworkStatusText({status:'complete', artwork_synced:false}), ' · Artwork unavailable');
+  assert.equal(artworkStatusText({status:'complete'}), '');
+  assert.equal(artworkStatusText({status:'processing', artwork_synced:true}), '');
 });

@@ -154,8 +154,10 @@ uses `_register_routers()` as the single delivery composition boundary.
 wrappers where scripts and integration tests still rely on the historical entry
 point.
 
-Provider metadata lookup, conservative YouTube matching, and playlist CSV
-parsing live under `audioextender/imports/`. Genre-folder taxonomy, source
+Provider metadata lookup, conservative YouTube matching, provider-neutral
+artwork resolution, and playlist CSV parsing live under `audioextender/imports/`.
+`SourceArtworkService` is the single policy used by both authorized imports and
+metadata repair jobs; keep provider branching out of HTTP routes. Genre-folder taxonomy, source
 sidecars, artwork caching, audio probing, downloaded-catalog reconciliation,
 catalog response mapping, and historical library-job removal live under
 `audioextender/library/`. Their HTTP adapters remain in `web/routes/`; do not

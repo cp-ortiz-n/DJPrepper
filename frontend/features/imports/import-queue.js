@@ -3,6 +3,12 @@ import {apiErrorMessage} from '../../core/api-client.js';
 const STORAGE_KEY = 'audioextender.authorized-import-queue.v1';
 const TERMINAL = new Set(['complete', 'failed', 'canceled']);
 
+export function artworkStatusText(item) {
+  if (item.status !== 'complete' || typeof item.artwork_synced !== 'boolean') return '';
+  if (!item.artwork_synced) return ' · Artwork unavailable';
+  return ` · Artwork synced${item.artwork_source ? ` from ${item.artwork_source}` : ''}`;
+}
+
 export class AuthorizedImportQueue {
   constructor({select, escapeHtml, waitForImport, onComplete}) {
     this.$ = select;
@@ -177,7 +183,7 @@ export class AuthorizedImportQueue {
     this.$('#authorized-import-queue-summary').textContent = `${queue.items.filter(item => item.status === 'waiting').length} waiting · ${queue.active} active`;
     this.$('#authorized-import-pause').textContent = queue.paused ? 'Resume queue' : 'Pause queue';
     this.$('#authorized-import-retry').disabled = !queue.items.some(item => ['failed', 'canceled'].includes(item.status));
-    list.innerHTML = queue.items.map((item, index) => `<article class="authorized-import-queue-item" data-index="${index}" data-status="${item.status}"><div><strong>${this.escapeHtml(item.url)}</strong><small>${this.escapeHtml(item.stage || item.status)}${item.error ? ` · ${this.escapeHtml(item.error)}` : ''}</small></div><div class="authorized-import-queue-actions">${item.status === 'waiting' ? `<button type="button" data-action="up" aria-label="Move up" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-action="down" aria-label="Move down" ${index === queue.items.length - 1 ? 'disabled' : ''}>↓</button>` : ''}${['waiting', 'processing'].includes(item.status) ? '<button type="button" data-action="cancel">Cancel</button>' : ''}${['failed', 'canceled'].includes(item.status) ? '<button type="button" data-action="retry">Retry</button>' : ''}</div></article>`).join('');
+    list.innerHTML = queue.items.map((item, index) => `<article class="authorized-import-queue-item" data-index="${index}" data-status="${item.status}"><div><strong>${this.escapeHtml(item.url)}</strong><small>${this.escapeHtml(item.stage || item.status)}${this.escapeHtml(artworkStatusText(item))}${item.error ? ` · ${this.escapeHtml(item.error)}` : ''}</small></div><div class="authorized-import-queue-actions">${item.status === 'waiting' ? `<button type="button" data-action="up" aria-label="Move up" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-action="down" aria-label="Move down" ${index === queue.items.length - 1 ? 'disabled' : ''}>↓</button>` : ''}${['waiting', 'processing'].includes(item.status) ? '<button type="button" data-action="cancel">Cancel</button>' : ''}${['failed', 'canceled'].includes(item.status) ? '<button type="button" data-action="retry">Retry</button>' : ''}</div></article>`).join('');
     list.querySelectorAll('button').forEach(button => {
       button.onclick = () => this.act(Number(button.closest('article').dataset.index), button.dataset.action);
     });

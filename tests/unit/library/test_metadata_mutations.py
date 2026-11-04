@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from audioextender.imports.source_artwork import ArtworkSyncResult
 from audioextender.infrastructure.batch_operations import BatchOperationRegistry
 from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
@@ -240,8 +241,7 @@ class TrackMetadataMutationTests(unittest.TestCase):
                     sync_wav_metadata=Mock(),
                     read_wav_artwork=Mock(),
                     embed_wav_artwork=Mock(),
-                    cache_track_artwork=Mock(),
-                    spotify_source_metadata=Mock(),
+                    source_artwork=Mock(),
                     generalized_genre=lambda _value: "Latin",
                     normalize_genre=lambda value: str(value),
                     genre_directory=lambda value: root / value,
@@ -263,6 +263,59 @@ class TrackMetadataMutationTests(unittest.TestCase):
 
             self.assertEqual(result["updated"], 2)
             self.assertEqual(changes, [([1], "Latin"), ([2], "Latin")])
+            self.assertEqual(publications, [True])
+
+    def test_artwork_batch_repairs_catalog_through_provider_independent_service(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            audio = root / "Track.wav"
+            audio.write_bytes(b"audio")
+            repository = Mock()
+            source_artwork = Mock()
+            source_artwork.sync_track.return_value = ArtworkSyncResult(
+                "https://i1.sndcdn.com/art.jpg",
+                str(root / ".artwork" / "art.jpg"),
+                "soundcloud",
+            )
+            publications: list[bool] = []
+            service = MetadataBatchService(
+                MetadataBatchDependencies(
+                    repository=lambda: repository,
+                    require_library_online=Mock(),
+                    sync_wav_metadata=Mock(),
+                    read_wav_artwork=Mock(return_value=None),
+                    embed_wav_artwork=Mock(),
+                    source_artwork=source_artwork,
+                    generalized_genre=Mock(),
+                    normalize_genre=Mock(),
+                    genre_directory=Mock(),
+                    change_genre=Mock(),
+                    publish_catalog=lambda: publications.append(True),
+                    refresh_wav_tag_audit=Mock(),
+                    schedule_wav_tag_audit_refresh=Mock(),
+                    music_library_root=lambda: root,
+                    registry=BatchOperationRegistry(),
+                )
+            )
+            track = {
+                "id": 7,
+                "title": "SoundCloud Track",
+                "filename": audio.name,
+                "file_path": str(audio),
+                "youtube_url": "https://soundcloud.com/dj/track",
+                "youtube_id": "soundcloud:abc123",
+                "artwork_path": "",
+            }
+
+            result = service._sync_artwork(Mock(), [track])
+
+            self.assertEqual(result["updated"], 1)
+            source_artwork.sync_track.assert_called_once_with(track, audio)
+            repository.update_downloaded_track_artwork.assert_called_once_with(
+                7,
+                artwork_url="https://i1.sndcdn.com/art.jpg",
+                artwork_path=str(root / ".artwork" / "art.jpg"),
+            )
             self.assertEqual(publications, [True])
 
 

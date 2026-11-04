@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from audioextender.imports.source_artwork import SourceArtworkService
 from audioextender.infrastructure.operation_lifecycle import AUTHORIZED_IMPORTS, LifecycleProjection
 
 
@@ -98,7 +99,7 @@ class ImportService:
         preset_snapshot: Callable[[str], dict[str, Any]],
         duplicate_lookup: Callable[[str], dict[str, Any] | None],
         probe_audio: Callable[[Path], dict[str, Any]],
-        cache_artwork: Callable[[str, Path], str],
+        source_artwork: SourceArtworkService,
         thread_factory: Callable[..., threading.Thread] = threading.Thread,
     ) -> None:
         self._repository = repository
@@ -108,7 +109,7 @@ class ImportService:
         self._preset_snapshot = preset_snapshot
         self._duplicate_lookup = duplicate_lookup
         self._probe_audio = probe_audio
-        self._cache_artwork = cache_artwork
+        self._source_artwork = source_artwork
         self._thread_factory = thread_factory
         self._states: dict[str, dict[str, Any]] = {}
         self._cancel_events: dict[str, threading.Event] = {}
@@ -349,8 +350,13 @@ class ImportService:
                         counter += 1
                     shutil.move(str(wavs[0]), destination)
             artist = str(request.artist or info.get("artist") or info.get("uploader") or "").strip()
-            artwork_url = str(request.artwork_url or info.get("thumbnail") or "")
-            artwork_path = self._cache_artwork(artwork_url, destination)
+            artwork = self._source_artwork.sync_import(
+                source_url=request.url,
+                destination=destination,
+                spotify_uri=request.spotify_uri,
+                supplied_url=request.artwork_url,
+                provider_info=info,
+            )
             self._repository.upsert_downloaded_track(
                 title=title,
                 artist=artist,
@@ -358,8 +364,8 @@ class ImportService:
                 youtube_id=catalog_source_id,
                 youtube_url=request.url,
                 spotify_uri=request.spotify_uri,
-                artwork_url=artwork_url,
-                artwork_path=artwork_path,
+                artwork_url=artwork.url if artwork else "",
+                artwork_path=artwork.path if artwork else "",
                 duration_seconds=float(info.get("duration") or 0) or None,
                 playlist_name=("SoundCloud Imports" if provider == "soundcloud" else "Imported Singles"),
             )
@@ -372,6 +378,8 @@ class ImportService:
                     filename=destination.name,
                     file_path=str(destination),
                     processed_with_extender=False,
+                    artwork_synced=bool(artwork),
+                    artwork_source=artwork.source if artwork else "",
                 )
                 return
             effective = self._effective_settings()
@@ -402,6 +410,8 @@ class ImportService:
                 filename=destination.name,
                 file_path=str(destination),
                 processed_with_extender=True,
+                artwork_synced=bool(artwork),
+                artwork_source=artwork.source if artwork else "",
             )
         except Exception as error:
             message = str(error)
