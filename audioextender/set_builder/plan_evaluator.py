@@ -21,6 +21,7 @@ def _track_terms(track: dict[str, Any]) -> set[str]:
     genre = str(track.get("genre") or "")
     values = [genre, *track.get("detailedGenres", [])]
     values.extend(descriptor.get("value", "") for descriptor in track.get("descriptors", []))
+    values.extend(tag.get("value", "") for tag in track.get("playlistIdentity", []))
     return {term for value in values for raw in re.split(r"[,/|]", str(value).casefold()) if (term := raw.strip())}
 
 

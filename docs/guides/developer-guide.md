@@ -95,13 +95,16 @@ Use this table before searching through the larger composition files:
 | DJ Library catalog coordination and card/sidebar presentation                              | `frontend/features/dj-library/index.js`, `frontend/features/dj-library/view.js`, and `frontend/styles.css`                                                                                                                   |
 | DJ Library filters, bulk actions, intelligence, and musical projection                     | `frontend/features/dj-library/filters.js`, `frontend/features/dj-library/selection.js`, `frontend/features/dj-library/intelligence.js`, and `frontend/features/dj-library/model.js`                                                           |
 | Set Builder UI composition and workflow coordination                                        | `frontend/features/set-builder/index.js`, `frontend/features/set-builder/policy.js`, and `frontend/styles.css`                                                                                                                |
+| Set Builder journey rendering, genre-expansion opt-in, validation, and confirmation          | `frontend/features/set-builder/journey-review.js`                                                                                                                                                           |
 | Set Builder planning jobs, proposal switching, fallback, observability, and receipts         | `frontend/features/set-builder/planning-session.js`                                                                                                                                                  |
+| Set Builder rules-based journey allocation, strict section scarcity, and section snapshots   | `frontend/features/set-builder/journey-allocation.js`                                                                                                                                                |
 | Set Builder planning-request serialization and section-aware lock placement                  | `frontend/features/set-builder/planning-request.js`                                                                                                                                                  |
 | Set Builder revision regeneration, comparison, rollback, and Undo contract                   | `frontend/features/set-builder/regeneration.js`                                                                                                                                                      |
 | Set Builder long-running operation progress and elapsed-time presentation                    | `frontend/features/set-builder/progress-view.js`                                                                                                                                                      |
 | Set Builder learned preferences, calibration, personalization, and review submission         | `frontend/features/set-builder/feedback.js`                                                                                                                                                          |
 | Set Builder transition scoring, previews, and editor lifecycle                               | `frontend/features/set-builder/transition-editor.js`                                                                                                                                                  |
 | Set Builder generated-plan rendering and track editing                                       | `frontend/features/set-builder/plan-view.js`                                                                                                                                                          |
+| Set Builder durable Keep/Reject evidence, scoped exclusion, validated replacement, and Undo reconciliation | `frontend/features/set-builder/track-decisions.js`, `track-decision-store.js`, `track-rejection.js`                                                                                                                        |
 | Set Builder saved plans, recovery, persistence, and exports                                  | `frontend/features/set-builder/saved-sets.js`                                                                                                                                                         |
 | Candidate review waveforms                                                                  | `frontend/features/processing/candidate-review.js` and `frontend/features/processing/candidate-waveform-editor.js`                                                                                                                       |
 | Processing detail waveforms                                                                 | `frontend/features/processing/processing-job-detail.js`                                                                                                                                                         |
@@ -151,8 +154,10 @@ uses `_register_routers()` as the single delivery composition boundary.
 wrappers where scripts and integration tests still rely on the historical entry
 point.
 
-Provider metadata lookup, conservative YouTube matching, and playlist CSV
-parsing live under `audioextender/imports/`. Genre-folder taxonomy, source
+Provider metadata lookup, conservative YouTube matching, provider-neutral
+artwork resolution, and playlist CSV parsing live under `audioextender/imports/`.
+`SourceArtworkService` is the single policy used by both authorized imports and
+metadata repair jobs; keep provider branching out of HTTP routes. Genre-folder taxonomy, source
 sidecars, artwork caching, audio probing, downloaded-catalog reconciliation,
 catalog response mapping, and historical library-job removal live under
 `audioextender/library/`. Their HTTP adapters remain in `web/routes/`; do not
@@ -490,6 +495,14 @@ the same revision. Do not add `?v=` query strings to module imports or edit
 version strings in `app.js`, feature modules, or `index.html`. The macOS launcher
 adds a fresh query parameter when opening the app so relaunching does not reuse a
 stale entry page.
+
+The asset revision controls browser cache coherence; it is not the server
+revision. `RuntimeRevision` hashes all Python and frontend source once during
+application composition. `GET /api/diagnostics/runtime` returns that immutable
+startup snapshot, and `Start AudioExtender.command` compares it with the current
+checkout before reusing a responsive server. Do not replace this check with a
+feature schema or a revision recalculated per request: either would allow an old
+Python process to appear current.
 
 When changing module exports, test both a fresh browser and an already-open
 browser with stale cached modules. The browser smoke suite covers a failed entry

@@ -33,6 +33,7 @@ test('composition modules stay within explicit ownership ceilings', () => {
     'features/dj-library/selection.js': 375,
     'features/dj-library/view.js': 575,
     'features/set-builder/index.js': 3500,
+    'features/set-builder/journey-review.js': 275,
     'features/set-builder/policy.js': 340,
     'shared/track-metadata-ui.js': 280,
     'features/processing/processing-job-detail.js': 220,
@@ -135,6 +136,7 @@ test('candidate waveform editor exposes a narrow controller contract', () => {
 
 test('searchable select controller owns observation lifecycle', () => {
   const calls = [];
+  const selectors = [];
   const OriginalMutationObserver = globalThis.MutationObserver;
   globalThis.MutationObserver = class {
     observe(...args) {
@@ -145,13 +147,19 @@ test('searchable select controller owns observation lifecycle', () => {
     }
   };
   try {
-    const root = { querySelectorAll: () => [] };
+    const root = {
+      querySelectorAll: (selector) => {
+        selectors.push(selector);
+        return [];
+      },
+    };
     const storageRoot = {};
     const controller = createSearchableSelectController({ root, storageRoot });
     controller.start();
     controller.stop();
     assert.equal(calls[0][0], 'observe');
     assert.deepEqual(calls.at(-1), ['disconnect']);
+    assert.deepEqual(selectors, ['select[data-searchable]']);
   } finally {
     globalThis.MutationObserver = OriginalMutationObserver;
   }

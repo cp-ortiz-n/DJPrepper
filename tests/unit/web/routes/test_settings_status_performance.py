@@ -25,6 +25,7 @@ class SettingsStatusPerformanceTests(unittest.TestCase):
                 library_status_lock=threading.Lock(),
                 repository=lambda: repository,
                 library_location_summary=lambda: {},
+                metadata_batches=Mock(latest=Mock(return_value=None)),
             )
 
             with patch(
@@ -48,6 +49,17 @@ class SettingsStatusPerformanceTests(unittest.TestCase):
                 routine = service.library_status()
                 self.assertEqual(routine["supporting_bytes"], 7)
                 self.assertEqual(routine["file_count"], 2)
+
+            with (
+                patch.object(
+                    service,
+                    "storage_inventory",
+                    side_effect=AssertionError("health must not crawl storage"),
+                ),
+                patch.object(service, "cached_storage_inventory", return_value={"reclaimable_bytes": 17}),
+            ):
+                health = service.library_health()
+                self.assertEqual(health["storage"]["reclaimable_bytes"], 17)
 
         self.assertEqual(status["available_tracks"], 1)
         self.assertEqual(status["total_bytes"], 5)

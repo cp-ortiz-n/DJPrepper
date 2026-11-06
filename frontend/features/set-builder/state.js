@@ -1,3 +1,5 @@
+import { reconcileSetRecordingFamilies } from './recording-identity.js';
+
 export function createSetBuilderId(prefix = 'set') {
   const value = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return `${prefix}-${value}`;
@@ -6,6 +8,7 @@ export function createSetBuilderId(prefix = 'set') {
 export function createSetBuilderStore({ storage = globalThis.localStorage, createId = createSetBuilderId } = {}) {
   return {
     library: [],
+    catalogVocabulary: [],
     plan: [],
     draftId: createId('draft'),
     activeSavedSetId: '',
@@ -24,24 +27,52 @@ export function createSetBuilderStore({ storage = globalThis.localStorage, creat
     future: [],
     compactMode: storage?.getItem('set-builder-compact') === 'true',
     transitionSettings: {},
+    trackReviews: new Map(),
+    manualCurationActive: false,
+    manualSearchQuery: '',
+    manualSearchRequireAll: false,
+    manualSuggestionsRequested: false,
   };
 }
 
 export function snapshotSetPlan(store, trackId) {
   return {
     tracks: store.plan.map(trackId),
+    sections: Object.fromEntries(
+      store.plan.filter((track) => track._planSectionId).map((track) => [trackId(track), track._planSectionId]),
+    ),
     locked: [...store.lockedIds],
     transitions: structuredClone(store.transitionSettings),
     revision: store.planRevision ? structuredClone(store.planRevision) : null,
     comparison: store.revisionComparison ? structuredClone(store.revisionComparison) : null,
+    excluded: [...store.excludedIds],
+    trackReviews: Object.fromEntries(
+      [...(store.trackReviews || [])].map(([id, review]) => [id, structuredClone(review)]),
+    ),
   };
 }
 
-export function restoreSetPlan(store, snapshot, library, trackId) {
+export function restoreSetPlan(store, snapshot, library, trackId, recordingKey = trackId) {
   const byId = new Map(library.map((track) => [trackId(track), track]));
-  store.plan = (snapshot?.tracks || []).map((id) => byId.get(id)).filter(Boolean);
-  store.lockedIds = new Set(snapshot?.locked || []);
+  const resolved = (snapshot?.tracks || []).map((id) => byId.get(id)).filter(Boolean);
+  store.plan = reconcileSetRecordingFamilies(resolved, {
+    preferredTrackIds: new Set(snapshot?.locked || []),
+    trackId,
+    recordingKey,
+  }).plan;
+  if (snapshot && Object.hasOwn(snapshot, 'sections')) {
+    store.plan.forEach((track) => {
+      track._planSectionId = snapshot.sections?.[trackId(track)] || null;
+    });
+  }
+  const retained = new Set(store.plan.map(trackId));
+  store.lockedIds = new Set((snapshot?.locked || []).filter((id) => retained.has(id)));
   store.transitionSettings = structuredClone(snapshot?.transitions || {});
+  if (snapshot && Object.hasOwn(snapshot, 'excluded')) store.excludedIds = new Set(snapshot.excluded || []);
+  if (snapshot && Object.hasOwn(snapshot, 'trackReviews')) {
+    (store.trackReviews ||= new Map()).clear();
+    Object.entries(snapshot.trackReviews || {}).forEach(([id, review]) => store.trackReviews.set(id, review));
+  }
   if (snapshot && Object.hasOwn(snapshot, 'revision')) {
     store.planRevision = snapshot.revision ? structuredClone(snapshot.revision) : null;
   }
@@ -82,5 +113,10 @@ export function resetSetBuilderWorkspace(store, { createId = createSetBuilderId 
   store.history = [];
   store.future = [];
   store.transitionSettings = {};
+  store.trackReviews?.clear();
+  store.manualCurationActive = false;
+  store.manualSearchQuery = '';
+  store.manualSearchRequireAll = false;
+  store.manualSuggestionsRequested = false;
   return store;
 }

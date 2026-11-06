@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
+from audioextender.imports.source_artwork import ArtworkSyncResult
 from audioextender.infrastructure.batch_operations import BatchOperationRegistry
 from audioextender.library.metadata_mutations import (
     TrackMetadataMutationDependencies,
@@ -73,6 +74,87 @@ class TrackMetadataMutationTests(unittest.TestCase):
             self.assertEqual(sidecars[0][0], destination)
             self.assertEqual(publications, [True])
             self.assertEqual(result["file_path"], str(destination.resolve()))
+
+    def test_existing_unavailable_artwork_does_not_block_unrelated_metadata_updates(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "Library" / "Latin" / "Reggaeton" / "Dr. Doctor.wav"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"audio")
+            repository = JobRepository(root / "catalog.sqlite3")
+            track_id = repository.upsert_downloaded_track(
+                title="Dr. Doctor",
+                artist="Emi Blue and 2 more",
+                file_path=source,
+                genre="",
+                genre_category="Latin / Reggaeton",
+                playlist_name="Imported Singles",
+            )
+            artwork_url = "https://image-cdn-fa.spotifycdn.com/image/ab67616d00001e02dcb887304895f39e60f1fd6c"
+            repository.update_downloaded_track_artwork(track_id, artwork_url=artwork_url, artwork_path="")
+            service = TrackMetadataMutationService(
+                TrackMetadataMutationDependencies(
+                    repository=repository,
+                    normalize_genre=lambda value: value,
+                    genre_directory=lambda value: root / "Library" / value.replace(" / ", "/"),
+                    music_library_root=lambda: root / "Library",
+                    source_metadata_path=lambda path: path.with_suffix(".json"),
+                    write_wav_metadata=lambda *_args, **_kwargs: None,
+                    write_source_metadata=lambda *_args, **_kwargs: None,
+                    cache_track_artwork=lambda *_args: "",
+                    safe_audio_name=lambda value: value,
+                    publish_catalog=lambda: None,
+                )
+            )
+
+            result = service.update_metadata(
+                track_id,
+                TrackMetadataUpdate(
+                    title="Dr. Doctor",
+                    artist="Emi Blue and 2 more",
+                    genre="reggaeton, latin pop",
+                    genre_category="Latin / Reggaeton",
+                    playlist_name="Imported Singles",
+                    artwork_url=artwork_url,
+                ),
+            )
+
+            self.assertTrue(result["updated"])
+            self.assertEqual(result["artwork_url"], artwork_url)
+            self.assertFalse(result["artwork_available"])
+            stored = repository.get_downloaded_track(track_id)
+            assert stored is not None
+            self.assertEqual(stored["genre"], "reggaeton, latin pop")
+
+    def test_new_unavailable_artwork_url_still_rejects_the_metadata_update(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "Track.wav"
+            source.write_bytes(b"audio")
+            repository = JobRepository(root / "catalog.sqlite3")
+            track_id = repository.upsert_downloaded_track(
+                title="Track", artist="Artist", file_path=source, genre="", genre_category="Other"
+            )
+            service = TrackMetadataMutationService(
+                TrackMetadataMutationDependencies(
+                    repository=repository,
+                    normalize_genre=lambda value: value,
+                    genre_directory=lambda _value: root,
+                    music_library_root=lambda: root,
+                    source_metadata_path=lambda path: path.with_suffix(".json"),
+                    write_wav_metadata=lambda *_args, **_kwargs: None,
+                    write_source_metadata=lambda *_args, **_kwargs: None,
+                    cache_track_artwork=lambda *_args: "",
+                    safe_audio_name=lambda value: value,
+                    publish_catalog=lambda: None,
+                )
+            )
+
+            with self.assertRaisesRegex(ValueError, "Artwork could not be downloaded"):
+                service.update_metadata(
+                    track_id,
+                    TrackMetadataUpdate(title="Track", artwork_url="https://example.com/new.jpg"),
+                )
 
     def test_genre_change_publishes_after_catalog_and_files_are_updated(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -159,8 +241,7 @@ class TrackMetadataMutationTests(unittest.TestCase):
                     sync_wav_metadata=Mock(),
                     read_wav_artwork=Mock(),
                     embed_wav_artwork=Mock(),
-                    cache_track_artwork=Mock(),
-                    spotify_source_metadata=Mock(),
+                    source_artwork=Mock(),
                     generalized_genre=lambda _value: "Latin",
                     normalize_genre=lambda value: str(value),
                     genre_directory=lambda value: root / value,
@@ -182,6 +263,59 @@ class TrackMetadataMutationTests(unittest.TestCase):
 
             self.assertEqual(result["updated"], 2)
             self.assertEqual(changes, [([1], "Latin"), ([2], "Latin")])
+            self.assertEqual(publications, [True])
+
+    def test_artwork_batch_repairs_catalog_through_provider_independent_service(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            audio = root / "Track.wav"
+            audio.write_bytes(b"audio")
+            repository = Mock()
+            source_artwork = Mock()
+            source_artwork.sync_track.return_value = ArtworkSyncResult(
+                "https://i1.sndcdn.com/art.jpg",
+                str(root / ".artwork" / "art.jpg"),
+                "soundcloud",
+            )
+            publications: list[bool] = []
+            service = MetadataBatchService(
+                MetadataBatchDependencies(
+                    repository=lambda: repository,
+                    require_library_online=Mock(),
+                    sync_wav_metadata=Mock(),
+                    read_wav_artwork=Mock(return_value=None),
+                    embed_wav_artwork=Mock(),
+                    source_artwork=source_artwork,
+                    generalized_genre=Mock(),
+                    normalize_genre=Mock(),
+                    genre_directory=Mock(),
+                    change_genre=Mock(),
+                    publish_catalog=lambda: publications.append(True),
+                    refresh_wav_tag_audit=Mock(),
+                    schedule_wav_tag_audit_refresh=Mock(),
+                    music_library_root=lambda: root,
+                    registry=BatchOperationRegistry(),
+                )
+            )
+            track = {
+                "id": 7,
+                "title": "SoundCloud Track",
+                "filename": audio.name,
+                "file_path": str(audio),
+                "youtube_url": "https://soundcloud.com/dj/track",
+                "youtube_id": "soundcloud:abc123",
+                "artwork_path": "",
+            }
+
+            result = service._sync_artwork(Mock(), [track])
+
+            self.assertEqual(result["updated"], 1)
+            source_artwork.sync_track.assert_called_once_with(track, audio)
+            repository.update_downloaded_track_artwork.assert_called_once_with(
+                7,
+                artwork_url="https://i1.sndcdn.com/art.jpg",
+                artwork_path=str(root / ".artwork" / "art.jpg"),
+            )
             self.assertEqual(publications, [True])
 
 

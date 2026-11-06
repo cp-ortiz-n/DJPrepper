@@ -86,6 +86,34 @@ export function setProposalMarkup(proposals, activeProposal, escapeHtml) {
     .join('');
 }
 
+export function planActionAvailability({
+  planLength = 0,
+  healthAccepted = false,
+  unresolvedRejection = false,
+  healthThreshold = 0,
+} = {}) {
+  const hasPlan = Number(planLength) > 0;
+  const exportBlocked = !hasPlan || !healthAccepted;
+  const exportReason = !hasPlan
+    ? 'Build a set before exporting.'
+    : unresolvedRejection
+      ? 'Save this draft now, then resolve rejected tracks before exporting.'
+      : healthAccepted
+        ? 'This set is ready to export.'
+        : `Save this draft now, then raise mix health to ${healthThreshold} before exporting.`;
+  return {
+    saveDisabled: !hasPlan,
+    saveTitle: hasPlan
+      ? healthAccepted
+        ? 'Save this set.'
+        : 'Save this draft. Export will remain unavailable until release checks pass.'
+      : 'Build a set before saving.',
+    exportDisabled: exportBlocked,
+    exportTitle: exportBlocked ? exportReason : '',
+    exportReason,
+  };
+}
+
 export function aiObservabilityCards(report, escapeHtml) {
   return [
     ['AI selected', report.aiSelectedCount],

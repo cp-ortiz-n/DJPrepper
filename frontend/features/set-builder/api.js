@@ -37,6 +37,12 @@ export function createSetBuilderApi({ api, planningClient = createSetPlanningCli
     preferenceProfile: (context) =>
       get(`/api/set-builder/preferences?context=${encodeURIComponent(context)}`, 'Profile unavailable.'),
     recordPreference: (events) => post('/api/set-builder/preferences/events', { events }, 'Feedback was not recorded.'),
+    deletePreferenceEvent: (eventId) =>
+      api.delete(
+        `/api/set-builder/preferences/events/${encodeURIComponent(eventId)}`,
+        {},
+        'Feedback could not be undone.',
+      ),
     dismissPreference: (dimension, value) =>
       api.delete(
         '/api/set-builder/preferences/signals',

@@ -9,9 +9,10 @@ from typing import Any
 
 from audioextender.library.musical_profile import MUSICAL_PROFILE_VERSION
 from audioextender.library.recording_identity import recording_dedupe_key
+from audioextender.set_builder.genre_vocabulary import normalize_genre_term
 from audioextender.set_builder.preference_learning import PersonalizedCandidateRanker
 
-SET_BUILDER_CATALOG_VERSION = 7
+SET_BUILDER_CATALOG_VERSION = 11
 
 
 def _terms(value: Any) -> list[str]:
@@ -37,12 +38,18 @@ def _descriptors(item: dict[str, Any]) -> list[dict[str, Any]]:
     return [descriptor for descriptor in raw if isinstance(descriptor, dict)]
 
 
+def _playlist_identity(item: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = item.get("playlist_identity") or []
+    return [tag for tag in raw if isinstance(tag, dict) and tag.get("value")]
+
+
 def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
     analysis = item.get("analysis") or {}
     serialized_profile = analysis.get("musical_profile") or {}
     profile = serialized_profile if serialized_profile.get("version") == MUSICAL_PROFILE_VERSION else {}
     job = item.get("job") or {}
     descriptors = _descriptors(item)
+    playlist_identity = _playlist_identity(item)
     path = _selected_path(item)
     title = str(analysis.get("title") or Path(str(analysis.get("source_name") or job.get("source_name") or "")).stem)
     artist = str(analysis.get("artist") or "")
@@ -66,6 +73,15 @@ def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
             for value in descriptors
             if value.get("value")
         ],
+        "playlistIdentity": [
+            {
+                "value": str(tag.get("value") or ""),
+                "source": str(tag.get("source") or ""),
+                "provenance": "playlist",
+                "confidence": float(tag.get("confidence") or 0),
+            }
+            for tag in playlist_identity
+        ],
         "bpm": round(float(analysis.get("bpm") or 0), 2),
         "key": str(profile.get("key") or analysis.get("key") or ""),
         "camelot": str(profile.get("camelot") or analysis.get("_camelot") or ""),
@@ -80,26 +96,54 @@ def _compact_track(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _match_score(track: dict[str, Any], section: dict[str, Any]) -> tuple[float, str, list[dict[str, str]]]:
+def _match_score(track: dict[str, Any], section: dict[str, Any]) -> tuple[float, str, list[dict[str, str]], bool]:
     genres = set(_terms(track["genre"]) + track["detailedGenres"])
-    descriptor_values = {str(item["value"]).casefold() for item in track["descriptors"]}
+    descriptor_values = {
+        normalized
+        for item in track["descriptors"]
+        for raw in [str(item["value"]), *_terms(item["value"])]
+        if (normalized := normalize_genre_term(raw))
+    }
+    playlist_values = {str(item["value"]).casefold() for item in track["playlistIdentity"]}
     requested_genres = set(_terms(section.get("genres", [])))
     characteristics = set(_terms(section.get("characteristics", [])))
     direct = requested_genres & genres
-    identity = (requested_genres | characteristics) & descriptor_values
+    requested_descriptor_identity = requested_genres & descriptor_values
+    characteristic_identity = characteristics & descriptor_values
+    descriptor_identity = requested_descriptor_identity | characteristic_identity
+    playlist_identity = requested_genres & playlist_values
+    identity = descriptor_identity | playlist_identity
     target_energy = (float(section.get("energyStart") or 5) + float(section.get("energyEnd") or 5)) / 20
     energy_fit = max(0.0, 1 - abs(float(track["energy"]) - target_energy))
     reasons: list[dict[str, str]] = []
     if direct:
         reasons.append({"evidence": "verified", "text": f"Catalog genre matches: {', '.join(sorted(direct))}."})
-    if identity:
-        reasons.append({"evidence": "verified", "text": f"Identity descriptors match: {', '.join(sorted(identity))}."})
+    if descriptor_identity:
+        reasons.append(
+            {"evidence": "verified", "text": f"Identity descriptors match: {', '.join(sorted(descriptor_identity))}."}
+        )
+    if playlist_identity:
+        sources = sorted(
+            {
+                str(item.get("source") or "")
+                for item in track["playlistIdentity"]
+                if str(item.get("value") or "").casefold() in playlist_identity and item.get("source")
+            }
+        )
+        source_text = f" from {', '.join(sources)}" if sources else ""
+        reasons.append(
+            {
+                "evidence": "estimated",
+                "text": f"Playlist/crate identity matches: {', '.join(sorted(playlist_identity))}{source_text}.",
+            }
+        )
     reasons.append({"evidence": "estimated", "text": f"Energy fit is {round(energy_fit * 100)}%."})
     tier = "direct" if direct else "identity" if identity else "bridge" if energy_fit >= 0.72 else "fallback"
     score = len(direct) * 45 + len(identity) * 24 + energy_fit * 20
     if track["timing"] == "steady":
         score += 3
-    return score, tier, reasons
+    strict_genre_eligible = bool(direct or requested_descriptor_identity or playlist_identity)
+    return score, tier, reasons, strict_genre_eligible
 
 
 def _matches_constraints(track: dict[str, Any], constraints: dict[str, Any]) -> bool:
@@ -118,11 +162,15 @@ def _matches_constraints(track: dict[str, Any], constraints: dict[str, Any]) -> 
     required_details = set(_terms(constraints.get("detailedGenres", [])))
     if required_details and not detailed.intersection(required_details):
         return False
-    genre = str(track.get("genre") or "").strip().casefold()
+    genre = normalize_genre_term(track.get("genre"))
+    genre_terms = {normalize_genre_term(term) for term in _terms(track.get("genre"))}
     excluded_genres = {
-        str(value).strip().casefold() for value in constraints.get("excludedGenres", []) if str(value).strip()
+        normalized
+        for value in constraints.get("excludedGenres", [])
+        for raw in [value, _terms(value)[-1] if _terms(value) else ""]
+        if (normalized := normalize_genre_term(raw))
     }
-    return not any(genre == excluded or genre.startswith(f"{excluded} /") for excluded in excluded_genres)
+    return genre not in excluded_genres and genre_terms.isdisjoint(excluded_genres)
 
 
 @dataclass(frozen=True)
@@ -163,6 +211,7 @@ class SetCandidateRetriever:
         ]
         compact, collapsed_ids = _deduplicate_recordings(compact, required | locked)
         known_ids = {track["id"] for track in compact}
+        strict_genres = str((journey.get("genrePolicy") or {}).get("mode") or "").casefold() == "strict"
         sections: list[dict[str, Any]] = []
         emitted: set[str] = set()
         for section in journey.get("sections", []):
@@ -172,7 +221,9 @@ class SetCandidateRetriever:
                 locked_section = locked_by_section.get(track["id"])
                 if locked_section and locked_section != section_id:
                     continue
-                score, tier, reasons = _match_score(track, section)
+                score, tier, reasons, strict_genre_eligible = _match_score(track, section)
+                if strict_genres and not strict_genre_eligible and track["id"] not in required | locked:
+                    continue
                 technical_score = score
                 preference_adjustment, preference_reasons = (
                     self.preference_ranker.adjustment(track, str((constraints or {}).get("vibe") or "balanced"))
@@ -243,10 +294,12 @@ class SetCandidateRetriever:
         available_ids = {track["id"] for track in compact if track["available"]}
         return {
             "version": 1,
+            "genrePolicy": "strict" if strict_genres else "related",
             "sections": sections,
             "candidateCount": len(emitted),
             "duplicateRecordingsCollapsed": len(collapsed_ids),
             "collapsedTrackIds": sorted(collapsed_ids),
+            "duplicateProtectedIds": sorted(collapsed_ids & (required | locked)),
             "missingRequiredIds": sorted(required - known_ids),
             "unavailableRequiredIds": sorted((required & known_ids) - available_ids),
             "limits": {"perSection": limit, "total": total_cap},

@@ -1,3 +1,5 @@
+import { reconcileInterpretedGenreAuthority } from './journey-policy.js';
+
 export const SET_STORAGE_KEY = 'dj-library-studio-sets-v1';
 export const SET_STORAGE_MIGRATION_KEY = 'dj-library-studio-sets-migrated-v2';
 export const SET_IDENTITY_STORAGE_KEY = 'dj-library-track-identities-v1';
@@ -10,6 +12,7 @@ export const DEFAULT_SET_FALLBACK_POLICY = [
 ];
 export {
   deduplicateSetRecordings,
+  reconcileSetRecordingFamilies,
   setCatalogTrackId,
   setRecordingKey,
   setTrackId,
@@ -114,22 +117,6 @@ export function parseIdentityTerms(value) {
   ];
 }
 
-const SET_GENRE_INTENT_PATTERNS = [
-  [/latin techno/, 'latin techno'],
-  [/latin house/, 'latin house'],
-  [/schranz/, 'schranz'],
-  [/reggaeton|perreo/, 'reggaeton'],
-  [/dembow/, 'dembow'],
-  [/bachata/, 'bachata'],
-  [/cumbia/, 'cumbia'],
-  [/merengue/, 'merengue'],
-  [/salsa/, 'salsa'],
-  [/guaracha/, 'guaracha'],
-  [/(?:r\s*&\s*b|rnb|rhythm and blues|\brab\b)/, 'r&b'],
-  [/hip[- ]?hop/, 'hip hop'],
-  [/(?:^|\W)rap(?:\W|$)/, 'rap'],
-];
-
 function normalizedIntentPhrase(value) {
   return ` ${String(value || '')
     .toLowerCase()
@@ -139,17 +126,43 @@ function normalizedIntentPhrase(value) {
     .replace(/\s+/g, ' ')} `;
 }
 
-function trackGenreSearchText(track) {
-  return normalizedIntentPhrase(
-    `${track?._genre || track?.genre || ''} ${track?._detailedGenre || track?.detailed_genre || ''}`,
-  ).trim();
+/** Return the inspectable evidence that makes a track eligible for a requested identity. */
+export function trackGenreMatchEvidence(track, term) {
+  const wanted = normalizedIntentPhrase(term).trim();
+  if (!wanted) return null;
+  const direct = [track?._genre || track?.genre, track?._detailedGenre || track?.detailed_genre]
+    .filter(Boolean)
+    .find((value) => normalizedIntentPhrase(value).trim().includes(wanted));
+  if (direct) return { kind: 'verified', source: 'catalog', text: `Catalog genre evidence: ${direct}.` };
+  const descriptor = (track?._descriptors || track?.descriptors || []).find(
+    (item) => normalizedIntentPhrase(item?.value || item).trim() === wanted,
+  );
+  if (descriptor)
+    return {
+      kind: 'verified',
+      source: 'descriptor',
+      text: `Musical identity descriptor: ${descriptor.value || descriptor}.`,
+    };
+  const playlist = (track?._playlistIdentity || track?.playlist_identity || []).find(
+    (item) => normalizedIntentPhrase(item?.value || item).trim() === wanted,
+  );
+  if (playlist)
+    return {
+      kind: 'estimated',
+      source: 'playlist',
+      text: `Playlist/crate identity: ${playlist.value || playlist}${playlist.source ? ` from ${playlist.source}` : ''}.`,
+    };
+  const manual = (track?._manualIdentity || []).find(
+    (value) => normalizedIntentPhrase(value).trim() === wanted,
+  );
+  if (manual) return { kind: 'verified', source: 'identity', text: `Track identity tag: ${manual}.` };
+  return null;
 }
 
 export function trackMatchesIntendedGenre(track, term) {
   const wanted = normalizedIntentPhrase(term).trim();
-  const metadata = trackGenreSearchText(track);
   if (!wanted) return false;
-  if (metadata.includes(wanted)) return true;
+  if (trackGenreMatchEvidence(track, term)) return true;
   return inferredTrackIdentity(track, track?._manualIdentity || []).some(
     (tag) => normalizedIntentPhrase(tag).trim() === wanted,
   );
@@ -161,8 +174,6 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
   const preferred = [];
   const required = [];
   const avoided = [];
-  const requestedGenres = [];
-  const genreSequence = [];
   const rules = [
     [/ecuador|ecuadorian/, 'ecuadorian party'],
     [/colombia|colombian/, 'colombian'],
@@ -192,34 +203,6 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
   rules.forEach(([pattern, term]) => {
     if (pattern.test(lower)) preferred.push(term);
   });
-  SET_GENRE_INTENT_PATTERNS.forEach(([pattern, term]) => {
-    const match = lower.match(pattern);
-    if (match) {
-      requestedGenres.push(term);
-      genreSequence.push({ term, index: match.index ?? Number.MAX_SAFE_INTEGER });
-    }
-  });
-  const normalizedText = normalizedIntentPhrase(text);
-  const genericTerms = new Set(['all', 'any', 'general', 'music', 'other', 'unknown', 'unclassified']);
-  for (const rawTerm of catalogVocabulary) {
-    const term = String(rawTerm || '')
-      .trim()
-      .toLowerCase();
-    const normalized = normalizedIntentPhrase(term).trim();
-    if (normalized.length < 3 || genericTerms.has(normalized)) continue;
-    if (normalizedText.includes(` ${normalized} `)) {
-      preferred.push(term);
-      if (
-        /techno|house|schranz|reggaeton|dembow|bachata|cumbia|merengue|salsa|guaracha|hip hop|r&b|\brap\b/.test(
-          normalized,
-        )
-      ) {
-        requestedGenres.push(term);
-        const index = normalizedText.indexOf(` ${normalized} `);
-        genreSequence.push({ term, index: index < 0 ? Number.MAX_SAFE_INTEGER : index });
-      }
-    }
-  }
   if (/(?:must|required|require)[^.]*spanish/.test(lower)) required.push('spanish vocals');
   if (/(?:must|required|require)[^.]*(?:latin percussion|dembow|latin rhythm)/.test(lower))
     required.push('latin rhythmic identity');
@@ -231,11 +214,16 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
       ? 'low'
       : /wide|open genre|context over genre/.test(lower)
         ? 'wide'
-        : 'moderate';
+        : /allow related genres|allow genre bridges|musical bridges|genre bridges|genre drift|allow[^.]{0,60}bridges/.test(
+              lower,
+            )
+          ? 'moderate'
+          : 'none';
   const chill = /(?:chill|kickback|laid[- ]?back|low[- ]?key)/.test(lower);
   const dance = /(?:party|danc(?:e|ing))/.test(lower);
-  const vibe =
-    chill && dance
+  const vibe = /peak[- ]?time|high energy/.test(lower)
+    ? 'peak-time'
+    : chill && dance
       ? 'balanced'
       : /warm[- ]?up/.test(lower)
         ? 'warm-up'
@@ -244,28 +232,31 @@ export function interpretSetIntention(value, catalogVocabulary = []) {
           : chill
             ? 'warm-up'
             : null;
-  const curve = /varying waves|energy waves|wave(?:s|d)? of energy/.test(lower) ? 'waves' : null;
+  const curve = /varying waves|energy waves|wave(?:s|d)? of energy/.test(lower)
+    ? 'waves'
+    : /all around|throughout|whole set|entire set|start to finish|all night|consistently/.test(lower)
+      ? 'steady'
+      : null;
   const opening = /(?:start|open|begin)[^.]{0,80}melodic|melodic[^.]{0,40}(?:start|opening|beginning)/.test(lower)
     ? 'melodic'
     : null;
-  const orderedGenres = [
-    ...new Map(
-      genreSequence.sort((left, right) => left.index - right.index).map((item) => [item.term, item.term]),
-    ).values(),
-  ];
-  return {
+  return reconcileInterpretedGenreAuthority(
+    {
+      text,
+      required: parseIdentityTerms(required.join(',')),
+      preferred: parseIdentityTerms(preferred.join(',')),
+      avoided: parseIdentityTerms(avoided.join(',')),
+      requestedGenres: [],
+      genreSequence: [],
+      drift,
+      vibe,
+      curve,
+      opening,
+      fallbackPolicy: [...DEFAULT_SET_FALLBACK_POLICY],
+    },
+    catalogVocabulary,
     text,
-    required: parseIdentityTerms(required.join(',')),
-    preferred: parseIdentityTerms(preferred.join(',')),
-    avoided: parseIdentityTerms(avoided.join(',')),
-    requestedGenres: parseIdentityTerms(requestedGenres.join(',')),
-    genreSequence: orderedGenres,
-    drift,
-    vibe,
-    curve,
-    opening,
-    fallbackPolicy: [...DEFAULT_SET_FALLBACK_POLICY],
-  };
+  );
 }
 
 export function intendedGenreForPosition(identity, index, count) {
@@ -288,7 +279,16 @@ export function intendedGenreForPosition(identity, index, count) {
 export function inferredTrackIdentity(track, manual = []) {
   const source =
     `${track.source_name || ''} ${track.title || ''} ${track.artist || ''} ${track._genre || track.genre || ''} ${track._detailedGenre || track.detailed_genre || ''}`.toLowerCase();
-  const tags = [...manual.map((value) => String(value).toLowerCase())];
+  const tags = [
+    ...manual.map((value) => String(value).toLowerCase()),
+    ...(track?._playlistIdentity || track?.playlist_identity || [])
+      .map((tag) =>
+        String(tag?.value || tag || '')
+          .trim()
+          .toLowerCase(),
+      )
+      .filter(Boolean),
+  ];
   const add = (term, pattern) => {
     if (pattern.test(source)) tags.push(term);
   };

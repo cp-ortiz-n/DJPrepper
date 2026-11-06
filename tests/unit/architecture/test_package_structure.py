@@ -151,6 +151,19 @@ class PackageStructureTests(unittest.TestCase):
         self.assertLess(len(main_shim.splitlines()), 30)
         self.assertLess(len(web_shim.splitlines()), 30)
 
+    def test_mac_launcher_restarts_a_responsive_but_stale_backend(self) -> None:
+        launcher = (PROJECT_ROOT / "Start AudioExtender.command").read_text(encoding="utf-8")
+
+        self.assertIn("/api/diagnostics/runtime", launcher)
+        self.assertIn("EXPECTED_RUNTIME_REVISION", launcher)
+        self.assertIn("RUNNING_RUNTIME_REVISION", launcher)
+        self.assertIn("audioextender.infrastructure.runtime_revision", launcher)
+        self.assertNotIn("EXPECTED_CATALOG_VERSION", launcher)
+        self.assertLess(
+            launcher.index("/api/diagnostics/runtime"),
+            launcher.index("AudioExtender is already running the current backend"),
+        )
+
     def test_application_imports_only_the_persistence_namespace(self) -> None:
         violations: list[str] = []
         for source in PACKAGE_ROOT.rglob("*.py"):

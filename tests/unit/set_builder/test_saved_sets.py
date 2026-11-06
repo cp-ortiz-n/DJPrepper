@@ -67,6 +67,34 @@ class SavedSetServiceTests(unittest.TestCase):
         self.assertTrue(service.delete("set-1")["deleted"])
         self.assertFalse(service.delete("set-1")["deleted"])
 
+    def test_saved_set_normalization_keeps_one_preferred_version_per_recording_family(self) -> None:
+        repository = MemoryStateRepository()
+        payload = record()
+        payload["tracks"] = ["original", "bridge", "remix"]
+        payload["locked"] = ["remix"]
+        payload["required"] = ["original"]
+        payload["trackDetails"] = [
+            {"id": "original", "recordingKey": "recording:DSC-1"},
+            {"id": "bridge", "recordingKey": "recording:DSC-2"},
+            {"id": "remix", "recordingKey": "recording:DSC-1"},
+        ]
+
+        saved = SavedSetService(repository).upsert(payload)["set"]
+
+        self.assertEqual(saved["tracks"], ["bridge", "remix"])
+        self.assertEqual(saved["locked"], ["remix"])
+        self.assertEqual(saved["required"], [])
+        self.assertEqual([detail["id"] for detail in saved["trackDetails"]], ["bridge", "remix"])
+
+    def test_legacy_saved_set_without_family_metadata_only_collapses_exact_track_ids(self) -> None:
+        payload = record()
+        payload["tracks"] = ["same", "same", "different"]
+        payload.pop("trackDetails", None)
+
+        saved = SavedSetService(MemoryStateRepository()).upsert(payload)["set"]
+
+        self.assertEqual(saved["tracks"], ["same", "different"])
+
 
 if __name__ == "__main__":
     unittest.main()

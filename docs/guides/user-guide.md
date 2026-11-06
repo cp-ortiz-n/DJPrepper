@@ -61,11 +61,51 @@ journey made of named sections, runtime percentages, catalog genres, musical
 characteristics, purposes, and start/end energy targets. The default `auto`
 provider order is local Ollama, optional OpenAI, and finally deterministic rules.
 
-Set Builder now exposes three explicit planning modes: **AI Planned** lets the
-configured model select and order tracks from a bounded catalog shortlist,
-**AI Interpreted** uses the model for the brief and journey while deterministic
-rules choose tracks, and **Classic** uses local rules only. AI Planned results
-are still validated against real catalog IDs,
+After reviewing an AI brief, confirm its **Planned journey** before building the
+track list. Exact genre prompts are strict by default: “Create a Latin Techno
+set” keeps Latin Techno in every section while allowing the energy and purpose
+to evolve. Short names are canonicalized from relationships in your current
+catalog: Set Builder groups each organized genre with the detailed genre names
+found on its tracks. When one detailed name appears under several organized
+genres, Set Builder first prefers the canonical family whose name contains that
+phrase, then uses that specific alias's observed track count as a tie-breaker
+instead of the unrelated size of the whole parent category. Broad catalog names
+joined with `&` also expose their own components, so prompts such as “rock,”
+“chill,” “funk,” and “soul” resolve without a source-code exception list.
+For example, “disco” selects **Disco & Funk** when Disco is a detailed genre on
+tracks organized there. No global list of genre exceptions is required, so new
+genres become available as the library evolves. The written brief remains
+authoritative even when the AI omits that genre from its structured response. The journey
+starts as compact overview rows; expand only the section you want to edit. Use
+**Use in every section** to apply the core genres at once.
+Related catalog genres proposed by the model appear as unselected suggestions;
+turn on **Allow related genres** and add only the bridges you actually want.
+If Local AI proposes an unrequested genre, Set Builder moves it out of the
+active section automatically and labels the journey **Adjusted · review**.
+The idea remains available as a suggestion, but it cannot affect track selection
+until you explicitly enable related genres and add it. A disabled **Confirm
+journey** button means a duration, empty-section, or genre-boundary issue is
+named in the journey footer and must be corrected first.
+Editing any section marks the journey unconfirmed again. **Reset** restores
+the reviewed proposal, while **Regenerate journey** creates another structure
+from the current prompt.
+
+Rules-based planning now treats those section genres as positional constraints,
+not just overall set suggestions. It fills each section from matching analyzed
+tracks and keeps transition optimization inside the section boundary. When a
+strict section needs more unique matches than the catalog contains, the build
+stops and names the scarce section instead of silently filling it with another
+genre. Edit that section, enable related genres, or analyze and retag additional
+matching tracks, then build again.
+
+Set Builder separates direction authoring from track selection. Choose
+**Describe what I want** to have Local AI turn natural language into an editable
+brief, or **Configure the journey** to define genres, energy, flow, and
+constraints yourself. Then choose **AI curated** to have the
+configured model rank and order a bounded catalog shortlist, or **Rules-based**
+to use local genre, BPM, key, energy, and constraint scoring only. The summary
+above the build action always shows both choices. AI-curated results are still
+validated against real catalog IDs,
 available files, exclusions, required or locked tracks, duration, section
 coverage, BPM jumps, keys, and vocal collisions. Invalid model plans receive up
 to two bounded repair attempts, then fall back to a deterministic catalog-backed
@@ -81,6 +121,43 @@ warnings, evaluation, fallback reason, journey, and per-track selection reasons.
 Planning jobs persist locally; an app restart marks interrupted work as safely
 retryable instead of losing or silently applying it.
 
+Choose **Curate track by track** when you want to build from an empty running
+order. The catalog search is not limited to genre: enter an artist, title,
+playlist/crate name, descriptor, role, vibe, detailed genre, audio profile, or
+several keywords. Results rank all matching identity evidence and show the
+specific playlist, tag, genre, or other source that matched. Turn on **Require
+every keyword** for a narrower intersection. Preview any result with the same
+seekable player used in the running order, then add it at the next position.
+Each result keeps its title, fit, two strongest evidence signals, preview, and
+add state inside one consistent card. Long metadata is shortened visually; its
+full value remains available by hovering the title or evidence signal.
+The catalog initially shows the 12 strongest matches; **Show more** reveals the
+next ranked batch without changing the search or losing the current set.
+**Suggest next** ranks unused tracks against the current last track, while
+**Check transitions** opens mix health after at least two tracks exist.
+The live running order stays in a sticky **Current set** rail beside the catalog,
+so you can preview and add tracks without losing sight of the set you are shaping.
+The rail scrolls independently and can be collapsed. On smaller screens it moves
+above the catalog with a bounded height, keeping both the current set and search
+results close at hand.
+
+The rail also contains **Set Coach**. Choose an **Energy shape**—Gradual build,
+Peak and release, Energy waves, or Hold the level—then select **Preview best
+order**. Set Coach compares only the tracks already in the set, preserving
+locked positions, journey-section boundaries, and set membership. The preview
+shows both mix-health and energy-fit changes plus each proposed track's energy;
+nothing moves until you choose **Apply order**, and the change remains undoable.
+**Suggest next tracks** uses that same energy shape when ranking unused catalog
+tracks against the current ending, intention, preferences, and compatibility,
+then opens those candidates with their evidence and audio previews.
+
+Only one version of a song family may occupy the set. After adding an original,
+remix, edit, or duplicate import, other versions are labeled **Already in set**
+in the catalog browser. Use **Alternatives** on the running-order row to
+swap versions without creating a duplicate. Manual sets keep the normal
+drag/reorder, Undo/Redo, transition editing, save/load, review, and export
+behavior.
+
 After a plan exists, use **Lock** on any track that must stay, then choose
 **Regenerate unlocked** in the persistent workspace bar. Set Builder reuses the
 current brief and journey rather than interpreting the intention again. Locked
@@ -90,6 +167,37 @@ workspace reports how many tracks stayed or changed and how many locks were
 preserved. **Undo** restores the complete previous revision, including its
 track order, locks, transitions, revision number, and planning receipt.
 
+The running order has a visible drag handle beneath each track number. Drag an
+unlocked track before or after another row to reorder it, or focus the handle
+and use the Up/Down arrow keys for precise keyboard movement. Reordering is
+undoable and immediately recalculates the neighboring transition scores. A
+locked track must be unlocked before it can be moved. Every compact track row
+also keeps its audio preview visible: press **Play**, drag the seek bar to sample
+another part of the track, and use the speaker control to mute or unmute it.
+Starting another preview stops the previous track, and changing the running
+order stops the current preview before the rows are rebuilt. **More** opens a fixed
+track inspector whose close control remains visible; click outside the
+inspector or press Escape to dismiss it. Opening **Edit mix** closes the
+inspector first. The transition editor keeps its close control visible while
+scrolling, also provides **Done editing** at the bottom, and accepts Escape.
+
+Track feedback is available from **More** without crowding the compact row.
+**Keep** saves a preference immediately and shows **Kept · saved**; it does not
+lock the position. **Reject & replace** opens a short guided dialog where the
+reason is optional and the scope is explicit: reject only that version, or the
+song's complete recording family. Set Builder saves the feedback before
+changing the running order, then chooses the strongest eligible replacement
+for the same journey section. The replacement must pass the current hard rules,
+must not duplicate another recording family, and is labeled **Replaced**. Undo
+restores the prior track and retracts the saved rejection; Redo reapplies both.
+Locked and required tracks explain why they must be unprotected before they can
+be rejected. If no valid replacement exists, the original remains visibly
+**Rejected · feedback saved**, Save and Export stay unavailable, and **Retry
+replacement** becomes available after rules are relaxed. This prevents a
+rejected track or a silent gap from being exported accidentally. Retry keeps
+the already-saved reason and scope; use Undo first if the decision itself needs
+to change.
+
 Phase 2D compares every validated AI proposal with an independently generated
 deterministic baseline. AI wins only when it improves the deterministic quality
 score, preserves requested-genre coverage, and still passes every hard
@@ -97,7 +205,13 @@ validator. Track uniqueness is enforced by permanent recording family, not by
 filename: an original, remix, alternate import, or spelling/spacing variant of
 the same song can contribute at most one track to a set. This rule applies to
 AI planning, deterministic planning, saved-set recovery, and manual add or
-replace actions. **Alternatives** on a recommended track still shows every
+replace actions. Saving, undo/redo restoration, regeneration, CSV export, and
+M3U8 export pass through the same recording-family invariant as a final safety
+boundary. A protected version wins over an unprotected version; when two
+locked or required tracks are versions of the same song, planning stops and
+asks you to keep one instead of silently breaking a lock. Legacy saved sets are
+reconciled when loaded, with unavailable tracks recovered separately so a
+duplicate version is never replaced by an unrelated song. **Alternatives** on a recommended track still shows every
 analyzed version in that recording family—such as the original, remix, extended
 mix, or live version—before suggesting different songs. Choosing one replaces
 the current version, so you can compare versions without creating a duplicate.
@@ -109,7 +223,7 @@ scores, the winner, the reason, and any repair count.
 
 Phase 2E adds local, explainable preference learning without retraining or
 granting the model control over safety rules. Locking, removing, replacing,
-adding, saving, and exporting tracks record small catalog-feature signals in a
+adding, keeping, rejecting, saving, and exporting tracks record small catalog-feature signals in a
 local JSON store. A signal must be supported by at least three distinct tracks
 before it changes candidate ordering, the combined adjustment is capped at
 eight points, and broad signals are damped so they do not hide distinctive
@@ -225,8 +339,14 @@ key, vocal, and energy movement. Checked-in scenario thresholds cause the
 evaluation command to fail when quality, coverage, or transition warnings
 regress.
 
-The **Import** tab can convert an individually confirmed, authorized YouTube
-source to WAV. It can also read a Spotify playlist CSV and suggest a likely
+The **Import** tab can convert individually confirmed, authorized YouTube and
+SoundCloud sources to WAV. It also synchronizes available cover artwork into
+the catalog and WAV: matched Spotify art is preferred, followed by SoundCloud
+track art and then the YouTube thumbnail. Completed queue items report whether
+artwork was synchronized. Missing artwork can be retried later with **Music
+Files → More → Sync artwork** without importing the audio again.
+
+The importer can also read a Spotify playlist CSV and suggest a likely
 YouTube URL for every track without Spotify credentials. The importer directly
 recognizes exports with `Track Name`, `Artist Name(s)`, `Duration (ms)`,
 `Genres`, and `Tempo`; only the track and artist columns are required.
@@ -293,8 +413,17 @@ Every Music Files recording has a permanent readable identity such as
 `HOU-000184-ORG`. Related versions share the `HOU-000184` family while the
 three-letter prefix identifies the parent genre and suffixes identify
 the original, extended edit, remix, radio edit, live recording, remaster,
-instrumental, or acapella. These IDs survive renames, genre moves, reanalysis,
-and library relocation. **Collection integrity** presents conservative duplicate
+instrumental, or acapella. Manually confirmed IDs survive renames, genre moves,
+reanalysis, and library relocation. Catalog startup, import, metadata
+correction, and reanalysis may repair an unlocked legacy family ID when another
+catalog row has the same inferred song identity—for example, an original and a
+credited remix. The generic inference uses canonical titles, explicit version
+and feature labels, stable source IDs, exact audio fingerprints, and shared
+named artist credits; it does not contain song-specific aliases or use broad
+fuzzy title similarity. An unrelated cover with the same title remains a
+separate family. **Keep as separate recording** or a manual family link prevents
+future automatic reassignment. **Collection
+integrity** presents conservative duplicate
 matches for review; merging combines catalog references while deliberately
 leaving the unused WAV on disk, and **Keep as separate recording** assigns a new
 family when two similar tracks are genuinely different.
@@ -445,7 +574,6 @@ arrangement thresholds remain visible as warnings and scores, but no longer
 discard the user's chosen option. Automatic processing continues to enforce all
 safety thresholds normally.
 
-
 ## Usage
 
 The easiest workflow is to place one or many songs in `workspace/input/`, then run:
@@ -484,11 +612,11 @@ intact. An unchanged candidate set is not duplicated. If an override or scoring
 improvement produces different candidates, a new timestamped generation is
 appended beneath the earlier review.
 
-| Candidate measurement | Interpretation |
-|---|---|
-| Phrase suitability | Whether the material belongs in an intro/outro based on arrangement role, vocals, stability, and buildup behavior. |
-| Loop compatibility | Whether the candidate's end can repeat into its beginning without an obvious seam. |
-| Transition quality | Whether it flows into the surrounding original song without a bass, chord, energy, or beat-grid discontinuity. |
+| Candidate measurement | Interpretation                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Phrase suitability    | Whether the material belongs in an intro/outro based on arrangement role, vocals, stability, and buildup behavior. |
+| Loop compatibility    | Whether the candidate's end can repeat into its beginning without an obvious seam.                                 |
+| Transition quality    | Whether it flows into the surrounding original song without a bass, chord, energy, or beat-grid discontinuity.     |
 
 The `Checks` column explains risks such as an interrupted buildup, bass reset,
 vocal pickup, harmonic resolution, or uncertain beat boundary. A style-aware
@@ -503,91 +631,91 @@ reranker later.
 All options can be combined in one command. Boundary timestamps are source-song
 times expressed in seconds; decimals are accepted, such as `12.5`.
 
-| Command or option | Accepted value | Default | What it does |
-|---|---:|---:|---|
-| `python3 -m audioextender` | — | — | Processes every supported song directly inside `workspace/input/`. |
-| `python3 -m audioextender "song.mp3"` | One or more file paths | `workspace/input/` batch | Processes only the named file or files. Quote paths containing spaces. |
-| `--intro-bars` | `0`, `2`, `4`, `8`, `16`, or `32` | From `audioextender/core/defaults.py` | Sets the added intro length. `0` disables the intro extension. |
-| `--outro-bars` | `0`, `2`, `4`, `8`, `16`, or `32` | From `audioextender/core/defaults.py` | Sets the added outro length. `0` preserves the original ending without an added outro. |
-| `--auto-bars` / `--no-auto-bars` | Flag; no value | On | Enables automatic length selection for sides without an explicit bar count, or restores fixed defaults. |
-| `--preset` | `auto` or a named profile below | None | Detects or applies a coordinated editing strategy. Explicit bar and stem options take priority. |
-| `--intro-before` | Positive seconds | None | Requires selected intro material to end by this source timestamp. |
-| `--outro-after` | Positive seconds | None | Requires selected outro material to begin at or after this source timestamp. |
-| `--outro-before` | Positive seconds | None | Requires selected outro material to end by this source timestamp. |
-| `--use-stems` / `--no-use-stems` | Flag; no value | From preset/settings | Enables or disables Demucs vocal scoring and automatic sustained-vocal boundaries. |
-| `--input-dir` | Folder path | `./input` | Changes the folder scanned when no individual input files are supplied. |
-| `--output-dir` | Folder path | `./output` | Changes where completed WAV files are written. |
-| `--bit-depth` | `16` or `24` | `24` | Selects the output WAV PCM bit depth. |
-| `--workers` | `auto`, `1`, `2`, or `3` | `auto` | Controls how many songs are processed concurrently. Automatic Demucs mode uses one worker. |
-| `--overwrite` | Flag; no value | Off | Replaces existing extended-edit files instead of skipping them. |
-| `--overrides` | JSON file path | `./track_overrides.json` | Loads musical boundaries from a different overrides file. |
-| `--no-cache` | Flag; no value | Off | Runs without reading or writing cached analysis. |
-| `--refresh-cache` | Flag; no value | Off | Recomputes analysis and replaces the applicable cache entries. |
-| `--clear-cache` | Flag; no value | Off | Deletes AudioExtender cache entries and exits without processing songs. |
-| `--cache-dir` | Folder path | `./cache` | Uses a different analysis-cache folder. |
-| `--previews` | Flag; no value | Off | Writes intro/outro splice previews in addition to the full extended WAV. |
-| `--preview-only` | Flag; no value | Off | Writes splice previews without exporting the full extended WAV. |
-| `--preview-seconds` | Positive seconds | `8` | Sets how much audio appears before and after each previewed splice. |
-| `--intro-candidate` | `0`, `1`, `2`, or `3` | `1` | Uses a ranked intro alternative; `0` rejects every intro candidate. |
-| `--outro-candidate` | `0`, `1`, `2`, or `3` | `1` | Uses a ranked outro alternative; `0` rejects every outro candidate. |
-| `--choose-candidates` | Flag; no value | Off | Displays three ranked options at a time. Choose `1–3`, `0` for none, `R` for the next page, or `C` for a custom source-time range. Forces one worker. |
-| `--review` | Flag; no value | Off | Auditions candidates interactively, records reason tags and notes, and appends the generation to `workspace/output/reports/Candidate Feedback.md`. Forces one worker. |
-| `--cues` / `--no-cues` | Flag; no value | On | Enables companion JSON cue sheets and Rekordbox XML, or disables both. |
-| `--help` or `-h` | — | — | Displays the built-in command help. |
+| Command or option                     |                    Accepted value |                               Default | What it does                                                                                                                                                          |
+| ------------------------------------- | --------------------------------: | ------------------------------------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `python3 -m audioextender`            |                                 — |                                     — | Processes every supported song directly inside `workspace/input/`.                                                                                                    |
+| `python3 -m audioextender "song.mp3"` |            One or more file paths |              `workspace/input/` batch | Processes only the named file or files. Quote paths containing spaces.                                                                                                |
+| `--intro-bars`                        | `0`, `2`, `4`, `8`, `16`, or `32` | From `audioextender/core/defaults.py` | Sets the added intro length. `0` disables the intro extension.                                                                                                        |
+| `--outro-bars`                        | `0`, `2`, `4`, `8`, `16`, or `32` | From `audioextender/core/defaults.py` | Sets the added outro length. `0` preserves the original ending without an added outro.                                                                                |
+| `--auto-bars` / `--no-auto-bars`      |                    Flag; no value |                                    On | Enables automatic length selection for sides without an explicit bar count, or restores fixed defaults.                                                               |
+| `--preset`                            |   `auto` or a named profile below |                                  None | Detects or applies a coordinated editing strategy. Explicit bar and stem options take priority.                                                                       |
+| `--intro-before`                      |                  Positive seconds |                                  None | Requires selected intro material to end by this source timestamp.                                                                                                     |
+| `--outro-after`                       |                  Positive seconds |                                  None | Requires selected outro material to begin at or after this source timestamp.                                                                                          |
+| `--outro-before`                      |                  Positive seconds |                                  None | Requires selected outro material to end by this source timestamp.                                                                                                     |
+| `--use-stems` / `--no-use-stems`      |                    Flag; no value |                  From preset/settings | Enables or disables Demucs vocal scoring and automatic sustained-vocal boundaries.                                                                                    |
+| `--input-dir`                         |                       Folder path |                             `./input` | Changes the folder scanned when no individual input files are supplied.                                                                                               |
+| `--output-dir`                        |                       Folder path |                            `./output` | Changes where completed WAV files are written.                                                                                                                        |
+| `--bit-depth`                         |                      `16` or `24` |                                  `24` | Selects the output WAV PCM bit depth.                                                                                                                                 |
+| `--workers`                           |          `auto`, `1`, `2`, or `3` |                                `auto` | Controls how many songs are processed concurrently. Automatic Demucs mode uses one worker.                                                                            |
+| `--overwrite`                         |                    Flag; no value |                                   Off | Replaces existing extended-edit files instead of skipping them.                                                                                                       |
+| `--overrides`                         |                    JSON file path |              `./track_overrides.json` | Loads musical boundaries from a different overrides file.                                                                                                             |
+| `--no-cache`                          |                    Flag; no value |                                   Off | Runs without reading or writing cached analysis.                                                                                                                      |
+| `--refresh-cache`                     |                    Flag; no value |                                   Off | Recomputes analysis and replaces the applicable cache entries.                                                                                                        |
+| `--clear-cache`                       |                    Flag; no value |                                   Off | Deletes AudioExtender cache entries and exits without processing songs.                                                                                               |
+| `--cache-dir`                         |                       Folder path |                             `./cache` | Uses a different analysis-cache folder.                                                                                                                               |
+| `--previews`                          |                    Flag; no value |                                   Off | Writes intro/outro splice previews in addition to the full extended WAV.                                                                                              |
+| `--preview-only`                      |                    Flag; no value |                                   Off | Writes splice previews without exporting the full extended WAV.                                                                                                       |
+| `--preview-seconds`                   |                  Positive seconds |                                   `8` | Sets how much audio appears before and after each previewed splice.                                                                                                   |
+| `--intro-candidate`                   |             `0`, `1`, `2`, or `3` |                                   `1` | Uses a ranked intro alternative; `0` rejects every intro candidate.                                                                                                   |
+| `--outro-candidate`                   |             `0`, `1`, `2`, or `3` |                                   `1` | Uses a ranked outro alternative; `0` rejects every outro candidate.                                                                                                   |
+| `--choose-candidates`                 |                    Flag; no value |                                   Off | Displays three ranked options at a time. Choose `1–3`, `0` for none, `R` for the next page, or `C` for a custom source-time range. Forces one worker.                 |
+| `--review`                            |                    Flag; no value |                                   Off | Auditions candidates interactively, records reason tags and notes, and appends the generation to `workspace/output/reports/Candidate Feedback.md`. Forces one worker. |
+| `--cues` / `--no-cues`                |                    Flag; no value |                                    On | Enables companion JSON cue sheets and Rekordbox XML, or disables both.                                                                                                |
+| `--help` or `-h`                      |                                 — |                                     — | Displays the built-in command help.                                                                                                                                   |
 
 ### Common commands
 
-| Goal | Command |
-|---|---|
-| Process everything in `workspace/input/` | `python3 -m audioextender` |
-| Process one song | `python3 -m audioextender "workspace/input/Song.mp3"` |
-| Process several named songs | `python3 -m audioextender "Song One.mp3" "Song Two.flac" "Song Three.aiff"` |
-| Make an 8-bar intro and 8-bar outro | `python3 -m audioextender --intro-bars 8 --outro-bars 8` |
-| Make a short 4-bar intro only | `python3 -m audioextender --intro-bars 4 --outro-bars 0` |
-| Make a minimal 2-bar extension | `python3 -m audioextender --intro-bars 2 --outro-bars 2` |
-| Make an intro only | `python3 -m audioextender --intro-bars 16 --outro-bars 0` |
-| Make an outro only | `python3 -m audioextender --intro-bars 0 --outro-bars 16` |
-| Preserve both sides and only convert to WAV | `python3 -m audioextender --intro-bars 0 --outro-bars 0` |
-| Keep intro material before 12 seconds | `python3 -m audioextender "workspace/input/Song.mp3" --intro-before 12` |
-| Keep outro material after 3:00 | `python3 -m audioextender "workspace/input/Song.mp3" --outro-after 180` |
-| Keep outro material before 3:25 | `python3 -m audioextender "workspace/input/Song.mp3" --outro-before 205` |
-| Restrict outro material to 3:00–3:25 | `python3 -m audioextender "workspace/input/Song.mp3" --outro-after 180 --outro-before 205` |
-| Enable Demucs vocal analysis | `python3 -m audioextender --use-stems` |
-| Rebuild existing results | `python3 -m audioextender --overwrite` |
-| Process with two workers | `python3 -m audioextender --workers 2` |
-| Use custom input and output folders | `python3 -m audioextender --input-dir "/Music/Input" --output-dir "/Music/Edits"` |
-| Export 16-bit WAV | `python3 -m audioextender --bit-depth 16` |
-| Use another override file | `python3 -m audioextender --overrides "/path/to/rules.json"` |
-| Use a vocal-safe profile | `python3 -m audioextender --preset vocal-safe` |
-| Detect the editing profile automatically | `python3 -m audioextender --preset auto` |
-| Ignore cached data once | `python3 -m audioextender --no-cache` |
-| Rebuild cached analysis | `python3 -m audioextender --refresh-cache --overwrite` |
-| Delete all cached analysis | `python3 -m audioextender --clear-cache` |
-| Export full edits and splice previews | `python3 -m audioextender --previews` |
-| Export only splice previews | `python3 -m audioextender --preview-only` |
-| Use 10 seconds around each splice | `python3 -m audioextender --previews --preview-seconds 10` |
-| Choose ranked alternatives interactively | `python3 -m audioextender "workspace/input/Song.mp3" --choose-candidates` |
-| Let the tool choose extension lengths | `python3 -m audioextender "workspace/input/Song.mp3" --auto-bars` |
-| Use the fixed configured defaults | `python3 -m audioextender "workspace/input/Song.mp3" --no-auto-bars` |
-| Use candidate 2 without prompting | `python3 -m audioextender "workspace/input/Song.mp3" --intro-candidate 2 --outro-candidate 2` |
-| Reject every ranked intro choice | `python3 -m audioextender "workspace/input/Song.mp3" --intro-candidate 0` |
+| Goal                                        | Command                                                                                       |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Process everything in `workspace/input/`    | `python3 -m audioextender`                                                                    |
+| Process one song                            | `python3 -m audioextender "workspace/input/Song.mp3"`                                         |
+| Process several named songs                 | `python3 -m audioextender "Song One.mp3" "Song Two.flac" "Song Three.aiff"`                   |
+| Make an 8-bar intro and 8-bar outro         | `python3 -m audioextender --intro-bars 8 --outro-bars 8`                                      |
+| Make a short 4-bar intro only               | `python3 -m audioextender --intro-bars 4 --outro-bars 0`                                      |
+| Make a minimal 2-bar extension              | `python3 -m audioextender --intro-bars 2 --outro-bars 2`                                      |
+| Make an intro only                          | `python3 -m audioextender --intro-bars 16 --outro-bars 0`                                     |
+| Make an outro only                          | `python3 -m audioextender --intro-bars 0 --outro-bars 16`                                     |
+| Preserve both sides and only convert to WAV | `python3 -m audioextender --intro-bars 0 --outro-bars 0`                                      |
+| Keep intro material before 12 seconds       | `python3 -m audioextender "workspace/input/Song.mp3" --intro-before 12`                       |
+| Keep outro material after 3:00              | `python3 -m audioextender "workspace/input/Song.mp3" --outro-after 180`                       |
+| Keep outro material before 3:25             | `python3 -m audioextender "workspace/input/Song.mp3" --outro-before 205`                      |
+| Restrict outro material to 3:00–3:25        | `python3 -m audioextender "workspace/input/Song.mp3" --outro-after 180 --outro-before 205`    |
+| Enable Demucs vocal analysis                | `python3 -m audioextender --use-stems`                                                        |
+| Rebuild existing results                    | `python3 -m audioextender --overwrite`                                                        |
+| Process with two workers                    | `python3 -m audioextender --workers 2`                                                        |
+| Use custom input and output folders         | `python3 -m audioextender --input-dir "/Music/Input" --output-dir "/Music/Edits"`             |
+| Export 16-bit WAV                           | `python3 -m audioextender --bit-depth 16`                                                     |
+| Use another override file                   | `python3 -m audioextender --overrides "/path/to/rules.json"`                                  |
+| Use a vocal-safe profile                    | `python3 -m audioextender --preset vocal-safe`                                                |
+| Detect the editing profile automatically    | `python3 -m audioextender --preset auto`                                                      |
+| Ignore cached data once                     | `python3 -m audioextender --no-cache`                                                         |
+| Rebuild cached analysis                     | `python3 -m audioextender --refresh-cache --overwrite`                                        |
+| Delete all cached analysis                  | `python3 -m audioextender --clear-cache`                                                      |
+| Export full edits and splice previews       | `python3 -m audioextender --previews`                                                         |
+| Export only splice previews                 | `python3 -m audioextender --preview-only`                                                     |
+| Use 10 seconds around each splice           | `python3 -m audioextender --previews --preview-seconds 10`                                    |
+| Choose ranked alternatives interactively    | `python3 -m audioextender "workspace/input/Song.mp3" --choose-candidates`                     |
+| Let the tool choose extension lengths       | `python3 -m audioextender "workspace/input/Song.mp3" --auto-bars`                             |
+| Use the fixed configured defaults           | `python3 -m audioextender "workspace/input/Song.mp3" --no-auto-bars`                          |
+| Use candidate 2 without prompting           | `python3 -m audioextender "workspace/input/Song.mp3" --intro-candidate 2 --outro-candidate 2` |
+| Reject every ranked intro choice            | `python3 -m audioextender "workspace/input/Song.mp3" --intro-candidate 0`                     |
 
 ### Preset profiles
 
-| Preset | Intro/outro | Demucs | Quality floor | Intended use |
-|---|---:|---:|---:|---|
-| `auto` | Detected | Optional | From selected profile | Chooses a profile from rhythmic, dynamic, harmonic, timing, and optional vocal analysis. |
-| `club` | 16 / 16 bars | No | 45% | Longer, conventional DJ phrasing for rhythm-forward tracks. |
-| `subtle` | 4 / 4 bars | No | 58% | Short additions with no repeated loop unit. |
-| `slow-song` | 4 / 0 bars | No | 62% | Conservative intro-only treatment for slower or less electronic music. |
-| `vocal-safe` | 8 / 0 bars | Yes | 60% | Demucs-aware intro with the original ending preserved. |
-| `melodic` | 4 / 4 bars | No | 68% | Harmonic, steady material where short, non-repeating additions are safer. |
-| `breakbeat` | 8 / 8 bars | No | 67% | Syncopated or broken-beat tracks that need shorter repetition than four-on-the-floor club music. |
-| `peak-time` | 16 / 16 bars | No | 65% | Fast, high-percussion, stable-grid tracks suited to conventional long DJ phrasing. |
-| `live-acoustic` | 2 / 0 bars | No | 72% | Tempo-variable or live-feeling material; preserves the ending and permits only a very short intro. |
-| `ambient` | 2 / 0 bars | No | 72% | Sparse, low-percussion material where repetition is especially exposed. |
-| `intro-only` | 8 / 0 bars | No | 50% | General intro extension without altering the ending. |
-| `outro-only` | 0 / 8 bars | No | 50% | General outro extension without altering the opening. |
+| Preset          |  Intro/outro |   Demucs |         Quality floor | Intended use                                                                                       |
+| --------------- | -----------: | -------: | --------------------: | -------------------------------------------------------------------------------------------------- |
+| `auto`          |     Detected | Optional | From selected profile | Chooses a profile from rhythmic, dynamic, harmonic, timing, and optional vocal analysis.           |
+| `club`          | 16 / 16 bars |       No |                   45% | Longer, conventional DJ phrasing for rhythm-forward tracks.                                        |
+| `subtle`        |   4 / 4 bars |       No |                   58% | Short additions with no repeated loop unit.                                                        |
+| `slow-song`     |   4 / 0 bars |       No |                   62% | Conservative intro-only treatment for slower or less electronic music.                             |
+| `vocal-safe`    |   8 / 0 bars |      Yes |                   60% | Demucs-aware intro with the original ending preserved.                                             |
+| `melodic`       |   4 / 4 bars |       No |                   68% | Harmonic, steady material where short, non-repeating additions are safer.                          |
+| `breakbeat`     |   8 / 8 bars |       No |                   67% | Syncopated or broken-beat tracks that need shorter repetition than four-on-the-floor club music.   |
+| `peak-time`     | 16 / 16 bars |       No |                   65% | Fast, high-percussion, stable-grid tracks suited to conventional long DJ phrasing.                 |
+| `live-acoustic` |   2 / 0 bars |       No |                   72% | Tempo-variable or live-feeling material; preserves the ending and permits only a very short intro. |
+| `ambient`       |   2 / 0 bars |       No |                   72% | Sparse, low-percussion material where repetition is especially exposed.                            |
+| `intro-only`    |   8 / 0 bars |       No |                   50% | General intro extension without altering the ending.                                               |
+| `outro-only`    |   0 / 8 bars |       No |                   50% | General outro extension without altering the opening.                                              |
 
 The quality floor is a safety rule: if the best candidate scores below it, that
 side is disabled rather than forcing a questionable loop. Presets also limit how
@@ -640,10 +768,10 @@ The optional root-level `track_overrides.json` file uses exact
 filenames, including extensions. Filename matching is case-insensitive. Each song
 can contain any of these fields:
 
-| Field | Value | Meaning |
-|---|---:|---|
-| `intro_before` | Positive seconds | The selected intro phrase must end at or before this source timestamp. Useful for protecting the first recognizable vocal. |
-| `outro_after` | Positive seconds | The selected outro phrase must begin at or after this source timestamp. Useful for excluding a late verse or chorus. |
+| Field          |            Value | Meaning                                                                                                                            |
+| -------------- | ---------------: | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `intro_before` | Positive seconds | The selected intro phrase must end at or before this source timestamp. Useful for protecting the first recognizable vocal.         |
+| `outro_after`  | Positive seconds | The selected outro phrase must begin at or after this source timestamp. Useful for excluding a late verse or chorus.               |
 | `outro_before` | Positive seconds | The selected outro phrase must end at or before this source timestamp. The original closing section after it then plays naturally. |
 
 Example with several different rule styles:
@@ -829,54 +957,54 @@ the other side.
 
 ### Understanding the processing report
 
-| Report item | Meaning | How to interpret it |
-|---|---|---|
-| `Time` | Wall-clock processing time for that song. | Demucs, longer tracks, and lower analysis hop lengths increase it. It says nothing about edit quality. |
-| `BPM` | Estimated tempo used to construct the beat grid. | Compare it with Rekordbox. Half-time and double-time readings can describe the same pulse but change perceived phrase length. |
-| `Tempo drift` | Spread between the track's faster and slower local beat intervals, relative to its median tempo. | Near zero suggests quantized timing. Larger values flag live playing, tempo automation, or an uncertain tracker; projected opening/ending bars use local timing rather than only the global BPM. |
-| `beats / bars` | Detected beats and inferred 4/4 bars. | Bars are groups of four beats. The count is approximate because sparse openings and endings may not provide detectable beats. |
-| `Beat-grid confidence` | Confidence that beats are regularly timed, supported by onsets, and assigned a plausible downbeat phase. | This measures timing placement—not whether the chosen loop is musically good. |
-| `Groove` | Subdivision pattern inferred between the main beats: `straight`, `swing`, `syncopated`, `loose/syncopated`, or `undetermined`. | This describes feel; swing and syncopation are not errors and are preserved rather than quantized. |
-| `Timing` | Interpretation of local tempo movement combined with grid support: `steady`, `mildly variable`, `variable/live`, or `uncertain grid`. | Variable/live can be musically intentional. Uncertain grid indicates that beat evidence itself is weak. |
-| `Downbeat continuity` | Consistency of beat placement, onset support, local timing, and recurring four-beat accent shape across bars. | Higher means inferred beat one remains convincing throughout the song. |
-| `Preset` | Manual profile or profile selected by `--preset auto`. | Automatic reports use the form `auto → club`. Explicit bar options may still override its lengths. |
-| `Detected style` | Heuristic style used by automatic mode. | Its reason lists measurements such as percussion, grid confidence, and dynamics. It is an editing strategy, not a genre label. |
-| `Intro` / `Outro` times | Start and end of the selected phrase in the original source. | These are source timestamps, not positions in the longer exported WAV. |
-| `Estimated key` | Global major/minor key inferred from the track's chroma distribution. | Higher confidence means one tonal profile separated clearly from alternatives. Modulation, borrowed chords, sparse harmony, and percussion can reduce reliability. |
-| `Loop quality` | Combined estimate of seam, harmony, chord return, timbre, bass, stability, structure, fills, pickups, and energy behavior. | It evaluates the artificial loop-back transition, but cannot guarantee that repetition is artistically tasteful. |
-| `Energy` | Arrangement shape across the selected phrase and its surrounding bars. | Reported as `stable`, `buildup`, `losing-bass`, `fading`, or `section-change`. Stable is normally preferred. |
-| `Buildup risk` | Heuristic 0–100 measure that the phrase is progressing toward a drop or transition. | Lower is safer. Candidates above the configured limit are disabled. |
-| `Bass-reset risk` | Estimated severity of low-end discontinuity when the phrase loops. | Lower is safer. High values correspond to bass entering, withdrawing, or restarting conspicuously. |
-| `Context` | Energy-flow agreement across four bars before, the candidate, and four bars after. | Higher means the phrase belongs naturally in its surrounding arrangement. |
-| `Splice mode` | Automatically selected join treatment: `percussion-priority`, `bass-preserving`, `harmonic-tail`, `zero-crossing`, or `adaptive`. | It controls micro-fade and sustained-tail behavior without moving the edit to different musical bars. |
-| `Chord return` | Compatibility of the candidate's final-bar harmony with its first-bar harmony, including common cadence motion in the estimated key. | Higher is safer. Unlike simple chord equality, a dominant-to-tonic return can score well because it forms a musically natural loop. |
-| `Resolution risk` | How much more strongly the ending chord appears to lead into the original next bar than back to the loop's beginning. | Lower is safer. High risk identifies phrases that sound unfinished when reset, even if the cut itself is clean. |
-| `Section` | Approximate arrangement role inferred bar by bar: `intro`, `verse`, `chorus`, `breakdown`, `buildup`, `drop`, `closing`, or `fade`. | Intro selection favors `intro`; outro selection favors `closing` and gentle `fade` material. Peaks, drops, and buildups are penalized when used in the wrong role. |
-| `Section confidence` | Strength and consistency of the dominant section label across the selected bars. | A low value means the candidate crosses labels or has ambiguous energy behavior, so treat the label cautiously. |
-| `Arrangement fit` | Signed score showing whether that section type suits its intended intro/outro role. | Positive is favorable, zero is neutral, and negative means the candidate resembles the wrong part of the song. It is one ranking factor, not a hard rejection. |
-| `Local grid` | Average rhythmic-grid confidence across the candidate's bars. | Lower values indicate sparse or ambiguous beats inside the phrase. |
-| `Boundary grid` | Confidence of the weaker first or last candidate bar. | This specifically guards the loop splice from landing on a displaced or poorly supported bar boundary. |
-| `Instrumental` | Percussion-to-mix ratio used as an instrumentalness proxy. | Higher values favor drum-led material. It is not a probability that vocals are absent; Demucs is more reliable for vocals. |
-| `Vocal coverage` | Proportion of the selected candidate classified as sustained vocal activity. | Lower is safer for repetition. Candidates above the configured maximum are disabled. |
-| `Boundary risk` | Vocal activity immediately around the phrase's start or end. | High values suggest a clipped lyric, sustained word, or vocal pickup crossing the artificial splice. |
-| `Stem separation reliability` | Similarity between the time-aligned sum of Demucs stems and the decoded source. | Instrumental construction requires the configured minimum; lower values keep the full mix. This measures reconstruction, not artistic isolation quality. |
-| `Construction` | Whether added copies use the `full mix` or `instrumental stems`. | Only the repeated extension changes. Untouched portions always use the original source audio. |
-| `Instrumental construction quality` | Loop-quality estimate with penalties caused solely by removed vocals excluded. | Use this instead of the full-mix quality when the report says `instrumental stems`. |
-| `Unique material / extension / copies` | Unique source length, total added length, and copy count. | `8 / 16 / 2` means two compatible four-bar halves form an eight-bar unit that is copied twice. More unique bars and fewer copies usually sound less mechanical. |
-| `Protected vocal entrance` | Active `intro_before` boundary, automatic or manual. | Intro material cannot extend beyond this source timestamp. |
-| `Protected vocal release` | Active `outro_after` boundary, automatic or manual. | Outro material cannot begin before this source timestamp. |
-| `Protected closing section` | Active `outro_before` boundary. | Outro material must end by this time so the recognizable closing section continues naturally. |
-| `Suggested cues` | Suggested mix-in and mix-out positions in the completed WAV. | These account for inserted audio. Confirm them in Rekordbox before performing. |
-| `Created / Skipped / Failed` | Batch result counts. | Skipped normally means an output existed; use `--overwrite` to rebuild it. |
+| Report item                            | Meaning                                                                                                                               | How to interpret it                                                                                                                                                                              |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Time`                                 | Wall-clock processing time for that song.                                                                                             | Demucs, longer tracks, and lower analysis hop lengths increase it. It says nothing about edit quality.                                                                                           |
+| `BPM`                                  | Estimated tempo used to construct the beat grid.                                                                                      | Compare it with Rekordbox. Half-time and double-time readings can describe the same pulse but change perceived phrase length.                                                                    |
+| `Tempo drift`                          | Spread between the track's faster and slower local beat intervals, relative to its median tempo.                                      | Near zero suggests quantized timing. Larger values flag live playing, tempo automation, or an uncertain tracker; projected opening/ending bars use local timing rather than only the global BPM. |
+| `beats / bars`                         | Detected beats and inferred 4/4 bars.                                                                                                 | Bars are groups of four beats. The count is approximate because sparse openings and endings may not provide detectable beats.                                                                    |
+| `Beat-grid confidence`                 | Confidence that beats are regularly timed, supported by onsets, and assigned a plausible downbeat phase.                              | This measures timing placement—not whether the chosen loop is musically good.                                                                                                                    |
+| `Groove`                               | Subdivision pattern inferred between the main beats: `straight`, `swing`, `syncopated`, `loose/syncopated`, or `undetermined`.        | This describes feel; swing and syncopation are not errors and are preserved rather than quantized.                                                                                               |
+| `Timing`                               | Interpretation of local tempo movement combined with grid support: `steady`, `mildly variable`, `variable/live`, or `uncertain grid`. | Variable/live can be musically intentional. Uncertain grid indicates that beat evidence itself is weak.                                                                                          |
+| `Downbeat continuity`                  | Consistency of beat placement, onset support, local timing, and recurring four-beat accent shape across bars.                         | Higher means inferred beat one remains convincing throughout the song.                                                                                                                           |
+| `Preset`                               | Manual profile or profile selected by `--preset auto`.                                                                                | Automatic reports use the form `auto → club`. Explicit bar options may still override its lengths.                                                                                               |
+| `Detected style`                       | Heuristic style used by automatic mode.                                                                                               | Its reason lists measurements such as percussion, grid confidence, and dynamics. It is an editing strategy, not a genre label.                                                                   |
+| `Intro` / `Outro` times                | Start and end of the selected phrase in the original source.                                                                          | These are source timestamps, not positions in the longer exported WAV.                                                                                                                           |
+| `Estimated key`                        | Global major/minor key inferred from the track's chroma distribution.                                                                 | Higher confidence means one tonal profile separated clearly from alternatives. Modulation, borrowed chords, sparse harmony, and percussion can reduce reliability.                               |
+| `Loop quality`                         | Combined estimate of seam, harmony, chord return, timbre, bass, stability, structure, fills, pickups, and energy behavior.            | It evaluates the artificial loop-back transition, but cannot guarantee that repetition is artistically tasteful.                                                                                 |
+| `Energy`                               | Arrangement shape across the selected phrase and its surrounding bars.                                                                | Reported as `stable`, `buildup`, `losing-bass`, `fading`, or `section-change`. Stable is normally preferred.                                                                                     |
+| `Buildup risk`                         | Heuristic 0–100 measure that the phrase is progressing toward a drop or transition.                                                   | Lower is safer. Candidates above the configured limit are disabled.                                                                                                                              |
+| `Bass-reset risk`                      | Estimated severity of low-end discontinuity when the phrase loops.                                                                    | Lower is safer. High values correspond to bass entering, withdrawing, or restarting conspicuously.                                                                                               |
+| `Context`                              | Energy-flow agreement across four bars before, the candidate, and four bars after.                                                    | Higher means the phrase belongs naturally in its surrounding arrangement.                                                                                                                        |
+| `Splice mode`                          | Automatically selected join treatment: `percussion-priority`, `bass-preserving`, `harmonic-tail`, `zero-crossing`, or `adaptive`.     | It controls micro-fade and sustained-tail behavior without moving the edit to different musical bars.                                                                                            |
+| `Chord return`                         | Compatibility of the candidate's final-bar harmony with its first-bar harmony, including common cadence motion in the estimated key.  | Higher is safer. Unlike simple chord equality, a dominant-to-tonic return can score well because it forms a musically natural loop.                                                              |
+| `Resolution risk`                      | How much more strongly the ending chord appears to lead into the original next bar than back to the loop's beginning.                 | Lower is safer. High risk identifies phrases that sound unfinished when reset, even if the cut itself is clean.                                                                                  |
+| `Section`                              | Approximate arrangement role inferred bar by bar: `intro`, `verse`, `chorus`, `breakdown`, `buildup`, `drop`, `closing`, or `fade`.   | Intro selection favors `intro`; outro selection favors `closing` and gentle `fade` material. Peaks, drops, and buildups are penalized when used in the wrong role.                               |
+| `Section confidence`                   | Strength and consistency of the dominant section label across the selected bars.                                                      | A low value means the candidate crosses labels or has ambiguous energy behavior, so treat the label cautiously.                                                                                  |
+| `Arrangement fit`                      | Signed score showing whether that section type suits its intended intro/outro role.                                                   | Positive is favorable, zero is neutral, and negative means the candidate resembles the wrong part of the song. It is one ranking factor, not a hard rejection.                                   |
+| `Local grid`                           | Average rhythmic-grid confidence across the candidate's bars.                                                                         | Lower values indicate sparse or ambiguous beats inside the phrase.                                                                                                                               |
+| `Boundary grid`                        | Confidence of the weaker first or last candidate bar.                                                                                 | This specifically guards the loop splice from landing on a displaced or poorly supported bar boundary.                                                                                           |
+| `Instrumental`                         | Percussion-to-mix ratio used as an instrumentalness proxy.                                                                            | Higher values favor drum-led material. It is not a probability that vocals are absent; Demucs is more reliable for vocals.                                                                       |
+| `Vocal coverage`                       | Proportion of the selected candidate classified as sustained vocal activity.                                                          | Lower is safer for repetition. Candidates above the configured maximum are disabled.                                                                                                             |
+| `Boundary risk`                        | Vocal activity immediately around the phrase's start or end.                                                                          | High values suggest a clipped lyric, sustained word, or vocal pickup crossing the artificial splice.                                                                                             |
+| `Stem separation reliability`          | Similarity between the time-aligned sum of Demucs stems and the decoded source.                                                       | Instrumental construction requires the configured minimum; lower values keep the full mix. This measures reconstruction, not artistic isolation quality.                                         |
+| `Construction`                         | Whether added copies use the `full mix` or `instrumental stems`.                                                                      | Only the repeated extension changes. Untouched portions always use the original source audio.                                                                                                    |
+| `Instrumental construction quality`    | Loop-quality estimate with penalties caused solely by removed vocals excluded.                                                        | Use this instead of the full-mix quality when the report says `instrumental stems`.                                                                                                              |
+| `Unique material / extension / copies` | Unique source length, total added length, and copy count.                                                                             | `8 / 16 / 2` means two compatible four-bar halves form an eight-bar unit that is copied twice. More unique bars and fewer copies usually sound less mechanical.                                  |
+| `Protected vocal entrance`             | Active `intro_before` boundary, automatic or manual.                                                                                  | Intro material cannot extend beyond this source timestamp.                                                                                                                                       |
+| `Protected vocal release`              | Active `outro_after` boundary, automatic or manual.                                                                                   | Outro material cannot begin before this source timestamp.                                                                                                                                        |
+| `Protected closing section`            | Active `outro_before` boundary.                                                                                                       | Outro material must end by this time so the recognizable closing section continues naturally.                                                                                                    |
+| `Suggested cues`                       | Suggested mix-in and mix-out positions in the completed WAV.                                                                          | These account for inserted audio. Confirm them in Rekordbox before performing.                                                                                                                   |
+| `Created / Skipped / Failed`           | Batch result counts.                                                                                                                  | Skipped normally means an output existed; use `--overwrite` to rebuild it.                                                                                                                       |
 
 #### Beat-grid confidence ranges
 
-| Confidence | Practical interpretation |
-|---:|---|
-| `80–100%` | Strong, steady grid. Usually reliable, but still verify beat one. |
-| `60–79%` | Generally usable. Check the first downbeat and several later phrases in Rekordbox. |
-| `40–59%` | Uncertain. Sparse drums, syncopation, live timing, or tempo movement may be affecting detection. |
-| Below `40%` | Treat the grid as unreliable and verify it manually before trusting an edit. |
+|  Confidence | Practical interpretation                                                                         |
+| ----------: | ------------------------------------------------------------------------------------------------ |
+|   `80–100%` | Strong, steady grid. Usually reliable, but still verify beat one.                                |
+|    `60–79%` | Generally usable. Check the first downbeat and several later phrases in Rekordbox.               |
+|    `40–59%` | Uncertain. Sparse drums, syncopation, live timing, or tempo movement may be affecting detection. |
+| Below `40%` | Treat the grid as unreliable and verify it manually before trusting an edit.                     |
 
 Downbeat phase is inferred from recurring four-beat accent patterns across many
 bars, not simply the loudest individual beat. This is still an approximation;
@@ -885,10 +1013,10 @@ checked in Rekordbox.
 
 #### Tempo-drift ranges
 
-| Drift | Practical interpretation |
-|---:|---|
-| Below `3%` | Usually steady or quantized. |
-| `3–8%` | Mild movement, expressive timing, or occasional tracker variation. |
+|      Drift | Practical interpretation                                                  |
+| ---------: | ------------------------------------------------------------------------- |
+| Below `3%` | Usually steady or quantized.                                              |
+|     `3–8%` | Mild movement, expressive timing, or occasional tracker variation.        |
 | Above `8%` | Variable-tempo/live material or a grid that deserves manual verification. |
 
 These are diagnostics, not quality grades. Syncopation and sparse percussion can
@@ -925,21 +1053,21 @@ can still disable it.
 
 #### Loop-quality ranges
 
-| Quality | Practical interpretation |
-|---:|---|
-| `85–100%` | Excellent measured seam compatibility. Still audition for repetition and recognizable lyrics. |
-| `70–84%` | Strong candidate that will usually splice cleanly. |
-| `55–69%` | Potentially usable, but audition it carefully. |
-| `40–54%` | Weak or context-dependent; a buildup, chord change, bass reset, or pickup may remain audible. |
-| Below `40%` | Poor candidate. Prefer another range, a shorter edit, or disabling that side. |
+|     Quality | Practical interpretation                                                                      |
+| ----------: | --------------------------------------------------------------------------------------------- |
+|   `85–100%` | Excellent measured seam compatibility. Still audition for repetition and recognizable lyrics. |
+|    `70–84%` | Strong candidate that will usually splice cleanly.                                            |
+|    `55–69%` | Potentially usable, but audition it carefully.                                                |
+|    `40–54%` | Weak or context-dependent; a buildup, chord change, bass reset, or pickup may remain audible. |
+| Below `40%` | Poor candidate. Prefer another range, a shorter edit, or disabling that side.                 |
 
 #### Instrumentalness ranges
 
-| Value | Practical interpretation |
-|---:|---|
-| `0.75–1.00` | Strongly percussion-led according to the mix-only proxy. |
-| `0.55–0.74` | Mixed material with useful rhythm but potentially prominent harmonic or vocal content. |
-| `0.35–0.54` | Harmonic, melodic, vocal, or relatively drum-light material. |
+|        Value | Practical interpretation                                                               |
+| -----------: | -------------------------------------------------------------------------------------- |
+|  `0.75–1.00` | Strongly percussion-led according to the mix-only proxy.                               |
+|  `0.55–0.74` | Mixed material with useful rhythm but potentially prominent harmonic or vocal content. |
+|  `0.35–0.54` | Harmonic, melodic, vocal, or relatively drum-light material.                           |
 | Below `0.35` | Usually a poor conventional DJ loop unless an ambient or very subtle edit is intended. |
 
 The temporary `score=...` shown during candidate selection is an internal ranking
@@ -949,12 +1077,12 @@ candidates from the same song and position. Use `loop quality` for the calibrate
 
 #### Automatic-style reason values
 
-| Measurement | Scale | Practical interpretation |
-|---|---:|---|
-| `percussion` | Usually `0.00–1.00` | Mean normalized drum/percussion energy. Around `0.40` or higher supports a rhythm-forward classification; it is relative to that recording. |
-| `grid` | `0–100%` | The same beat-grid confidence described above. Automatic mode becomes more conservative below approximately 60%. |
-| `dynamics` | Usually `0.00–1.00` | Difference between the track's quiet and loud energy percentiles. Lower values imply a steady arrangement; higher values imply larger builds, breakdowns, or acoustic variation. |
-| `vocals occupy` | `0–100%` | With Demucs, the proportion of analyzed frames containing sustained vocal energy. High density favors `vocal-safe`. |
+| Measurement     |               Scale | Practical interpretation                                                                                                                                                         |
+| --------------- | ------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `percussion`    | Usually `0.00–1.00` | Mean normalized drum/percussion energy. Around `0.40` or higher supports a rhythm-forward classification; it is relative to that recording.                                      |
+| `grid`          |            `0–100%` | The same beat-grid confidence described above. Automatic mode becomes more conservative below approximately 60%.                                                                 |
+| `dynamics`      | Usually `0.00–1.00` | Difference between the track's quiet and loud energy percentiles. Lower values imply a steady arrangement; higher values imply larger builds, breakdowns, or acoustic variation. |
+| `vocals occupy` |            `0–100%` | With Demucs, the proportion of analyzed frames containing sustained vocal energy. High density favors `vocal-safe`.                                                              |
 
 The output retains the source sample rate whenever the decoder exposes it, is
 always stereo, and is written as PCM WAV. Gain is unchanged unless a constructed

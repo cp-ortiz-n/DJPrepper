@@ -1,10 +1,8 @@
 /** Durable saved-set loading, recovery, persistence, and export ownership. */
-
-import {
-  createSavedSetLifecycle,
-  restoreSavedSetIdentity,
-  savedSetRecordIdentity,
-} from './saved-set-lifecycle.js';
+import { createSavedSetLifecycle, restoreSavedSetIdentity, savedSetRecordIdentity } from './saved-set-lifecycle.js';
+import { applyDefaultSetPlanIntegrity, recoverSavedSetPlan } from './plan-integrity.js';
+import { reconcileSetRecordingFamilies } from './recording-identity.js';
+import { beginButtonAction } from './ui-state.js';
 export function buildSetCsv({
   plan,
   compatibility,
@@ -14,6 +12,7 @@ export function buildSetCsv({
   songEnergy,
   libraryRoles,
 }) {
+  const uniquePlan = reconcileSetRecordingFamilies(plan).plan;
   const rows = [
     [
       'Position',
@@ -34,8 +33,8 @@ export function buildSetCsv({
       'Transition Notes',
     ],
   ];
-  plan.forEach((track, index) => {
-    const match = index ? compatibility(plan[index - 1], track) : null;
+  uniquePlan.forEach((track, index) => {
+    const match = index ? compatibility(uniquePlan[index - 1], track) : null;
     const settings = index ? transitionSettings(index) : {};
     rows.push([
       index + 1,
@@ -58,14 +57,17 @@ export function buildSetCsv({
   });
   return rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
 }
-
 export function buildSetM3u(entries) {
+  const uniqueEntries = reconcileSetRecordingFamilies((entries || []).map(({ track }) => track)).plan;
+  const selected = new Set(uniqueEntries);
   return [
     '#EXTM3U',
-    ...entries.flatMap(({ track, path }) => [
-      `#EXTINF:${Math.round(track.duration_seconds || 0)},${track.artist ? `${track.artist} - ` : ''}${track.source_name.replace(/\.[^.]+$/, '')}`,
-      path,
-    ]),
+    ...(entries || [])
+      .filter(({ track }) => selected.has(track))
+      .flatMap(({ track, path }) => [
+        `#EXTINF:${Math.round(track.duration_seconds || 0)},${track.artist ? `${track.artist} - ` : ''}${track.source_name.replace(/\.[^.]+$/, '')}`,
+        path,
+      ]),
   ].join('\r\n');
 }
 
@@ -140,6 +142,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
   }
   async function saveCurrentSet() {
     if (!state.plan.length) return;
+    const integrity = applyDefaultSetPlanIntegrity(state, true);
     const button = $('#save-set');
     const sets = [...savedSets()];
     const identity = savedSetRecordIdentity(state, $('#saved-set-select').value);
@@ -158,6 +161,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
         genre: track._genre,
         bpm: Number(track.bpm || 0),
         key: track.key || '',
+        recordingKey: setRecordingKey(track),
         selectionReason: track._aiSelectionReason || null,
         sectionId: track._planSectionId || null,
       })),
@@ -165,10 +169,10 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
       locked: [...state.lockedIds],
       required: [...state.requiredIds],
       excluded: [...state.excludedIds],
+      trackReviews: Object.fromEntries(state.trackReviews || []),
       updatedAt: new Date().toISOString(),
     };
-    button.disabled = true;
-    button.textContent = 'Saving…';
+    const restoreAction = beginButtonAction(button, 'Saving set…');
     try {
       await setBuilderApi.saveSet(record);
       const existing = sets.findIndex((set) => set.id === id);
@@ -188,7 +192,9 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
             duration_seconds: Number(track.duration_seconds || 0),
           })),
         });
-        $('#set-builder-message').textContent = `Set saved durably · playlist written to ${result.path}`;
+        $('#set-builder-message').textContent =
+          `${integrity.removed.length ? `${integrity.removed.length} duplicate song version${integrity.removed.length === 1 ? ' was' : 's were'} removed. ` : ''}` +
+          `Set saved durably · playlist written to ${result.path}`;
       } catch (error) {
         $('#set-builder-message').textContent =
           `Set saved durably and will survive restart. The optional playlist file needs attention: ${error.message || error}`;
@@ -197,8 +203,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
       $('#set-builder-message').textContent = `Set was not saved: ${error.message || error}`;
       notify('The set could not be saved. Your current draft remains open.', 'danger');
     } finally {
-      button.disabled = false;
-      button.textContent = 'Save set';
+      restoreAction();
     }
   }
   function recoveryScore(candidate, detail, previous) {
@@ -214,7 +219,6 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
   }
   async function loadSavedSet(record) {
     if (!record) return;
-    const byId = new Map(state.library.map((track) => [setTrackId(track), track]));
     const brief = record.brief || {};
     Object.entries(brief).forEach(([key, value]) => {
       if (['genres', 'detailedGenres', 'excludedGenres', 'genreWeights', 'identity'].includes(key)) return;
@@ -250,45 +254,31 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     $('#set-genre').dispatchEvent(new Event('change', { bubbles: true }));
     $('#set-detailed-genres').dispatchEvent(new Event('change', { bubbles: true }));
     $('#set-excluded-genres').dispatchEvent(new Event('change', { bubbles: true }));
-    const details = new Map((record.trackDetails || []).map((item) => [item.id, item]));
-    const used = new Set();
-    const recoveredPlan = [];
-    let recovered = 0;
-    (record.tracks || []).forEach((id) => {
-      let track = byId.get(id);
-      if (track && used.has(setRecordingKey(track))) track = null;
-      if (!track) {
-        track = state.library
-          .filter((candidate) => !used.has(setRecordingKey(candidate)))
-          .map((candidate) => ({
-            candidate,
-            score: recoveryScore(candidate, details.get(id) || { id }, recoveredPlan.at(-1)),
-          }))
-          .sort((a, b) => b.score - a.score)[0]?.candidate;
-        if (track) recovered += 1;
-      }
-      if (track) {
-        const detail = details.get(id);
-        track._aiSelectionReason = detail?.selectionReason || null;
-        track._planSectionId = detail?.sectionId || null;
-        used.add(setRecordingKey(track));
-        recoveredPlan.push(track);
-      }
+    const recovery = recoverSavedSetPlan({
+      record,
+      library: state.library,
+      trackId: setTrackId,
+      recordingKey: setRecordingKey,
+      recoveryScore,
     });
-    state.plan = recoveredPlan;
+    state.plan = recovery.plan;
     setPlanningReceipt(record.planningReceipt || null);
     state.revisionComparison = record.planningReceipt?.regeneration || null;
     restoreSavedSetIdentity(state, record);
     $('#saved-set-select').value = record.id;
     const savedWorkflow = inferSetWorkflow(record.planningMode, Boolean(savedIdentity.text));
+    state.manualCurationActive = savedWorkflow.authoringMode === 'curate';
     $$('[name="set-track-planner"]').forEach((input) => {
       input.checked = input.value === savedWorkflow.trackPlanner;
     });
     workflow.applyBriefMode(brief.authoringMode || savedWorkflow.authoringMode, { announce: false });
     workflow.syncPlanningMode();
-    state.lockedIds = new Set(record.locked || []);
-    state.requiredIds = new Set(record.required || []);
+    const retained = new Set(state.plan.map(setTrackId));
+    state.lockedIds = new Set((record.locked || []).filter((id) => retained.has(id)));
+    state.requiredIds = new Set((record.required || []).filter((id) => retained.has(id)));
     state.excludedIds = new Set(record.excluded || []);
+    (state.trackReviews ||= new Map()).clear();
+    Object.entries(record.trackReviews || {}).forEach(([id, review]) => state.trackReviews.set(id, review));
     state.transitionSettings = record.transitions || {};
     state.proposals = [];
     state.activeProposal = '';
@@ -298,9 +288,12 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     const optimized = await autoOptimizeSetTransitions();
     renderSetPlan();
     $('#set-builder-message').textContent =
-      (recovered
-        ? `Loaded set and recovered ${recovered} unavailable track${recovered === 1 ? '' : 's'} with the closest Library matches.`
+      (recovery.recovered
+        ? `Loaded set and recovered ${recovery.recovered} unavailable track${recovery.recovered === 1 ? '' : 's'} with the closest Library matches.`
         : 'Saved set loaded with every track available.') +
+      (recovery.duplicatesRemoved
+        ? ` Removed ${recovery.duplicatesRemoved} duplicate song version${recovery.duplicatesRemoved === 1 ? '' : 's'} from the legacy plan.`
+        : '') +
       (optimized
         ? ` Optimized ${optimized} transition${optimized === 1 ? '' : 's'} that previously used defaults.`
         : '');
@@ -318,6 +311,8 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     return (setBrief().name || 'DJ Set').replace(/[^\w .-]+/g, '').trim() || 'DJ Set';
   }
   function exportSetCsv() {
+    const integrity = applyDefaultSetPlanIntegrity(state, true);
+    if (integrity.removed.length) renderSetPlan();
     downloadSetText(
       `${safeSetFilename()}.csv`,
       buildSetCsv({
@@ -334,6 +329,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     void recordPreference('export', state.plan);
   }
   function setM3uEntries() {
+    applyDefaultSetPlanIntegrity(state, true);
     const preference = setBrief().edits;
     return state.plan.map((track) => {
       const extended = track._hasExtended ? track._job?.extended_path : '';
@@ -358,8 +354,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
     const button = $('#export-set-m3u');
     const status = $('#set-export-status');
     const entries = setM3uEntries();
-    button.disabled = true;
-    button.textContent = 'Checking paths…';
+    const restoreAction = beginButtonAction(button, 'Checking playlist paths…');
     status.className = 'set-export-status checking';
     status.innerHTML = `<span>Checking ${entries.length} tracks on disk…</span>`;
     try {
@@ -381,8 +376,7 @@ export function createSavedSetController({ state, dom, api, storageKeys, authori
       status.className = 'set-export-status warning';
       status.innerHTML = `<strong>Could not validate the playlist</strong><span>${escapeHtml(error.message || String(error))}</span>`;
     } finally {
-      button.disabled = false;
-      button.textContent = 'Export M3U8';
+      restoreAction();
     }
   }
 

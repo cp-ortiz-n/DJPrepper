@@ -69,6 +69,11 @@ def _model_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
             str(descriptor.get("value"))
             for descriptor in candidate.get("descriptors", [])
             if isinstance(descriptor, dict) and descriptor.get("value")
+        ]
+        + [
+            str(tag.get("value"))
+            for tag in candidate.get("playlistIdentity", [])
+            if isinstance(tag, dict) and tag.get("value")
         ],
         "bpm": candidate.get("bpm"),
         "camelot": candidate.get("camelot") or candidate.get("key"),

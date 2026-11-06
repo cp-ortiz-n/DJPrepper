@@ -1,5 +1,7 @@
 /** Preference learning, transition review, and calibration ownership for Set Builder. */
 
+import { beginButtonAction } from './ui-state.js';
+
 export function createSetBuilderFeedback({ state, dom, api, music, planning, review }) {
   const { $, $$, escapeHtml } = dom;
   const { compatibility, setTrackDetailedGenres, setTrackId, setCatalogTrackId, setVocalProfile, songEnergy } = music;
@@ -167,8 +169,7 @@ export function createSetBuilderFeedback({ state, dom, api, music, planning, rev
   async function submitSetReview() {
     if (!state.plan.length) return;
     const button = $('#submit-set-review');
-    button.disabled = true;
-    button.textContent = 'Saving…';
+    const restoreAction = beginButtonAction(button, 'Saving set review…');
     const transitions = state.plan.slice(1).map((track, index) => {
       const left = state.plan[index];
       const pairId = `${setCatalogTrackId(left)}→${setCatalogTrackId(track)}`;
@@ -213,8 +214,7 @@ export function createSetBuilderFeedback({ state, dom, api, music, planning, rev
     } catch (error) {
       $('#set-review-status').textContent = error.message || String(error);
     } finally {
-      button.disabled = false;
-      button.textContent = 'Save review';
+      restoreAction();
     }
   }
 

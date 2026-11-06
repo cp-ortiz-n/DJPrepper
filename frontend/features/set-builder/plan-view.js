@@ -6,7 +6,12 @@ import {
   recordingVersionCount,
   searchVersionAwareReplacements,
 } from './version-alternatives.js';
+import { bindTrackReordering } from './track-reordering.js';
+import { applyExplicitSetPlanChoice } from './plan-integrity.js';
 import { compactTrackSummaryMarkup, createSetBuilderWorkspaceShell } from './workspace-shell.js';
+import { beginButtonAction } from './ui-state.js';
+import { planActionAvailability } from './view-model.js';
+import { setTrackAudioUrl } from './track-media.js';
 
 export function createSetPlanView({ state, dom, ui, music, policy, transitions, lifecycle, review }) {
   const { $, $$, escapeHtml } = dom;
@@ -17,6 +22,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     inferDescriptorEditor,
     bindCompactAudio,
     compactAudioMarkup,
+    stopCompactAudio,
   } = ui;
   const { compatibility, energyBand, formatLibraryKey, LIBRARY_ROLE_INFO, libraryRoles, songEnergy, timingProfile } =
     music;
@@ -26,6 +32,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     eligibleSetTracks,
     genreAllocationTargets,
     identityStore,
+    intendedGenreForPosition,
     intentionEvaluation,
     preferenceAdjustment,
     parseIdentityTerms,
@@ -37,6 +44,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     setVocalProfile,
     targetSetEnergy,
     trackIdentity,
+    trackGenreMatchEvidence,
     trackMatchesSetDetailedGenre,
     trackMatchesSetGenre,
   } = policy;
@@ -55,12 +63,13 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     pushSetHistory,
     recordPreference,
     regenerateUnlocked,
+    renderManualCuration,
     renderSetProposals,
     setBrief,
     setPlanSnapshot,
     updateSetHistoryButtons,
   } = lifecycle;
-  const { trackReviewDraft, transitionReviewDraft } = review;
+  const { bindTrackReview, hasUnresolvedRejections, trackReviewMarkup, transitionReviewDraft } = review;
   const workspaceShell = createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regenerateUnlocked });
 
   function renderSetRules() {
@@ -107,6 +116,11 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     const matchingDetailed = (brief.detailedGenres || []).filter((genre) => trackMatchesSetDetailedGenre(track, genre));
     if (track._aiSelectionReason?.text)
       reasons.push({ kind: track._aiSelectionReason.evidence || 'ai-suggested', text: track._aiSelectionReason.text });
+    const playlistReason = (track._candidateReasons || []).find((reason) =>
+      String(reason?.text || '').startsWith('Playlist/crate identity matches:'),
+    );
+    if (playlistReason?.text && playlistReason.text !== track._aiSelectionReason?.text)
+      reasons.push({ kind: playlistReason.evidence || 'estimated', text: playlistReason.text });
     if (state.requiredIds.has(id))
       reasons.push({ kind: 'required', text: 'Selected because it is a must-play track.' });
     const intention = intentionEvaluation(track, brief);
@@ -241,30 +255,34 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       evaluation = receipt?.evaluation,
       comparison = receipt?.comparison;
     const receiptRows = receipt
-      ? `<section class="set-planning-receipt"><strong>${escapeHtml(receipt.mode === 'ai-planned' ? 'AI Planned' : receipt.mode === 'deterministic-fallback' ? 'Catalog-safe fallback' : receipt.mode === 'ai-interpreted' ? 'AI Interpreted' : 'Classic rules')}</strong><span>${escapeHtml(receipt.provider || 'offline')}${receipt.model ? ` · ${escapeHtml(receipt.model)}` : ''}${receipt.planningDurationMs != null ? ` · ${(receipt.planningDurationMs / 1000).toFixed(1)}s` : ''}</span><p>${escapeHtml(receipt.summary || '')}</p>${receipt.mode === 'deterministic-fallback' ? '<p>Catalog, constraint, duration, and journey checks passed. Mix health is evaluated separately below.</p>' : ''}${receipt.modelRepairs?.length ? `<p>${receipt.modelRepairs.length} structural model selection${receipt.modelRepairs.length === 1 ? ' was' : 's were'} repaired before validation.</p>` : ''}${comparison ? `<p><strong>AI ${comparison.ai?.qualityScore ?? '—'} · Baseline ${comparison.deterministic?.qualityScore ?? '—'}</strong> — ${escapeHtml(comparison.reason || '')}</p>` : ''}${evaluation?.disclosures?.map((text) => `<p>${escapeHtml(text)}</p>`).join('') || ''}${receipt.fallbackReason ? '<p class="set-relaxation-warning">The AI result was replaced by the deterministic safety fallback.</p>' : ''}</section>`
+      ? `<section class="set-planning-receipt"><strong>${escapeHtml(receipt.mode === 'ai-planned' ? 'AI curated' : receipt.mode === 'deterministic-fallback' ? 'Catalog-safe fallback' : receipt.mode === 'ai-interpreted' ? 'Rules-based · AI brief' : 'Rules-based')}</strong><span>${escapeHtml(receipt.provider || 'offline')}${receipt.model ? ` · ${escapeHtml(receipt.model)}` : ''}${receipt.planningDurationMs != null ? ` · ${(receipt.planningDurationMs / 1000).toFixed(1)}s` : ''}</span><p>${escapeHtml(receipt.summary || '')}</p>${receipt.mode === 'deterministic-fallback' ? '<p>Catalog, constraint, duration, and journey checks passed. Mix health is evaluated separately below.</p>' : ''}${receipt.modelRepairs?.length ? `<p>${receipt.modelRepairs.length} structural model selection${receipt.modelRepairs.length === 1 ? ' was' : 's were'} repaired before validation.</p>` : ''}${comparison ? `<p><strong>AI ${comparison.ai?.qualityScore ?? '—'} · Baseline ${comparison.deterministic?.qualityScore ?? '—'}</strong> — ${escapeHtml(comparison.reason || '')}</p>` : ''}${evaluation?.disclosures?.map((text) => `<p>${escapeHtml(text)}</p>`).join('') || ''}${receipt.fallbackReason ? '<p class="set-relaxation-warning">The AI result was replaced by the deterministic safety fallback.</p>' : ''}</section>`
       : '';
     root.querySelector('div').innerHTML =
       `<p class="set-selection-overview">${state.plan.length} songs chosen by allocating the requested genre balance first, then ranking candidates for musical identity, energy shape, BPM and key compatibility, vocal spacing, timing, and transition health.${mustPlays.length ? ` ${mustPlays.length} must-play track${mustPlays.length === 1 ? ' was' : 's were'} preserved.` : ''}</p>${receiptRows}${intentionRows}<div class="set-selection-groups">${genreRows}${fallback}</div><p class="set-selection-note">Open “Why this track” on any song for its position-specific explanation. Counts may differ only when a locked, required, manually added, or unavailable genre track prevents the requested allocation. Any expansion beyond direct matches is disclosed above.</p>`;
   }
   function renderSetPlan() {
-    const result = $('#set-result');
+    const result = $('#set-result'), manualCuration = Boolean(state.manualCurationActive);
+    stopCompactAudio();
     workspaceShell.beforeRender();
-    result.hidden = !state.plan.length;
-    if (!state.plan.length) return;
+    result.hidden = !state.plan.length && !manualCuration;
+    result.classList.toggle('manual-curation', manualCuration);
+    if (result.hidden) return;
     closeTransitionEditors();
     result.classList.toggle('compact-planning', state.compactMode);
     $('#set-compact').textContent = state.compactMode ? 'Comfortable view' : 'Compact view';
     updateSetHistoryButtons();
+    renderManualCuration?.();
+    const brief = setBrief();
+    const resultName = $('#set-result-name');
+    if (document.activeElement !== resultName) resultName.value = brief.name;
+    if (!state.plan.length) return;
     const activeProposal = state.proposals.find((proposal) => proposal.id === state.activeProposal);
     if (activeProposal) {
       activeProposal.snapshot = setPlanSnapshot();
       activeProposal.health = setHealth();
     }
     renderSetProposals();
-    const brief = setBrief();
     const runtime = setRuntime();
-    const resultName = $('#set-result-name');
-    if (document.activeElement !== resultName) resultName.value = brief.name;
     const genreSummary = (brief.detailedGenres || []).length
       ? brief.detailedGenres.join(' + ')
       : brief.genres.length
@@ -278,23 +296,26 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     exportStatus.innerHTML = '<span>Rekordbox paths will be checked before export.</span>';
     const health = setHealth();
     const healthThreshold = brief.minimumHealth;
-    const healthAccepted = health.score >= healthThreshold;
+    const unresolvedRejection = hasUnresolvedRejections();
+    const healthAccepted = health.score >= healthThreshold && !unresolvedRejection;
     const weak = health.transitions.filter((item) => item.score < healthThreshold).sort((a, b) => a.score - b.score);
-    const healthDetail = weak.length
-      ? weak
-          .slice(0, 8)
-          .map(
-            (item) =>
-              `<button type="button" data-transition="${item.to}"><b>${item.from + 1} → ${item.to + 1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`,
-          )
-          .join('')
-      : healthAccepted
-        ? `<p>Health target met. No transitions fall below ${healthThreshold}.</p>`
-        : `<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes === 1 ? ' is' : 's are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;
+    const healthDetail = unresolvedRejection
+      ? '<p>A rejected track still needs a valid replacement. Open its details to retry after relaxing a rule.</p>'
+      : weak.length
+        ? weak
+            .slice(0, 8)
+            .map(
+              (item) =>
+                `<button type="button" data-transition="${item.to}"><b>${item.from + 1} → ${item.to + 1}</b><span>${item.score}% · ${escapeHtml(item.key)} · tempo ${item.components.tempo}/45</span></button>`,
+            )
+            .join('')
+        : healthAccepted
+          ? `<p>Health target met. No transitions fall below ${healthThreshold}.</p>`
+          : `<p>${health.vocalClashes} vocal-forward pairing${health.vocalClashes === 1 ? ' is' : 's are'} lowering the overall health below ${healthThreshold}. Regenerate or replace those tracks.</p>`;
     $('#set-health').className =
       `set-health ${healthAccepted ? 'good' : health.score >= healthThreshold - 10 ? 'fair' : 'weak'}`;
     $('#set-health').innerHTML =
-      `<summary><strong>${health.score}</strong><span><b>Mix health</b><em>${healthAccepted ? 'Performance-ready' : 'Draft · repair needed'}</em></span><small>Target ${healthThreshold} · ${weak.length} transition${weak.length === 1 ? '' : 's'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}</small></summary><div>${healthDetail}</div>`;
+      `<summary><strong>${health.score}</strong><span><b>Mix health</b><em>${healthAccepted ? 'Performance-ready' : 'Draft · repair needed'}</em></span><small>Target ${healthThreshold} · ${weak.length} transition${weak.length === 1 ? '' : 's'} below target · ${health.vocalClashes} vocal clash${health.vocalClashes === 1 ? '' : 'es'}${unresolvedRejection ? ' · rejected track unresolved' : ''}</small></summary><div>${healthDetail}</div>`;
     $('#set-health')
       .querySelectorAll('[data-transition]')
       .forEach(
@@ -304,31 +325,46 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
               .querySelector(`.set-track-card[data-index="${button.dataset.transition}"]`)
               ?.scrollIntoView({ behavior: 'smooth', block: 'center' })),
       );
-    ['#save-set', '#export-set-csv', '#export-set-m3u'].forEach((selector) => {
-      const button = $(selector);
-      button.disabled = !healthAccepted;
-      button.title = healthAccepted ? '' : `Set health must reach ${healthThreshold} before saving or exporting.`;
+    const actionAvailability = planActionAvailability({
+      planLength: state.plan.length,
+      healthAccepted,
+      unresolvedRejection,
+      healthThreshold,
     });
+    const saveButton = $('#save-set');
+    saveButton.disabled = actionAvailability.saveDisabled;
+    saveButton.title = actionAvailability.saveTitle;
+    ['#export-set-csv', '#export-set-m3u'].forEach((selector) => {
+      const button = $(selector);
+      button.disabled = actionAvailability.exportDisabled;
+      button.title = actionAvailability.exportTitle;
+    });
+    if (!healthAccepted) {
+      exportStatus.className = 'set-export-status warning';
+      exportStatus.innerHTML = `<strong>Draft saving is available</strong><span>${escapeHtml(actionAvailability.exportReason)}</span>`;
+    }
     $('#set-track-list').innerHTML = state.plan
       .map((track, index) => {
         const transition = transitionExplanation(state.plan[index - 1], track);
         const id = setTrackId(track);
         const locked = state.lockedIds.has(id);
         const selectionReasons = setSelectionExplanation(track, index, brief);
-        const preview = track._job?.id
-          ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
-          : '';
-        const review = trackReviewDraft.get(id) || {},
+        const intendedGenre = intendedGenreForPosition(brief.identity, index, state.plan.length);
+        const identityEvidence = trackGenreMatchEvidence(track, intendedGenre);
+        const previewSource = setTrackAudioUrl(track);
+        const preview = previewSource ? compactAudioMarkup(previewSource, track.duration_seconds, true) : '';
+        const review = state.trackReviews.get(id) || {},
           metrics = track._candidateMetrics || {};
         const alternateVersionCount = recordingVersionCount(track, state.library);
         const pairId = index ? `${setCatalogTrackId(state.plan[index - 1])}→${setCatalogTrackId(track)}` : '';
-        return `<article class="set-track-card${locked ? ' locked' : ''}" draggable="${locked ? 'false' : 'true'}" data-index="${index}"><span class="set-position">${index + 1}</span><div class="set-track-title"><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
+        const trackName = track.source_name.replace(/\.[^.]+$/, '');
+        return `<article class="set-track-card${locked ? ' locked' : ''}" data-index="${index}"><span class="set-position"><b>${index + 1}</b><button type="button" class="button tertiary set-drag-handle" draggable="${locked ? 'false' : 'true'}" ${locked ? 'disabled' : ''} aria-label="${locked ? `Track ${index + 1} is locked; unlock it before reordering` : `Drag track ${index + 1}: ${escapeHtml(trackName)}`}" title="${locked ? 'Unlock this track to reorder it' : 'Drag to reorder · use arrow keys for precise movement'}">⠿</button></span><div class="set-track-title"><strong>${escapeHtml(trackName)}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${libraryRoles(
           track,
         )
           .map((role) => LIBRARY_ROLE_INFO[role]?.[0] || role)
           .join(
             ', ',
-          )}</span>${preview}</div>${compactTrackSummaryMarkup({ track, transition, locked, review, changed: state.revisionComparison?.changedTrackIds?.includes(id), formatKey: formatLibraryKey, energyLabel: energyBand(songEnergy(track)), healthThreshold, escapeHtml })}<div class="set-track-meta"><strong>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended ? 'Extended edit available' : 'Original analyzed track'}${metrics.preferenceAdjustment ? ` · preference ${metrics.preferenceAdjustment > 0 ? '+' : ''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta > 0 ? '+' : ''}${metrics.rankDelta}` : ''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons
+          )}</span>${identityEvidence ? `<span class="set-track-identity-proof">${escapeHtml(intendedGenre)} evidence · ${escapeHtml(identityEvidence.source)}</span>` : ''}${preview}</div>${compactTrackSummaryMarkup({ track, transition, locked, review, changed: state.revisionComparison?.changedTrackIds?.includes(id), formatKey: formatLibraryKey, energyLabel: energyBand(songEnergy(track)), healthThreshold, escapeHtml })}<div class="set-track-meta"><strong>${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))}</strong><span>${energyBand(songEnergy(track))} energy · ${setVocalProfile(track)} · ${timingProfile(track)}</span><span>${track._hasExtended ? 'Extended edit available' : 'Original analyzed track'}${metrics.preferenceAdjustment ? ` · preference ${metrics.preferenceAdjustment > 0 ? '+' : ''}${metrics.preferenceAdjustment} · rank ${metrics.rankDelta > 0 ? '+' : ''}${metrics.rankDelta}` : ''}</span><details class="set-selection-reasons"><summary>Why this track</summary><ul>${selectionReasons
           .map((reason) => {
             const label = ['verified', 'estimated', 'ai-suggested'].includes(reason.kind)
               ? `<em>${escapeHtml(reason.kind)}</em>`
@@ -337,7 +373,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           })
           .join(
             '',
-          )}</ul></details><div class="set-track-review"><button type="button" data-track-review="accept" class="${review.decision === 'accept' ? 'active' : ''}">✓ Keep</button><button type="button" data-track-review="reject" class="${review.decision === 'reject' ? 'active' : ''}">× Reject</button><select class="set-reject-reason" aria-label="Rejection reason"><option value="">Reason…</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Other</option></select></div></div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="set-audition">Mix transition</button><button type="button" class="edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-remove">Remove</button><button type="button" class="set-add-after">Add after</button><button type="button" class="set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="set-identity">Identity tags</button></div><div class="set-track-quick-actions"><button type="button" class="set-quick-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="set-quick-alternative">Replace</button><button type="button" class="set-inspect-track">More</button></div></article>`;
+          )}</ul></details>${trackReviewMarkup(track)}</div><div class="set-transition ${transition.score != null && transition.score < healthThreshold ? 'warning' : 'good'}"><b>${transition.score == null ? 'OPEN' : `${transition.score}% match`}</b><span><i>Why this transition:</i> ${escapeHtml(transition.text)}</span>${index ? `<button type="button" class="button secondary set-audition">Mix transition</button><button type="button" class="button secondary edit-transition">Edit mix</button><label class="set-transition-rating">Your rating<select data-pair-id="${escapeHtml(pairId)}"><option value="3">Not rated</option><option value="5">5 · Excellent</option><option value="4">4 · Good</option><option value="2">2 · Weak</option><option value="1">1 · Bad</option></select></label>` : ''}</div><div class="set-row-actions"><button type="button" class="button secondary set-move-up" ${index === 0 ? 'disabled' : ''}>↑ Earlier</button><button type="button" class="button secondary set-move-down" ${index === state.plan.length - 1 ? 'disabled' : ''}>↓ Later</button><button type="button" class="button secondary set-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="button destructive set-remove">Remove</button><button type="button" class="button secondary set-add-after">Add after</button><button type="button" class="button secondary set-alternative">${alternateVersionCount ? `Alternatives · ${alternateVersionCount} other version${alternateVersionCount === 1 ? '' : 's'}` : 'Find alternative'}</button><button type="button" class="button tertiary set-identity">Identity tags</button></div><div class="set-track-quick-actions"><button type="button" class="button tertiary set-quick-lock">${locked ? 'Unlock' : 'Lock'}</button><button type="button" class="button secondary set-quick-alternative">Replace</button><button type="button" class="button tertiary set-inspect-track">More</button></div></article>`;
       })
       .join('');
     bindSetRows();
@@ -378,11 +414,17 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       : `<p class="set-ready">Set health target ${healthThreshold} met with no transition warnings. Listen through the plan before performing it live.</p>`;
   }
   function moveSetTrack(from, to) {
-    if (editCommands.move(from, to)) updateSetHistoryButtons();
+    if (!editCommands.move(from, to)) return false;
+    updateSetHistoryButtons();
+    const movedTrack = state.plan[to];
+    const message = $('#set-builder-message');
+    if (message && movedTrack)
+      message.textContent = `${movedTrack.source_name.replace(/\.[^.]+$/, '')} moved to position ${to + 1}. Undo is available.`;
+    return true;
   }
   function bindSetRows() {
-    let dragging = null;
-    $$('.set-track-card').forEach((card) => {
+    const cards = $$('.set-track-card');
+    cards.forEach((card) => {
       const index = Number(card.dataset.index);
       card.querySelector('.set-move-up').onclick = () => moveSetTrack(index, index - 1);
       card.querySelector('.set-move-down').onclick = () => moveSetTrack(index, index + 1);
@@ -408,26 +450,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       card.querySelector('.set-alternative').onclick = () => replaceSetTrack(index);
       card.querySelector('.set-quick-alternative').onclick = () => replaceSetTrack(index);
       card.querySelector('.set-identity').onclick = () => openTrackIdentityEditor(index, card);
-      card.querySelectorAll('[data-track-review]').forEach(
-        (button) =>
-          (button.onclick = () => {
-            const track = state.plan[index],
-              reason = card.querySelector('.set-reject-reason').value;
-            trackReviewDraft.set(setTrackId(track), {
-              decision: button.dataset.trackReview,
-              reason: button.dataset.trackReview === 'reject' ? reason : '',
-            });
-            renderSetPlan();
-          }),
-      );
-      const rejectReason = card.querySelector('.set-reject-reason');
-      rejectReason.value = trackReviewDraft.get(setTrackId(state.plan[index]))?.reason || '';
-      rejectReason.onchange = (event) => {
-        const track = state.plan[index],
-          current = trackReviewDraft.get(setTrackId(track));
-        if (current?.decision === 'reject')
-          trackReviewDraft.set(setTrackId(track), { ...current, reason: event.currentTarget.value });
-      };
+      bindTrackReview(card, index);
       const rating = card.querySelector('.set-transition-rating select');
       if (rating) {
         rating.value = String(transitionReviewDraft.get(rating.dataset.pairId) || 3);
@@ -437,22 +460,12 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
       card
         .querySelector('.set-audition')
         ?.addEventListener('click', (event) => auditionTransition(index, event.currentTarget));
-      card.querySelector('.edit-transition')?.addEventListener('click', () => openTransitionEditor(index, card));
-      card.ondragstart = (event) => {
-        if (event.target.closest('input,select,button,audio,.transition-editor,.set-compact-audio')) {
-          event.preventDefault();
-          return;
-        }
-        dragging = index;
-        card.classList.add('dragging');
-      };
-      card.ondragend = () => card.classList.remove('dragging');
-      card.ondragover = (event) => event.preventDefault();
-      card.ondrop = (event) => {
-        event.preventDefault();
-        moveSetTrack(dragging, index);
-      };
+      card.querySelector('.edit-transition')?.addEventListener('click', () => {
+        workspaceShell.closeInspector();
+        openTransitionEditor(index, card);
+      });
     });
+    bindTrackReordering({ cards, planLength: state.plan.length, moveTrack: moveSetTrack });
   }
   function openTrackIdentityEditor(index, card) {
     card.querySelector('.set-identity-editor')?.remove();
@@ -472,22 +485,18 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         return;
       }
       const action = event.currentTarget,
-        original = action.textContent;
-      action.disabled = true;
-      action.textContent = 'Inferring…';
+        restoreAction = beginButtonAction(action, 'Inferring identity tags…');
       try {
         await inferDescriptorEditor(editor, [track._downloadedId]);
       } catch (error) {
         notify(error.message, 'danger');
       } finally {
-        action.disabled = false;
-        action.textContent = original;
+        restoreAction();
       }
     };
     editor.querySelector('.save-descriptors').onclick = async (event) => {
       const action = event.currentTarget;
-      action.disabled = true;
-      action.textContent = 'Saving…';
+      const restoreAction = beginButtonAction(action, 'Saving identity tags…');
       try {
         if (track._downloadedId) {
           const result = await saveDescriptorEditor(editor, [track._downloadedId]);
@@ -507,8 +516,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
           `Identity tags saved for ${track.source_name.replace(/\.[^.]+$/, '')} in the persistent track catalog.`;
       } catch (error) {
         notify(error.message, 'danger');
-        action.disabled = false;
-        action.textContent = 'Save changes';
+        restoreAction();
       }
     };
     editor.querySelector('input')?.focus();
@@ -533,7 +541,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     const genres = [...new Set(available.map((choice) => choice.track._genre).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b),
     );
-    panel.innerHTML = `<header><div><strong>${insertIndex >= state.plan.length ? 'Add a track to the end' : `Add a track at position ${insertIndex + 1}`}</strong><span>Search any unused song in your DJ Library.</span></div><button type="button" class="close-alternatives" aria-label="Close track browser">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
+    panel.innerHTML = `<header><div><strong>${insertIndex >= state.plan.length ? 'Add a track to the end' : `Add a track at position ${insertIndex + 1}`}</strong><span>Search any unused song in your DJ Library.</span></div><button type="button" class="button tertiary close-alternatives" aria-label="Close track browser">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
     const list = panel.querySelector('.set-alternative-list');
     const status = panel.querySelector('.set-alternative-status');
     const renderChoices = () => {
@@ -549,10 +557,9 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         ? choices
             .map((choice, choiceIndex) => {
               const track = choice.track;
-              const preview = track._job?.id
-                ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
-                : '';
-              return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">Add to set</button></article>`;
+              const previewSource = setTrackAudioUrl(track);
+              const preview = previewSource ? compactAudioMarkup(previewSource, track.duration_seconds, true) : '';
+              return `<article data-choice="${choiceIndex}"><div><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="button secondary use-alternative">Add to set</button></article>`;
             })
             .join('')
         : '<p class="empty">No unused tracks match that search.</p>';
@@ -563,6 +570,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
             if (!choice) return;
             pushSetHistory();
             state.plan.splice(Math.min(insertIndex, state.plan.length), 0, choice.track);
+            applyExplicitSetPlanChoice(state, choice.track);
             void recordPreference('replace-in', choice.track);
             renderSetPlan();
           }),
@@ -601,7 +609,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
     card.querySelector('.set-alternative-panel')?.remove();
     const panel = document.createElement('section');
     panel.className = 'set-alternative-panel';
-    panel.innerHTML = `<header><div><strong>Choose an alternative</strong><span>Use another version of this song or replace it with a different recording. Only one version can remain in the set.</span></div><button type="button" class="close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, version, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
+    panel.innerHTML = `<header><div><strong>Choose an alternative</strong><span>Use another version of this song or replace it with a different recording. Only one version can remain in the set.</span></div><button type="button" class="button tertiary close-alternatives" aria-label="Close alternatives">×</button></header><div class="set-alternative-tools"><label><span>Song, artist, version, or genre</span><input class="alternative-search" type="search" placeholder="Search your library…" autocomplete="off"></label><label><span>Genre</span><select class="alternative-genre"><option value="">All genres</option>${genres.map((genre) => `<option value="${escapeHtml(genre)}">${escapeHtml(genre)}</option>`).join('')}</select></label></div><div class="set-alternative-status" aria-live="polite"></div><div class="set-alternative-list"></div>`;
     const list = panel.querySelector('.set-alternative-list');
     const status = panel.querySelector('.set-alternative-status');
     const renderChoices = () => {
@@ -619,13 +627,13 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
         ? choices
             .map((choice, choiceIndex, items) => {
               const track = choice.track;
-              const preview = track._job?.id
-                ? compactAudioMarkup(`/api/jobs/${track._job.id}/audio/wav`, track.duration_seconds, true)
-                : '';
-              const heading = !choiceIndex || items[choiceIndex - 1].group !== choice.group
-                ? `<h4>${escapeHtml(choice.group)}</h4>`
-                : '';
-              return `${heading}<article data-choice="${choiceIndex}" class="${choice.sameRecording ? 'same-recording-version' : ''}"><div><em class="set-alternative-kind">${choice.sameRecording ? escapeHtml(choice.versionLabel) : 'Different song'}</em><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="use-alternative">${choice.sameRecording ? 'Use this version' : 'Use this track'}</button></article>`;
+              const previewSource = setTrackAudioUrl(track);
+              const preview = previewSource ? compactAudioMarkup(previewSource, track.duration_seconds, true) : '';
+              const heading =
+                !choiceIndex || items[choiceIndex - 1].group !== choice.group
+                  ? `<h4>${escapeHtml(choice.group)}</h4>`
+                  : '';
+              return `${heading}<article data-choice="${choiceIndex}" class="${choice.sameRecording ? 'same-recording-version' : ''}"><div><em class="set-alternative-kind">${choice.sameRecording ? escapeHtml(choice.versionLabel) : 'Different song'}</em><strong>${escapeHtml(track.source_name.replace(/\.[^.]+$/, ''))}</strong><span>${track.artist ? `${escapeHtml(track.artist)} · ` : ''}${escapeHtml(track._genre)} · ${Number(track.bpm || 0).toFixed(1)} BPM · ${escapeHtml(formatLibraryKey(track.key))} · ${Math.round(choice.score)} fit</span></div>${preview}<button type="button" class="button secondary use-alternative">${choice.sameRecording ? 'Use this version' : 'Use this track'}</button></article>`;
             })
             .join('')
         : '<p class="empty">No unused tracks match that search.</p>';
@@ -638,6 +646,7 @@ export function createSetPlanView({ state, dom, ui, music, policy, transitions, 
             const replaced = state.plan[index];
             state.lockedIds.delete(setTrackId(replaced));
             state.plan[index] = choice.track;
+            applyExplicitSetPlanChoice(state, choice.track);
             void recordPreference('replace-out', replaced);
             void recordPreference('replace-in', choice.track);
             renderSetPlan();

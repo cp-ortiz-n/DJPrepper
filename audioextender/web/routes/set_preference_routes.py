@@ -12,10 +12,15 @@ from audioextender.set_builder.preference_learning import DJPreferenceService
 
 class PreferenceEventRequest(BaseModel):
     id: str | None = Field(default=None, max_length=200)
-    action: Literal["keep", "lock", "save", "export", "replace-in", "remove", "replace-out"]
+    action: Literal["keep", "reject", "lock", "save", "export", "replace-in", "remove", "replace-out"]
     track_id: str = Field(min_length=1, max_length=200, alias="trackId")
     context: str = Field(default="balanced", max_length=100)
     features: dict[str, list[str] | str] = Field(default_factory=dict)
+    reason: str = Field(default="", max_length=200)
+    scope: Literal["version", "recording-family"] = "version"
+    recording_key: str = Field(default="", max_length=300, alias="recordingKey")
+    set_id: str = Field(default="", max_length=200, alias="setId")
+    revision_id: str = Field(default="", max_length=200, alias="revisionId")
     created_at: str | None = Field(default=None, max_length=100, alias="createdAt")
 
 
@@ -42,6 +47,10 @@ def create_set_preference_router(service: DJPreferenceService) -> APIRouter:
     @router.post("/events")
     def record_events(request: PreferenceEventsRequest) -> dict[str, Any]:
         return service.record([event.model_dump(by_alias=True) for event in request.events])
+
+    @router.delete("/events/{event_id}")
+    def retract_event(event_id: str) -> dict[str, Any]:
+        return service.retract(event_id)
 
     @router.put("/enabled")
     def set_enabled(request: PreferenceEnabledRequest) -> dict[str, Any]:

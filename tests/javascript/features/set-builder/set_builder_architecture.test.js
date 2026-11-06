@@ -9,7 +9,26 @@ import {
 } from '../../../../frontend/features/set-builder/classic-planner.js';
 import { createSetEditCommands } from '../../../../frontend/features/set-builder/commands.js';
 import { createSetBuilderFeedback } from '../../../../frontend/features/set-builder/feedback.js';
+import {
+  canonicalGenreNames,
+  catalogGenreMentions,
+  createCatalogGenreVocabulary,
+  mergeCatalogGenreVocabulary,
+} from '../../../../frontend/features/set-builder/genre-vocabulary.js';
+import {
+  excludedGenreMentions,
+  journeyGenreAuthority,
+  reconcileInterpretedGenreAuthority,
+  repairJourneyGenrePolicy,
+  reviewJourneyGenrePolicy,
+} from '../../../../frontend/features/set-builder/journey-policy.js';
+import { interpretSetIntention } from '../../../../frontend/features/set-builder/policy.js';
 import { createSetPlanView } from '../../../../frontend/features/set-builder/plan-view.js';
+import {
+  applyExplicitSetPlanChoice,
+  recoverSavedSetPlan,
+  requireUniqueSetPlan,
+} from '../../../../frontend/features/set-builder/plan-integrity.js';
 import { createSetPlanningSession } from '../../../../frontend/features/set-builder/planning-session.js';
 import {
   assignPlanSections,
@@ -23,6 +42,7 @@ import {
 } from '../../../../frontend/features/set-builder/regeneration.js';
 import {
   deduplicateSetRecordings,
+  reconcileSetRecordingFamilies,
   recordingVersionAlternatives,
   recordingVersionLabel,
   setRecordingKey,
@@ -50,6 +70,12 @@ import {
   snapshotSetPlan,
 } from '../../../../frontend/features/set-builder/state.js';
 import { createSetTransitionEditor } from '../../../../frontend/features/set-builder/transition-editor.js';
+import { createTrackDecisionStore } from '../../../../frontend/features/set-builder/track-decision-store.js';
+import { selectValidatedReplacement } from '../../../../frontend/features/set-builder/track-rejection.js';
+import {
+  bindTrackReordering,
+  dropDestinationIndex,
+} from '../../../../frontend/features/set-builder/track-reordering.js';
 import {
   compactTrackSummaryMarkup,
   trackStateChips,
@@ -61,6 +87,7 @@ import {
   intentionProviderView,
   journeyEnergyRange,
   journeyEvidenceLabel,
+  planActionAvailability,
   setProposalMarkup,
 } from '../../../../frontend/features/set-builder/view-model.js';
 import {
@@ -70,11 +97,13 @@ import {
   createSetIntentionController,
   createSetWorkflowController,
   inferSetWorkflow,
+  offlineJourneyFromInterpretation,
   passesSetCandidateHardFilters,
   requiresStrictGenreEligibility,
   resolveStructuredGenreFilters,
   resolveSetPlanningMode,
   setBriefModeMessage,
+  setPlanningPresentation,
 } from '../../../../frontend/features/set-builder/workflow.js';
 
 const trackId = (track) => track.id;
@@ -195,6 +224,13 @@ function planningSessionFor({ state, elements, planningClient, classicPlanner, o
     lifecycle: {
       eligibleSetTracks: () => state.library,
       pushSetHistory() {},
+      requireUniquePlan: (plan, source) =>
+        requireUniqueSetPlan(plan, {
+          preferredTrackIds: new Set([...state.lockedIds, ...state.requiredIds]),
+          trackId,
+          recordingKey: (track) => track.recordingKey || `track:${track.id}`,
+          source,
+        }),
       renderSetPlan() {},
       resetSetReviewDraft() {},
       restoreSetSnapshot(snapshot) {
@@ -266,6 +302,221 @@ test('recording deduplication honors an explicitly preferred catalog entry', () 
   assert.deepEqual(deduplicateSetRecordings([original, remix], new Set(['funkytown remix.wav'])), [remix]);
 });
 
+test('recording-family reconciliation reports removals and keeps the explicitly protected version in plan order', () => {
+  const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
+  const bridge = { source_name: 'Born to Be Alive.wav', _recordingCode: 'DSC-000002' };
+  const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
+
+  const result = reconcileSetRecordingFamilies([original, bridge, remix], {
+    preferredTrackIds: new Set(['funkytown remix.wav']),
+  });
+
+  assert.deepEqual(result.plan, [bridge, remix]);
+  assert.deepEqual(result.removed, [original]);
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.duplicateFamilies, [
+    {
+      recordingKey: 'recording:DSC-000001',
+      keptTrackId: 'funkytown remix.wav',
+      removedTrackIds: ['funkytown.wav'],
+      preferredTrackIds: ['funkytown remix.wav'],
+    },
+  ]);
+});
+
+test('recording-family reconciliation is stable for conflicting preferences and incomplete metadata', () => {
+  const firstLocked = { source_name: 'Rasputin.wav', artist: 'Majestic' };
+  const secondLocked = { source_name: 'Rasputin Remix.wav', artist: 'Majestic' };
+  const unknownOne = { _downloadedId: 10 };
+  const unknownTwo = { _downloadedId: 11 };
+
+  const result = reconcileSetRecordingFamilies([firstLocked, secondLocked, unknownOne, unknownTwo], {
+    preferredTrackIds: new Set(['rasputin.wav', 'rasputin remix.wav']),
+  });
+
+  assert.deepEqual(result.plan, [firstLocked, unknownOne, unknownTwo]);
+  assert.deepEqual(result.duplicateFamilies[0].preferredTrackIds, ['rasputin.wav', 'rasputin remix.wav']);
+  assert.notEqual(setRecordingKey(unknownOne), setRecordingKey(unknownTwo));
+  assert.notEqual(
+    setRecordingKey({ source_name: 'One More Time.wav', artist: 'Daft Punk' }),
+    setRecordingKey({ source_name: 'One More Time.wav', artist: 'Another Artist' }),
+  );
+});
+
+test('manual Add or Replace keeps the chosen version unless another version is protected', () => {
+  const original = { source_name: 'Funkytown.wav', _recordingCode: 'DSC-000001' };
+  const bridge = { source_name: 'Born to Be Alive.wav', _recordingCode: 'DSC-000002' };
+  const remix = { source_name: 'Funkytown Remix.wav', _recordingCode: 'DSC-000001' };
+  const editable = {
+    plan: [original, bridge, remix],
+    lockedIds: new Set(),
+    requiredIds: new Set(),
+  };
+
+  const chosen = applyExplicitSetPlanChoice(editable, remix);
+
+  assert.deepEqual(editable.plan, [bridge, remix]);
+  assert.deepEqual(chosen.removed, [original]);
+
+  const protectedPlan = {
+    plan: [original, bridge, remix],
+    lockedIds: new Set(['funkytown.wav']),
+    requiredIds: new Set(),
+  };
+  const protectedResult = applyExplicitSetPlanChoice(protectedPlan, remix);
+
+  assert.deepEqual(protectedPlan.plan, [original, bridge]);
+  assert.deepEqual(protectedResult.removed, [remix]);
+  assert.deepEqual([...protectedPlan.lockedIds], ['funkytown.wav']);
+});
+
+test('reject replacement respects exclusions, occupied families, and adjacent transition fit', () => {
+  const current = { id: 'current', family: 'family-current' };
+  const occupied = { id: 'occupied', family: 'family-used' };
+  const duplicate = { id: 'duplicate', family: 'family-used', fit: 100 };
+  const excluded = { id: 'excluded', family: 'family-free-1', fit: 90 };
+  const selected = { id: 'selected', family: 'family-free-2', fit: 70 };
+  const result = selectValidatedReplacement({
+    state: { plan: [occupied, current] },
+    index: 1,
+    candidates: [duplicate, excluded, selected],
+    excludedIds: new Set(['excluded']),
+    setTrackId: (track) => track.id,
+    setRecordingKey: (track) => track.family,
+    setCandidateScore: (track) => track.fit,
+    compatibility: () => ({ score: 0 }),
+    brief: {},
+  });
+
+  assert.equal(result, selected);
+});
+
+test('reject replacement preserves strict journey-section genre authority', () => {
+  const current = { id: 'current', family: 'current', _planSectionId: 'warmup' };
+  const latinHouse = { id: 'latin-house', family: 'house', genre: 'Latin House', fit: 30 };
+  const peakTechno = { id: 'peak-techno', family: 'techno', genre: 'Techno', fit: 100 };
+  const result = selectValidatedReplacement({
+    state: { plan: [current] },
+    index: 0,
+    candidates: [peakTechno, latinHouse],
+    excludedIds: new Set(),
+    setTrackId: (track) => track.id,
+    setRecordingKey: (track) => track.family,
+    trackMatchesIntendedGenre: (track, genre) => track.genre === genre,
+    setCandidateScore: (track) => track.fit,
+    compatibility: () => ({ score: 0 }),
+    brief: {
+      identity: {
+        journey: {
+          genrePolicy: { mode: 'strict' },
+          sections: [{ id: 'warmup', genres: ['Latin House'] }],
+        },
+      },
+    },
+  });
+
+  assert.equal(result, latinHouse);
+  assert.equal(
+    selectValidatedReplacement({
+      state: { plan: [current] },
+      index: 0,
+      candidates: [peakTechno],
+      excludedIds: new Set(),
+      setTrackId: (track) => track.id,
+      setRecordingKey: (track) => track.family,
+      trackMatchesIntendedGenre: (track, genre) => track.genre === genre,
+      setCandidateScore: (track) => track.fit,
+      compatibility: () => ({ score: 0 }),
+      brief: {
+        identity: {
+          journey: {
+            genrePolicy: { mode: 'strict' },
+            sections: [{ id: 'warmup', genres: ['Latin House'] }],
+          },
+        },
+      },
+    }),
+    undefined,
+  );
+});
+
+test('durable track decisions reuse event IDs and reconcile Undo and Redo idempotently', async () => {
+  const calls = [];
+  const api = {
+    recordPreference: async (events) => {
+      calls.push(['record', events]);
+      return { profile: {} };
+    },
+    deletePreferenceEvent: async (id) => calls.push(['delete', id]),
+  };
+  const store = createTrackDecisionStore({
+    api,
+    context: () => 'peak-time',
+    features: () => ({ genre: ['Disco'] }),
+    trackId: (track) => track.id,
+    recordingKey: (track) => track.family,
+    setIdentity: () => ({ setId: 'set-1', revisionId: 'revision-2' }),
+    refresh: async () => {},
+  });
+  const track = { id: 'track-1', family: 'recording:one' };
+  const review = await store.record(track, {
+    decision: 'reject',
+    reason: 'wrong-energy',
+    scope: 'recording-family',
+    eventId: 'decision-1',
+  });
+
+  await store.reconcile(new Map([['track-1', review]]), new Map());
+  await store.reconcile(new Map(), new Map([['track-1', review]]));
+
+  assert.equal(review.eventId, 'decision-1');
+  assert.deepEqual(calls.map(([action]) => action), ['record', 'delete', 'record']);
+  assert.equal(calls[0][1][0].recordingKey, 'recording:one');
+  assert.equal(calls[0][1][0].scope, 'recording-family');
+});
+
+test('Keep remains durable preference feedback without becoming a structural lock', async () => {
+  const calls = [];
+  const store = createTrackDecisionStore({
+    api: {
+      recordPreference: async (events) => calls.push(events),
+      deletePreferenceEvent: async () => {},
+    },
+    context: () => 'warm-up',
+    features: () => ({ genre: ['House'] }),
+    trackId: (track) => track.id,
+    recordingKey: (track) => track.family,
+    setIdentity: () => ({ setId: 'set-keep', revisionId: 'revision-4' }),
+    refresh: async () => {},
+  });
+
+  const review = await store.record(
+    { id: 'track-kept', family: 'recording:kept' },
+    { decision: 'accept', eventId: 'keep-1' },
+  );
+
+  assert.deepEqual(review, {
+    decision: 'accept',
+    reason: '',
+    scope: 'version',
+    saved: true,
+    eventId: 'keep-1',
+    eventPayload: calls[0][0],
+  });
+  assert.deepEqual(calls[0][0], {
+    id: 'keep-1',
+    action: 'keep',
+    trackId: 'track-kept',
+    context: 'warm-up',
+    features: { genre: ['House'] },
+    reason: '',
+    scope: 'version',
+    recordingKey: 'recording:kept',
+    setId: 'set-keep',
+    revisionId: 'revision-4',
+  });
+});
+
 test('recording families retain alternate versions for explicit substitution', () => {
   const original = {
     source_name: 'Funkytown.wav',
@@ -321,13 +572,22 @@ test('version-aware replacement choices separate family versions from different 
     rankTrack: (track) => ({ track, score: track === remix ? 91 : 82 }),
   });
 
-  assert.deepEqual(catalog.versionChoices.map(({ track }) => track), [remix]);
-  assert.deepEqual(catalog.recommendedSongs.map(({ track }) => track), [other]);
+  assert.deepEqual(
+    catalog.versionChoices.map(({ track }) => track),
+    [remix],
+  );
+  assert.deepEqual(
+    catalog.recommendedSongs.map(({ track }) => track),
+    [other],
+  );
   assert.deepEqual(
     defaultVersionAwareReplacements(catalog.versionChoices, catalog.recommendedSongs).map(({ group }) => group),
     ['Other versions of this song', 'Recommended different songs'],
   );
-  assert.deepEqual(searchVersionAwareReplacements(catalog.searchable, 'remix', '').map(({ track }) => track), [remix]);
+  assert.deepEqual(
+    searchVersionAwareReplacements(catalog.searchable, 'remix', '').map(({ track }) => track),
+    [remix],
+  );
 });
 
 test('failed brief preparation does not launch more slow AI requests', async () => {
@@ -344,12 +604,358 @@ test('failed brief preparation does not launch more slow AI requests', async () 
   const result = await controller.interpretAndPlan('House');
   assert.equal(result.provider, 'offline');
   assert.deepEqual(result.requestedGenres, ['house']);
+  assert.equal(result.journey.sections.length, 3);
+  assert.deepEqual(
+    result.journey.sections.map((section) => section.genres),
+    [['house'], ['house'], ['house']],
+  );
+});
+
+test('offline journey preserves exact genres and a complete editable duration', () => {
+  const journey = offlineJourneyFromInterpretation(
+    { requestedGenres: ['latin techno'], genreSequence: ['latin techno'], optionalGenres: [], drift: 'none' },
+    90,
+  );
+  assert.equal(journey.genrePolicy.mode, 'strict');
+  assert.equal(
+    journey.sections.reduce((total, section) => total + section.durationPercent, 0),
+    100,
+  );
+  assert.deepEqual(
+    journey.sections.flatMap((section) => section.genres),
+    ['latin techno', 'latin techno', 'latin techno'],
+  );
+});
+
+test('written genre brief removes nested parents and unrequested AI neighbors', () => {
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a Latin Techno set',
+      requestedGenres: ['latin techno', 'techno'],
+      optionalGenres: ['latin house', 'latin pop'],
+      genreSequence: ['latin techno', 'techno'],
+    },
+    ['latin techno', 'techno', 'latin house', 'latin pop'],
+  );
+  assert.deepEqual(interpreted.requestedGenres, ['latin techno']);
+  assert.deepEqual(interpreted.optionalGenres, []);
+  assert.deepEqual(interpreted.genreSequence, ['latin techno']);
+});
+
+test('written disco brief restores one canonical core genre from an empty model interpretation', () => {
+  const vocabulary = createCatalogGenreVocabulary([
+    { _genre: 'Disco & Funk', _detailedGenre: 'Disco' },
+    { _genre: 'Disco & Funk', _detailedGenre: 'Nu Disco' },
+  ]);
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a disco set',
+      requestedGenres: ['disco'],
+      optionalGenres: [],
+      genreSequence: [],
+    },
+    vocabulary,
+  );
+  assert.deepEqual(interpreted.requestedGenres, ['disco & funk']);
+  assert.deepEqual(interpreted.optionalGenres, []);
+  assert.deepEqual(interpreted.genreSequence, ['disco & funk']);
+  assert.deepEqual(vocabulary, [
+    {
+      canonical: 'disco & funk',
+      aliases: ['disco & funk', 'nu disco', 'disco', 'funk'],
+      count: 2,
+      aliasCounts: { 'disco & funk': 2, disco: 2, funk: 2, 'nu disco': 1 },
+    },
+  ]);
+  assert.deepEqual(
+    reconcileInterpretedGenreAuthority(
+      { text: 'Create a disco set', requestedGenres: [], optionalGenres: [], genreSequence: [] },
+      [],
+    ).requestedGenres,
+    [],
+  );
+});
+
+test('catalog genre matching prefers the canonical family over an unrelated prevalent parent', () => {
+  const vocabulary = [
+    { canonical: 'house', aliases: ['house', 'disco'], count: 500 },
+    { canonical: 'disco & funk', aliases: ['disco & funk', 'disco'], count: 20 },
+  ];
+  assert.deepEqual(catalogGenreMentions('Disco set', vocabulary), ['disco & funk']);
+  assert.deepEqual(canonicalGenreNames(vocabulary), ['house', 'disco & funk']);
+});
+
+test('catalog genre matrix resolves families, detailed aliases, nesting, and requested order', () => {
+  const tracks = [
+    { _genre: 'Disco & Funk', _detailedGenre: 'Disco, Funk' },
+    { _genre: 'Electronic / House / House', _detailedGenre: 'Disco' },
+    { _genre: 'Electronic / House / House', _detailedGenre: 'Disco' },
+    { _genre: 'Rock & Alternative', _detailedGenre: 'Alternative' },
+    { _genre: 'Hip-Hop & Rap', _detailedGenre: 'Rock, Afropop' },
+    { _genre: 'Electronic / House / Afro House', _detailedGenre: 'Afropop' },
+    { _genre: 'Electronic / House / Afro House', _detailedGenre: 'Afropop' },
+    { _genre: 'Afro & Amapiano', _detailedGenre: 'Afropop' },
+    { _genre: 'Electronic / Techno / Techno', _detailedGenre: 'Techno' },
+    { _genre: 'Electronic / Techno / Hard Techno', _detailedGenre: 'Hard Techno' },
+    { _genre: 'Other', _detailedGenre: 'Latin Techno' },
+  ];
+  const vocabulary = createCatalogGenreVocabulary(tracks);
+  const cases = new Map([
+    ['Disco set', ['disco & funk']],
+    ['Funk set', ['disco & funk']],
+    ['Rock set', ['rock & alternative']],
+    ['Alternative set', ['rock & alternative']],
+    ['Afropop set', ['afro house']],
+    ['Techno set', ['techno']],
+    ['Hard Techno set', ['hard techno']],
+    ['Latin Techno set', ['latin techno']],
+    ['Start with house, move to disco, finish with hard techno', ['house', 'disco & funk', 'hard techno']],
+  ]);
+  for (const [brief, expected] of cases) assert.deepEqual(catalogGenreMentions(brief, vocabulary), expected, brief);
+  for (const canonical of canonicalGenreNames(vocabulary))
+    assert.deepEqual(catalogGenreMentions(`${canonical} set`, vocabulary), [canonical], canonical);
+});
+
+test('catalog vocabulary exposes playlist-supported musical identities', () => {
+  const vocabulary = createCatalogGenreVocabulary([
+    {
+      _genre: 'Latin / Reggaeton',
+      _detailedGenre: 'Neoperreo',
+      _playlistIdentity: [{ value: 'latin techno', source: 'Latin Techno crate' }],
+    },
+  ]);
+
+  assert.deepEqual(catalogGenreMentions('Build a Latin Techno set', vocabulary), ['latin techno']);
+});
+
+test('server catalog vocabulary remains authoritative over stale loaded tracks', () => {
+  const vocabulary = mergeCatalogGenreVocabulary(
+    [{ canonical: 'latin techno', aliases: ['latin techno'], count: 12 }],
+    [{ _genre: 'House' }],
+  );
+  assert.deepEqual(canonicalGenreNames(vocabulary), ['latin techno']);
+});
+
+test('server interpretation survives a stale non-empty browser vocabulary', () => {
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a latin techno set, latin house to warmup',
+      requestedGenres: ['latin techno', 'latin house'],
+      optionalGenres: [],
+      genreSequence: ['latin house', 'latin techno'],
+    },
+    ['house'],
+  );
+
+  assert.deepEqual(interpreted.requestedGenres, ['latin techno', 'latin house']);
+  assert.deepEqual(interpreted.genreSequence, ['latin house', 'latin techno']);
+});
+
+test('trailing warmup cue assigns only the nearest preceding genre', () => {
+  const interpreted = reconcileInterpretedGenreAuthority(
+    {
+      text: 'Create a latin techno set, latin house to warmup',
+      requestedGenres: ['latin techno', 'latin house'],
+      optionalGenres: [],
+      genreSequence: ['latin techno', 'latin house'],
+    },
+    ['latin techno', 'latin house'],
+  );
+
+  assert.deepEqual(interpreted.genreSequence, ['latin house', 'latin techno']);
+  assert.deepEqual(interpreted.openingGenres, ['latin house']);
+  assert.deepEqual(journeyGenreAuthority(interpreted), {
+    coreGenres: ['latin techno'],
+    openingGenres: ['latin house'],
+    optionalGenres: [],
+    allowedGenres: ['latin house', 'latin techno'],
+  });
+});
+
+test('offline journey applies opening-only authority across catalog genre pairs', () => {
+  const cases = [
+    {
+      text: 'Create a salsa set, with bachata just for the warmup, but more than half will be salsa',
+      opening: 'bachata',
+      core: 'salsa',
+    },
+    {
+      text: 'Create an afro house set, with amapiano just for the warmup, but more than half will be afro house',
+      opening: 'amapiano',
+      core: 'afro house',
+    },
+    {
+      text: 'Create a drum & bass set, with disco & funk just for the warmup, but more than half will be drum & bass',
+      opening: 'disco & funk',
+      core: 'drum & bass',
+    },
+  ];
+
+  for (const scenario of cases) {
+    const interpreted = reconcileInterpretedGenreAuthority(
+      {
+        text: scenario.text,
+        requestedGenres: [scenario.opening, scenario.core],
+        optionalGenres: [],
+        genreSequence: [scenario.opening, scenario.core],
+        drift: 'none',
+      },
+      [scenario.opening, scenario.core],
+    );
+    const journey = offlineJourneyFromInterpretation(interpreted, 60);
+
+    assert.deepEqual(
+      journey.sections.map((section) => [section.durationPercent, section.genres]),
+      [
+        [25, [scenario.opening]],
+        [45, [scenario.core]],
+        [30, [scenario.core]],
+      ],
+      scenario.text,
+    );
+    assert.deepEqual(journey.genrePolicy.coreGenres, [scenario.core], scenario.text);
+    assert.deepEqual(journey.genrePolicy.openingGenres, [scenario.opening], scenario.text);
+  }
+});
+
+test('strict journey repair removes any opening-only genre from later sections', () => {
+  const interpreted = {
+    requestedGenres: ['amapiano', 'afro house'],
+    genreSequence: ['amapiano', 'afro house'],
+    openingGenres: ['amapiano'],
+    optionalGenres: [],
+    drift: 'none',
+  };
+  const result = repairJourneyGenrePolicy(
+    {
+      genrePolicy: { mode: 'strict' },
+      sections: [
+        { id: 'opening', name: 'Opening', genres: ['amapiano'] },
+        { id: 'build', name: 'Build', genres: ['amapiano'] },
+        { id: 'closing', name: 'Closing', genres: ['afro house'] },
+      ],
+    },
+    interpreted,
+  );
+
+  assert.deepEqual(
+    result.journey.sections.map((section) => section.genres),
+    [['amapiano'], ['afro house'], ['afro house']],
+  );
+  assert.deepEqual(result.repairs, ['build']);
+  assert.equal(reviewJourneyGenrePolicy(result.journey, interpreted).valid, true);
+});
+
+test('catalog vocabulary exposes inferred cultural identities without rewriting genre', () => {
+  const vocabulary = createCatalogGenreVocabulary([
+    {
+      _genre: 'International / Bollywood',
+      _descriptors: [{ category: 'cultural', value: 'Indian / South Asian' }],
+    },
+  ]);
+  assert.deepEqual(catalogGenreMentions('Build an Indian party set', vocabulary), ['indian south asian']);
+});
+
+test('brief policy handles negation, warmup order, and sustained energy across a prompt matrix', () => {
+  const vocabulary = [
+    { canonical: 'disco & funk', aliases: ['disco', 'funk'] },
+    'latin techno',
+    'latin house',
+    { canonical: 'indian south asian', aliases: ['indian', 'south asian'] },
+    { canonical: 'hip hop & rap', aliases: ['hip hop', 'rap'] },
+    'afro house',
+    'schranz',
+    'techno',
+  ];
+  const cases = [
+    ['Create a latin disco set, high energy.', ['disco & funk'], [], 'peak-time'],
+    ['Create a latin techno set, latin house to warmup', ['latin house', 'latin techno'], [], 'warm-up'],
+    [
+      'Implement a high energy disco techno, latin techno set',
+      ['disco & funk', 'techno', 'latin techno'],
+      [],
+      'peak-time',
+    ],
+    [
+      'Create an indian party song set, high energy all around. No rap',
+      ['indian south asian'],
+      ['hip hop & rap'],
+      'peak-time',
+    ],
+    ['Create a disco set without techno', ['disco & funk'], ['techno'], null],
+    ['Start with Afro House, then Techno', ['afro house', 'techno'], [], null],
+    ['Build a Latin House set, no Schranz', ['latin house'], ['schranz'], null],
+  ];
+  for (const [brief, sequence, excluded, vibe] of cases) {
+    const interpreted = interpretSetIntention(brief, vocabulary);
+    assert.deepEqual(interpreted.genreSequence, sequence, brief);
+    assert.deepEqual(interpreted.excludedGenres, excluded, brief);
+    assert.equal(interpreted.vibe, vibe, brief);
+  }
+  assert.deepEqual(excludedGenreMentions('House without techno or schranz', vocabulary), ['techno', 'schranz']);
+
+  const journey = offlineJourneyFromInterpretation(
+    interpretSetIntention('Indian party set, high energy throughout. No rap', vocabulary),
+  );
+  assert.ok(journey.sections.every((section) => section.energyStart >= 8 && section.energyEnd >= 8));
+});
+
+test('strict journey policy repairs AI genre drift and retains it only as suggestions', () => {
+  const interpreted = {
+    requestedGenres: ['latin techno'],
+    optionalGenres: [],
+    genreSequence: ['latin techno'],
+    drift: 'none',
+  };
+  const result = repairJourneyGenrePolicy(
+    {
+      genrePolicy: { mode: 'strict' },
+      sections: [
+        { id: 'opening', name: 'Opening', genres: ['latin techno'] },
+        { id: 'build', name: 'Build', genres: ['latin house', 'techno'] },
+        { id: 'closing', name: 'Closing', genres: ['latin pop', 'latin r&b'] },
+      ],
+    },
+    interpreted,
+  );
+  assert.deepEqual(
+    result.journey.sections.map((section) => section.genres),
+    [['latin techno'], ['latin techno'], ['latin techno']],
+  );
+  assert.deepEqual(result.journey.sections[1].suggestedGenres, ['latin house', 'techno']);
+  assert.deepEqual(result.journey.sections[2].suggestedGenres, ['latin pop', 'latin r&b']);
+  assert.deepEqual(result.repairs, ['build', 'closing']);
+  assert.equal(reviewJourneyGenrePolicy(result.journey, interpreted).valid, true);
+});
+
+test('strict journey policy blocks a manually reintroduced neighbor until related genres are enabled', () => {
+  const interpreted = {
+    requestedGenres: ['latin techno'],
+    optionalGenres: [],
+    genreSequence: ['latin techno'],
+    drift: 'none',
+  };
+  const journey = {
+    genrePolicy: { mode: 'strict' },
+    sections: [{ id: 'build', name: 'Build', genres: ['latin techno', 'latin house'] }],
+  };
+  const review = reviewJourneyGenrePolicy(journey, interpreted);
+  assert.equal(review.valid, false);
+  assert.deepEqual(review.unapprovedGenres, ['latin house']);
+  assert.deepEqual(
+    review.violations.map(({ name }) => name),
+    ['Build'],
+  );
+  assert.equal(reviewJourneyGenrePolicy({ ...journey, genrePolicy: { mode: 'related' } }, interpreted).valid, true);
 });
 
 test('Set Builder store snapshots and restores plan identity, locks, and transitions', () => {
   const storage = { getItem: () => 'true' };
   const store = createSetBuilderStore({ storage });
-  const library = [{ id: 'a' }, { id: 'b' }];
+  const library = [
+    { id: 'a', _planSectionId: 'opening' },
+    { id: 'b', _planSectionId: 'closing' },
+  ];
   store.plan = [...library];
   store.lockedIds.add('a');
   store.transitionSettings['a→b'] = { bars: 16 };
@@ -360,6 +966,9 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
   store.lockedIds.clear();
   store.transitionSettings['a→b'].bars = 8;
   store.revisionComparison = null;
+  library.forEach((track) => {
+    track._planSectionId = 'wrong';
+  });
   restoreSetPlan(store, snapshot, library, trackId);
 
   assert.equal(store.compactMode, true);
@@ -367,6 +976,28 @@ test('Set Builder store snapshots and restores plan identity, locks, and transit
   assert.deepEqual([...store.lockedIds], ['a']);
   assert.deepEqual(store.transitionSettings, { 'a→b': { bars: 16 } });
   assert.deepEqual(store.revisionComparison, { stayed: 1, changedTrackIds: ['b'] });
+  assert.deepEqual(
+    store.plan.map((track) => track._planSectionId),
+    ['opening', 'closing'],
+  );
+});
+
+test('restoring a legacy snapshot keeps one recording version and honors its locked preference', () => {
+  const store = createSetBuilderStore({ storage: { getItem: () => null } });
+  const original = { id: 'original', family: 'family-1' };
+  const bridge = { id: 'bridge', family: 'family-2' };
+  const remix = { id: 'remix', family: 'family-1' };
+
+  restoreSetPlan(
+    store,
+    { tracks: ['original', 'bridge', 'remix'], locked: ['remix'], transitions: {} },
+    [original, bridge, remix],
+    trackId,
+    (track) => track.family,
+  );
+
+  assert.deepEqual(store.plan, [bridge, remix]);
+  assert.deepEqual([...store.lockedIds], ['remix']);
 });
 
 test('Set Builder keeps stable draft and plan revision identities until an explicit reset', () => {
@@ -433,6 +1064,27 @@ test('compact workspace presentation exposes plan identity and concise track sta
   assert.match(markup, /Kept/);
 });
 
+test('draft persistence stays available when release checks block export', () => {
+  assert.deepEqual(planActionAvailability({ planLength: 17, healthAccepted: false, healthThreshold: 65 }), {
+    saveDisabled: false,
+    saveTitle: 'Save this draft. Export will remain unavailable until release checks pass.',
+    exportDisabled: true,
+    exportTitle: 'Save this draft now, then raise mix health to 65 before exporting.',
+    exportReason: 'Save this draft now, then raise mix health to 65 before exporting.',
+  });
+  assert.match(
+    planActionAvailability({
+      planLength: 17,
+      healthAccepted: false,
+      unresolvedRejection: true,
+      healthThreshold: 65,
+    }).exportReason,
+    /resolve rejected tracks/,
+  );
+  assert.equal(planActionAvailability({ planLength: 17, healthAccepted: true }).exportDisabled, false);
+  assert.equal(planActionAvailability().saveDisabled, true);
+});
+
 test('planning requests derive stable journey sections and preserve explicit locked placements', () => {
   const journey = planningJourney({
     length: 60,
@@ -455,7 +1107,10 @@ test('planning requests derive stable journey sections and preserve explicit loc
     { id: 'c', catalogId: 'downloaded:3' },
   ];
   assignPlanSections(plan, journey, new Set(['a']), trackId);
-  assert.deepEqual(plan.map((track) => track._planSectionId), ['opening', 'peak', 'peak']);
+  assert.deepEqual(
+    plan.map((track) => track._planSectionId),
+    ['opening', 'peak', 'peak'],
+  );
   assert.deepEqual(
     lockedTrackSections({
       plan,
@@ -569,7 +1224,10 @@ test('provider labels never expose a missing model as undefined', () => {
     title: 'Ollama is available for local language interpretation.',
   });
   assert.equal(intentionProviderView({ available: true, provider: 'openai' }).text, 'Cloud AI ready');
-  assert.equal(intentionProviderView({ available: true, provider: 'ollama', model: 'qwen' }).text, 'Local AI ready · qwen');
+  assert.equal(
+    intentionProviderView({ available: true, provider: 'ollama', model: 'qwen' }).text,
+    'Local AI ready · qwen',
+  );
 });
 
 test('brief authoring and track planning remain independent choices', () => {
@@ -577,8 +1235,10 @@ test('brief authoring and track planning remain independent choices', () => {
   assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.AI), 'ai-planned');
   assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.DETERMINISTIC), 'interpreted');
   assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.DETERMINISTIC), 'classic');
+  assert.equal(resolveSetPlanningMode(SET_BRIEF_MODES.CURATE, SET_TRACK_PLANNERS.MANUAL), 'manual-curation');
   assert.match(setBriefModeMessage(SET_BRIEF_MODES.AI), /Local AI/);
   assert.match(setBriefModeMessage(SET_BRIEF_MODES.MANUAL), /yourself/);
+  assert.match(setBriefModeMessage(SET_BRIEF_MODES.CURATE), /empty running order/);
 });
 
 test('AI-authored briefs ignore hidden manual genre filters while manual briefs retain them', () => {
@@ -596,6 +1256,12 @@ test('AI-authored briefs ignore hidden manual genre filters while manual briefs 
     weights: {},
   });
   assert.deepEqual(resolveStructuredGenreFilters(SET_BRIEF_MODES.MANUAL, filters), filters);
+  assert.deepEqual(resolveStructuredGenreFilters(SET_BRIEF_MODES.CURATE, filters), {
+    genres: [],
+    detailedGenres: [],
+    excludedGenres: [],
+    weights: {},
+  });
 });
 
 test('genre eligibility stays consistent across every authoring and planner combination', () => {
@@ -611,14 +1277,14 @@ test('genre eligibility stays consistent across every authoring and planner comb
   });
 });
 
-test('AI-authored genres rank candidates without becoming hard catalog filters', () => {
+test('AI-authored genres become ranking guidance after related genres are authorized', () => {
   assert.equal(
     allowsCandidateGenre({
       authoringMode: SET_BRIEF_MODES.AI,
       directGenre: false,
       requestedGenreMatch: false,
       hasInterpretedIdentity: true,
-      drift: 'none',
+      drift: 'moderate',
       preferredIdentityMatches: 0,
     }),
     true,
@@ -642,6 +1308,31 @@ test('manual genre filters remain strict while wide identity drift remains avail
       hasInterpretedIdentity: true,
       drift: 'wide',
       preferredIdentityMatches: 1,
+    }),
+    true,
+  );
+});
+
+test('AI-authored exact genre briefs remain strict until related genres are enabled', () => {
+  assert.equal(
+    allowsCandidateGenre({
+      authoringMode: SET_BRIEF_MODES.AI,
+      directGenre: true,
+      requestedGenreMatch: false,
+      hasInterpretedIdentity: true,
+      drift: 'none',
+      preferredIdentityMatches: 2,
+    }),
+    false,
+  );
+  assert.equal(
+    allowsCandidateGenre({
+      authoringMode: SET_BRIEF_MODES.AI,
+      directGenre: true,
+      requestedGenreMatch: false,
+      hasInterpretedIdentity: true,
+      drift: 'moderate',
+      preferredIdentityMatches: 0,
     }),
     true,
   );
@@ -677,6 +1368,25 @@ test('saved planning modes migrate into the two-part workflow without losing int
     authoringMode: SET_BRIEF_MODES.AI,
     trackPlanner: SET_TRACK_PLANNERS.AI,
   });
+  assert.deepEqual(inferSetWorkflow('manual-curation'), {
+    authoringMode: SET_BRIEF_MODES.CURATE,
+    trackPlanner: SET_TRACK_PLANNERS.MANUAL,
+  });
+});
+
+test('planning presentation keeps brief provenance separate from track selection', () => {
+  assert.deepEqual(setPlanningPresentation(SET_BRIEF_MODES.AI, SET_TRACK_PLANNERS.AI), {
+    actionLabel: 'Build AI-curated set',
+    summary: 'Direction: AI interpreted · Tracks: AI curated',
+  });
+  assert.deepEqual(setPlanningPresentation(SET_BRIEF_MODES.MANUAL, SET_TRACK_PLANNERS.DETERMINISTIC), {
+    actionLabel: 'Build rules-based set',
+    summary: 'Direction: Manual brief · Tracks: Rules-based',
+  });
+  assert.deepEqual(setPlanningPresentation(SET_BRIEF_MODES.CURATE, SET_TRACK_PLANNERS.MANUAL), {
+    actionLabel: 'Start curating',
+    summary: 'Direction: Track by track · Tracks: Chosen by you',
+  });
 });
 
 test('workflow controller updates mode surfaces without clearing authored values', () => {
@@ -684,13 +1394,17 @@ test('workflow controller updates mode surfaces without clearing authored values
     ['#set-builder-form', { dataset: {} }],
     ['#set-ai-brief', { hidden: false }],
     ['#set-manual-brief', { hidden: true }],
+    ['#set-track-planner', { hidden: false }],
     ['#set-brief-mode-help', { textContent: '' }],
     ['#set-planning-mode', { value: '' }],
+    ['#set-planning-summary', { textContent: '' }],
+    ['#set-generate', { textContent: '', disabled: false }],
     ['#set-builder-message', { textContent: '' }],
   ]);
   const briefInputs = [
     { value: 'ai', checked: true },
     { value: 'manual', checked: false },
+    { value: 'curate', checked: false },
   ];
   const plannerInputs = [
     { value: 'ai', checked: true },
@@ -709,6 +1423,8 @@ test('workflow controller updates mode surfaces without clearing authored values
   assert.equal(elements.get('#set-ai-brief').hidden, true);
   assert.equal(elements.get('#set-manual-brief').hidden, false);
   assert.equal(elements.get('#set-planning-mode').value, 'ai-planned');
+  assert.equal(elements.get('#set-planning-summary').textContent, 'Direction: Manual brief · Tracks: AI curated');
+  assert.equal(elements.get('#set-generate').textContent, 'Build AI-curated set');
   assert.match(elements.get('#set-brief-mode-help').textContent, /yourself/);
 });
 
@@ -739,6 +1455,68 @@ test('Set edit commands own checkpoint, move, undo, redo, and bounded history', 
   commands.checkpoint();
   assert.equal(store.history.length, 2);
   assert.equal(renders, 3);
+});
+
+test('drag reordering resolves before and after destinations after removing the source', () => {
+  assert.equal(dropDestinationIndex(0, 2, false, 4), 1);
+  assert.equal(dropDestinationIndex(0, 2, true, 4), 2);
+  assert.equal(dropDestinationIndex(3, 1, false, 4), 1);
+  assert.equal(dropDestinationIndex(3, 1, true, 4), 2);
+  assert.equal(dropDestinationIndex(1, 1, false, 4), 1);
+  assert.equal(dropDestinationIndex(-1, 1, false, 4), -1);
+  assert.equal(dropDestinationIndex(1, 8, false, 4), -1);
+});
+
+test('track reordering binds explicit drag and keyboard interactions', () => {
+  const card = (index) => {
+    const classes = new Set();
+    const handle = {
+      listeners: {},
+      addEventListener(type, listener) {
+        this.listeners[type] = listener;
+      },
+    };
+    return {
+      dataset: { index: String(index) },
+      handle,
+      classList: {
+        add: (...names) => names.forEach((name) => classes.add(name)),
+        remove: (...names) => names.forEach((name) => classes.delete(name)),
+        contains: (name) => classes.has(name),
+        toggle: (name, active) => (active ? classes.add(name) : classes.delete(name)),
+      },
+      querySelector: () => handle,
+      getBoundingClientRect: () => ({ top: 0, height: 100 }),
+      contains: () => false,
+    };
+  };
+  const cards = [card(0), card(1), card(2)];
+  const moves = [];
+  let focused = false;
+  bindTrackReordering({
+    cards,
+    planLength: cards.length,
+    moveTrack(from, to) {
+      moves.push([from, to]);
+      return true;
+    },
+    documentRef: { querySelector: () => ({ focus: () => (focused = true) }) },
+    schedule: (callback) => callback(),
+  });
+
+  let prevented = false;
+  cards[1].handle.listeners.keydown({ key: 'ArrowDown', preventDefault: () => (prevented = true) });
+  assert.equal(prevented, true);
+  assert.equal(focused, true);
+  assert.deepEqual(moves, [[1, 2]]);
+
+  const transfer = { setData() {}, effectAllowed: '', dropEffect: '' };
+  cards[0].ondragstart({ target: { closest: () => cards[0].handle }, dataTransfer: transfer });
+  cards[2].ondragover({ preventDefault() {}, clientY: 90, dataTransfer: transfer });
+  assert.equal(cards[2].classList.contains('drag-after'), true);
+  cards[2].ondrop({ preventDefault() {} });
+  assert.deepEqual(moves.at(-1), [0, 2]);
+  assert.equal(cards[2].classList.contains('drag-after'), false);
 });
 
 test('transition editor owns health, runtime, default transition settings, and order optimization', () => {
@@ -926,6 +1704,167 @@ test('planning session builds and receipts an accepted deterministic proposal', 
   assert.equal(Object.isFrozen(session), true);
 });
 
+test('deterministic planning fills tracks from each confirmed journey section', async () => {
+  const state = {
+    library: [
+      { id: 'house-1', catalogId: 1, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-2', catalogId: 2, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-3', catalogId: 3, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-4', catalogId: 4, duration_seconds: 180, genres: ['house'] },
+      { id: 'techno-1', catalogId: 5, duration_seconds: 180, genres: ['latin techno', 'techno'] },
+      { id: 'techno-2', catalogId: 6, duration_seconds: 180, genres: ['latin techno', 'techno'] },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+    genreSelectionOrder: [],
+    generationNonce: 0,
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-planning-mode', { value: 'classic' }],
+  ]);
+  const classicPlanner = {
+    async generate(options) {
+      const plan = options.buildVariation('balanced', new Set());
+      const proposal = {
+        id: 'balanced',
+        label: 'Balanced',
+        accepted: true,
+        snapshot: options.snapshot(plan),
+        health: options.evaluate(plan),
+      };
+      return { accepted: [proposal], proposals: [proposal], preferred: proposal, best: proposal };
+    },
+  };
+  const journey = {
+    genrePolicy: { mode: 'strict' },
+    sections: [
+      { id: 'warm-up', name: 'Warm-up', durationPercent: 33, genres: ['house'] },
+      { id: 'opening', name: 'Opening', durationPercent: 34, genres: ['house', 'latin techno'] },
+      { id: 'closing', name: 'Closing', durationPercent: 33, genres: ['techno'] },
+    ],
+  };
+  const { session } = planningSessionFor({
+    state,
+    elements,
+    classicPlanner,
+    planningClient: {},
+    overrides: {
+      policy: {
+        trackMatchesIntendedGenre: (track, genre) => track.genres.includes(genre),
+        trackMatchesSetGenre: (track, genre) => track.genres.includes(genre),
+      },
+      lifecycle: {
+        setBrief: () => ({
+          length: 15,
+          genres: ['house', 'techno'],
+          detailedGenres: [],
+          genreWeights: { house: 50, techno: 50 },
+          genreFlow: 'chapters',
+          minimumHealth: 65,
+          curve: 'rise',
+          identity: { journey },
+        }),
+        restoreSetSnapshot(snapshot) {
+          const byId = new Map(state.library.map((track) => [track.id, track]));
+          state.plan = snapshot.tracks.map((id) => byId.get(id));
+        },
+      },
+    },
+  });
+
+  await session.generateDeterministicSetPlan();
+
+  assert.deepEqual(
+    state.plan.slice(0, 2).map((track) => track.genres[0]),
+    ['house', 'house'],
+  );
+  assert.deepEqual(
+    state.plan.slice(2, 4).map((track) => track.genres[0]),
+    ['house', 'house'],
+  );
+  assert.deepEqual(
+    state.plan.slice(4).map((track) => track.genres.at(-1)),
+    ['techno', 'techno'],
+  );
+  assert.deepEqual(
+    state.plan.map((track) => track._planSectionId),
+    ['warm-up', 'warm-up', 'opening', 'opening', 'closing', 'closing'],
+  );
+});
+
+test('strict deterministic planning reports section scarcity instead of drifting genres', async () => {
+  const state = {
+    library: [
+      { id: 'house-1', catalogId: 1, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-2', catalogId: 2, duration_seconds: 180, genres: ['house'] },
+      { id: 'house-3', catalogId: 3, duration_seconds: 180, genres: ['house'] },
+      { id: 'techno-1', catalogId: 4, duration_seconds: 180, genres: ['techno'] },
+    ],
+    plan: [],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+    genreSelectionOrder: [],
+    generationNonce: 0,
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-planning-mode', { value: 'classic' }],
+  ]);
+  let plannerCalled = false;
+  const journey = {
+    genrePolicy: { mode: 'strict' },
+    sections: [
+      { id: 'opening', name: 'Opening', durationPercent: 50, genres: ['house'] },
+      { id: 'closing', name: 'Closing', durationPercent: 50, genres: ['techno'] },
+    ],
+  };
+  const { session } = planningSessionFor({
+    state,
+    elements,
+    classicPlanner: {
+      async generate() {
+        plannerCalled = true;
+        throw new Error('planner should not run');
+      },
+    },
+    planningClient: {},
+    overrides: {
+      policy: {
+        trackMatchesIntendedGenre: (track, genre) => track.genres.includes(genre),
+      },
+      lifecycle: {
+        setBrief: () => ({
+          length: 10,
+          genres: ['house', 'techno'],
+          detailedGenres: [],
+          genreWeights: { house: 50, techno: 50 },
+          genreFlow: 'chapters',
+          minimumHealth: 65,
+          curve: 'rise',
+          identity: { journey },
+        }),
+      },
+    },
+  });
+
+  await session.generateDeterministicSetPlan();
+
+  assert.equal(plannerCalled, false);
+  assert.equal(state.plan.length, 0);
+  assert.match(elements.get('#set-builder-message').textContent, /Closing needs 2 unique tracks matching techno/);
+  assert.match(elements.get('#set-builder-message').textContent, /only 1 analyzed track is available/);
+});
+
 test('planning session cancels the active AI job and aborts its pending result', async () => {
   const state = {
     library: [
@@ -1032,7 +1971,16 @@ test('planning session retains a validated deterministic safety fallback from th
       warnings: ['AI plan rejected'],
       fallbackReason: 'quality threshold',
       plan: [
-        { id: 1, technicalScore: 81 },
+        {
+          id: 1,
+          technicalScore: 81,
+          reasons: [
+            {
+              evidence: 'estimated',
+              text: 'Playlist/crate identity matches: latin techno from LATIN_bounce_TECHNO_Rave_Edition.',
+            },
+          ],
+        },
         { id: 2, technicalScore: 79 },
       ],
     }),
@@ -1046,7 +1994,47 @@ test('planning session retains a validated deterministic safety fallback from th
   assert.deepEqual(state.plan.map(trackId), ['a', 'b']);
   assert.equal(session.receipt().mode, 'deterministic-fallback');
   assert.equal(session.receipt().fallbackReason, 'quality threshold');
+  assert.match(state.plan[0]._candidateReasons[0].text, /LATIN_bounce_TECHNO_Rave_Edition/);
   assert.match(elements.get('#set-builder-message').textContent, /deterministic safety fallback/);
+});
+
+test('planning session refuses a supposedly validated plan containing two versions of one song', async () => {
+  const stable = { id: 'stable', catalogId: 3, recordingKey: 'recording:stable' };
+  const state = {
+    library: [
+      { id: 'original', catalogId: 1, recordingKey: 'recording:duplicate' },
+      { id: 'remix', catalogId: 2, recordingKey: 'recording:duplicate' },
+      stable,
+    ],
+    plan: [stable],
+    requiredIds: new Set(),
+    excludedIds: new Set(),
+    lockedIds: new Set(),
+    transitionSettings: {},
+    proposals: [],
+    activeProposal: '',
+  };
+  const elements = new Map([
+    ['#set-builder-message', { textContent: '' }],
+    ['#set-cancel-planning', { hidden: true }],
+  ]);
+  const planningClient = {
+    start: async () => ({ jobId: 'job-duplicate' }),
+    wait: async () => ({
+      mode: 'ai-planned',
+      provider: 'ollama',
+      model: 'qwen3.5:4b',
+      summary: 'Invalid duplicate family.',
+      plan: [{ id: 1 }, { id: 2 }],
+    }),
+    cancel: async () => {},
+  };
+  const { session } = planningSessionFor({ state, elements, planningClient, classicPlanner: {} });
+
+  await assert.rejects(session.generateAITrackPlan(), /duplicate song version/);
+
+  assert.deepEqual(state.plan, [stable]);
+  assert.equal(elements.get('#set-cancel-planning').hidden, true);
 });
 
 test('AI regeneration request carries its base revision and section-aware locked-track contract', async () => {
@@ -1244,6 +2232,7 @@ test('plan view renders required and excluded rules through its focused boundary
       inferDescriptorEditor() {},
       bindCompactAudio() {},
       compactAudioMarkup() {},
+      stopCompactAudio() {},
     },
     music: {
       compatibility() {},
@@ -1331,6 +2320,55 @@ test('saved-set export serializers preserve transition and playlist details', ()
     { track: { source_name: 'Intro.wav', artist: 'DJ One', duration_seconds: 121.6 }, path: '/music/Intro.wav' },
   ]);
   assert.equal(m3u, '#EXTM3U\r\n#EXTINF:122,DJ One - Intro\r\n/music/Intro.wav');
+});
+
+test('saved-set export serializers never emit two versions of one recording family', () => {
+  const original = {
+    source_name: 'Funkytown.wav',
+    artist: 'Lipps Inc',
+    _recordingCode: 'DSC-1',
+    _genre: 'Disco',
+  };
+  const remix = {
+    source_name: 'Funkytown Remix.wav',
+    artist: 'Lipps Inc',
+    _recordingCode: 'DSC-1',
+    _genre: 'Disco',
+  };
+  const csv = buildSetCsv({
+    plan: [original, remix],
+    compatibility: () => ({ score: 80 }),
+    transitionSettings: () => ({}),
+    camelotKey: () => '',
+    energyBand: () => '',
+    songEnergy: () => 0.5,
+    libraryRoles: () => [],
+  });
+  const m3u = buildSetM3u([
+    { track: original, path: '/music/Funkytown.wav' },
+    { track: remix, path: '/music/Funkytown Remix.wav' },
+  ]);
+
+  assert.equal(csv.match(/Funkytown/g)?.length, 1);
+  assert.equal(m3u.match(/Funkytown/g)?.length, 2);
+  assert.doesNotMatch(m3u, /Remix/);
+});
+
+test('legacy saved-set reconciliation drops duplicate versions and retains the locked version', () => {
+  const original = { id: 'original', family: 'recording:DSC-1' };
+  const bridge = { id: 'bridge', family: 'recording:DSC-2' };
+  const remix = { id: 'remix', family: 'recording:DSC-1' };
+
+  const result = recoverSavedSetPlan({
+    record: { tracks: ['original', 'bridge', 'missing', 'remix'], locked: ['remix'], trackDetails: [] },
+    library: [original, bridge, remix],
+    trackId,
+    recordingKey: (track) => track.family,
+    recoveryScore: () => 0,
+  });
+
+  assert.deepEqual(result.plan, [bridge, remix]);
+  assert.equal(result.duplicatesRemoved, 1);
 });
 
 test('saved-set controller loads durable records and falls back to the browser recovery cache', async () => {
@@ -1444,7 +2482,10 @@ test('saved-set duplication creates an independent draft and revision lineage', 
     assert.match(copy.draftId, /^draft-/);
     assert.equal(copy.planRevision.number, 1);
     assert.equal(copy.planRevision.parentId, 'revision-set-1');
-    assert.deepEqual(controller.savedSets().map((record) => record.id), [copy.id, original.id]);
+    assert.deepEqual(
+      controller.savedSets().map((record) => record.id),
+      [copy.id, original.id],
+    );
   } finally {
     globalThis.localStorage = originalStorage;
   }
@@ -1466,6 +2507,8 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     ['#set-builder-message', message],
   ]);
   const calls = [];
+  let failPlaylist = false;
+  let failSave = false;
   const state = {
     draftId: 'draft-1',
     activeSavedSetId: '',
@@ -1486,13 +2529,20 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     lockedIds: new Set(['track-1']),
     requiredIds: new Set(),
     excludedIds: new Set(),
+    trackReviews: new Map([
+      ['track-1', { decision: 'accept', saved: true, eventId: 'decision-1' }],
+    ]),
   };
   const controller = savedSetControllerFor({
     state,
     elements,
     api: {
-      saveSet: async (record) => calls.push(['set', record]),
+      saveSet: async (record) => {
+        if (failSave) throw new Error('database unavailable');
+        calls.push(['set', record]);
+      },
       savePlaylist: async (payload) => {
+        if (failPlaylist) throw new Error('playlist folder unavailable');
         calls.push(['playlist', payload]);
         return { path: '/playlists/Night Set.m3u8' };
       },
@@ -1506,11 +2556,25 @@ test('saved-set controller persists the plan, recovery cache, and playlist path'
     assert.deepEqual(controller.savedSets()[0].tracks, ['track-1']);
     assert.equal(controller.savedSets()[0].draftId, 'draft-1');
     assert.deepEqual(controller.savedSets()[0].planRevision, state.planRevision);
+    assert.equal(controller.savedSets()[0].trackReviews['track-1'].eventId, 'decision-1');
     assert.equal(state.activeSavedSetId, 'draft-1');
     assert.equal(JSON.parse(storage.get('sets')).length, 1);
     assert.equal(calls[1][1].tracks[0].path, '/music/Opening.wav');
     assert.match(message.textContent, /playlist written to \/playlists\/Night Set\.m3u8/);
     assert.equal(selected.value, controller.savedSets()[0].id);
+
+    failPlaylist = true;
+    await controller.saveCurrentSet();
+    assert.match(message.textContent, /Set saved durably and will survive restart/);
+    assert.match(message.textContent, /playlist folder unavailable/);
+
+    failSave = true;
+    await controller.saveCurrentSet();
+    assert.match(message.textContent, /Set was not saved: database unavailable/);
+    assert.equal(elements.get('#save-set').disabled, false);
+    assert.equal(elements.get('#save-set').textContent, 'Save set');
+    assert.equal(elements.get('#save-set')['aria-busy'], undefined);
+    assert.equal(controller.savedSets().length, 1);
   } finally {
     globalThis.localStorage = originalStorage;
   }
@@ -1635,6 +2699,30 @@ test('final mix optimization improves returned order without moving locked track
   assert.deepEqual(
     plan.map((track) => track.id),
     ['locked', 'high', 'middle'],
+  );
+});
+
+test('final mix optimization never moves tracks across confirmed journey sections', () => {
+  const plan = [
+    { id: 'opening-high', energy: 0.9, _planSectionId: 'opening' },
+    { id: 'opening-low', energy: 0.1, _planSectionId: 'opening' },
+    { id: 'closing-low', energy: 0.1, _planSectionId: 'closing' },
+    { id: 'closing-high', energy: 0.9, _planSectionId: 'closing' },
+  ];
+  const editor = transitionEditorFor(
+    { plan, lockedIds: new Set(), transitionSettings: {} },
+    {
+      optimizePlanOrder,
+      songEnergy: (track) => track.energy,
+      targetSetEnergy: (index) => (index < 2 ? 0.1 : 0.9),
+    },
+  );
+
+  const optimized = editor.improveSetOrder(plan, { identity: {} });
+
+  assert.deepEqual(
+    optimized.map((track) => track._planSectionId),
+    ['opening', 'opening', 'closing', 'closing'],
   );
 });
 

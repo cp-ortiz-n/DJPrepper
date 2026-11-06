@@ -10,6 +10,8 @@ from typing import Any
 
 from audioextender.library.musical_corrections import MusicalCorrectionIndex
 from audioextender.library.musical_profile import musical_profile
+from audioextender.library.playlist_identity import catalog_genre_terms, playlist_identity_projection
+from audioextender.set_builder.catalog_cache import build_catalog_payload
 
 
 class CatalogProjectionBuilder:
@@ -86,8 +88,10 @@ class CatalogProjectionBuilder:
         return compact
 
     def build_catalog_payload(self) -> dict:
+        rows = self._repository().list_set_builder_tracks()
+        genre_terms = catalog_genre_terms(rows)
         tracks = []
-        for row in self._repository().list_set_builder_tracks():
+        for row in rows:
             try:
                 descriptors = json.loads(str(row.get("descriptors_json") or "[]"))
             except (TypeError, ValueError, json.JSONDecodeError):
@@ -108,6 +112,7 @@ class CatalogProjectionBuilder:
                     "version_code": row.get("version_code") or "",
                     "external_rating": json.loads(row.get("external_rating_json") or "null"),
                     "descriptors": descriptors,
+                    **playlist_identity_projection(row.get("playlists_json"), genre_terms),
                     "job": {
                         "id": row["job_id"],
                         "source_name": row["source_name"],
@@ -119,7 +124,7 @@ class CatalogProjectionBuilder:
                     },
                 }
             )
-        return {"version": 7, "tracks": tracks, "total": len(tracks)}
+        return build_catalog_payload(tracks)
 
     def write_catalog_cache(self) -> None:
         payload = self.build_catalog_payload()

@@ -1,5 +1,8 @@
 /** Transition scoring, preview playback, cue optimization, and editor ownership. */
 
+import { beginButtonAction } from './ui-state.js';
+import { setTrackAudioUrl } from './track-media.js';
+
 export function createSetTransitionEditor({
   state,
   setBuilderApi,
@@ -75,13 +78,13 @@ export function createSetTransitionEditor({
     const score = Math.max(0, Math.min(100, Math.round(average - vocalClashes * 3)));
     return { score, transitions, vocalClashes };
   }
-  function setOrderFitness(plan, brief) {
+  function setOrderFitness(plan, brief, { energyWeight = 3 } = {}) {
     const health = setHealth(plan);
     const energyPenalty =
       plan.reduce(
         (sum, track, index) => sum + Math.abs(songEnergy(track) - targetSetEnergy(index, plan.length, brief)),
         0,
-      ) * 3;
+      ) * energyWeight;
     const journeyFit = plan.reduce((sum, track, index) => {
       const target = intendedGenreForPosition(brief.identity, index, plan.length);
       return sum + (target && trackMatchesIntendedGenre(track, target) ? 16 : 0);
@@ -92,10 +95,12 @@ export function createSetTransitionEditor({
       : 0;
     return health.score * 5 - energyPenalty + journeyFit + openingFit;
   }
-  function improveSetOrder(plan, brief) {
+  function improveSetOrder(plan, brief, options = {}) {
     return optimizePlanOrder(plan, {
-      fitness: (candidate) => setOrderFitness(candidate, brief),
+      fitness: (candidate) => setOrderFitness(candidate, brief, options),
       isFixed: (track) => state.lockedIds.has(setTrackId(track)),
+      canSwap: (left, _leftIndex, right) =>
+        !left._planSectionId || !right._planSectionId || left._planSectionId === right._planSectionId,
       maximumPasses: 16,
     });
   }
@@ -235,7 +240,12 @@ export function createSetTransitionEditor({
     stopTransitionPreview();
     const previous = state.plan[index - 1],
       next = state.plan[index];
-    if (!previous?._job?.id || !next?._job?.id) return;
+    const outgoingSource = setTrackAudioUrl(previous),
+      incomingSource = setTrackAudioUrl(next);
+    if (!outgoingSource || !incomingSource) {
+      notify('Mix preview could not play because one of these tracks has no available audio.', 'danger');
+      return;
+    }
     stopCompactAudio();
     document.querySelectorAll('audio').forEach((audio) => audio.pause());
     const settings = transitionSettings(index);
@@ -244,8 +254,8 @@ export function createSetTransitionEditor({
     const incomingBpm = Math.max(60, Number(next.bpm || outgoingBpm));
     const overlap = (bars * 4 * 60) / outgoingBpm;
     const lead = Math.min(6, overlap * 0.25);
-    const outgoing = new Audio(`/api/jobs/${previous._job.id}/audio/wav`);
-    const incoming = new Audio(`/api/jobs/${next._job.id}/audio/wav`);
+    const outgoing = new Audio(outgoingSource);
+    const incoming = new Audio(incomingSource);
     outgoing.preload = 'auto';
     incoming.preload = 'auto';
     incoming.volume = 0;
@@ -840,7 +850,10 @@ export function createSetTransitionEditor({
     panel.className = 'transition-editor';
     const leftDuration = Math.max(1, Number(left.duration_seconds || 210)),
       rightDuration = Math.max(1, Number(right.duration_seconds || 210));
-    panel.innerHTML = `<header><div><strong>Transition ${index} → ${index + 1}</strong><span>${escapeHtml(left.source_name.replace(/\.[^.]+$/, ''))} into ${escapeHtml(right.source_name.replace(/\.[^.]+$/, ''))}</span></div><div class="transition-header-actions"><button type="button" class="optimize-transition">✦ Find best</button><button type="button" class="undo-transition-timing" disabled>↶ Undo timing</button><button type="button" class="close-transition-editor">×</button></div></header><div class="transition-wave-stack"><span class="transition-point-label">Mix starts here · matched 60-second view</span><span class="transition-point-line" aria-hidden="true"></span><div class="transition-wave-row"><label>Outgoing mix-out <b class="mix-out-label">${clock(settings.mixOut)}</b></label><div class="transition-wave outgoing-wave"></div><input class="transition-mix-out" type="range" min="0" max="${leftDuration}" step="0.1" value="${settings.mixOut}"><div class="transition-cue-options outgoing-cues" aria-label="Alternative outgoing cue points"></div></div><div class="transition-wave-row"><label>Incoming mix-in <b class="mix-in-label">${clock(settings.mixIn)}</b></label><div class="transition-wave incoming-wave"></div><input class="transition-mix-in" type="range" min="0" max="${rightDuration}" step="0.1" value="${settings.mixIn}"><div class="transition-cue-options incoming-cues" aria-label="Alternative incoming cue points"></div></div></div><div class="transition-fade-visual"><div><span>Fade shape</span><b class="fade-curve-length">${settings.bars} bars</b></div><svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-label="Transition fade curve"><path class="fade-grid" d="M0 12 H100 M50 1 V23"></path><path class="fade-out-path"></path><path class="fade-in-path"></path><line class="fade-live-line" x1="0" x2="0" y1="1" y2="23"></line><circle class="fade-live-out" cx="0" cy="2" r="1.6"></circle><circle class="fade-live-in" cx="0" cy="22" r="1.6"></circle></svg><div class="fade-legend"><span class="fade-out-key">Outgoing</span><span class="fade-in-key">Incoming</span><small class="fade-live-status">Preview to follow the fade</small></div></div><div class="transition-optimizer-results" hidden></div><div class="transition-editor-controls"><label>Length<select class="transition-bars"><option value="8">8 bars</option><option value="16">16 bars</option><option value="32">32 bars</option></select></label><label>Fade curve<select class="transition-curve"><option value="smooth">Smooth equal-power</option><option value="linear">Linear</option><option value="quick-cut">Quick cut</option><option value="long-blend">Long blend</option></select></label><label>Technique<select class="transition-technique"><option value="crossfade">Classic crossfade</option><option value="bass-swap">Bass swap</option><option value="filter-blend">Filter blend</option><option value="vocal-duck">Vocal duck</option><option value="echo-out">Echo out</option><option value="drop-swap">Drop swap</option><option value="loop-assist">Loop-assisted blend</option></select></label><label class="transition-tempo"><input type="checkbox" class="transition-tempo-sync"> Tempo match</label><label class="transition-notes">Transition notes<input class="transition-note" type="text" maxlength="300" placeholder="Loop 8 bars, swap bass on phrase…" value="${escapeHtml(settings.notes || '')}"></label><button type="button" class="preview-transition">▶ Preview mix</button></div>`;
+    const titleId = `transition-editor-title-${index}`;
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-labelledby', titleId);
+    panel.innerHTML = `<header><div><strong id="${titleId}">Transition ${index} → ${index + 1}</strong><span>${escapeHtml(left.source_name.replace(/\.[^.]+$/, ''))} into ${escapeHtml(right.source_name.replace(/\.[^.]+$/, ''))}</span></div><div class="transition-header-actions"><button type="button" class="button primary optimize-transition">✦ Find best</button><button type="button" class="button secondary undo-transition-timing" disabled>↶ Undo timing</button><button type="button" class="button tertiary close-transition-editor" aria-label="Close transition editor">×</button></div></header><div class="transition-wave-stack"><span class="transition-point-label">Mix starts here · matched 60-second view</span><span class="transition-point-line" aria-hidden="true"></span><div class="transition-wave-row"><label>Outgoing mix-out <b class="mix-out-label">${clock(settings.mixOut)}</b></label><div class="transition-wave outgoing-wave"></div><input class="transition-mix-out" type="range" min="0" max="${leftDuration}" step="0.1" value="${settings.mixOut}"><div class="transition-cue-options outgoing-cues" aria-label="Alternative outgoing cue points"></div></div><div class="transition-wave-row"><label>Incoming mix-in <b class="mix-in-label">${clock(settings.mixIn)}</b></label><div class="transition-wave incoming-wave"></div><input class="transition-mix-in" type="range" min="0" max="${rightDuration}" step="0.1" value="${settings.mixIn}"><div class="transition-cue-options incoming-cues" aria-label="Alternative incoming cue points"></div></div></div><div class="transition-fade-visual"><div><span>Fade shape</span><b class="fade-curve-length">${settings.bars} bars</b></div><svg viewBox="0 0 100 24" preserveAspectRatio="none" aria-label="Transition fade curve"><path class="fade-grid" d="M0 12 H100 M50 1 V23"></path><path class="fade-out-path"></path><path class="fade-in-path"></path><line class="fade-live-line" x1="0" x2="0" y1="1" y2="23"></line><circle class="fade-live-out" cx="0" cy="2" r="1.6"></circle><circle class="fade-live-in" cx="0" cy="22" r="1.6"></circle></svg><div class="fade-legend"><span class="fade-out-key">Outgoing</span><span class="fade-in-key">Incoming</span><small class="fade-live-status">Preview to follow the fade</small></div></div><div class="transition-optimizer-results" hidden></div><div class="transition-editor-controls"><label>Length<select class="transition-bars"><option value="8">8 bars</option><option value="16">16 bars</option><option value="32">32 bars</option></select></label><label>Fade curve<select class="transition-curve"><option value="smooth">Smooth equal-power</option><option value="linear">Linear</option><option value="quick-cut">Quick cut</option><option value="long-blend">Long blend</option></select></label><label>Technique<select class="transition-technique"><option value="crossfade">Classic crossfade</option><option value="bass-swap">Bass swap</option><option value="filter-blend">Filter blend</option><option value="vocal-duck">Vocal duck</option><option value="echo-out">Echo out</option><option value="drop-swap">Drop swap</option><option value="loop-assist">Loop-assisted blend</option></select></label><label class="transition-tempo"><input type="checkbox" class="transition-tempo-sync"> Tempo match</label><label class="transition-notes">Transition notes<input class="transition-note" type="text" maxlength="300" placeholder="Loop 8 bars, swap bass on phrase…" value="${escapeHtml(settings.notes || '')}"></label><button type="button" class="button primary preview-transition">▶ Preview mix</button><button type="button" class="button secondary close-transition-editor-bottom">Done editing</button></div>`;
     card.append(panel);
     const mixOut = panel.querySelector('.transition-mix-out'),
       mixIn = panel.querySelector('.transition-mix-in'),
@@ -995,8 +1008,7 @@ export function createSetTransitionEditor({
     renderTransitionFadeCurve(panel, curve.value, Number(bars.value), technique.value);
     refreshCueButtons();
     optimizer.onclick = async () => {
-      optimizer.disabled = true;
-      optimizer.textContent = 'Scoring…';
+      const restoreAction = beginButtonAction(optimizer, 'Scoring transition options…');
       optimizerResults.hidden = false;
       optimizerResults.innerHTML =
         '<p>Comparing timing, phrasing, harmony, loudness, vocals, energy, and technique…</p>';
@@ -1005,7 +1017,7 @@ export function createSetTransitionEditor({
         optimizerResults.innerHTML = candidates
           .map(
             (candidate, candidateIndex) =>
-              `<article class="${candidateIndex ? '' : 'recommended'}" data-candidate="${candidateIndex}"><div><b>${candidateIndex ? 'Alternative ' + (candidateIndex + 1) : 'Recommended'} · ${candidate.score}/100</b><strong>${escapeHtml(candidate.technique.replaceAll('-', ' '))} · ${candidate.bars} bars · ${escapeHtml(candidate.curve.replaceAll('-', ' '))}</strong><span>${clock(candidate.mixOut)} → ${clock(candidate.mixIn)} · ${escapeHtml(candidate.reason)}</span><small>Phrase ${candidate.components.phrase}/25 · tempo ${candidate.components.tempo}/25 · key ${candidate.components.key}/15 · loudness ${candidate.components.loudness}/15 · vocals ${candidate.components.vocals}/10</small></div><button type="button">Apply</button></article>`,
+              `<article class="${candidateIndex ? '' : 'recommended'}" data-candidate="${candidateIndex}"><div><b>${candidateIndex ? 'Alternative ' + (candidateIndex + 1) : 'Recommended'} · ${candidate.score}/100</b><strong>${escapeHtml(candidate.technique.replaceAll('-', ' '))} · ${candidate.bars} bars · ${escapeHtml(candidate.curve.replaceAll('-', ' '))}</strong><span>${clock(candidate.mixOut)} → ${clock(candidate.mixIn)} · ${escapeHtml(candidate.reason)}</span><small>Phrase ${candidate.components.phrase}/25 · tempo ${candidate.components.tempo}/25 · key ${candidate.components.key}/15 · loudness ${candidate.components.loudness}/15 · vocals ${candidate.components.vocals}/10</small></div><button type="button" class="button secondary">Apply</button></article>`,
           )
           .join('');
         optimizerResults.querySelectorAll('[data-candidate]').forEach(
@@ -1029,23 +1041,32 @@ export function createSetTransitionEditor({
       } catch (error) {
         optimizerResults.innerHTML = `<p>Could not score this transition: ${escapeHtml(error.message)}</p>`;
       } finally {
-        optimizer.disabled = false;
-        optimizer.textContent = '✦ Find best';
+        restoreAction();
       }
     };
-    panel.querySelector('.close-transition-editor').onclick = () => {
+    const closeEditor = () => {
       stopTransitionPreview();
       transitionEditorSurfaces.forEach((surface) => surface.destroy());
       transitionEditorSurfaces = [];
       panel.remove();
+      card.querySelector('.edit-transition')?.focus();
     };
+    panel.querySelectorAll('.close-transition-editor, .close-transition-editor-bottom').forEach((button) => {
+      button.onclick = closeEditor;
+    });
+    panel.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeEditor();
+    });
     panel.querySelector('.preview-transition').onclick = (event) => {
       persist();
       auditionTransition(index, event.currentTarget);
     };
     initializeTransitionWave(panel.querySelector('.outgoing-wave'), left, mixOut, '#ffb45c');
     initializeTransitionWave(panel.querySelector('.incoming-wave'), right, mixIn, '#d6ff44');
-    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    panel.querySelector('.close-transition-editor').focus({ preventScroll: true });
   }
   function setSvgCurve(selector, values, color) {
     const svg = $(selector);

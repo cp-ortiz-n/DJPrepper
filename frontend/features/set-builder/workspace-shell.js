@@ -1,6 +1,7 @@
 /** Compact Set Builder workspace presentation and selected-track ownership. */
 
 import { revisionComparisonLabel } from './regeneration.js';
+import { beginButtonAction } from './ui-state.js';
 
 export function workspaceIdentity(state) {
   const revision = Number(state.planRevision?.number || 0);
@@ -15,6 +16,7 @@ export function trackStateChips({ locked, decision, changed = false }) {
     locked ? { kind: 'locked', label: 'Locked' } : null,
     decision === 'accept' ? { kind: 'kept', label: 'Kept' } : null,
     decision === 'reject' ? { kind: 'rejected', label: 'Rejected' } : null,
+    decision === 'replaced' ? { kind: 'changed', label: 'Replaced' } : null,
     changed ? { kind: 'changed', label: 'Changed' } : null,
   ].filter(Boolean);
 }
@@ -64,7 +66,9 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regen
     panel.querySelector('.set-track-inspector-content').replaceChildren();
     state.selectedTrackId = '';
     if (restoreFocus && selectedId) {
-      $$('.set-track-card').find((card) => setTrackId(state.plan[Number(card.dataset.index)]) === selectedId)?.focus();
+      $$('.set-track-card')
+        .find((card) => setTrackId(state.plan[Number(card.dataset.index)]) === selectedId)
+        ?.focus();
     }
   }
 
@@ -146,19 +150,24 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regen
   const inspectorPanel = inspector();
   if (inspectorPanel)
     inspectorPanel.querySelector('.close-set-inspector').onclick = () => closeInspector({ restoreFocus: true });
+  globalThis.document?.addEventListener('pointerdown', (event) => {
+    const panel = inspector();
+    if (!panel || panel.hidden || panel.contains(event.target) || event.target.closest('.set-track-card')) return;
+    closeInspector();
+  });
   const reviewAction = $('#review-set-action');
-  if (reviewAction) reviewAction.onclick = () => {
-    const panel = $('#set-review-panel');
-    panel.open = true;
-    const behavior = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-    panel.scrollIntoView({ behavior, block: 'center' });
-    panel.querySelector('summary').focus();
-  };
+  if (reviewAction)
+    reviewAction.onclick = () => {
+      const panel = $('#set-review-panel');
+      panel.open = true;
+      const behavior = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+      panel.scrollIntoView({ behavior, block: 'center' });
+      panel.querySelector('summary').focus();
+    };
   const regenerateAction = $('#regenerate-set');
   if (regenerateAction)
     regenerateAction.onclick = async () => {
-      regenerateAction.disabled = true;
-      regenerateAction.textContent = 'Regenerating…';
+      const restoreAction = beginButtonAction(regenerateAction, 'Regenerating unlocked tracks…');
       $('#set-builder-message').textContent = 'Keeping locked tracks and rebuilding the rest of this revision…';
       try {
         const comparison = await regenerateUnlocked();
@@ -168,8 +177,7 @@ export function createSetBuilderWorkspaceShell({ state, $, $$, setTrackId, regen
         $('#set-builder-message').textContent =
           `Regeneration failed: ${error?.message || error}. The previous revision remains available.`;
       } finally {
-        regenerateAction.disabled = false;
-        regenerateAction.textContent = 'Regenerate unlocked';
+        restoreAction();
       }
     };
   inspectorPanel?.addEventListener('keydown', (event) => {

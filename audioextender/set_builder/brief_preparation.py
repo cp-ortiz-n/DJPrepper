@@ -11,16 +11,24 @@ from dataclasses import dataclass, field
 from time import monotonic
 from typing import Any
 
-from audioextender.set_builder.intention_planner import INTENTION_SCHEMA, PLANNER_INSTRUCTIONS, IntentionPlanner
+from audioextender.set_builder.genre_vocabulary import canonical_genres, normalize_genre_vocabulary
+from audioextender.set_builder.intention_planner import (
+    INTENTION_SCHEMA,
+    PLANNER_INSTRUCTIONS,
+    IntentionPlanner,
+    sanitize_interpretation,
+)
 from audioextender.set_builder.journey_planner import (
     JOURNEY_INSTRUCTIONS,
     JOURNEY_SCHEMA,
     _preserves_requested_sequence,
+    enforce_journey_energy_policy,
+    enforce_journey_genre_policy,
     offline_journey,
     sanitize_journey,
 )
 
-BRIEF_PREPARATION_VERSION = 1
+BRIEF_PREPARATION_VERSION = 8
 BRIEF_SCHEMA = {
     **INTENTION_SCHEMA,
     "properties": {**INTENTION_SCHEMA["properties"], "journey": JOURNEY_SCHEMA},
@@ -45,10 +53,10 @@ class BriefPreparationService:
     def prepare(
         self,
         brief: str,
-        catalog_vocabulary: list[str],
+        catalog_vocabulary: list[Any],
         duration_minutes: int,
     ) -> dict[str, Any]:
-        vocabulary = sorted({str(value).strip() for value in catalog_vocabulary if str(value).strip()})[:800]
+        vocabulary = normalize_genre_vocabulary(catalog_vocabulary)[:800]
         key = self._key(brief, vocabulary, duration_minutes)
         now = monotonic()
         with self._lock:
@@ -67,16 +75,29 @@ class BriefPreparationService:
             interpretation = self.intention_planner.interpret(
                 brief, vocabulary, schema=BRIEF_SCHEMA, instructions=BRIEF_INSTRUCTIONS
             )
+            interpretation = sanitize_interpretation(interpretation, vocabulary, brief)
             proposed_journey = interpretation.pop("journey", None)
+            journey_vocabulary = list(
+                dict.fromkeys(
+                    [
+                        *canonical_genres(vocabulary),
+                        *interpretation.get("genreSequence", []),
+                        *interpretation.get("requestedGenres", []),
+                        *interpretation.get("optionalGenres", []),
+                    ]
+                )
+            )
             try:
                 if not isinstance(proposed_journey, dict):
                     raise ValueError("Missing journey")
-                journey = sanitize_journey(proposed_journey, vocabulary, duration_minutes)
-                if not _preserves_requested_sequence(journey, interpretation, vocabulary):
+                journey = sanitize_journey(proposed_journey, journey_vocabulary, duration_minutes)
+                journey = enforce_journey_genre_policy(journey, interpretation, journey_vocabulary)
+                journey = enforce_journey_energy_policy(journey, interpretation)
+                if not _preserves_requested_sequence(journey, interpretation, journey_vocabulary):
                     raise ValueError("Journey changed requested genre order")
                 evidence = "ai-planned"
             except (ValueError, TypeError, KeyError):
-                journey = offline_journey(interpretation, vocabulary, duration_minutes)
+                journey = offline_journey(interpretation, journey_vocabulary, duration_minutes)
                 evidence = "ai-interpreted"
             journey.update(
                 provider=interpretation.get("provider", "offline"),
@@ -100,7 +121,7 @@ class BriefPreparationService:
             with self._lock:
                 self._inflight.pop(key, None)
 
-    def _key(self, brief: str, vocabulary: list[str], duration_minutes: int) -> str:
+    def _key(self, brief: str, vocabulary: list[dict[str, Any]], duration_minutes: int) -> str:
         payload = {
             "version": BRIEF_PREPARATION_VERSION,
             "brief": brief.strip(),

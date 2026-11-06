@@ -19,11 +19,19 @@ The browser supplies the source and presents lifecycle state. The service owns
 authority checks, safe names, duplicate handling, conversion, metadata, catalog
 persistence, and temporary-file cleanup.
 
+`SourceArtworkService` applies one artwork policy to authorized imports and
+later Music Files repairs. It prefers a matched Spotify cover, then provider-native
+SoundCloud artwork, then a YouTube thumbnail. The first downloadable candidate
+is cached under `.artwork`, embedded into the WAV, and persisted in the catalog.
+Provider metadata or artwork failures never discard an otherwise valid audio
+import; the queue reports artwork as unavailable and **Sync artwork** can retry it.
+
 ## Shared result
 
 A successful import produces:
 
 - a managed WAV under the configured music library;
+- cached and embedded source artwork when a supported provider exposes it;
 - one downloaded-track catalog row with stable identity and file paths;
 - refreshed Music Files, DJ Library, and Set Builder projections;
 - a terminal operation receipt that survives page navigation.

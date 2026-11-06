@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 
 _VERSION_PATTERNS = (
@@ -16,6 +17,20 @@ _VERSION_PATTERNS = (
     ("INST", re.compile(r"\b(?:instrumental|karaoke)\b", re.I)),
     ("ACAP", re.compile(r"\b(?:a\s*cappella|acapella|vocals? only)\b", re.I)),
 )
+
+_ARTIST_CREDIT_SEPARATOR = re.compile(
+    r"\s*(?:,|;|/|\b(?:feat(?:uring)?|ft|vs)\.?\b)\s*",
+    re.I,
+)
+
+
+@dataclass(frozen=True)
+class RecordingFamilyInference:
+    """Conservative evidence that two catalog rows describe one song family."""
+
+    confidence: str
+    reason: str
+    strength: int
 
 
 def normalize_identity_text(value: str) -> str:
@@ -36,7 +51,8 @@ def base_title(title: str) -> str:
         r"\([^)]*\)|\[[^]]*\]",
         lambda match: (
             " "
-            if version_kind(match.group(0)) != "ORG" or re.search(r"\b(?:version|edit)\b", match.group(0), re.I)
+            if version_kind(match.group(0)) != "ORG"
+            or re.search(r"\b(?:version|edit|feat(?:uring)?|ft)\.?\b", match.group(0), re.I)
             else match.group(0)
         ),
         title,
@@ -59,6 +75,8 @@ def canonical_title_key(title: str, artist: str = "") -> str:
     value = title
     parts = re.split(r"\s+[-–—]\s+", title)
     if len(parts) > 1:
+        if version_kind(title) != "ORG" and version_kind(parts[-1]) != "ORG":
+            value = " - ".join(parts[:-1])
         suffix = normalize_identity_text(parts[-1])
         artist_text = normalize_identity_text(artist)
         remainder = suffix
@@ -68,6 +86,65 @@ def canonical_title_key(title: str, artist: str = "") -> str:
         if remainder and set(remainder.split()).issubset(version_words):
             value = " - ".join(parts[:-1])
     return base_title(value).replace(" ", "")
+
+
+def artist_credit_keys(artist: str) -> set[str]:
+    """Return normalized full and individual artist credits.
+
+    Ampersands are intentionally not separators because they commonly belong to
+    a single act's name. Short partial credits are retained for exact full-name
+    comparisons but are not enough to establish cross-credit overlap.
+    """
+    full = normalize_identity_text(artist)
+    if not full:
+        return set()
+    parts = {
+        normalize_identity_text(part)
+        for part in _ARTIST_CREDIT_SEPARATOR.split(artist)
+        if normalize_identity_text(part)
+    }
+    return {full, *parts}
+
+
+def artists_share_credit(left: str, right: str) -> bool:
+    """Return whether two artist fields share a conservative named credit."""
+    left_full = normalize_identity_text(left)
+    right_full = normalize_identity_text(right)
+    if not left_full or not right_full:
+        return False
+    if left_full == right_full:
+        return True
+    return any(len(credit.replace(" ", "")) >= 4 for credit in artist_credit_keys(left) & artist_credit_keys(right))
+
+
+def infer_recording_family(
+    left_artist: str,
+    left_title: str,
+    right_artist: str,
+    right_title: str,
+) -> RecordingFamilyInference | None:
+    """Infer a shared song family from structured metadata, never fuzzy titles.
+
+    Version words, bracketed remix/feature credits, harmless spacing, and
+    diacritics are normalized before comparison. A shared named artist credit
+    is still required so unrelated covers with the same title remain separate.
+    """
+    left_title_key = canonical_title_key(left_title, left_artist)
+    right_title_key = canonical_title_key(right_title, right_artist)
+    if not left_title_key or left_title_key != right_title_key:
+        return None
+    if not artists_share_credit(left_artist, right_artist):
+        return None
+    exact_artist = normalize_identity_text(left_artist) == normalize_identity_text(right_artist)
+    return RecordingFamilyInference(
+        confidence="review",
+        reason=(
+            "Matched canonical song title and artist"
+            if exact_artist
+            else "Matched canonical song title and shared artist credit"
+        ),
+        strength=2 if exact_artist else 1,
+    )
 
 
 def identity_key(artist: str, title: str) -> str:

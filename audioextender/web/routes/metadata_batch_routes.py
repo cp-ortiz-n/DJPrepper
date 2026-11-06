@@ -12,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from audioextender.imports.source_artwork import SourceArtworkService
 from audioextender.infrastructure.batch_operations import BatchContext, BatchOperationRegistry
 
 
@@ -26,8 +27,7 @@ class MetadataBatchDependencies:
     sync_wav_metadata: Callable[..., bool]
     read_wav_artwork: Callable[[Path], Any]
     embed_wav_artwork: Callable[[Path, Path], Any]
-    cache_track_artwork: Callable[[str, Path], str]
-    spotify_source_metadata: Callable[[str], dict]
+    source_artwork: SourceArtworkService
     generalized_genre: Callable[[str], str]
     normalize_genre: Callable[[str], str]
     genre_directory: Callable[[str], Path]
@@ -154,28 +154,17 @@ class MetadataBatchService:
             try:
                 if not path.is_file():
                     raise FileNotFoundError(path)
-                artwork_url = str(track.get("artwork_url") or "")
                 cached_path = Path(str(track.get("artwork_path") or ""))
                 if cached_path.is_file():
                     if self.dependencies.read_wav_artwork(path) is None:
                         self.dependencies.embed_wav_artwork(path, cached_path)
                         outcome = "updated"
                 else:
-                    spotify_uri = str(track.get("spotify_uri") or "")
-                    if spotify_uri.startswith("spotify:track:"):
-                        metadata = self.dependencies.spotify_source_metadata(
-                            "https://open.spotify.com/track/" + spotify_uri.rsplit(":", 1)[-1]
-                        )
-                        artwork_url = str(metadata.get("thumbnail_url") or "")
-                    if not artwork_url and track.get("youtube_id"):
-                        artwork_url = f"https://i.ytimg.com/vi/{track['youtube_id']}/hqdefault.jpg"
-                    if not artwork_url:
-                        raise ValueError("No Spotify or YouTube artwork source is stored")
-                    artwork_path = self.dependencies.cache_track_artwork(artwork_url, path)
-                    if not artwork_path:
-                        raise ValueError("Artwork could not be downloaded or embedded")
+                    artwork = self.dependencies.source_artwork.sync_track(track, path)
+                    if artwork is None:
+                        raise ValueError("No supported artwork source could be resolved and embedded")
                     self.repository.update_downloaded_track_artwork(
-                        int(track["id"]), artwork_url=artwork_url, artwork_path=artwork_path
+                        int(track["id"]), artwork_url=artwork.url, artwork_path=artwork.path
                     )
                     outcome = "updated"
             except Exception as exception:

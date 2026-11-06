@@ -125,6 +125,31 @@ class DJPreferenceServiceTests(unittest.TestCase):
             self.assertTrue(reset["enabled"])
             self.assertEqual(reset["eventCount"], 0)
 
+    def test_rejection_metadata_is_durable_and_retraction_is_idempotent(self) -> None:
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "preferences.json"
+            service = DJPreferenceService(JsonPreferenceStore(path))
+            rejection = {
+                **event("original", "reject"),
+                "reason": "wrong-energy",
+                "scope": "recording-family",
+                "recordingKey": "recording:DSC-1",
+                "setId": "set-1",
+                "revisionId": "revision-2",
+            }
+
+            first = service.record([rejection])
+            duplicate = service.record([rejection])
+            stored = JsonPreferenceStore(path).load()["events"][0]
+
+            self.assertEqual(first["recorded"], 1)
+            self.assertEqual(duplicate["recorded"], 0)
+            self.assertEqual(stored["reason"], "wrong-energy")
+            self.assertEqual(stored["scope"], "recording-family")
+            self.assertTrue(service.retract(rejection["id"])["retracted"])
+            self.assertFalse(service.retract(rejection["id"])["retracted"])
+            self.assertEqual(service.profile()["eventCount"], 0)
+
     def test_dismissed_signal_is_persisted_and_no_longer_affects_ranking(self) -> None:
         with TemporaryDirectory() as temporary:
             path = Path(temporary) / "preferences.json"
@@ -146,6 +171,9 @@ class DJPreferenceServiceTests(unittest.TestCase):
             client = TestClient(app)
             recorded = client.post("/api/set-builder/preferences/events", json={"events": [event("one")]})
             self.assertEqual(recorded.status_code, 200)
+            self.assertTrue(client.delete("/api/set-builder/preferences/events/save-one").json()["retracted"])
+            self.assertFalse(client.delete("/api/set-builder/preferences/events/save-one").json()["retracted"])
+            client.post("/api/set-builder/preferences/events", json={"events": [event("one")]})
             self.assertEqual(client.get("/api/set-builder/preferences?context=warm-up").json()["eventCount"], 1)
             self.assertFalse(
                 client.put("/api/set-builder/preferences/enabled", json={"enabled": False}).json()["enabled"]

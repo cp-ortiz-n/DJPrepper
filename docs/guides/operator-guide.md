@@ -17,11 +17,12 @@ On macOS, `Start AudioExtender.command` performs the same application startup
 and can also prepare the configured local Ollama model. Open
 [http://localhost:8765](http://localhost:8765) after startup.
 
-The launcher verifies the rendered homepage, not only a background API. If an
-older AudioExtender process still owns port 8765 but cannot render the current
-frontend, the launcher replaces that stale process before starting the current
-package entry point. It never terminates an unrelated application using the
-same port.
+The launcher verifies both the rendered homepage and the lightweight runtime
+identity endpoint. The identity is an immutable SHA-256 hash of backend and
+frontend source captured when the server starts. If a process on port 8765 has a
+different revision—or predates the endpoint—the launcher replaces that stale
+AudioExtender process before starting the current package entry point. It never
+terminates an unrelated application using the same port.
 
 Closing a browser tab does not stop active work. Closing the server process
 does. Persisted jobs are restored safely after restart; an interrupted running
@@ -122,6 +123,14 @@ Generated reports and cache files are reproducible and are not substitutes for
 a catalog or audio backup.
 
 ## Health and release checks
+
+Routine library status is cached for five minutes, while **Verify library**
+always performs the authoritative filesystem scan. Opening the application no
+longer starts the deeper health and orphaned-storage inventory; those checks are
+loaded when Settings is opened. Waveform previews are generated with one
+sequential audio pass and then served from the revision-aware cache. Catalog
+projection rebuilds retain the last known-good JSON until the atomic replacement
+is complete, so readers do not see a missing file during publication.
 
 For a source checkout, these commands verify the supported runtime and major
 workflows:

@@ -9,11 +9,13 @@ import {
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
+  reconcileSetRecordingFamilies,
   setCatalogTrackId,
   setRecordingKey,
   setTrackDetailedGenres,
   setTrackId,
   targetSetEnergy,
+  trackGenreMatchEvidence,
   trackMatchesIntendedGenre,
   trackMatchesSetDetailedGenre,
   trackMatchesSetGenre,
@@ -29,7 +31,10 @@ import {
   resolveStructuredGenreFilters,
 } from './workflow.js';
 import { createSetBuilderProgressView } from './progress-view.js';
-
+import { createSetJourneyReview } from './journey-review.js';
+import { intentionAuthoritySummary, reconcileInterpretedGenreAuthority } from './journey-policy.js';
+import { mergeCatalogGenreVocabulary } from './genre-vocabulary.js';
+import { beginButtonAction } from './ui-state.js';
 export {
   DEFAULT_SET_FALLBACK_POLICY,
   SET_IDENTITY_STORAGE_KEY,
@@ -41,6 +46,7 @@ export {
   intendedGenreForPosition,
   interpretSetIntention,
   parseIdentityTerms,
+  reconcileSetRecordingFamilies,
   setCatalogTrackId,
   setRecordingKey,
   setTrackDetailedGenres,
@@ -76,7 +82,7 @@ export function createSetBuilderFeature({
     useFrontendServices(services);
   const state = createSetBuilderStore();
   const workflow = createSetWorkflowController({ $, $$ });
-  const trackReviewDraft = new Map();
+  const trackReviewDraft = state.trackReviews;
   const transitionReviewDraft = new Map();
   const setBuilderApi = createSetBuilderApi({ api });
   const intentionController = createSetIntentionController({
@@ -89,6 +95,19 @@ export function createSetBuilderFeature({
   });
   const planningClient = setBuilderApi.planning;
   const progressView = createSetBuilderProgressView({ $, escapeHtml });
+  const journeyReview = createSetJourneyReview({
+    $,
+    $$,
+    workflow,
+    escapeHtml,
+    option,
+    parseIdentityTerms,
+    intentionVocabulary,
+    durationMinutes: () => Number($('#set-length').value),
+    journeyDurationStatus,
+    journeyEnergyRange,
+    journeyEvidenceLabel,
+  });
   const classicPlanner = createClassicSetPlanner({
     strategies: SET_PROPOSAL_STRATEGIES,
     schedule: () => new Promise((resolve) => requestAnimationFrame(() => resolve())),
@@ -99,37 +118,15 @@ export function createSetBuilderFeature({
     restore: (snapshot) => restoreSetSnapshot(snapshot, false),
     render: () => renderSetPlan(),
   });
-  function identityStore() {
-    try {
-      return JSON.parse(localStorage.getItem(SET_IDENTITY_STORAGE_KEY) || '{}');
-    } catch (_) {
-      return {};
-    }
-  }
+  const identityPersistence = createTrackIdentityStore({
+    storage: localStorage, storageKey: SET_IDENTITY_STORAGE_KEY, trackId: setTrackId, parseTerms: parseIdentityTerms,
+  });
+  const identityStore = identityPersistence.load;
   function intentionVocabulary() {
-    return [
-      ...new Set(
-        state.library
-          .flatMap((track) => [
-            ...String(track._genre || '')
-              .split('/')
-              .map((value) => value.trim()),
-            ...setTrackDetailedGenres(track),
-            ...(track._descriptors || []).map((item) => item.value),
-          ])
-          .filter(Boolean),
-      ),
-    ];
+    return mergeCatalogGenreVocabulary(state.catalogVocabulary, state.library);
   }
-  function manualTrackIdentity(track) {
-    return identityStore()[setTrackId(track)] || [];
-  }
-  function saveManualTrackIdentity(track, terms) {
-    const store = identityStore();
-    store[setTrackId(track)] = parseIdentityTerms(terms);
-    localStorage.setItem(SET_IDENTITY_STORAGE_KEY, JSON.stringify(store));
-    track._manualIdentity = store[setTrackId(track)];
-  }
+  const manualTrackIdentity = identityPersistence.terms;
+  const saveManualTrackIdentity = identityPersistence.save;
   function trackIdentity(track) {
     return inferredTrackIdentity(track, track._manualIdentity || manualTrackIdentity(track));
   }
@@ -163,29 +160,6 @@ export function createSetBuilderFeature({
       score: preferred.length * 14 + required.length * 22 - avoided.length * 35 - missingRequired.length * 45,
     };
   }
-  function currentJourney() {
-    const root = $('#set-journey-preview');
-    if (!root || root.hidden) return null;
-    const sections = [...root.querySelectorAll('.set-journey-section')].map((row, index) => ({
-      id: row.dataset.id || `section-${index + 1}`,
-      name: row.querySelector('.journey-name').value.trim() || `Section ${index + 1}`,
-      durationPercent: Number(row.querySelector('.journey-duration').value || 0),
-      energyStart: Number(row.querySelector('.journey-energy-start').value || 5),
-      energyEnd: Number(row.querySelector('.journey-energy-end').value || 5),
-      genres: parseIdentityTerms(row.querySelector('.journey-genres input').value),
-      characteristics: parseIdentityTerms(row.querySelector('.journey-characteristics').value),
-      purpose: row.querySelector('.journey-purpose input').value.trim(),
-    }));
-    const duration = journeyDurationStatus(sections, Number($('#set-length').value));
-    if (!duration.valid)
-      throw new Error(`Journey section durations total ${duration.total}%. Adjust them to 100% before generating.`);
-    return {
-      version: 1,
-      summary: $('#set-journey-summary').textContent,
-      durationMinutes: Number($('#set-length').value),
-      sections,
-    };
-  }
   function currentIntention() {
     const usesAIBrief = workflow.briefMode() === SET_BRIEF_MODES.AI,
       text = usesAIBrief ? $('#set-intention').value.trim() : '',
@@ -195,16 +169,18 @@ export function createSetBuilderFeature({
     try {
       if (usesAIBrief && panel.dataset.source === text) interpreted = JSON.parse(panel.dataset.interpretation || '{}');
     } catch (_) {}
-    const journey = usesAIBrief ? currentJourney() : null;
+    const journey = usesAIBrief ? journeyReview.current() : null;
     const journeySequence = journey?.sections.flatMap((section) => section.genres) || [];
     return {
       text,
       required: parseIdentityTerms($('#set-intention-required').value),
       preferred: parseIdentityTerms($('#set-intention-preferred').value),
       avoided: parseIdentityTerms($('#set-intention-avoided').value),
-      requestedGenres: interpreted.requestedGenres || parsed.requestedGenres || [],
-      optionalGenres: interpreted.optionalGenres || [],
+      excludedGenres: interpreted.excludedGenres || parsed.excludedGenres || [],
+      requestedGenres: interpreted.requestedGenres?.length ? interpreted.requestedGenres : parsed.requestedGenres || [],
+      optionalGenres: interpreted.optionalGenres?.length ? interpreted.optionalGenres : parsed.optionalGenres || [],
       genreSequence: journeySequence.length ? journeySequence : interpreted.genreSequence || parsed.genreSequence || [],
+      openingGenres: interpreted.openingGenres || parsed.openingGenres || [],
       journey,
       opening: interpreted.opening || parsed.opening || null,
       ending: interpreted.ending || null,
@@ -216,39 +192,12 @@ export function createSetBuilderFeature({
   function renderFallbackPolicy(policy = DEFAULT_SET_FALLBACK_POLICY) {
     $('#set-fallback-policy').innerHTML = fallbackPolicyMarkup(policy, escapeHtml);
   }
-  function renderJourney(journey) {
-    const root = $('#set-journey-preview'),
-      container = $('#set-journey-sections');
-    root.hidden = false;
-    root.dataset.journey = JSON.stringify(journey);
-    $('#set-journey-summary').textContent = journey.summary || 'Review the planned journey before generating.';
-    $('#set-journey-evidence').textContent = journeyEvidenceLabel(journey);
-    container.innerHTML = (journey.sections || [])
-      .map((section, index) => {
-        const [energyStart, energyEnd] = journeyEnergyRange(section);
-        return `<article class="set-journey-section" data-id="${escapeHtml(section.id || `section-${index + 1}`)}"><span class="journey-step" aria-hidden="true">${index + 1}</span><div class="journey-primary"><label>Section<input class="journey-name" value="${escapeHtml(section.name || `Section ${index + 1}`)}"></label><label class="journey-duration-label">Duration<input class="journey-duration" type="number" min="1" max="100" step="1" value="${Number(section.durationPercent || 0)}"><span>%</span></label><label class="journey-energy">Energy <span class="journey-energy-value">${energyStart} → ${energyEnd}</span><span class="journey-energy-inputs"><input class="journey-energy-start" aria-label="Starting energy" type="number" min="1" max="10" step=".5" value="${energyStart}"><i aria-hidden="true">→</i><input class="journey-energy-end" aria-label="Ending energy" type="number" min="1" max="10" step=".5" value="${energyEnd}"></span></label></div><div class="journey-details"><label class="journey-genres">Genres<input value="${escapeHtml((section.genres || []).join(', '))}" placeholder="Catalog genres"></label><label>Character<input class="journey-characteristics" value="${escapeHtml((section.characteristics || []).join(', '))}" placeholder="melodic, warm-up"></label><label class="journey-purpose">Purpose<input value="${escapeHtml(section.purpose || '')}"></label></div></article>`;
-      })
-      .join('');
-    const refresh = () => {
-      const total = [...container.querySelectorAll('.journey-duration')].reduce(
-          (sum, input) => sum + Number(input.value || 0),
-          0,
-        ),
-        status = $('#set-journey-total');
-      status.textContent = `${journey.sections.length} sections · ${total}% of ${Number($('#set-length').value)} minutes · edits drive track placement`;
-      status.classList.toggle('invalid', Math.abs(total - 100) > 0.01);
-      container.querySelectorAll('.set-journey-section').forEach((row) => {
-        const startInput = row.querySelector('.journey-energy-start'),
-          endInput = row.querySelector('.journey-energy-end'),
-          values = journeyEnergyRange({ energyStart: startInput.value, energyEnd: endInput.value });
-        if (!String(endInput.value).trim() || !Number.isFinite(Number(endInput.value))) endInput.value = values[1];
-        row.querySelector('.journey-energy-value').textContent = `${values[0]} → ${values[1]}`;
-      });
-    };
-    container.querySelectorAll('input').forEach((input) => input.addEventListener('input', refresh));
-    refresh();
-  }
   function applyIntentionInterpretation(interpreted, { announce = true } = {}) {
+    interpreted = reconcileInterpretedGenreAuthority(
+      interpreted,
+      intentionVocabulary(),
+      interpreted.text || $('#set-intention').value,
+    );
     const panel = $('#set-intention-interpretation');
     panel.hidden = false;
     panel.dataset.source = interpreted.text || '';
@@ -257,10 +206,12 @@ export function createSetBuilderFeature({
     $('#set-intention-preferred').value = (interpreted.preferred || []).join(', ');
     $('#set-intention-avoided').value = (interpreted.avoided || []).join(', ');
     $('#set-intention-drift').value = interpreted.drift || 'moderate';
+    if ($('#set-allow-related-genres'))
+      $('#set-allow-related-genres').checked = (interpreted.drift || 'none') !== 'none';
     if (interpreted.vibe) $('#set-vibe').value = interpreted.vibe;
     if (interpreted.curve) $('#set-curve').value = interpreted.curve;
     renderFallbackPolicy(interpreted.fallbackPolicy || DEFAULT_SET_FALLBACK_POLICY);
-    if (interpreted.journey) renderJourney(interpreted.journey);
+    if (interpreted.journey) journeyReview.render(interpreted.journey, { confirmed: !announce });
     intentionController.showProvider({
       available: interpreted.provider !== 'offline',
       provider: interpreted.provider,
@@ -274,8 +225,7 @@ export function createSetBuilderFeature({
           : interpreted.provider === 'openai'
             ? `Cloud AI${model ? ` · ${model}` : ''}`
             : 'offline rules';
-      $('#set-intention-status').textContent =
-        `Interpreted with ${source}. Found ${(interpreted.required || []).length} requirement${(interpreted.required || []).length === 1 ? '' : 's'}, ${(interpreted.preferred || []).length} preference${(interpreted.preferred || []).length === 1 ? '' : 's'}, and ${(interpreted.avoided || []).length} limit${(interpreted.avoided || []).length === 1 ? '' : 's'}. Edit anything before generating.`;
+      $('#set-intention-status').textContent = intentionAuthoritySummary(interpreted, source);
     }
   }
   function selectedSetGenres() {
@@ -383,6 +333,7 @@ export function createSetBuilderFeature({
   }
   function setBrief() {
     const authoringMode = workflow.briefMode();
+    const identity = currentIntention();
     const structuredGenres = resolveStructuredGenreFilters(authoringMode, {
       genres: selectedSetGenres(),
       detailedGenres: selectedSetDetailedGenres(),
@@ -401,7 +352,8 @@ export function createSetBuilderFeature({
       length: Number($('#set-length').value),
       genres: structuredGenres.genres,
       detailedGenres: structuredGenres.detailedGenres,
-      excludedGenres: structuredGenres.excludedGenres,
+      excludedGenres:
+        authoringMode === SET_BRIEF_MODES.AI ? [...(identity.excludedGenres || [])] : structuredGenres.excludedGenres,
       genreWeights: structuredGenres.weights,
       genreFlow: $('#set-genre-flow').value,
       vibe: $('#set-vibe').value,
@@ -413,7 +365,7 @@ export function createSetBuilderFeature({
       timing: $('#set-timing').value,
       edits: $('#set-edits').value,
       minimumHealth: Number($('#set-minimum-health').value || 65),
-      identity: currentIntention(),
+      identity,
     };
   }
   function setCandidateScore(
@@ -517,7 +469,7 @@ export function createSetBuilderFeature({
   function setVocalProfile(track) {
     return track.intro || track.outro || track.stem_reliability != null ? vocalProfile(track) : 'mixed';
   }
-  function eligibleSetTracks(brief) {
+  function eligibleSetTracks(brief, { deduplicate = true } = {}) {
     const eligible = state.library.filter((track) => {
       const bpm = Number(track.bpm || 0);
       const id = setTrackId(track);
@@ -552,13 +504,17 @@ export function createSetBuilderFeature({
         timingEligible: brief.timing === 'all' || timingProfile(track) === brief.timing,
       });
     });
-    return deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds]));
+    return deduplicate
+      ? deduplicateSetRecordings(eligible, new Set([...state.requiredIds, ...state.lockedIds]))
+      : eligible;
   }
   function setPlanSnapshot() {
     return { ...snapshotSetPlan(state, setTrackId), planningReceipt: planningSession?.receipt() || null };
   }
   function restoreSetSnapshot(snapshot, render = true) {
-    restoreSetPlan(state, snapshot, state.library, setTrackId);
+    const previousReviews = new Map(state.trackReviews);
+    restoreSetPlan(state, snapshot, state.library, setTrackId, setRecordingKey);
+    void trackDecisions?.reconcile(previousReviews, state.trackReviews);
     if (Object.hasOwn(snapshot || {}, 'planningReceipt')) planningSession?.setReceipt(snapshot.planningReceipt);
     if (render) renderSetPlan();
   }
@@ -578,8 +534,8 @@ export function createSetBuilderFeature({
   function redoSetEdit() {
     if (editCommands.redo()) updateSetHistoryButtons();
   }
-  let transitionEditor;
-  let planningSession;
+  let transitionEditor, planningSession, planView, trackDecisions, manualCuration;
+  const renderSetPlan = () => planView?.renderSetPlan();
   const feedbackController = createSetBuilderFeedback({
     state,
     dom: { $, $$, escapeHtml },
@@ -660,6 +616,7 @@ export function createSetBuilderFeature({
       intentionEvaluation,
       setCandidateScore,
       setCatalogTrackId,
+      setRecordingKey,
       setTrackId,
       songEnergy,
       targetSetEnergy,
@@ -671,6 +628,13 @@ export function createSetBuilderFeature({
       advancePlanRevision: () => advanceSetPlanRevision(state),
       eligibleSetTracks,
       pushSetHistory,
+      requireUniquePlan: (plan, source) =>
+        requireUniqueSetPlan(plan, {
+          preferredTrackIds: new Set([...state.lockedIds, ...state.requiredIds]),
+          trackId: setTrackId,
+          recordingKey: setRecordingKey,
+          source,
+        }),
       renderSetPlan: () => renderSetPlan(),
       resetSetReviewDraft,
       restoreSetSnapshot,
@@ -688,7 +652,29 @@ export function createSetBuilderFeature({
     regenerateUnlocked,
     renderSetProposals,
   } = planningSession;
-  const planView = createSetPlanView({
+  trackDecisions = createTrackDecisionWorkflow({
+    state,
+    api: setBuilderApi,
+    dom: { $, escapeHtml },
+    music: { compatibility, setTrackId, setRecordingKey, trackMatchesIntendedGenre },
+    policy: {
+      eligibleSetTracks: (brief) => eligibleSetTracks(brief, { deduplicate: false }),
+      setCandidateScore,
+    },
+    lifecycle: {
+      advancePlanRevision: () => advanceSetPlanRevision(state),
+      pushSetHistory,
+      renderSetPlan,
+      setBrief,
+    },
+    preference: {
+      context: () => $('#set-vibe')?.value || 'balanced',
+      features: feedbackController.preferenceFeatures,
+      setIdentity: () => ({ setId: state.activeSavedSetId || state.draftId, revisionId: state.planRevision?.id || '' }),
+      refresh: loadPreferenceProfile,
+    },
+  });
+  planView = createSetPlanView({
     state,
     dom: { $, $$, escapeHtml },
     ui: {
@@ -698,6 +684,7 @@ export function createSetBuilderFeature({
       inferDescriptorEditor,
       bindCompactAudio,
       compactAudioMarkup,
+      stopCompactAudio,
     },
     music: {
       compatibility,
@@ -725,6 +712,7 @@ export function createSetBuilderFeature({
       setVocalProfile,
       targetSetEnergy,
       trackIdentity,
+      intendedGenreForPosition, trackGenreMatchEvidence,
       trackMatchesSetDetailedGenre,
       trackMatchesSetGenre,
     },
@@ -735,14 +723,21 @@ export function createSetBuilderFeature({
       pushSetHistory,
       recordPreference,
       regenerateUnlocked,
+      renderManualCuration: () => manualCuration?.render(),
       renderSetProposals,
       setBrief,
       setPlanSnapshot,
       updateSetHistoryButtons,
     },
-    review: { trackReviewDraft, transitionReviewDraft },
+    review: { ...trackDecisions, transitionReviewDraft },
   });
-  const { addSetTrack, renderSetPlan, renderSetRules } = planView;
+  const { addSetTrack, renderSetRules } = planView;
+  manualCuration = createManualCurationController({
+    state, dom: { $, escapeHtml }, ui: { bindCompactAudio, compactAudioMarkup }, transitions: { improveSetOrder, setHealth },
+    music: { energyBand, formatLibraryKey, libraryRoles, songEnergy, timingProfile, vocalProfile: setVocalProfile },
+    policy: { setCandidateScore, setRecordingKey, setTrackId, targetSetEnergy, trackIdentity },
+    lifecycle: { advancePlanRevision: () => advanceSetPlanRevision(state), confirmAction, pushSetHistory, renderSetPlan, resetWorkspace: () => resetSetBuilderWorkspace(state), setBrief, setPlanningReceipt: (receipt) => planningSession.setReceipt(receipt) },
+  });
   const savedSetController = createSavedSetController({
     state,
     dom: { $, $$, option, escapeHtml, notify },
@@ -815,6 +810,7 @@ export function createSetBuilderFeature({
     await loadSetReviewReport();
     await loadAIObservability();
     const catalog = await setBuilderApi.catalog();
+    state.catalogVocabulary = catalog.genre_vocabulary || [];
     const identities = identityStore();
     state.library = (catalog.tracks || []).map((item) => {
       const song = item.analysis || {};
@@ -834,11 +830,13 @@ export function createSetBuilderFeature({
         _recordingCode: item.recording_code || '',
         _versionCode: item.version_code || '',
         _descriptors: item.descriptors || [],
+        _playlistIdentity: item.playlist_identity || [],
         _externalRating: item.external_rating || null,
       };
       track._manualIdentity = [
         ...new Set([
           ...(track._descriptors || []).map((descriptor) => descriptor.value),
+          ...(track._playlistIdentity || []).map((tag) => tag.value),
           ...(identities[setTrackId(track)] || []),
         ]),
       ];
@@ -890,7 +888,7 @@ export function createSetBuilderFeature({
     renderExcludedSetGenres();
     renderSavedSets();
     renderSetRules();
-    if (state.plan.length) renderSetPlan();
+    if (state.plan.length || state.manualCurationActive) renderSetPlan();
   }
   function bindSetBuilder() {
     if (state.bound) return;
@@ -902,10 +900,12 @@ export function createSetBuilderFeature({
         button = $('#set-generate'),
         briefMode = workflow.briefMode(),
         mode = workflow.syncPlanningMode();
-      button.disabled = true;
+      const restoreAction = beginButtonAction(button, 'Building set…');
       try {
+        if (briefMode === SET_BRIEF_MODES.CURATE) return void (await manualCuration.start());
+        state.manualCurationActive = false;
         if (briefMode === SET_BRIEF_MODES.AI && !intentionText) {
-          throw new Error('Describe the set you want, or switch to Build manually.');
+          throw new Error('Describe the set you want, or switch to Configure the journey.');
         }
         if (
           briefMode === SET_BRIEF_MODES.AI &&
@@ -919,6 +919,11 @@ export function createSetBuilderFeature({
           } finally {
             progressView.finishJourney();
           }
+        }
+        if (briefMode === SET_BRIEF_MODES.AI && $('#set-journey-preview').dataset.confirmed !== 'true') {
+          $('#set-builder-message').textContent =
+            'Review and confirm the planned journey before choosing tracks. Your edits are preserved.';
+          return;
         }
         progressView.startTrackPlanning(mode);
         button.textContent = mode === 'ai-planned' ? 'AI planning tracks…' : 'Building and optimizing…';
@@ -941,8 +946,13 @@ export function createSetBuilderFeature({
       } finally {
         progressView.finishJourney();
         progressView.finishTrackPlanning();
-        button.disabled = false;
-        button.textContent = 'Build this set';
+        restoreAction();
+        workflow.syncPlanningMode();
+        if (state.manualCurationActive && workflow.briefMode() === SET_BRIEF_MODES.CURATE) {
+          button.textContent = 'Go to catalog';
+          button.setAttribute('aria-label', 'Go to manual catalog');
+        }
+        journeyReview.syncBuildAvailability();
         $('#set-cancel-planning').hidden = true;
       }
     };
@@ -960,17 +970,16 @@ export function createSetBuilderFeature({
         $('#set-builder-message').textContent = 'Describe the set first, then interpret it.';
         return;
       }
-      button.disabled = true;
-      button.textContent = 'Planning journey…';
+      const restoreAction = beginButtonAction(button, 'Planning journey…');
       progressView.startJourney();
       try {
         applyIntentionInterpretation(await intentionController.interpretAndPlan(text));
       } finally {
         progressView.finishJourney();
-        button.disabled = false;
-        button.textContent = 'Review set direction';
+        restoreAction();
       }
     };
+    journeyReview.bind({ onRegenerate: () => $('#interpret-set-intention').click() });
     $$('[name="set-brief-mode"]').forEach((input) => {
       input.addEventListener('change', () => workflow.applyBriefMode(input.value));
     });
@@ -979,8 +988,8 @@ export function createSetBuilderFeature({
         workflow.syncPlanningMode();
         $('#set-builder-message').textContent =
           input.value === SET_TRACK_PLANNERS.AI
-            ? 'AI will choose and order tracks from a validated catalog candidate pool.'
-            : 'Compatibility rules will choose and order tracks without an AI planning call.';
+            ? 'AI will rank and order validated catalog tracks. Compatibility checks still verify the result.'
+            : 'Rules will rank tracks by genre, BPM, key, energy, and constraints without an AI planning call.';
       });
     });
     const briefName = $('#set-name'),
@@ -1109,7 +1118,6 @@ export function createSetBuilderFeature({
       }
     };
   }
-
   return { loadSetBuilder };
 }
 import { SetPlanningCanceled } from './planning-client.js';
@@ -1118,16 +1126,15 @@ import { createClassicSetPlanner, optimizePlanOrder } from './classic-planner.js
 import { createSetEditCommands } from './commands.js';
 import { createSetBuilderFeedback } from './feedback.js';
 import { createSetPlanView } from './plan-view.js';
+import { createManualCurationController } from './manual-curation.js';
 import { createSetPlanningSession } from './planning-session.js';
+import { requireUniqueSetPlan } from './plan-integrity.js';
 import { createSavedSetController } from './saved-sets.js';
-import {
-  advanceSetPlanRevision,
-  createSetBuilderStore,
-  restoreSetPlan,
-  snapshotSetPlan,
-} from './state.js';
+import { advanceSetPlanRevision, createSetBuilderStore, resetSetBuilderWorkspace, restoreSetPlan, snapshotSetPlan } from './state.js';
+import { createTrackDecisionWorkflow } from './track-decisions.js';
 import { createSetTransitionEditor } from './transition-editor.js';
 import { createSetBuilderResetController } from './workspace-reset.js';
+import { createTrackIdentityStore } from './track-identity-store.js';
 import { useFrontendServices } from '../../core/frontend-services.js';
 import {
   SET_PROPOSAL_STRATEGIES,
@@ -1139,10 +1146,5 @@ import {
   journeyEvidenceLabel,
   setProposalMarkup,
 } from './view-model.js';
-export {
-  SET_PROPOSAL_STRATEGIES,
-  intentionProviderView,
-  journeyDurationStatus,
-  journeyEnergyRange,
-} from './view-model.js';
+export { SET_PROPOSAL_STRATEGIES, intentionProviderView, journeyDurationStatus, journeyEnergyRange } from './view-model.js';
 export { createSetBuilderStore, createSetBuilderStore as createSetBuilderState } from './state.js';

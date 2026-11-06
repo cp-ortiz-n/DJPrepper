@@ -197,6 +197,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
             "audioextender/persistence/catalog/analysis.py": 90,
             "frontend/app.js": 918,
             "frontend/features/set-builder/index.js": 1150,
+            "frontend/features/set-builder/journey-review.js": 275,
             "frontend/features/set-builder/feedback.js": 275,
             "frontend/features/set-builder/planning-session.js": 475,
             "frontend/features/set-builder/transition-editor.js": 1100,

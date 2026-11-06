@@ -1,4 +1,7 @@
-export function optimizePlanOrder(plan, { fitness, isFixed = () => false, maximumPasses = 16 }) {
+export function optimizePlanOrder(
+  plan,
+  { fitness, isFixed = () => false, canSwap = () => true, maximumPasses = 16 },
+) {
   const improved = [...plan];
   let current = fitness(improved);
   for (let pass = 0; pass < Math.min(maximumPasses, Math.max(1, improved.length)); pass += 1) {
@@ -8,6 +11,7 @@ export function optimizePlanOrder(plan, { fitness, isFixed = () => false, maximu
       if (isFixed(improved[left], left)) continue;
       for (let right = left + 1; right < improved.length; right += 1) {
         if (isFixed(improved[right], right)) continue;
+        if (!canSwap(improved[left], left, improved[right], right)) continue;
         [improved[left], improved[right]] = [improved[right], improved[left]];
         const score = fitness(improved);
         [improved[left], improved[right]] = [improved[right], improved[left]];

@@ -895,7 +895,13 @@ without replacing the technical safety score.
     direction, sends the base revision and section-aware locks, preserves hard
     required/excluded and recording-family rules, reports the revision delta,
     and restores the entire prior revision through Undo.
-  - [ ] Next: Slice D — durable reject-and-replace.
+  - [x] Slice D completed 2026-10-26: **Keep** and **Reject & replace** now save
+    idempotent per-track evidence; rejection has explicit reason and
+    version/family scope, chooses a validated same-section replacement, labels
+    the result, survives saved-set reload, and reconciles the durable event with
+    Undo/Redo. Locked and required tracks are guarded, and an unresolved
+    rejection blocks Save/Export while offering Retry.
+  - [ ] Next: Slice E — editable direction lifecycle.
 
 ## Rekordbox track-rating synchronization
 

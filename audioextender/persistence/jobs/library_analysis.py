@@ -26,8 +26,17 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
             ratings = connection.execute(
                 "SELECT COUNT(*), COALESCE(MAX(synced_at),'') FROM external_track_ratings"
             ).fetchone()
+            playlists = connection.execute(
+                "SELECT COUNT(*), COALESCE(MAX(added_at),'') FROM downloaded_track_playlists"
+            ).fetchone()
         return json.dumps(
-            {"jobs": list(jobs), "tracks": list(tracks), "ratings": list(ratings), "indexed": indexed},
+            {
+                "jobs": list(jobs),
+                "tracks": list(tracks),
+                "ratings": list(ratings),
+                "playlists": list(playlists),
+                "indexed": indexed,
+            },
             separators=(",", ":"),
         )
 
@@ -310,7 +319,10 @@ class LibraryAnalysisRepositoryMixin(RepositoryMixinBase):
                         'confidence', descriptors.confidence,
                         'updated_at', descriptors.updated_at))
                      FROM downloaded_track_descriptors descriptors
-                     WHERE descriptors.track_id=downloaded.id) AS descriptors_json
+                     WHERE descriptors.track_id=downloaded.id) AS descriptors_json,
+                    (SELECT json_group_array(playlists.playlist_name)
+                     FROM downloaded_track_playlists playlists
+                     WHERE playlists.track_id=downloaded.id) AS playlists_json
                     FROM library_search_index idx
                     JOIN jobs ON jobs.id = idx.job_id
                     LEFT JOIN downloaded_tracks downloaded ON downloaded.id = idx.downloaded_id

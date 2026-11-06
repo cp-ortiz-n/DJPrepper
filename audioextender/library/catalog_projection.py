@@ -20,7 +20,7 @@ class CatalogProjectionPublisher:
     catalog_path: Callable[[], Path]
     memory_cache: dict[str, Any]
     memory_cache_lock: Any
-    schema_version: int = 7
+    schema_version: int = 8
     _publication_lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
     def signature(self) -> tuple[tuple[tuple[int, int], tuple[int, int]], str]:
@@ -35,11 +35,10 @@ class CatalogProjectionPublisher:
         return signature, serialized
 
     def publish(self) -> tuple[tuple[int, int], tuple[int, int]]:
-        """Remove stale state, rebuild both projections, and publish their signature."""
+        """Atomically replace projections while retaining the last known-good file."""
         with self._publication_lock:
             with self.memory_cache_lock:
                 self.memory_cache.clear()
-            self.catalog_path().unlink(missing_ok=True)
             self.rebuild()
             signature, serialized = self.signature()
             self.repository().set_system_state("library_search_index_signature", serialized)

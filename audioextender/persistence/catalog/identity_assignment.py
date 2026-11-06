@@ -6,8 +6,10 @@ import sqlite3
 from dataclasses import dataclass
 
 from audioextender.library.recording_identity import (
+    canonical_title_key,
     format_family_code,
     identity_key,
+    infer_recording_family,
     next_version_code,
     version_kind,
 )
@@ -20,6 +22,49 @@ class RecordingAssignment:
     version_code: str
     confidence: str
     reason: str
+
+
+def _inferred_family(
+    connection: sqlite3.Connection,
+    *,
+    title: str,
+    artist: str,
+    excluded_path: str = "",
+    excluded_id: int | None = None,
+) -> tuple[sqlite3.Row, str, str] | None:
+    """Find the strongest safe metadata family without broad fuzzy matching."""
+    title_key = canonical_title_key(title, artist)
+    if not title_key:
+        return None
+    rows = connection.execute(
+        """SELECT * FROM downloaded_tracks
+        WHERE recording_code!='' AND (?='' OR file_path!=?) AND (? IS NULL OR id!=?)
+        AND identity_reason!='Kept separate by user' AND identity_key LIKE ? ORDER BY id""",
+        (excluded_path, excluded_path, excluded_id, excluded_id, f"%|{title_key}"),
+    ).fetchall()
+    matches: list[tuple[int, int, sqlite3.Row, str, str]] = []
+    for row in rows:
+        inference = infer_recording_family(
+            artist,
+            title,
+            str(row["artist"] or ""),
+            str(row["title"] or ""),
+        )
+        if inference is None:
+            continue
+        matches.append(
+            (
+                inference.strength,
+                -int(row["id"]),
+                row,
+                inference.confidence,
+                inference.reason,
+            )
+        )
+    if not matches:
+        return None
+    _, _, row, confidence, reason = max(matches, key=lambda item: (item[0], item[1]))
+    return row, confidence, reason
 
 
 def assignment_for_upsert(
@@ -58,6 +103,15 @@ def assignment_for_upsert(
             if family:
                 confidence, reason = match_confidence, match_reason
                 break
+        if family is None:
+            inferred = _inferred_family(
+                connection,
+                title=title,
+                artist=artist,
+                excluded_path=resolved_path,
+            )
+            if inferred is not None:
+                family, confidence, reason = inferred
     if family:
         recording_code = str(family["recording_code"])
     elif current and current["recording_code"]:
@@ -101,6 +155,16 @@ def assignment_for_metadata_update(
         ).fetchone()
         if matched:
             recording_code = str(matched["recording_code"])
+        else:
+            inferred = _inferred_family(
+                connection,
+                title=title,
+                artist=artist,
+                excluded_id=track_id,
+            )
+            if inferred is not None:
+                matched, _, _ = inferred
+                recording_code = str(matched["recording_code"])
     wanted_kind = version_kind(title)
     current_kind = str(current["version_code"] or "ORG").rstrip("0123456789")
     version_code = str(current["version_code"] or "ORG")

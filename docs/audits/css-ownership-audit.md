@@ -90,3 +90,18 @@ entry point. Numbered owner fragments preserve the original cascade order, and
 candidates were removed; active attribute-based status tones remain supported.
 The entry order and removed-selector set are protected by a fast frontend test.
 
+## 2026-10-27 follow-up
+
+The Set Builder consistency pass removed a cross-feature ownership leak found
+after ARCH-013B: searchable-select controls were still defined by
+`features/set-builder/61-set-builder-workspace.css` even though Music Files,
+DJ Library, Reporting, Settings, and Set Builder all instantiate the component.
+The component now lives in `shared/11-shared-searchable-select.css`, after the
+shared collection foundation and before feature overrides.
+
+The same pass established shared readable-type tokens in the base layer and
+made Set Builder consume them through feature aliases. Primary, secondary,
+tertiary, and destructive Set Builder actions now use the shared button
+hierarchy in both static and dynamically rendered surfaces. A focused frontend
+test protects the shared owner, prevents independent micro-type declarations,
+and verifies the action hierarchy.

@@ -43,17 +43,22 @@ class WebCompositionContractTests(unittest.TestCase):
     def test_public_route_inventory_is_compatible(self) -> None:
         inventory = public_route_inventory()
         self.assertIn(("POST", "/api/set-builder/prepare-brief"), inventory)
+        self.assertIn(("GET", "/api/set-builder/catalog-version"), inventory)
+        self.assertIn(("GET", "/api/diagnostics/runtime"), inventory)
+        self.assertIn(("DELETE", "/api/set-builder/preferences/events/{event_id}"), inventory)
         self.assertIn(("GET", "/api/settings/rekordbox-ratings"), inventory)
         self.assertIn(("POST", "/api/settings/rekordbox-ratings/preview"), inventory)
         self.assertIn(("POST", "/api/settings/rekordbox-ratings/apply"), inventory)
         self.assertIn(("DELETE", "/api/settings/rekordbox-ratings"), inventory)
         inventory.remove(("POST", "/api/set-builder/prepare-brief"))
+        inventory.remove(("GET", "/api/set-builder/catalog-version"))
+        inventory.remove(("GET", "/api/diagnostics/runtime"))
         encoded = json.dumps(inventory, separators=(",", ":")).encode()
 
-        self.assertEqual(len(inventory), 163)
+        self.assertEqual(len(inventory), 164)
         self.assertEqual(
             hashlib.sha256(encoded).hexdigest(),
-            "5c25b9bf629277326253d22ddc20b8f665ad28e9b86b13184a6902282d83d209",
+            "2b4371cacf61e86727ffdf90fc9d3a3c49c7ccbc24fe7c253a139ee9e06d2fe0",
             "Public route inventory changed:\n" + json.dumps(inventory, indent=2),
         )
 
@@ -109,6 +114,17 @@ class WebCompositionContractTests(unittest.TestCase):
             self.assertEqual(response.headers["cache-control"], "no-store")
             conditional = self.client.get(path, headers={"If-None-Match": response.headers["etag"]})
             self.assertEqual(conditional.headers["cache-control"], "no-store")
+
+    def test_runtime_revision_is_an_immutable_no_store_startup_snapshot(self) -> None:
+        first = self.client.get("/api/diagnostics/runtime")
+        second = self.client.get("/api/diagnostics/runtime")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.headers["cache-control"], "no-store")
+        self.assertEqual(first.json(), second.json())
+        self.assertRegex(first.json()["revision"], r"^[0-9a-f]{64}$")
+        self.assertEqual(first.json()["algorithm"], "sha256")
+        self.assertGreater(first.json()["source_files"], 0)
 
     def test_shell_versions_the_complete_local_module_graph_from_one_manifest(self) -> None:
         response = self.client.get("/")

@@ -64,6 +64,20 @@ drawer. Editing them marks the direction as changed and shows one explicit
 **Update generated set** action. A track rerun must not call intention
 interpretation or journey planning again unless the direction itself changed.
 
+The entry surface also exposes **Curate track by track** as a distinct authoring
+mode. It creates an empty running order and delegates catalog browsing to
+`manual-curation.js`. This mode does not manufacture a journey or overload the
+configured-journey path. `authoringMode` remains independent from generated
+track-planner selection, and durable records identify the path with
+`manual-curation`.
+
+Manual catalog retrieval is evidence-driven instead of genre-only. The search
+index composes title, artist, genres, durable descriptors, playlist identity,
+browser recovery tags, musical roles, and audio profiles. It does not rewrite
+canonical genres or duplicate candidate/recording policy. Explicit insertion
+passes through the shared recording-family integrity boundary before the plan
+is rendered or persisted.
+
 ### 2. Generated-set workspace
 
 After generation, replace the long form with a workspace containing:
@@ -81,6 +95,9 @@ genre, BPM, key, energy, match score, and visible state chips such as **Locked**
 **Kept**, **Rejected**, or **Changed**. The frequent actions are **Lock**,
 **Replace**, and **More**. Explanations, transition editing, identity tags,
 movement controls, ratings, and advanced metadata belong in the inspector.
+Playback remains directly available in compact mode through the shared preview
+engine, including play/pause, elapsed time, seeking, and mute. Rebuilding the
+running order stops the active preview so detached rows cannot keep playing.
 
 ### 3. Review and export
 
@@ -88,6 +105,10 @@ Keep overall listening notes and transition ratings as an optional final
 **Review & teach Set Builder** step. Track-level Keep/Reject actions must no
 longer depend on finding this final form. Export remains unavailable when the
 existing hard validation or mix-health release policy says the plan is unsafe.
+Draft persistence is independent from that release gate: every non-empty plan
+can be saved and resumed even when its health is low or a rejected track still
+needs replacement. The UI must explain that the draft was saved while export
+remains unavailable.
 
 ## Required behavior changes
 
@@ -140,19 +161,22 @@ Replace the ambiguous draft-only controls with a complete action:
 
 1. Selecting **Reject** opens a small confirmation panel with an optional
    reason and scope: this version or this recording family.
-2. The primary action is **Reject & replace**. A secondary **Reject and leave a
-   gap** action remains available under More.
+2. The primary action is **Reject & replace**. It stays inside the focused track
+   inspector rather than expanding every compact row.
 3. Persist the rejection with an idempotent event ID before mutating the plan.
 4. Mark the selected version/family unavailable for this plan revision and
    future reruns according to the chosen scope.
 5. Insert the highest-ranked validated alternative for the same section and
    recalculate adjacent transitions.
-6. Show **Rejected and replaced · feedback saved** with an Undo action.
+6. Show **Rejected and replaced · feedback saved** and use the workspace Undo
+   and Redo controls for the atomic plan-and-feedback decision.
 
 The replacement row should briefly label what changed. If no valid alternative
-exists, keep a visible empty slot with a useful explanation; do not silently
-restore the rejected track. If persistence or replacement fails, retain the
-original track and show a retryable error.
+exists, retain the original only as an explicit unresolved **Rejected · feedback
+saved** row, block Save/Export, and offer **Retry replacement** after constraints
+change. This is safer than introducing a fake empty-track object into scoring,
+transition, and export code. If persistence fails, retain the original track and
+show a retryable error.
 
 **Keep** becomes an immediate durable preference event and adds a visible Kept
 chip. It does not lock the track automatically: preference and plan structure
@@ -164,6 +188,20 @@ The AI-created journey remains fully editable. The compact timeline shows
 section name, duration, genres, character, purpose, and energy movement. **Edit
 direction** opens all fields in one drawer with validation and reset-to-AI
 controls.
+
+Exact genre requests are strict unless the DJ explicitly enables related
+genres. AI suggestions outside that boundary remain visible but unselected.
+Canonical genre aliases are data, not application constants. The frontend builds
+structured `{canonical, aliases, count}` entries from each catalog track's
+organized genre path and detailed genres. Both offline and provider-backed
+interpretation use that same request vocabulary; the backend normalizes it,
+prefers direct canonical matches, and otherwise uses catalog prevalence to
+resolve ambiguity. Legacy string vocabularies remain valid for exact matching.
+The one-pass preparation service revalidates that authority and repairs an empty
+model journey before it reaches the confirmation screen.
+New or edited journeys require **Confirm journey** before track selection; the
+confirmation gate checks section genres and total duration and becomes dirty
+again after any edit.
 
 After any edit:
 
@@ -266,6 +304,12 @@ and candidate-selection policy were not changed.
   delegates existing commands without changing their payloads.
 - [x] Verify desktop, narrow viewport, keyboard row navigation, inspector focus
   restoration, reduced motion, and warm-cache application startup.
+- [x] Keep the inspector in a bounded viewport drawer, dismiss it on outside
+  interaction or Escape, and close it before opening the transition editor.
+- [x] Expose running-order drag handles with before/after drop feedback,
+  keyboard reordering, undo integration, and locked-track protection.
+- [x] Keep transition-editor exit controls reachable through a sticky header,
+  bottom completion action, and Escape handling.
 
 Verification completed for this slice: the full repository quality gate, 451
 Python tests, 115 JavaScript tests, the catalog stability workflow, refreshed
@@ -304,10 +348,24 @@ entire prior revision with Undo. Musical scoring weights were not changed.
 
 ### Slice D — durable reject-and-replace
 
-- Add idempotent per-track review persistence.
-- Add reason/scope confirmation, validated replacement, visible saved state,
-  retry, and Undo.
-- Keep overall review and transition learning as the optional final step.
+- **Status: complete (2026-10-26).**
+- [x] Add idempotent per-track Keep/Reject persistence with stable event IDs.
+- [x] Add an accessible, responsive reason/scope dialog in the focused track
+  inspector without expanding compact rows.
+- [x] Select a same-section replacement from the existing hard-eligible pool,
+  preserve recording-family uniqueness, and recalculate affected transitions.
+- [x] Persist review state in saved plans and expose Kept, Replaced, and
+  unresolved Rejected receipts after rerender and reload.
+- [x] Retract and restore the durable preference event through serialized
+  Undo/Redo reconciliation.
+- [x] Guard locked and required tracks, allow incomplete drafts to be saved, and
+  block Export while a rejection has no valid replacement.
+- [x] Keep overall review and transition learning as the optional final step.
+
+Verification covers candidate exclusions and occupied recording families,
+idempotent persistence and retraction, Keep-versus-Lock separation, saved-set
+round trips, locked-track guidance, responsive presentation, WCAG 2A/2AA serious
+issues, automatic replacement, and Undo/Redo in the browser workflow.
 
 ### Slice E — editable direction lifecycle
 
@@ -327,6 +385,24 @@ entire prior revision with Undo. Musical scoring weights were not changed.
   stability, browser, and real-library listening gates.
 - Compare generation time and interaction count against the current workflow
   before calling the redesign complete.
+
+### Presentation consistency pass — complete (2026-10-27)
+
+- Centralized Set Builder label, caption, body, and title sizing on the shared
+  typography tokens instead of 178 independent micro-type declarations.
+- Applied the shared four-level button hierarchy to authoring, review,
+  regeneration, rejection, alternatives, track actions, and transition editing.
+- Added one reversible async-button state owner so saves, exports, reviews,
+  regeneration, journey planning, identity inference, and transition scoring
+  expose consistent disabled, `aria-busy`, accessible-label, success, and error
+  restoration behavior.
+- Moved searchable-select presentation out of Set Builder and into the shared
+  component layer used by all workspaces.
+- Preserved musical scoring, planning payloads, recording-family enforcement,
+  and saved-set schemas.
+- Added focused unit contracts plus browser coverage for regeneration failure,
+  restored action state, minimum action height, narrow-screen overflow,
+  keyboard focus, reduced motion, dialogs, and WCAG A/AA serious findings.
 
 ## Acceptance scenarios
 

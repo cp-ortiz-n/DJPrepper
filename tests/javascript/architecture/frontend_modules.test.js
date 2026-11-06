@@ -32,6 +32,7 @@ globalThis.document = {
 
 const musicFiles = await import('../../../frontend/features/music-files/index.js');
 const setBuilder = await import('../../../frontend/features/set-builder/index.js');
+const { trackGenreMatchEvidence } = await import('../../../frontend/features/set-builder/policy.js');
 const settings = await import('../../../frontend/features/settings/index.js');
 const shared = await import('../../../frontend/shared/shared-components.js');
 const requests = await import('../../../frontend/core/request-state-controller.js');
@@ -116,6 +117,7 @@ test('stylesheet entry point preserves explicit owner order without dead audit s
   assert.deepEqual(imports, [
     'core/00-base-shell.css',
     'shared/10-shared-collections.css',
+    'shared/11-shared-searchable-select.css',
     'features/processing/20-processing-media.css',
     'shared/21-shared-secondary-actions.css',
     'features/library/30-library-reporting.css',
@@ -128,6 +130,7 @@ test('stylesheet entry point preserves explicit owner order without dead audit s
     'features/reporting/70-reporting-analysis.css',
     'features/set-builder/61-set-builder-workspace.css',
     'features/set-builder/62-set-builder-shell.css',
+    'features/set-builder/63-set-builder-manual-curation.css',
     'features/settings/41-settings-secondary.css',
     'features/music-files/51-music-files-rows.css',
     'features/music-files/52-music-files-filters.css',
@@ -252,13 +255,29 @@ test('Set Builder interprets an intention into editable deterministic preference
   const result = setBuilder.interpretSetIntention(
     'Build a driving Latin electronic set with a Techno foundation. Favor Spanish vocals, dembow or Latin percussion for an Ecuadorian party crowd. Avoid generic instrumental Techno.',
   );
-  assert.equal(result.drift, 'moderate');
+  assert.equal(result.drift, 'none');
   assert.ok(result.preferred.includes('techno foundation'));
   assert.ok(result.preferred.includes('spanish vocals'));
   assert.ok(result.preferred.includes('dembow'));
   assert.ok(result.preferred.includes('ecuadorian party'));
   assert.deepEqual(result.avoided, ['generic instrumental techno']);
   assert.equal(result.fallbackPolicy.length, 5);
+});
+
+test('Set Builder requires explicit permission before broadening requested genres', () => {
+  const exact = setBuilder.interpretSetIntention('Create a Latin Techno set', ['Latin Techno', 'Techno']);
+  assert.equal(exact.drift, 'none');
+  assert.deepEqual(exact.requestedGenres, ['latin techno']);
+  assert.equal(
+    setBuilder.interpretSetIntention('Create a Latin Techno set and allow related genres', ['Latin Techno']).drift,
+    'moderate',
+  );
+  assert.deepEqual(
+    setBuilder.interpretSetIntention('Build a disco set', [
+      { canonical: 'Disco & Funk', aliases: ['Disco'], count: 14 },
+    ]).requestedGenres,
+    ['disco & funk'],
+  );
 });
 
 test('Set Builder derives identity separately from catalog genre', () => {
@@ -276,15 +295,80 @@ test('Set Builder derives identity separately from catalog genre', () => {
   assert.ok(tags.includes('ecuadorian party'));
 });
 
+test('Set Builder accepts playlist-derived compound identity without changing catalog genre', () => {
+  const track = {
+    _genre: 'Latin / Reggaeton',
+    _detailedGenre: 'Neoperreo, Guaracha',
+    _playlistIdentity: [
+      {
+        value: 'latin techno',
+        source: 'LATIN_bounce_TECHNO_Rave_Edition',
+        provenance: 'playlist',
+        confidence: 0.78,
+      },
+    ],
+  };
+
+  assert.equal(setBuilder.trackMatchesIntendedGenre(track, 'latin techno'), true);
+  assert.equal(setBuilder.trackMatchesIntendedGenre(track, 'latin house'), false);
+  assert.ok(setBuilder.inferredTrackIdentity(track).includes('latin techno'));
+  assert.deepEqual(trackGenreMatchEvidence(track, 'latin techno'), {
+    kind: 'estimated',
+    source: 'playlist',
+    text: 'Playlist/crate identity: latin techno from LATIN_bounce_TECHNO_Rave_Edition.',
+  });
+  assert.equal(
+    trackGenreMatchEvidence(
+      { _genre: 'Electronic / Techno / Techno', _detailedGenre: 'techno, minimal techno' },
+      'latin techno',
+    ),
+    null,
+  );
+});
+
+test('Set Builder playlist evidence works for unrelated catalog identities', () => {
+  for (const scenario of [
+    { identity: 'afro house', source: 'Cape Town Afro House Crate' },
+    { identity: 'salsa dura', source: 'Classic Salsa Dura Playlist' },
+    { identity: 'drum & bass', source: 'Drum and Bass Favorites' },
+  ]) {
+    const track = {
+      _genre: 'Other',
+      _detailedGenre: 'Unclassified',
+      _playlistIdentity: [
+        {
+          value: scenario.identity,
+          source: scenario.source,
+          provenance: 'playlist',
+          confidence: 0.78,
+        },
+      ],
+    };
+
+    assert.equal(setBuilder.trackMatchesIntendedGenre(track, scenario.identity), true, scenario.identity);
+    assert.deepEqual(trackGenreMatchEvidence(track, scenario.identity), {
+      kind: 'estimated',
+      source: 'playlist',
+      text: `Playlist/crate identity: ${scenario.identity} from ${scenario.source}.`,
+    });
+  }
+});
+
 test('Set Builder keeps a mixed chill party brief instead of dropping adjacent genres and context', () => {
   const result = setBuilder.interpretSetIntention(
     'Build a latin reggaeton and dembow mix that also includes some rab/rap, hip hop for a chill party, kickback. Some dancing will take place as well. Add something melodic in the beginning.',
+    [
+      { canonical: 'Reggaeton', aliases: ['Reggaeton'], count: 12 },
+      { canonical: 'Dembow', aliases: ['Dembow'], count: 8 },
+      { canonical: 'R&B & Soul', aliases: ['R&B', 'RAB'], count: 5 },
+      { canonical: 'Hip-Hop & Rap', aliases: ['Hip Hop', 'Rap'], count: 9 },
+    ],
   );
   for (const term of ['dembow', 'reggaeton', 'r&b', 'rap', 'hip hop', 'chill kickback', 'dance-friendly'])
     assert.ok(result.preferred.includes(term), term);
   assert.equal(result.vibe, 'balanced');
   assert.equal(result.opening, 'melodic');
-  assert.deepEqual(result.requestedGenres, ['reggaeton', 'dembow', 'r&b', 'hip hop', 'rap']);
+  assert.deepEqual(result.requestedGenres, ['reggaeton', 'dembow', 'r&b & soul', 'hip hop & rap']);
   assert.deepEqual(result.avoided, []);
 });
 
@@ -347,8 +431,8 @@ test('Set Builder recognizes future catalog vocabulary without another hard-code
     'Jersey Club',
     'Future Genre Not Requested',
   ]);
-  assert.ok(result.preferred.includes('jersey club'));
-  assert.ok(!result.preferred.includes('future genre not requested'));
+  assert.deepEqual(result.requestedGenres, ['jersey club']);
+  assert.ok(!result.requestedGenres.includes('future genre not requested'));
 });
 
 test('Settings controller preserves startup ordering', async () => {

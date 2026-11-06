@@ -33,7 +33,7 @@
   border-radius: 999px;
   color: var(--muted);
   background: #191c19;
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -55,7 +55,7 @@
   color: var(--ink);
   background: #202320;
   cursor: pointer;
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
   font-weight: 800;
   list-style: none;
 }
@@ -76,17 +76,11 @@
   border-radius: 8px;
   color: #dce7bc;
   background: #182016;
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
   font-weight: 750;
 }
 .set-running-order-workspace {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-  gap: 12px;
-  align-items: start;
-}
-.set-running-order-workspace:has(.set-track-inspector[hidden]) {
-  grid-template-columns: minmax(0, 1fr);
+  display: block;
 }
 .set-running-order-main {
   min-width: 0;
@@ -126,7 +120,8 @@
   color: #c1c4bb;
 }
 .set-result.compact-planning .set-track-title .compact-audio {
-  display: none;
+  display: grid;
+  width: min(100%, 320px);
 }
 .set-track-summary {
   display: flex;
@@ -134,11 +129,11 @@
   gap: 4px 10px;
   align-items: center;
   color: var(--muted);
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
 }
 .set-track-summary strong {
   color: var(--lime);
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
 }
 .set-track-summary strong.warning {
   color: #ffb45c;
@@ -177,11 +172,14 @@
   border: 1px solid var(--line);
   color: var(--muted);
   background: #202320;
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
 }
 .set-track-inspector {
-  position: sticky;
-  top: 88px;
+  position: fixed;
+  z-index: 80;
+  top: max(84px, env(safe-area-inset-top));
+  right: 16px;
+  width: min(380px, calc(100vw - 32px));
   max-height: calc(100vh - 112px);
   overflow: auto;
   border: 1px solid #4a5735;
@@ -202,7 +200,7 @@
 }
 .set-track-inspector-position {
   color: var(--lime);
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -214,7 +212,7 @@
 .set-track-inspector header p {
   margin: 3px 0 0;
   color: var(--muted);
-  font-size: 8px;
+  font-size: var(--set-type-caption, 8px);
 }
 .close-set-inspector {
   width: 30px;
@@ -278,11 +276,11 @@
   margin-right: auto;
 }
 .set-workspace-action-bar strong {
-  font-size: 9px;
+  font-size: var(--set-type-body, 9px);
 }
 .set-workspace-action-bar span {
   color: var(--muted);
-  font-size: 7px;
+  font-size: var(--set-type-label, 7px);
 }
 .set-workspace-action-bar button {
   width: auto;
@@ -294,13 +292,9 @@
   color: var(--lime);
 }
 @media (max-width: 1100px) {
-  .set-running-order-workspace {
-    grid-template-columns: 1fr;
-  }
   .set-track-inspector {
-    position: static;
-    max-height: none;
-    grid-row: 1;
+    top: 16px;
+    max-height: calc(100vh - 32px);
   }
   .set-table-head {
     display: none;

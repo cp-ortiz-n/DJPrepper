@@ -12,37 +12,91 @@ from typing import Any
 
 import httpx
 
+from audioextender.set_builder.genre_vocabulary import (
+    excluded_genre_mentions,
+    explicit_genre_mentions,
+    normalize_genre_term,
+    normalize_genre_vocabulary,
+    opening_genre_mentions,
+    resolve_catalog_genre,
+)
+
 logger = logging.getLogger("uvicorn.error")
 
 INTENTION_SCHEMA: dict[str, Any] = {
-    "type": "object", "additionalProperties": False,
+    "type": "object",
+    "additionalProperties": False,
     "properties": {
-        "required": {"type": "array", "description": "Concrete must-have musical traits; empty unless explicit.",
-                     "items": {"type": "string"}},
-        "preferred": {"type": "array", "description": "Concrete musical, crowd, venue, or identity preferences.",
-                      "items": {"type": "string"}},
-        "avoided": {"type": "array", "description": "Concrete traits the DJ explicitly limits or rejects.",
-                    "items": {"type": "string"}},
-        "requestedGenres": {"type": "array", "description": "Catalog genres directly requested.",
-                            "items": {"type": "string"}},
-        "optionalGenres": {"type": "array", "description": "Genres qualified by if available, some, or a little.",
-                           "items": {"type": "string"}},
-        "genreSequence": {"type": "array",
-                          "description": "Directly requested catalog genres in the order their sections should appear.",
-                          "items": {"type": "string"}},
+        "required": {
+            "type": "array",
+            "description": "Concrete must-have musical traits; empty unless explicit.",
+            "items": {"type": "string"},
+        },
+        "preferred": {
+            "type": "array",
+            "description": "Concrete musical, crowd, venue, or identity preferences.",
+            "items": {"type": "string"},
+        },
+        "avoided": {
+            "type": "array",
+            "description": "Concrete traits the DJ explicitly limits or rejects.",
+            "items": {"type": "string"},
+        },
+        "requestedGenres": {
+            "type": "array",
+            "description": "Catalog genres directly requested.",
+            "items": {"type": "string"},
+        },
+        "optionalGenres": {
+            "type": "array",
+            "description": "Genres qualified by if available, some, or a little.",
+            "items": {"type": "string"},
+        },
+        "genreSequence": {
+            "type": "array",
+            "description": "Directly requested catalog genres in the order their sections should appear.",
+            "items": {"type": "string"},
+        },
         "drift": {"type": "string", "enum": ["none", "low", "moderate", "wide"]},
-        "vibe": {"type": ["string", "null"],
-                 "enum": ["balanced", "dance-party", "warm-up", "peak-time", "melodic", "vocal-safe",
-                          "ambient", "closing", None]},
+        "vibe": {
+            "type": ["string", "null"],
+            "enum": [
+                "balanced",
+                "dance-party",
+                "warm-up",
+                "peak-time",
+                "melodic",
+                "vocal-safe",
+                "ambient",
+                "closing",
+                None,
+            ],
+        },
         "curve": {"type": ["string", "null"], "enum": ["rise", "peak-release", "waves", "steady", None]},
-        "opening": {"type": ["string", "null"],
-                    "description": "All explicitly requested opening traits, comma-separated when there are several."},
-        "ending": {"type": ["string", "null"],
-                   "description": "All explicitly requested ending traits, comma-separated when there are several."},
+        "opening": {
+            "type": ["string", "null"],
+            "description": "All explicitly requested opening traits, comma-separated when there are several.",
+        },
+        "ending": {
+            "type": ["string", "null"],
+            "description": "All explicitly requested ending traits, comma-separated when there are several.",
+        },
         "explanation": {"type": "string"},
     },
-    "required": ["required", "preferred", "avoided", "requestedGenres", "optionalGenres", "genreSequence",
-                 "drift", "vibe", "curve", "opening", "ending", "explanation"],
+    "required": [
+        "required",
+        "preferred",
+        "avoided",
+        "requestedGenres",
+        "optionalGenres",
+        "genreSequence",
+        "drift",
+        "vibe",
+        "curve",
+        "opening",
+        "ending",
+        "explanation",
+    ],
 }
 
 PLANNER_INSTRUCTIONS = (
@@ -53,60 +107,143 @@ PLANNER_INSTRUCTIONS = (
     "optionalGenres. "
     "Required, preferred, and avoided must contain concrete requested traits, never schema field names or generic "
     "placeholders. Do not infer an ending, venue, or crowd when none was stated. 'Varying waves' always means the "
-    "waves curve, not rise. Example: 'Latin House with a little Schranz if available; start melodic with varying "
-    "waves' produces requestedGenres=['Latin House'], optionalGenres=['Schranz'], opening='melodic', curve='waves', "
-    "required=[], and ending=null. "
+    "waves curve, not rise. Keep an explicitly requested catalog genre in requestedGenres, move only catalog genres "
+    "qualified by phrases such as 'a little' or 'if available' into optionalGenres, and keep positional style words "
+    "such as 'start melodic' in opening rather than treating them as genres. "
     "When the DJ requests multiple opening or ending traits, preserve every trait in that positional field, separated "
     "by commas; for example, 'begin organic and melodic' means opening='organic, melodic'. "
     "When the brief uses ordering language such as 'start with', 'from there', 'then', or 'end with', put every "
     "directly requested catalog genre in genreSequence in performance order. Genres joined by 'and' belong to the "
     "same neighboring section but still appear individually and in stated order. Do not put non-genre traits there. "
-    "Never invent catalog genres. Preserve cultural, rhythmic, vocal, energy, venue, and crowd intent as concise "
+    "A genre assigned 'to warm up' or 'for the opening' comes first even when the primary set genre was named before "
+    "it. A genre following 'no', 'without', 'avoid', or 'exclude' belongs in avoided and must never appear in "
+    "requestedGenres, optionalGenres, or genreSequence. "
+    "Never invent catalog genres. Default drift to none. Only use low, moderate, or wide drift when the DJ explicitly "
+    "asks for related genres, bridges, or open-genre exploration; naming one genre is not permission to broaden it. "
+    "Preserve cultural, rhythmic, vocal, energy, venue, and crowd intent as concise "
     "preferred descriptors. Return only the requested JSON schema."
 )
 
 RESERVED_PLACEHOLDERS = {
-    "genre", "requestedgenres", "optionalgenres", "opening", "opening style", "closing style", "ending", "curve",
-    "energy level", "rhythm", "vocal type", "venue", "venue intent", "crowd", "crowd intent", "optional genres",
-    "cultural context", "rhythmic variation", "vocal delivery", "energy transition", "venue specifics",
-    "invented genres", "genre misinterpretation", "overly specific cultural references",
+    "genre",
+    "requestedgenres",
+    "optionalgenres",
+    "opening",
+    "opening style",
+    "closing style",
+    "ending",
+    "curve",
+    "energy level",
+    "rhythm",
+    "vocal type",
+    "venue",
+    "venue intent",
+    "crowd",
+    "crowd intent",
+    "optional genres",
+    "cultural context",
+    "rhythmic variation",
+    "vocal delivery",
+    "energy transition",
+    "venue specifics",
+    "invented genres",
+    "genre misinterpretation",
+    "overly specific cultural references",
 }
 NON_GENRE_JOURNEY_TERMS = {
-    "ambient", "balanced", "closing", "dance party", "dark", "driving", "euphoric", "hypnotic",
-    "industrial", "melodic", "peak time", "party ready", "warm up", "vocal safe",
+    "ambient",
+    "balanced",
+    "closing",
+    "dance party",
+    "dark",
+    "driving",
+    "euphoric",
+    "hypnotic",
+    "industrial",
+    "melodic",
+    "peak time",
+    "party ready",
+    "warm up",
+    "vocal safe",
 }
 
 
 def _clean_term(value: Any) -> str:
-    return " ".join(re.sub(r"[^a-z0-9&]+", " ", str(value or "").strip().lower()).split())
+    return normalize_genre_term(value)
 
 
-def sanitize_interpretation(result: dict[str, Any], vocabulary: list[str], brief: str = "") -> dict[str, Any]:
+def _explicit_drift(brief: str) -> str:
+    """Return only the genre expansion level the DJ explicitly authorized."""
+    normalized = _clean_term(brief)
+    if re.search(r"\b(?:do not drift|no genre drift|strict genre|only this genre|direct genres only)\b", normalized):
+        return "none"
+    if re.search(r"\b(?:wide genre|open genre|genre agnostic|context over genre)\b", normalized):
+        return "wide"
+    if re.search(
+        r"\b(?:close variants|close genres|adjacent genres|related genres only|slight genre drift)\b",
+        normalized,
+    ):
+        return "low"
+    if re.search(
+        r"\b(?:allow related genres|allow genre bridges|musical bridges|genre bridges|broaden the genres|genre drift)\b"
+        r"|\ballow\b.{0,60}\bbridges\b",
+        normalized,
+    ):
+        return "moderate"
+    return "none"
+
+
+def _explicit_genre_mentions(brief: str, catalog: list[Any]) -> list[str]:
+    """Return explicit genres without treating a nested parent term as a second request."""
+    return explicit_genre_mentions(brief, catalog, excluded=NON_GENRE_JOURNEY_TERMS)
+
+
+def sanitize_interpretation(result: dict[str, Any], vocabulary: list[Any], brief: str = "") -> dict[str, Any]:
     """Reject schema-label hallucinations and canonicalize genres against the local catalog."""
     cleaned = dict(result)
     for field in ("required", "preferred", "avoided"):
         cleaned[field] = [
-            term for term in dict.fromkeys(_clean_term(value) for value in result.get(field, []))
+            term
+            for term in dict.fromkeys(_clean_term(value) for value in result.get(field, []))
             if term and term not in RESERVED_PLACEHOLDERS
         ]
-    catalog = sorted({_clean_term(value) for value in vocabulary if _clean_term(value)}, key=len, reverse=True)
     for field in ("requestedGenres", "optionalGenres", "genreSequence"):
         genres: list[str] = []
         for value in result.get(field, []):
-            raw = _clean_term(value)
-            match = next((term for term in catalog if term == raw or term in raw), "")
+            match = resolve_catalog_genre(value, vocabulary)
             if match and match not in genres:
                 genres.append(match)
         cleaned[field] = genres
     if brief:
-        normalized_brief = f" {_clean_term(brief)} "
-        explicit_genres = {
-            genre for genre in [*cleaned["requestedGenres"], *cleaned["optionalGenres"], *cleaned["genreSequence"]]
-            if f" {genre} " in normalized_brief and genre not in NON_GENRE_JOURNEY_TERMS
-        }
-        cleaned["genreSequence"] = sorted(
-            explicit_genres, key=lambda genre: normalized_brief.index(f" {genre} ")
-        )
+        excluded_genres = excluded_genre_mentions(brief, vocabulary)
+        explicit_genres = [
+            genre for genre in _explicit_genre_mentions(brief, vocabulary) if genre not in excluded_genres
+        ]
+        opening_genres = [genre for genre in opening_genre_mentions(brief, vocabulary) if genre in explicit_genres]
+        ordered_genres = [*opening_genres, *(genre for genre in explicit_genres if genre not in opening_genres)]
+        requested_by_model = set(cleaned["requestedGenres"])
+        optional_by_model = set(cleaned["optionalGenres"])
+        cleaned["optionalGenres"] = [genre for genre in explicit_genres if genre in optional_by_model]
+        cleaned["requestedGenres"] = [
+            genre for genre in explicit_genres if genre in requested_by_model or genre not in optional_by_model
+        ]
+        cleaned["genreSequence"] = ordered_genres
+        cleaned["openingGenres"] = opening_genres
+        cleaned["excludedGenres"] = excluded_genres
+        cleaned["avoided"] = list(dict.fromkeys([*cleaned["avoided"], *excluded_genres]))
+        for field in ("required", "preferred"):
+            cleaned[field] = [
+                term
+                for term in cleaned[field]
+                if resolve_catalog_genre(term, vocabulary) not in excluded_genres
+                and not any(term in genre or genre in term for genre in excluded_genres)
+            ]
+        cleaned["text"] = brief.strip()
+        cleaned["drift"] = _explicit_drift(brief)
+    elif cleaned.get("drift") not in {"none", "low", "moderate", "wide"}:
+        cleaned["drift"] = "none"
+    cleaned.setdefault("excludedGenres", [])
+    cleaned.setdefault("openingGenres", [])
     return cleaned
 
 
@@ -147,20 +284,32 @@ class IntentionPlanner:
                 )
             except (httpx.HTTPError, ValueError):
                 pass
-        return {"available": local_available or bool(self.api_key),
-                "provider": "ollama" if local_available else "openai" if self.api_key else "offline",
-                "model": self.ollama_model if local_available else self.model if self.api_key else None,
-                "local_runtime": local_available, "installed_local_models": local_models}
+        return {
+            "available": local_available or bool(self.api_key),
+            "provider": "ollama" if local_available else "openai" if self.api_key else "offline",
+            "model": self.ollama_model if local_available else self.model if self.api_key else None,
+            "local_runtime": local_available,
+            "installed_local_models": local_models,
+        }
 
-    def interpret(self, brief: str, catalog_vocabulary: list[str], *,
-                  schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
-        vocabulary = sorted({str(value).strip() for value in catalog_vocabulary if str(value).strip()})[:800]
+    def interpret(
+        self,
+        brief: str,
+        catalog_vocabulary: list[Any],
+        *,
+        schema: dict[str, Any] | None = None,
+        instructions: str | None = None,
+    ) -> dict[str, Any]:
+        vocabulary = normalize_genre_vocabulary(catalog_vocabulary)[:800]
         errors: list[str] = []
         started = perf_counter()
         if self.provider in {"auto", "ollama"}:
             try:
-                result = (self._interpret_ollama(brief, vocabulary, schema=schema, instructions=instructions)
-                          if schema is not None else self._interpret_ollama(brief, vocabulary))
+                result = (
+                    self._interpret_ollama(brief, vocabulary, schema=schema, instructions=instructions)
+                    if schema is not None
+                    else self._interpret_ollama(brief, vocabulary)
+                )
                 logger.info(
                     "Set Builder AI response: provider=ollama model=%s elapsed_ms=%d vocabulary_terms=%d",
                     self.ollama_model,
@@ -179,8 +328,11 @@ class IntentionPlanner:
                     raise RuntimeError(errors[-1]) from error
         if self.provider in {"auto", "openai"} and self.api_key:
             try:
-                result = (self._interpret_openai(brief, vocabulary, schema=schema, instructions=instructions)
-                          if schema is not None else self._interpret_openai(brief, vocabulary))
+                result = (
+                    self._interpret_openai(brief, vocabulary, schema=schema, instructions=instructions)
+                    if schema is not None
+                    else self._interpret_openai(brief, vocabulary)
+                )
                 logger.info(
                     "Set Builder AI response: provider=openai model=%s elapsed_ms=%d vocabulary_terms=%d",
                     self.model,
@@ -193,15 +345,28 @@ class IntentionPlanner:
                 logger.warning("Set Builder AI provider failed: provider=openai model=%s error=%s", self.model, error)
         raise RuntimeError("; ".join(errors) or "No local or cloud AI provider is configured")
 
-    def _interpret_ollama(self, brief: str, vocabulary: list[str], *,
-                          schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
+    def _interpret_ollama(
+        self,
+        brief: str,
+        vocabulary: list[dict[str, Any]],
+        *,
+        schema: dict[str, Any] | None = None,
+        instructions: str | None = None,
+    ) -> dict[str, Any]:
         response = httpx.post(
             f"{self.ollama_endpoint}/api/chat",
-            json={"model": self.ollama_model, "stream": False, "think": False, "format": schema or INTENTION_SCHEMA,
-                  "keep_alive": "10m", "options": {"temperature": 0, "num_predict": 1600 if schema else 800},
-                  "messages": [{"role": "system", "content": instructions or PLANNER_INSTRUCTIONS},
-                               {"role": "user", "content": json.dumps({"brief": brief,
-                                                                         "catalog_vocabulary": vocabulary})}]},
+            json={
+                "model": self.ollama_model,
+                "stream": False,
+                "think": False,
+                "format": schema or INTENTION_SCHEMA,
+                "keep_alive": "10m",
+                "options": {"temperature": 0, "num_predict": 1600 if schema else 800},
+                "messages": [
+                    {"role": "system", "content": instructions or PLANNER_INSTRUCTIONS},
+                    {"role": "user", "content": json.dumps({"brief": brief, "catalog_vocabulary": vocabulary})},
+                ],
+            },
             timeout=90,
         )
         response.raise_for_status()
@@ -212,15 +377,31 @@ class IntentionPlanner:
         result.update(provider="ollama", model=self.ollama_model)
         return result
 
-    def _interpret_openai(self, brief: str, vocabulary: list[str], *,
-                          schema: dict[str, Any] | None = None, instructions: str | None = None) -> dict[str, Any]:
+    def _interpret_openai(
+        self,
+        brief: str,
+        vocabulary: list[dict[str, Any]],
+        *,
+        schema: dict[str, Any] | None = None,
+        instructions: str | None = None,
+    ) -> dict[str, Any]:
         response = httpx.post(
             self.endpoint,
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
-            json={"model": self.model, "store": False, "instructions": instructions or PLANNER_INSTRUCTIONS,
-                  "input": json.dumps({"brief": brief, "catalog_vocabulary": vocabulary}, ensure_ascii=False),
-                  "text": {"format": {"type": "json_schema", "name": "dj_set_intention", "strict": True,
-                                      "schema": schema or INTENTION_SCHEMA}}},
+            json={
+                "model": self.model,
+                "store": False,
+                "instructions": instructions or PLANNER_INSTRUCTIONS,
+                "input": json.dumps({"brief": brief, "catalog_vocabulary": vocabulary}, ensure_ascii=False),
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "dj_set_intention",
+                        "strict": True,
+                        "schema": schema or INTENTION_SCHEMA,
+                    }
+                },
+            },
             timeout=25,
         )
         response.raise_for_status()

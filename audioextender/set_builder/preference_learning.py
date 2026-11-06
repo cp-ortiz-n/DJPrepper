@@ -14,6 +14,7 @@ from typing import Any
 
 ACTION_WEIGHTS = {
     "keep": 1.0,
+    "reject": -2.0,
     "lock": 2.0,
     "save": 1.0,
     "export": 1.0,
@@ -101,6 +102,11 @@ class DJPreferenceService:
                     "trackId": track_id,
                     "context": str(raw.get("context") or "balanced").strip().casefold(),
                     "features": features,
+                    "reason": str(raw.get("reason") or "")[:200],
+                    "scope": str(raw.get("scope") or "version")[:30],
+                    "recordingKey": str(raw.get("recordingKey") or "")[:300],
+                    "setId": str(raw.get("setId") or "")[:200],
+                    "revisionId": str(raw.get("revisionId") or "")[:200],
                     "createdAt": str(raw.get("createdAt") or _now()),
                 }
             )
@@ -110,6 +116,16 @@ class DJPreferenceService:
         self.store.save(payload)
         context = str(events[0].get("context") or "balanced") if events else None
         return {"recorded": accepted, "profile": self.profile(context)}
+
+    def retract(self, event_id: str) -> dict[str, Any]:
+        """Idempotently remove one decision event so Undo also undoes learning."""
+        payload = self._payload()
+        retained = [event for event in payload["events"] if str(event.get("id")) != event_id]
+        retracted = len(retained) != len(payload["events"])
+        if retracted:
+            payload["events"] = retained
+            self.store.save(payload)
+        return {"retracted": retracted, "profile": self.profile()}
 
     def profile(self, context: str | None = None) -> dict[str, Any]:
         payload = self._payload()

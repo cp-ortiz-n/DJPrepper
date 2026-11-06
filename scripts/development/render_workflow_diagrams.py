@@ -178,7 +178,7 @@ DIAGRAMS = (
         (
             call("Create the brief", "Set Builder UI", "describe or build manually", "browser"),
             call("Interpret the journey", "Planning routes", "prepare-brief / plan-journey", "http"),
-            call("Review direction", "Set Builder UI", "edit sections and constraints", "browser"),
+            call("Review and confirm", "Set Builder UI", "strict genres + editable sections", "browser"),
             call("Retrieve candidates", "Planning service", "SetCandidateRetriever", "service"),
             call("Generate proposals", "Planner", "AI or deterministic planner", "service"),
             call("Validate and compare", "Policy", "SetPlanValidator + comparator", "service"),
@@ -187,7 +187,7 @@ DIAGRAMS = (
         ),
         (
             "Invalid or weaker AI proposal → select the validated deterministic baseline.",
-            "Regeneration → preserve locked tracks and restore the prior revision on failure.",
+            "Unrequested genre → keep it unselected until the DJ enables related genres.",
         ),
     ),
     Diagram(

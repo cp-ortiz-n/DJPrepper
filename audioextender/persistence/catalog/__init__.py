@@ -9,12 +9,14 @@ from audioextender.persistence.catalog.external_ratings import ExternalTrackRati
 from audioextender.persistence.catalog.metadata import TrackMetadataStateRepositoryMixin
 from audioextender.persistence.catalog.projections import TrackProjectionRepositoryMixin
 from audioextender.persistence.catalog.recording_families import RecordingFamilyRepositoryMixin
+from audioextender.persistence.catalog.recording_family_reassessment import RecordingFamilyReassessmentRepositoryMixin
 
 
 class TrackCatalogRepositoryMixin(
     TrackDescriptorRepositoryMixin,
     ExternalTrackRatingRepositoryMixin,
     TrackCoreRepositoryMixin,
+    RecordingFamilyReassessmentRepositoryMixin,
     RecordingFamilyRepositoryMixin,
     TrackProjectionRepositoryMixin,
     TrackMetadataStateRepositoryMixin,

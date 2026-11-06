@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import mimetypes
 import tempfile
 import threading
@@ -195,18 +196,7 @@ def _waveform(dependencies: JobMediaRouteDependencies, job_id: int, kind: str) -
         cache_hit = cached is not None
         dependencies.record_cache_result("waveform", cache_hit)
         if cached is None:
-            info = sf.info(path)
-            sample_window = min(2048, max(256, int(info.samplerate * 0.025)))
-            envelope = []
-            with sf.SoundFile(path) as audio_file:
-                positions = np.linspace(0, max(0, info.frames - sample_window), target_points, dtype=np.int64)
-                for position in positions:
-                    audio_file.seek(int(position))
-                    block = audio_file.read(sample_window, dtype="float32", always_2d=True)
-                    envelope.append(float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))) if block.size else 0.0)
-            scale = max(float(np.percentile(envelope, 98)), 1e-8) if envelope else 1.0
-            peaks = np.power(np.clip(np.asarray(envelope) / scale, 0.0, 1.0), 1.35).astype(np.float32)
-            duration = float(info.duration)
+            duration, peaks = _generate_waveform(path, target_points)
             cache.save_waveform(path, duration, peaks, target_points)
         else:
             duration, peaks = cached
@@ -272,6 +262,29 @@ def _waveform(dependencies: JobMediaRouteDependencies, job_id: int, kind: str) -
         "timeline": timeline,
         "cache": "hit" if cache_hit else "generated",
     }
+
+
+def _generate_waveform(path: Path, target_points: int) -> tuple[float, np.ndarray]:
+    """Build display peaks with one sequential pass over the audio file."""
+    info = sf.info(path)
+    block_frames = max(1, math.ceil(int(info.frames) / max(1, target_points)))
+    envelope: list[float] = []
+    with sf.SoundFile(path) as audio_file:
+        while True:
+            block = audio_file.read(block_frames, dtype="float32", always_2d=True)
+            if not block.size:
+                break
+            envelope.append(float(np.sqrt(np.mean(np.square(block, dtype=np.float64)))))
+    values = np.asarray(envelope or [0.0], dtype=np.float64)
+    if values.size != target_points:
+        values = np.interp(
+            np.linspace(0.0, 1.0, target_points),
+            np.linspace(0.0, 1.0, values.size),
+            values,
+        )
+    scale = max(float(np.percentile(values, 98)), 1e-8)
+    peaks = np.power(np.clip(values / scale, 0.0, 1.0), 1.35).astype(np.float32)
+    return float(info.duration), peaks
 
 
 def create_job_media_router(dependencies: JobMediaRouteDependencies) -> APIRouter:

@@ -145,10 +145,14 @@ class TrackMetadataMutationService:
                 genre=category,
                 album=playlist_name,
             )
+            stored_artwork_url = str(track.get("artwork_url") or "")
             artwork_path = str(track.get("artwork_path") or "")
-            if artwork_url and (artwork_url != str(track.get("artwork_url") or "") or not Path(artwork_path).is_file()):
-                artwork_path = self.dependencies.cache_track_artwork(artwork_url, destination)
-                if not artwork_path:
+            artwork_changed = artwork_url != stored_artwork_url
+            if artwork_url and (artwork_changed or not Path(artwork_path).is_file()):
+                cached_artwork_path = self.dependencies.cache_track_artwork(artwork_url, destination)
+                if cached_artwork_path:
+                    artwork_path = cached_artwork_path
+                elif artwork_changed:
                     raise ValueError("Artwork could not be downloaded. Use a direct Spotify or YouTube image URL.")
             metadata = {
                 **track,
@@ -160,7 +164,7 @@ class TrackMetadataMutationService:
                 "playlists": [playlist_name],
                 "file_path": str(destination.resolve()),
                 "filename": destination.name,
-                "artwork_url": artwork_url or str(track.get("artwork_url") or ""),
+                "artwork_url": artwork_url or stored_artwork_url,
                 "artwork_path": artwork_path,
             }
             self.dependencies.write_source_metadata(destination, metadata)

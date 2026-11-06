@@ -1,0 +1,114 @@
+/* Searchable select presentation shared by every feature workspace. */
+.select-search-input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  margin: 6px 0 0;
+  padding: 0 32px 0 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--control-radius);
+  color: var(--ink);
+  background-color: var(--panel-2);
+  background-image:
+    linear-gradient(45deg, transparent 50%, #b8bbb3 50%), linear-gradient(135deg, #b8bbb3 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 50%,
+    calc(100% - 10px) 50%;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  font: inherit;
+  font-size: var(--type-title);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.select-search-input::placeholder {
+  color: #777b73;
+}
+.select-search-input:focus {
+  outline: 2px solid rgba(214, 255, 68, 0.24);
+  outline-offset: 1px;
+  border-color: var(--lime);
+}
+.select-search-input.no-results {
+  border-color: #b76b6b;
+}
+.select-search-input[hidden],
+.searchable-native-select {
+  display: none !important;
+}
+.has-searchable-select {
+  position: relative;
+}
+.has-searchable-select:focus-within {
+  z-index: 80;
+}
+.select-combobox-menu {
+  position: absolute;
+  z-index: 100;
+  left: 0;
+  right: 0;
+  max-height: min(320px, 55vh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin-top: 5px;
+  padding: 5px;
+  border: 1px solid #454940;
+  border-radius: var(--control-radius);
+  background: #181b18;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.48);
+}
+.select-combobox-menu[hidden] {
+  display: none;
+}
+.select-combobox-menu button {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  height: auto;
+  margin: 0;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  font-size: var(--type-title);
+  line-height: 1.3;
+}
+.select-combobox-menu button:hover,
+.select-combobox-menu button:focus,
+.select-combobox-menu button.active {
+  color: var(--ink);
+  background: #2a2e29;
+  outline: 0;
+}
+.select-combobox-menu button[aria-selected='true'] {
+  font-weight: 800;
+}
+.select-combobox-menu small {
+  display: block;
+  padding: 6px 9px 4px;
+  color: var(--muted);
+  font-size: var(--type-caption);
+}
+.downloaded-filters .select-search-input,
+.library-filters .select-search-input {
+  height: 48px;
+  min-height: 48px;
+  margin-top: 6px;
+  padding-left: 9px;
+  border-radius: 7px;
+  font-size: inherit;
+}
+.downloaded-filters select:focus-visible,
+.library-filters select:focus-visible,
+.report-toolbar select:focus-visible,
+.set-controls select:focus-visible,
+.settings-form select:focus-visible {
+  outline: 2px solid rgba(214, 255, 68, 0.24);
+  outline-offset: 1px;
+  border-color: var(--lime);
+}

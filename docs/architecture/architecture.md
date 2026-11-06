@@ -166,10 +166,11 @@ and historical library-job removal are owned by `audioextender/library/`.
 ## Set Builder intention planning
 
 Set Builder uses optional language-model boundaries to understand a DJ's
-natural-language brief and, in AI Planned mode, choose a running order from a
-server-controlled shortlist. The model never inspects audio or the unrestricted
-catalog, and every proposed order passes deterministic validation before it can
-reach the browser.
+natural-language brief and, with **AI-curated** track selection, choose a running
+order from a server-controlled shortlist. Brief authoring and track selection
+are independent choices in the interface. The model never inspects audio or the
+unrestricted catalog, and every proposed order passes deterministic validation
+before it can reach the browser.
 
 ```text
 Natural-language brief
@@ -226,11 +227,22 @@ DeterministicTransitionOptimizer (fallback plans)
 Catalog row IDs identify files and remain immutable. `recording_code` identifies
 the underlying song across related catalog rows, while `version_code` identifies
 the original, remix, edit, live, or other version. Import/rescan uses conservative
-canonical artist/title matching to assign the family; explicit **Keep separate**
-and manual family links are inference-locked. The Set Builder catalog projection
+canonical artist/title matching to assign the family. Forced reanalysis also
+reassesses an unlocked singleton family using an exact canonical title plus a
+shared named artist credit or stable source identity; it never performs broad
+fuzzy merging or splits an established family. Explicit **Keep separate** and
+manual family links are inference-locked. The Set Builder catalog projection
 serializes both codes, and `recordingKey` is the hard uniqueness key shared by
 candidate retrieval, proposal repair, deterministic fallback, validation, saved
-set recovery, and browser track editing.
+set recovery, browser track editing, durable persistence, and export.
+
+The projection also serializes one authoritative `genre_vocabulary` assembled
+from canonical genres, detailed aliases, playlist identity, and cultural
+descriptors. Intention and journey routes reload that server-owned vocabulary
+before sanitizing a brief, so an older browser catalog cannot erase a newly
+available identity and leave journey sections empty. The browser retains this
+vocabulary as explicit Set Builder state and merges it with track-derived terms;
+catalog and brief-preparation schema revisions invalidate older cached results.
 
 Candidate retrieval sends one representative per recording family to the model,
 so model context cannot contain two versions of the same song. The browser keeps
@@ -238,7 +250,10 @@ the complete catalog separately. `recording-identity.js` resolves the selected
 track's family and `plan-view.js` presents the remaining family members as
 explicit version substitutions ahead of different-song recommendations. A
 version choice replaces the current row atomically; it never appends a second
-family member to the running order.
+family member to the running order. `plan-integrity.js` is the pure browser
+policy boundary used by planning, manual edits, snapshot restoration, legacy
+saved-set recovery, and export; coordinators do not reimplement its selection
+rules.
 
 The route surface is:
 
@@ -254,6 +269,8 @@ The route surface is:
 - `GET /api/set-builder/ai-observability` for aggregate local outcomes, latency, repairs, and fallbacks.
 - `GET /api/set-builder/preferences` to inspect active and pending local signals.
 - `POST /api/set-builder/preferences/events` to record accepted or rejected track choices.
+- `DELETE /api/set-builder/preferences/events/{event_id}` to retract one
+  idempotent decision when workspace Undo restores the previous revision.
 - `PUT /api/set-builder/preferences/enabled` to pause or resume personalization.
 - `DELETE /api/set-builder/preferences` to reset signals without changing catalog data.
 - `GET /api/set-builder/reviews` for context-specific acceptance and calibration reports.
@@ -303,14 +320,22 @@ controlled by `AUDIOEXTENDER_LLM_PROVIDER`, `OLLAMA_HOST`,
 `OPENAI_SET_BUILDER_MODEL`.
 
 Only the text brief and a bounded catalog vocabulary list cross this boundary;
-audio and filesystem paths never do. AI Planned mode adds only the bounded
-candidate metadata needed for selection. OpenAI requests use `store: false`. Returned genres are
+audio and filesystem paths never do. AI-curated selection (persisted internally
+as `ai-planned`) adds only the bounded candidate metadata needed for selection.
+OpenAI requests use `store: false`. Returned genres are
 canonicalized against catalog vocabulary, schema labels and placeholders are
 removed, and malformed or unavailable provider responses fall through safely.
 Journey percentages are normalized to 100%, energy values are bounded to 1–10,
 unknown genres are rejected, and omission or reordering of required genre
-sequences triggers deterministic fallback. Edited journey sections directly
-control positional genre and energy targets in either safe generator. The
+sequences triggers deterministic fallback. A deterministic genre-policy pass
+also removes valid-but-unrequested catalog genres unless the DJ explicitly
+authorized drift. Removed genres remain disclosed as unselected suggestions.
+The browser's `journey-review.js` owner requires confirmation after generation
+or any edit and serializes the strict/related policy with the journey. Edited
+journey sections directly control positional genre and energy targets in either
+safe generator. `journey-allocation.js` owns rules-based section capacity,
+section-specific candidate pools, and scarcity reporting; the transition
+optimizer cannot exchange tracks across confirmed section boundaries. The
 candidate and validator services are provider-independent. `track_planner.py`
 owns provider adaptation, repair, and fallback; `planning_jobs.py` owns lifecycle
 and cancellation; `planning_store.py` atomically persists job/request state and
@@ -396,6 +421,7 @@ persist; terminal receipts replace that provisional statement with the outcome.
 | `track_core.py`       | Core downloaded-track CRUD, playlists, duplicates, and fingerprints    |
 | `track_descriptors.py` | Musical-identity descriptors, inference state, and vocabulary review  |
 | `recording_families.py` | Recording identities, version relationships, suggestions, and merge |
+| `recording_family_reassessment.py` | Conservative reanalysis repair for legacy family assignments |
 | `track_projections.py` | Catalog paging, filtering, search projections, and facets             |
 | `track_metadata_state.py` | Artwork, metadata, paths, import failures, and deletion state       |
 | `track_analysis_state.py` | Audio-quality and key-analysis result persistence                    |
@@ -482,6 +508,9 @@ library is offline. Never silently fall back to `~/Music` or a temporary folder.
 | `set-builder-feedback.js`        | Learned preferences, calibration reporting, personalization controls, and set-review submission               |
 | `set-builder-transition-editor.js` | Transition scoring, cue optimization, preview playback, and transition-editor lifecycle                    |
 | `set-builder-plan-view.js`       | Generated-plan rendering plus track rules, alternatives, identity edits, and row interactions                 |
+| `features/set-builder/track-decisions.js` | Focused composition boundary for per-track decision persistence and replacement behavior               |
+| `features/set-builder/track-decision-store.js` | Idempotent Keep/Reject events and serialized durable Undo/Redo reconciliation                   |
+| `features/set-builder/track-rejection.js` | Guided rejection scope, eligible replacement selection, and unresolved-state presentation             |
 | `set-builder-saved-sets.js`      | Durable saved-set recovery, persistence, loading, and CSV/M3U8 export                                         |
 | `set-builder-view-model.js`      | Escaped proposal, fallback-policy, journey-energy normalization, and AI-observability presentation models     |
 | `settings.js`                    | Settings forms, library health, relocation, backups, storage, and refresh coordination                        |

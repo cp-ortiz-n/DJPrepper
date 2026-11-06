@@ -28,6 +28,7 @@ def catalog_track(
     key: str = "8A",
     vocals: str = "mixed",
     descriptors: list[dict] | None = None,
+    playlist_identity: list[dict] | None = None,
     title: str | None = None,
     recording_code: str = "",
     version_code: str = "ORG",
@@ -38,6 +39,7 @@ def catalog_track(
         "genre": genre,
         "detailed_genre": detail,
         "descriptors": descriptors or [],
+        "playlist_identity": playlist_identity or [],
         "recording_code": recording_code,
         "version_code": version_code,
         "external_rating": {"source": "rekordbox", "rating": external_rating} if external_rating else None,
@@ -165,6 +167,78 @@ class SetCandidateRetrieverTests(unittest.TestCase):
             {"identity", "bridge", "fallback"},
         )
 
+    def test_strict_journey_excludes_unrequested_bridge_and_fallback_candidates(self) -> None:
+        tracks = [
+            catalog_track(1, Path("/missing/direct.wav"), genre="Electronic / Techno", detail="Latin Techno"),
+            catalog_track(2, Path("/missing/bridge.wav"), genre="Latin / House", detail="Latin House"),
+        ]
+        strict_journey = journey("Latin Techno")
+        strict_journey["genrePolicy"] = {"mode": "strict", "coreGenres": ["latin techno"]}
+        result = SetCandidateRetriever().retrieve(tracks, strict_journey, section_limit=4)
+        self.assertEqual([candidate["id"] for candidate in result["sections"][0]["candidates"]], ["downloaded:1"])
+        self.assertEqual(result["genrePolicy"], "strict")
+
+    def test_strict_journey_accepts_any_playlist_supported_identity_without_retagging_track(self) -> None:
+        for target, source in [
+            ("Afro House", "Cape Town Afro House Crate"),
+            ("Salsa Dura", "Classic Salsa Dura Playlist"),
+            ("Drum & Bass", "Drum and Bass Favorites"),
+        ]:
+            with self.subTest(target=target):
+                playlist_track = catalog_track(
+                    1,
+                    Path("/missing/playlist-track.wav"),
+                    genre="Electronic / Breaks",
+                    detail="Breaks",
+                    playlist_identity=[
+                        {
+                            "value": target.casefold(),
+                            "source": source,
+                            "provenance": "playlist",
+                            "confidence": 0.78,
+                        }
+                    ],
+                )
+                unrelated = catalog_track(
+                    2,
+                    Path("/missing/unrelated.wav"),
+                    genre="Electronic / Breaks",
+                    detail="Breaks",
+                    descriptors=[{"category": "sound", "value": "melodic", "confidence": 0.9}],
+                )
+                strict_journey = journey(target)
+                strict_journey["genrePolicy"] = {"mode": "strict", "coreGenres": [target.casefold()]}
+
+                result = SetCandidateRetriever().retrieve([playlist_track, unrelated], strict_journey, section_limit=4)
+
+                candidates = result["sections"][0]["candidates"]
+                self.assertEqual([candidate["id"] for candidate in candidates], ["downloaded:1"])
+                self.assertEqual(candidates[0]["genre"], "Electronic / Breaks")
+                self.assertEqual(candidates[0]["matchTier"], "identity")
+                self.assertTrue(any(source in reason["text"] for reason in candidates[0]["reasons"]))
+
+    def test_cultural_identity_matches_strict_sections_and_normalized_exclusions(self) -> None:
+        indian = catalog_track(
+            1,
+            Path("/missing/indian.wav"),
+            genre="International / Bollywood",
+            descriptors=[{"category": "cultural", "value": "Indian / South Asian", "confidence": 0.9}],
+        )
+        rap = catalog_track(2, Path("/missing/rap.wav"), genre="Hip-Hop & Rap", detail="Rap")
+        strict_journey = journey("Indian South Asian")
+        strict_journey["genrePolicy"] = {"mode": "strict"}
+
+        result = SetCandidateRetriever().retrieve(
+            [indian, rap],
+            strict_journey,
+            constraints={"excludedGenres": ["hip hop & rap"]},
+        )
+
+        candidates = result["sections"][0]["candidates"]
+        self.assertEqual([candidate["id"] for candidate in candidates], ["downloaded:1"])
+        self.assertEqual(candidates[0]["matchTier"], "identity")
+        self.assertEqual(result["sections"][0]["scarcity"]["identity"], 1)
+
     def test_caps_pool_and_limits_repeated_artists(self) -> None:
         tracks = [catalog_track(index, Path(f"/missing/{index}.wav"), artist="Same") for index in range(1, 7)]
         tracks.append(catalog_track(8, Path("/missing/8.wav"), artist="Different"))
@@ -208,6 +282,21 @@ class SetCandidateRetrieverTests(unittest.TestCase):
         self.assertEqual(candidates[0]["recordingKey"], "recording:DSC-000001")
         self.assertEqual(result["duplicateRecordingsCollapsed"], 1)
         self.assertEqual(result["collapsedTrackIds"], ["downloaded:2"])
+
+    def test_reports_a_conflict_when_multiple_protected_tracks_share_one_recording(self) -> None:
+        tracks = [
+            catalog_track(1, Path("/missing/original.wav"), recording_code="DSC-000001", version_code="ORG"),
+            catalog_track(2, Path("/missing/remix.wav"), recording_code="DSC-000001", version_code="RMX01"),
+        ]
+
+        result = SetCandidateRetriever().retrieve(
+            tracks,
+            journey("Reggaeton"),
+            locked_ids={"downloaded:1", "downloaded:2"},
+        )
+
+        self.assertEqual(len(result["duplicateProtectedIds"]), 1)
+        self.assertTrue(set(result["duplicateProtectedIds"]).issubset({"downloaded:1", "downloaded:2"}))
 
     def test_collapses_safe_metadata_variants_without_persisted_family(self) -> None:
         tracks = [

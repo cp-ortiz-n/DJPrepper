@@ -185,9 +185,9 @@
           <details id="downloaded-filter-panel" class="downloaded-filter-panel">
             <summary class="button secondary">Filters <b id="downloaded-filter-badge" hidden>0</b></summary>
             <div class="downloaded-filters">
-              <label>Parent genre<select id="downloaded-genre"><option value="all">All parent genres</option></select></label>
-              <label>Detailed genre<select id="downloaded-detailed-genre-filter"><option value="all">All detailed genres</option></select></label>
-              <label>Playlist<select id="downloaded-playlist"><option value="all">All playlists</option></select></label>
+              <label>Parent genre<select id="downloaded-genre" data-searchable><option value="all">All parent genres</option></select></label>
+              <label>Detailed genre<select id="downloaded-detailed-genre-filter" data-searchable><option value="all">All detailed genres</option></select></label>
+              <label>Playlist<select id="downloaded-playlist" data-searchable><option value="all">All playlists</option></select></label>
               <label>Analysis<select id="downloaded-analysis"><option value="all">All tracks</option><optgroup label="Track analysis"><option value="needs">Needs audio analysis</option><option value="complete">Analyzed</option><option value="active">Queued or analyzing</option><option value="failed">Analysis failed or canceled</option></optgroup><optgroup label="Needs attention"><option value="attention">All needing attention</option><option value="missing_title">Missing title</option><option value="missing_artist">Missing artist</option><option value="missing_genre">Missing genre tags</option><option value="missing_artwork">Missing artwork</option><option value="unmapped_genre">Unrecognized genre</option><option value="broad_genre">Needs a specific genre</option></optgroup></select></label>
               <label>Artwork<select id="downloaded-artwork"><option value="all">All artwork</option><option value="missing">Needs artwork</option><option value="available">Has artwork</option></select></label>
               <label>Audio quality<select id="downloaded-quality"><option value="all">All quality levels</option><option value="excellent">Excellent · 90–100</option><option value="good">Good · 75–89</option><option value="below-target">Needs review · below 75</option><option value="review">Review · 55–74</option><option value="poor">Poor · below 55</option><option value="unanalyzed">Not quality analyzed</option></select></label>
@@ -241,7 +241,7 @@
       </div>
       <details class="panel library-intelligence">
         <summary><div><p class="eyebrow">LIBRARY INTELLIGENCE</p><h2>Mix roles & compatible tracks</h2></div><span>Explore compatibility and track behavior</span></summary>
-        <div class="library-intelligence-body"><div class="intelligence-head"><p>Mix roles describe where a track may fit in a DJ set. Expand any role to learn what it means and browse every matching track.</p><label>Find compatible tracks for<select id="compatibility-source"><option value="">Choose a track</option></select></label></div><div id="role-groups" class="role-groups"></div><div id="compatible-tracks" class="compatible-tracks"><p>Select a track to see mix suggestions with a transparent score breakdown.</p></div></div>
+        <div class="library-intelligence-body"><div class="intelligence-head"><p>Mix roles describe where a track may fit in a DJ set. Expand any role to learn what it means and browse every matching track.</p><label>Find compatible tracks for<select id="compatibility-source" data-searchable><option value="">Choose a track</option></select></label></div><div id="role-groups" class="role-groups"></div><div id="compatible-tracks" class="compatible-tracks"><p>Select a track to see mix suggestions with a transparent score breakdown.</p></div></div>
       </details>
       <div class="library-layout">
       <aside id="library-sidebar" class="panel library-sidebar"><div class="empty">Loading Library…</div></aside>
@@ -249,17 +249,17 @@
       <section class="panel library-toolbar">
         <div class="library-filters">
           <label>Find a track<input id="library-search" type="search" placeholder="Search title, artist, track ID, role, key, or genre"></label>
-          <label>Parent genre<select id="library-category"><option value="all">All parent genres</option></select></label>
-          <label>Detailed genre<select id="library-detailed-genre"><option value="all">All detailed genres</option></select></label>
-          <label>Set role<select id="library-role"><option value="all">All roles</option></select></label>
-          <label>Effective preset<select id="library-preset"><option value="all">All effective presets</option></select></label>
+          <label>Parent genre<select id="library-category" data-searchable><option value="all">All parent genres</option></select></label>
+          <label>Detailed genre<select id="library-detailed-genre" data-searchable><option value="all">All detailed genres</option></select></label>
+          <label>Set role<select id="library-role" data-searchable><option value="all">All roles</option></select></label>
+          <label>Effective preset<select id="library-preset" data-searchable><option value="all">All effective presets</option></select></label>
           <label>Sort<select id="library-sort"><option value="newest">Newest processed</option><option value="title">Title A–Z</option><option value="bpm-up">BPM low–high</option><option value="bpm-down">BPM high–low</option><option value="energy-down">Energy high–low</option></select></label>
           <div class="library-filter-summary"><span id="library-filter-count"></span><button id="library-reset-filters-top" type="button" class="button tertiary filter-reset">Reset filters</button></div>
         </div>
         <details class="library-advanced-filters"><summary>More DJ filters <span id="library-active-filter-count"></span></summary><div>
           <label>Minimum BPM<input id="library-bpm-min" type="number" min="0" step="1" placeholder="Any"></label>
           <label>Maximum BPM<input id="library-bpm-max" type="number" min="0" step="1" placeholder="Any"></label>
-          <label>Musical key<select id="library-key"><option value="all">All keys</option></select></label>
+          <label>Musical key<select id="library-key" data-searchable><option value="all">All keys</option></select></label>
           <label>Energy<select id="library-energy"><option value="all">All energy levels</option><option value="low">Low / opening</option><option value="medium">Medium</option><option value="high">High / peak</option></select></label>
           <label>Vocal profile<select id="library-vocals"><option value="all">All vocal profiles</option><option value="vocal-safe">Vocal-safe</option><option value="mixed">Mixed</option><option value="vocal-forward">Vocal-forward</option></select></label>
           <label>Timing<select id="library-timing"><option value="all">All timing behavior</option><option value="steady">Steady / griddable</option><option value="variable">Variable / live</option></select></label>
@@ -298,7 +298,8 @@
           <fieldset class="set-brief-mode-picker">
             <legend>How would you like to begin?</legend>
             <label><input type="radio" name="set-brief-mode" value="ai" checked><span><strong>Describe what I want</strong><small>AI turns natural language into an editable direction.</small></span></label>
-            <label><input type="radio" name="set-brief-mode" value="manual"><span><strong>Build manually</strong><small>Choose genres, energy, flow, and constraints yourself.</small></span></label>
+            <label><input type="radio" name="set-brief-mode" value="manual"><span><strong>Configure the journey</strong><small>Choose genres, energy, flow, and constraints; then let the planner choose tracks.</small></span></label>
+            <label><input type="radio" name="set-brief-mode" value="curate"><span><strong>Curate track by track</strong><small>Start empty. Search, preview, and place every song yourself.</small></span></label>
             <p id="set-brief-mode-help">Describe the outcome. Local AI will translate it into a brief you can review.</p>
           </fieldset>
           <div class="set-objective-fields">
@@ -319,17 +320,26 @@
                 <label>Genre drift<select id="set-intention-drift"><option value="none">None · direct genres only</option><option value="low">Low · close variants</option><option value="moderate" selected>Moderate · musical bridges</option><option value="wide">Wide · context before genre</option></select></label>
               </div></details>
               <section id="set-journey-preview" class="set-journey-preview" hidden>
-                <header><div><strong>Planned journey</strong><small id="set-journey-summary">Review the sections before generating tracks.</small></div><span id="set-journey-evidence"></span></header>
+                <header><div><strong>Planned journey</strong><small id="set-journey-summary">Review the sections before generating tracks.</small></div><div class="set-journey-badges"><span id="set-journey-evidence"></span><span id="set-journey-confirmation" class="needs-review">Needs confirmation</span></div></header>
+                <div class="set-journey-policy">
+                  <div class="set-journey-core"><div><small>Core genres</small><div id="set-journey-core-genres" class="set-journey-core-genres"></div></div><button id="set-journey-apply-core" type="button" class="button tertiary">Use in every section</button></div>
+                  <label class="set-journey-related-toggle"><input id="set-allow-related-genres" type="checkbox"><span class="set-journey-switch" aria-hidden="true"></span><span><strong>Related genres</strong><small id="set-journey-related-status">Off · exact genres only</small></span></label>
+                </div>
+                <datalist id="set-journey-genre-options"></datalist>
                 <div id="set-journey-sections" class="set-journey-sections"></div>
-                <p id="set-journey-total" class="set-journey-total"></p>
+                <div class="set-journey-actions">
+                  <p id="set-journey-total" class="set-journey-total"></p>
+                  <div><button id="set-journey-reset" type="button" class="button tertiary">Reset</button><button id="set-journey-regenerate" type="button" class="button secondary">Regenerate</button></div>
+                  <button id="set-journey-confirm" type="button" class="button primary">Confirm journey</button>
+                </div>
               </section>
               <details class="set-fallback-details"><summary>How scarce music is handled</summary><ol id="set-fallback-policy" class="set-fallback-policy"></ol></details>
             </div>
           </section>
           <div id="set-manual-brief" class="set-basics" hidden>
-            <div class="set-genre-mix"><label>Parent genre mix<select id="set-genre" multiple><option value="all" selected>Any parent genre</option></select></label><div id="set-genre-chips" class="set-genre-chips"></div><div id="set-genre-weights" class="set-genre-weights" hidden></div></div>
-            <div class="set-genre-mix"><label>Detailed genres<select id="set-detailed-genres" multiple><option value="all" selected>Any detailed genre</option></select></label><div id="set-detailed-genre-chips" class="set-genre-chips"></div></div>
-            <div class="set-genre-mix"><label>Exclude genres<select id="set-excluded-genres" multiple></select></label><div id="set-excluded-genre-chips" class="set-genre-chips excluded-genre-chips"></div></div>
+            <div class="set-genre-mix"><label>Parent genre mix<select id="set-genre" data-searchable multiple><option value="all" selected>Any parent genre</option></select></label><div id="set-genre-chips" class="set-genre-chips"></div><div id="set-genre-weights" class="set-genre-weights" hidden></div></div>
+            <div class="set-genre-mix"><label>Detailed genres<select id="set-detailed-genres" data-searchable multiple><option value="all" selected>Any detailed genre</option></select></label><div id="set-detailed-genre-chips" class="set-genre-chips"></div></div>
+            <div class="set-genre-mix"><label>Exclude genres<select id="set-excluded-genres" data-searchable multiple></select></label><div id="set-excluded-genre-chips" class="set-genre-chips excluded-genre-chips"></div></div>
             <label>Overall vibe<select id="set-vibe"><option value="balanced">Balanced</option><option value="dance-party">Dance / party</option><option value="warm-up">Warm-up</option><option value="peak-time">Peak-time</option><option value="melodic">Melodic</option><option value="vocal-safe">Vocal-safe</option><option value="ambient">Ambient</option><option value="closing">Closing</option></select></label>
             <label>Genre flow<select id="set-genre-flow"><option value="blend">Blend genres naturally</option><option value="chapters">Group genres into chapters</option><option value="sequence">Follow selected genre order</option></select></label>
             <label>Energy journey<select id="set-curve"><option value="rise">Gradual rise</option><option value="peak-release">Peak and release</option><option value="waves">Multiple waves</option><option value="steady">Maintain energy</option></select></label>
@@ -340,11 +350,12 @@
               <label>Timing<select id="set-timing"><option value="all">Any timing</option><option value="steady">Steady / griddable only</option><option value="variable">Allow live timing</option></select></label><label>Audio preference<select id="set-edits"><option value="either">Best available audio</option><option value="extended">Prefer extended edits</option><option value="original">Prefer originals</option></select></label>
               <label>Minimum set health<select id="set-minimum-health"><option value="55">55 · Flexible</option><option value="65" selected>65 · Balanced</option><option value="75">75 · Strong</option><option value="85">85 · Strict</option></select></label>
           </div></details>
-          <details class="set-advanced set-track-constraints"><summary><span><strong>Required and excluded tracks</strong><small>Pin must-play tracks or remove songs from consideration</small></span><b id="set-rule-count">0 rules</b></summary><div class="set-track-rules"><label>Required track<select id="set-required"><option value="">Choose a track</option></select></label><button id="add-required-track" type="button" class="button secondary">Add required</button><label>Exclude track<select id="set-excluded"><option value="">Choose a track</option></select></label><button id="add-excluded-track" type="button" class="button secondary">Exclude</button></div><div id="set-rule-chips" class="set-rule-chips"></div></details>
+          <details class="set-advanced set-track-constraints"><summary><span><strong>Required and excluded tracks</strong><small>Pin must-play tracks or remove songs from consideration</small></span><b id="set-rule-count">0 rules</b></summary><div class="set-track-rules"><label>Required track<select id="set-required" data-searchable><option value="">Choose a track</option></select></label><button id="add-required-track" type="button" class="button secondary">Add required</button><label>Exclude track<select id="set-excluded" data-searchable><option value="">Choose a track</option></select></label><button id="add-excluded-track" type="button" class="button secondary">Exclude</button></div><div id="set-rule-chips" class="set-rule-chips"></div></details>
           <div class="set-generate-row">
-            <fieldset class="set-track-planner"><legend>How should tracks be planned?</legend><label><input type="radio" name="set-track-planner" value="ai" checked><span><strong>AI-assisted</strong><small>AI chooses from safe, validated candidates.</small></span></label><label><input type="radio" name="set-track-planner" value="deterministic"><span><strong>Deterministic</strong><small>Compatibility scoring only; no AI planning call.</small></span></label></fieldset>
-            <select id="set-planning-mode" hidden aria-hidden="true"><option value="ai-planned" selected>AI planned</option><option value="interpreted">AI interpreted</option><option value="classic">Classic</option></select>
-            <button id="set-generate" type="submit">Build this set</button>
+            <fieldset id="set-track-planner" class="set-track-planner"><legend>Who should choose the tracks?</legend><label><input type="radio" name="set-track-planner" value="ai" checked><span><strong>AI curated</strong><small>AI ranks and orders validated tracks. Compatibility checks still verify the result.</small></span></label><label><input type="radio" name="set-track-planner" value="deterministic"><span><strong>Rules-based</strong><small>Uses genre, BPM, key, energy, and constraints without an AI planning call.</small></span></label></fieldset>
+            <input id="set-planning-mode" type="hidden" value="ai-planned">
+            <p id="set-planning-summary" class="set-planning-summary">Direction: AI interpreted · Tracks: AI curated</p>
+            <button id="set-generate" type="submit" class="button primary">Build AI-curated set</button>
             <button id="set-cancel-planning" type="button" class="button secondary" hidden>Cancel planning</button>
             <p id="set-builder-message" class="form-message" role="status">Choose a direction to build a playable order.</p>
             <section id="set-planning-progress" class="set-builder-progress" role="status" aria-live="polite" hidden></section>
@@ -352,7 +363,7 @@
         </form>
         <aside class="panel saved-sets-panel">
           <p class="eyebrow">SAVED SETS</p><h2>Your plans</h2>
-          <select id="saved-set-select"><option value="">No saved set selected</option></select>
+          <select id="saved-set-select" data-searchable><option value="">No saved set selected</option></select>
           <div class="saved-set-actions"><button id="load-set" type="button" class="button primary">Load</button><button id="duplicate-set" type="button" class="button secondary">Duplicate</button><button id="delete-set" type="button" class="button destructive">Delete</button></div>
           <p>Set plans stay on this Mac in your browser. Audio files remain in DJ Library.</p>
           <details class="set-preference-panel">
@@ -373,9 +384,23 @@
       <section id="set-result" class="panel set-result" hidden>
         <header class="set-result-head">
           <div class="set-workspace-title"><p class="eyebrow">GENERATED RUNNING ORDER</p><div><input id="set-result-name" class="set-result-name" type="text" maxlength="100" value="New DJ Set" aria-label="Set name" title="Edit the set name"><span id="set-workspace-state" class="set-workspace-state">Draft plan</span><span id="set-workspace-revision" class="set-workspace-revision">Unversioned draft</span></div><p id="set-result-summary"></p></div>
-          <div class="set-result-actions"><label class="set-transition-length">Transition<select id="set-transition-bars"><option value="8">8 bars</option><option value="16" selected>16 bars</option><option value="32">32 bars</option></select></label><button id="set-undo" type="button" class="button secondary" disabled>↶ Undo</button><button id="set-redo" type="button" class="button secondary" disabled>↷ Redo</button><button id="save-set" type="button">Save set</button><details class="set-export-menu"><summary>Export</summary><button id="export-set-csv" type="button" class="button secondary">Export CSV</button><button id="export-set-m3u" type="button" class="button secondary">Export M3U8</button></details></div>
+          <div class="set-result-actions"><label class="set-transition-length">Transition<select id="set-transition-bars"><option value="8">8 bars</option><option value="16" selected>16 bars</option><option value="32">32 bars</option></select></label><button id="set-undo" type="button" class="button secondary" disabled>↶ Undo</button><button id="set-redo" type="button" class="button secondary" disabled>↷ Redo</button><button id="save-set" type="button" class="button primary">Save set</button><details class="set-export-menu"><summary class="button secondary">Export</summary><button id="export-set-csv" type="button" class="button secondary">Export CSV</button><button id="export-set-m3u" type="button" class="button secondary">Export M3U8</button></details></div>
         </header>
         <p id="set-revision-comparison" class="set-revision-comparison" role="status" aria-live="polite" hidden></p>
+        <div id="set-manual-curation-layout" class="set-manual-curation-layout" hidden>
+          <section id="set-manual-curation-workspace" class="set-manual-curation-workspace" aria-labelledby="set-manual-curation-heading" hidden></section>
+          <details id="set-manual-running-order-panel" class="set-manual-running-order-panel" open>
+            <summary><span><small>CURRENT SET</small><strong>Running order</strong></span><b id="set-manual-running-order-count">0 tracks</b></summary>
+            <section id="set-manual-coach" class="set-manual-coach" aria-labelledby="set-manual-coach-heading">
+              <header><div><small>SET COACH</small><strong id="set-manual-coach-heading">Shape the next move</strong></div><span class="set-manual-coach-health">Start your set</span></header>
+              <p>Improve the order you already chose, or find compatible tracks to add next. Suggestions never change the set until you approve them.</p>
+              <label class="set-manual-energy-control"><span>Energy shape</span><select class="set-manual-energy-shape"><option value="rise">Gradual build</option><option value="peak-release">Peak and release</option><option value="waves">Energy waves</option><option value="steady">Hold the level</option></select><small class="set-manual-energy-help">Start controlled and build toward the final tracks.</small></label>
+              <div class="set-manual-coach-actions"><button type="button" class="button secondary suggest-manual-order">Refresh order preview</button><button type="button" class="button secondary suggest-manual-next">Suggest next tracks</button></div>
+              <div id="set-manual-coach-status" class="set-manual-coach-status" role="status" aria-live="polite"></div>
+            </section>
+            <div id="set-manual-running-order-slot" class="set-manual-running-order-slot"></div>
+          </details>
+        </div>
         <section class="set-proposal-picker" aria-labelledby="set-proposal-heading">
           <div><p class="eyebrow">THREE DIRECTIONS</p><h3 id="set-proposal-heading">Choose how the set should feel</h3><p>Switching directions keeps edits made to each version.</p></div>
           <div id="set-proposals" class="set-proposals" role="radiogroup" aria-label="Generated set directions"></div>
@@ -386,19 +411,30 @@
           <summary><span><strong>Review this set</strong><small>Teach Set Builder what worked after listening.</small></span></summary>
           <div class="set-review-overall" role="group" aria-label="Overall set decision"><button type="button" data-set-decision="accept" class="button secondary">Approve running order</button><button type="button" data-set-decision="reject" class="button secondary">Needs changes</button></div>
           <label>Review notes<textarea id="set-review-notes" rows="2" maxlength="2000" placeholder="What worked, what felt wrong, or what should change next time?"></textarea></label>
-          <div class="set-review-actions"><button id="submit-set-review" type="button">Save review</button><span id="set-review-status" role="status">Review individual tracks and transitions below, then save.</span></div>
+          <div class="set-review-actions"><button id="submit-set-review" type="button" class="button primary">Save review</button><span id="set-review-status" role="status">Review individual tracks and transitions below, then save.</span></div>
           <div id="set-calibration-summary" class="set-calibration-summary"></div>
         </details>
         <div id="set-export-status" class="set-export-status"><span>Rekordbox paths will be checked before export.</span></div>
         <div id="set-add-track-panel-host"></div>
         <details class="set-journey" open><summary>Energy and BPM journey</summary><div class="set-curves"><div><span>Energy journey</span><svg id="set-energy-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div><div><span>BPM journey</span><svg id="set-bpm-curve" viewBox="0 0 600 90" preserveAspectRatio="none"></svg></div></div></details>
+        <div id="set-running-order-anchor" aria-hidden="true"></div>
         <section class="set-running-order-workspace" aria-label="Set running order editor">
-          <div class="set-running-order-main"><div class="set-table-head"><span>#</span><span>Track</span><span>Genre and tempo</span><span>Transition</span><span>Quick actions</span></div><div id="set-track-list" class="set-track-list" role="list" aria-label="Tracks in running order"></div></div>
+          <div class="set-running-order-main"><div class="set-table-head"><span>Order</span><span>Track</span><span>Genre and tempo</span><span>Transition</span><span>Quick actions</span></div><div id="set-track-list" class="set-track-list" role="list" aria-label="Tracks in running order"></div></div>
           <aside id="set-track-inspector" class="set-track-inspector" aria-labelledby="set-track-inspector-title" hidden><header><div><span class="set-track-inspector-position">Selected track</span><h3 id="set-track-inspector-title" class="set-track-inspector-title">Track details</h3><p class="set-track-inspector-artist"></p></div><button type="button" class="close-set-inspector" aria-label="Close track inspector">×</button></header><div class="set-track-inspector-content"></div></aside>
         </section>
         <div id="set-warnings" class="set-warnings"></div>
-        <nav class="set-workspace-action-bar" aria-label="Set workspace actions"><div><strong>Shape this revision</strong><span>Lock what works, then regenerate only the remaining tracks.</span></div><button id="set-compact" type="button" class="button secondary">Compact rows</button><button id="add-set-track" type="button" class="button secondary">+ Add track</button><button id="regenerate-set" type="button" class="button secondary">Regenerate unlocked</button><button id="review-set-action" type="button">Review set</button></nav>
+        <nav class="set-workspace-action-bar" aria-label="Set workspace actions"><div><strong>Shape this revision</strong><span>Lock what works, then regenerate only the remaining tracks.</span></div><button id="set-compact" type="button" class="button secondary">Compact rows</button><button id="add-set-track" type="button" class="button secondary">+ Add track</button><button id="regenerate-set" type="button" class="button secondary">Regenerate unlocked</button><button id="review-set-action" type="button" class="button primary">Review set</button></nav>
       </section>
+      <dialog id="set-track-decision-dialog" class="app-dialog set-track-decision-dialog" aria-labelledby="set-track-decision-title">
+        <form method="dialog">
+          <header><span class="dialog-icon" aria-hidden="true">×</span><div><p class="eyebrow">TRACK FEEDBACK</p><strong id="set-track-decision-title">Reject and replace this track?</strong><p><span class="set-decision-track"></span><span class="set-decision-artist"></span></p></div></header>
+          <label class="set-decision-reason"><span>Why does it not fit? <small>Optional</small></span><select name="set-reject-reason"><option value="">No reason selected</option><option value="wrong-genre">Wrong genre</option><option value="wrong-energy">Wrong energy</option><option value="weak-transition">Weak transition</option><option value="too-familiar">Too familiar</option><option value="not-familiar-enough">Not familiar enough</option><option value="other">Something else</option></select></label>
+          <fieldset class="set-decision-scope"><legend>What should Set Builder avoid?</legend><label><input type="radio" name="set-reject-scope" value="version" checked><span><b>Only this version</b><small>A remix or alternate version of the same song may still be suggested.</small></span></label><label><input type="radio" name="set-reject-scope" value="recording-family"><span><b>This song and every version</b><small>Exclude the original, remixes, edits, and alternate imports from this set.</small></span></label></fieldset>
+          <p class="set-decision-guidance">Feedback is saved first. The replacement must fit the same journey, pass every hard rule, and cannot duplicate another song in the set.</p>
+          <p class="set-decision-error" role="alert" aria-live="polite"></p>
+          <footer><button type="button" class="button tertiary cancel-track-rejection">Cancel</button><button type="button" class="button destructive confirm-track-rejection">Reject &amp; replace</button></footer>
+        </form>
+      </dialog>
     </section>
 
     <section id="review-view" class="view page-view">

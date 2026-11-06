@@ -127,6 +127,11 @@ class SetPlanningJobService:
                 total_limit=request["total_limit"],
             )
             timings["candidateRetrievalMs"] = round((perf_counter() - phase_started) * 1000)
+            if pool.get("duplicateProtectedIds"):
+                raise ValueError(
+                    "Locked or required tracks contain multiple versions of the same song. "
+                    f"Keep one version before regenerating: {pool['duplicateProtectedIds']}"
+                )
             if pool["missingRequiredIds"] or pool["unavailableRequiredIds"]:
                 raise ValueError(
                     "Required tracks are missing or unavailable: "
