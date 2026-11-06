@@ -1,4 +1,4 @@
-"""Compatibility entry point for DJ Library Studio.
+"""Compatibility entry point for DJPrepper.
 
 The assembled FastAPI application lives in :mod:`audioextender.web.application`.
 Aliasing the module preserves existing callers that import or patch ``web_app``.

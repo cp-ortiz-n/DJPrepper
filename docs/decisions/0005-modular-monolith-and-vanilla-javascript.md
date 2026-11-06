@@ -5,7 +5,7 @@
 
 ## Context
 
-DJ Library Studio is a single-user local application. Its complexity has come
+DJPrepper is a single-user local application. Its complexity has come
 from blurred responsibilities in large modules, not from deployment scale or a
 failure of FastAPI, SQLite, or browser ES modules.
 

@@ -1,6 +1,6 @@
 # Development quality baseline
 
-This is the reproducible Phase 0 baseline for DJ Library Studio. Generated reports stay in the existing ignored `coverage/` directory; they are diagnostic artifacts, not source files or historical records.
+This is the reproducible Phase 0 baseline for DJPrepper. Generated reports stay in the existing ignored `coverage/` directory; they are diagnostic artifacts, not source files or historical records.
 
 ## Commands and verification tiers
 

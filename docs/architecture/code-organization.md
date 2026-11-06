@@ -1,6 +1,6 @@
 # Code organization
 
-DJ Library Studio is a modular monolith. Code is organized first by the feature
+DJPrepper is a modular monolith. Code is organized first by the feature
 or domain that owns a behavior, then by technical role only inside that owner.
 This keeps related files together without creating a generic `utils`, `helpers`,
 or `services` dumping ground.

@@ -1,4 +1,4 @@
-# AudioExtender Backlog
+# DJPrepper Backlog
 
 # Architecture Modernization & Technical Debt Reduction
 
@@ -907,7 +907,7 @@ without replacing the technical safety score.
 
 Status: **In progress — parser, conservative preview/apply matching, durable
 storage, Settings workflow, and bounded Set Builder ranking are complete.** The
-current Rekordbox integration exports DJ Library Studio cues and playlists and
+current Rekordbox integration exports DJPrepper cues and playlists and
 can read Rekordbox's per-track star ratings back into the catalog. This remains
 explicit, previewable preference synchronization;
 do not read or modify Rekordbox's private database and do not use song ratings to
@@ -923,7 +923,7 @@ change rendered audio.
     and synchronization time separately from analyzed musical facts. Repeated
     imports are idempotent, and ratings survive application restart, reanalysis,
     rescans, metadata synchronization, and library relocation.
-  - Match conservatively in this order: stable DJ Library Studio/catalog
+  - Match conservatively in this order: stable DJPrepper/catalog
     identity when present, normalized file URI/path, exact audio or recording-
     family identity, then an exact normalized artist/title/duration tuple. Never
     apply a fuzzy or ambiguous match silently; unmatched and ambiguous rows go

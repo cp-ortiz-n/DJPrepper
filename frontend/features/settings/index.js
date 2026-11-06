@@ -278,7 +278,7 @@ export function createSettingsFeature({
   });
   cleanupButton.addEventListener('click', async () => {
     if (cleanupConfirmation.value !== 'DELETE EVERYTHING') return;
-    if (!await confirmAction('This permanently removes every song, edit, track report, cache entry, and processing-history item managed by DJ Library Studio. Your presets and settings will be kept. Continue?', {title:'Remove all managed track data', acceptLabel:'Remove everything', danger:true})) return;
+    if (!await confirmAction('This permanently removes every song, edit, track report, cache entry, and processing-history item managed by DJPrepper. Your presets and settings will be kept. Continue?', {title:'Remove all managed track data', acceptLabel:'Remove everything', danger:true})) return;
     cleanupButton.disabled = true; cleanupButton.textContent = 'Cleaning up…';
     const response = await api.raw('/api/settings/cleanup', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirmation:cleanupConfirmation.value})});
     const payload = await response.json();

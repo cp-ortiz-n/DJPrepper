@@ -1,4 +1,4 @@
-"""Portable, integrity-checked backups for DJ Library Studio state."""
+"""Portable, integrity-checked backups for DJPrepper state."""
 
 from __future__ import annotations
 

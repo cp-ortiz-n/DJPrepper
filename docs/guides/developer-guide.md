@@ -379,7 +379,7 @@ documentation rather than source.
 
 ## Automated tests
 
-DJ Library Studio includes fast unit tests built on Python's standard `unittest`
+DJPrepper includes fast unit tests built on Python's standard `unittest`
 library, so running the normal suite does not require another test framework:
 
 ```bash
@@ -503,6 +503,11 @@ startup snapshot, and `Start AudioExtender.command` compares it with the current
 checkout before reusing a responsive server. Do not replace this check with a
 feature schema or a revision recalculated per request: either would allow an old
 Python process to appear current.
+
+DJPrepper is the display name. Keep the `audioextender` package, existing
+`AUDIOEXTENDER_*` environment variables, persistence identifiers, legacy
+launcher filename, and on-disk library/cache paths stable unless a separately
+planned compatibility migration explicitly replaces them.
 
 When changing module exports, test both a fresh browser and an already-open
 browser with stale cached modules. The browser smoke suite covers a failed entry

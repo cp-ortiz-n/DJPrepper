@@ -1,6 +1,6 @@
-# Contributing to DJ Library Studio
+# Contributing to DJPrepper
 
-DJ Library Studio is a modular monolith with a Python/FastAPI backend and a
+DJPrepper is a modular monolith with a Python/FastAPI backend and a
 vanilla JavaScript frontend. Keep changes within the ownership boundaries in
 [`docs/architecture/architecture.md`](docs/architecture/architecture.md); use
 [`docs/architecture/repository-map.md`](docs/architecture/repository-map.md) to find the owning module and

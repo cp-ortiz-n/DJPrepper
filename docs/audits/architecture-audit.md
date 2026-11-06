@@ -1,4 +1,4 @@
-# DJ Library Studio — Architecture Audit
+# DJPrepper — Architecture Audit
 
 Audit date: 2026-10-11  
 Scope: repository architecture, technical debt, and an incremental modernization plan.  
@@ -6,7 +6,7 @@ Decision: retain the modular monolith and vanilla JavaScript frontend.
 
 ## 1. Executive Summary
 
-DJ Library Studio has a sound architectural direction and unusually strong behavioral safeguards for a local application of its age. Domain packages exist, SQL is contained in repositories, the Set Builder has explicit validation and deterministic fallback, dependency injection is used where external work matters, and the current test suite is broad and fast. The audit found no Python import cycles and no reason to replace the modular monolith, SQLite, FastAPI, or vanilla JavaScript.
+DJPrepper has a sound architectural direction and unusually strong behavioral safeguards for a local application of its age. Domain packages exist, SQL is contained in repositories, the Set Builder has explicit validation and deterministic fallback, dependency injection is used where external work matters, and the current test suite is broad and fast. The audit found no Python import cycles and no reason to replace the modular monolith, SQLite, FastAPI, or vanilla JavaScript.
 
 The main concern is incomplete migration rather than a failed architecture. `audioextender/web/application.py` remains both the composition root and a 3,693-line legacy feature host with 55 route handlers, 128 top-level definitions, 37 internal package dependencies, and substantial global mutable state. The audio pipeline has a similarly concentrated 662-line `TrackProcessor.process` method. In the browser, feature extraction has reduced `frontend/app.js`, but `app.js` is still 1,878 lines and `set-builder.js` combines state, API orchestration, deterministic planning, rendering, editing, playback, persistence, and review in 675 dense lines.
 
@@ -608,4 +608,4 @@ decisions:
 
 ## 20. Conclusion
 
-DJ Library Studio does not need a new architecture. It needs completion and enforcement of the architecture it has already begun: explicit composition, focused application services, authoritative musical facts, narrow persistence capabilities, consistent operation contracts, and testable frontend state. The work should start with baselines and characterization, then remove one source of coupling at a time. No refactoring described here has been started by this audit.
+DJPrepper does not need a new architecture. It needs completion and enforcement of the architecture it has already begun: explicit composition, focused application services, authoritative musical facts, narrow persistence capabilities, consistent operation contracts, and testable frontend state. The work should start with baselines and characterization, then remove one source of coupling at a time. No refactoring described here has been started by this audit.

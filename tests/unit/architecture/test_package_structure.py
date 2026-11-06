@@ -161,8 +161,11 @@ class PackageStructureTests(unittest.TestCase):
         self.assertNotIn("EXPECTED_CATALOG_VERSION", launcher)
         self.assertLess(
             launcher.index("/api/diagnostics/runtime"),
-            launcher.index("AudioExtender is already running the current backend"),
+            launcher.index("DJPrepper is already running the current backend"),
         )
+
+        canonical_launcher = (PROJECT_ROOT / "Start DJPrepper.command").read_text(encoding="utf-8")
+        self.assertIn('exec "$SCRIPT_DIR/Start AudioExtender.command" "$@"', canonical_launcher)
 
     def test_application_imports_only_the_persistence_namespace(self) -> None:
         violations: list[str] = []

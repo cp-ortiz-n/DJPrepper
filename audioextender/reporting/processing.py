@@ -197,7 +197,7 @@ def _candidate_markdown(label: str, data: dict[str, Any] | None, reason: str | N
 
 def _render_markdown(document: dict[str, Any]) -> str:
     lines = [
-        "# DJ Library Studio Processing Report",
+        "# DJPrepper Processing Report",
         "",
         f"Last report update: {document['updated_at']}",
         "",

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="700"
   viewBox="0 0 1440 700" role="img" aria-labelledby="title desc">
-  <title id="title">DJ Library Studio workflow map</title>
+  <title id="title">DJPrepper workflow map</title>
   <desc id="desc">The common call path from a user action to durable state and a visible result. Calls are numbered in execution order.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
@@ -36,7 +36,7 @@
   </defs>
   <rect width="1440" height="700" fill="#ffffff"/>
   <rect x="28" y="25" width="1384" height="510" rx="24" fill="#f4f8fa"/>
-  <text class="title" x="52" y="67">DJ Library Studio workflow map</text>
+  <text class="title" x="52" y="67">DJPrepper workflow map</text>
   <text class="subtitle" x="52" y="95">The common call path from a user action to durable state and a visible result.</text>
   <text class="order-note" x="52" y="132">PRIMARY CALL ORDER</text>
   <path class="arrow" d="M 352 246.0 H 378" marker-end="url(#arrow)"/><path class="arrow" d="M 686 246.0 H 712" marker-end="url(#arrow)"/><path class="arrow" d="M 1020 246.0 H 1046" marker-end="url(#arrow)"/><path class="arrow" d="M 1354 246.0 H 1371.0 V 443.0 H 1362" marker-end="url(#arrow)"/><path class="arrow" d="M 1054 443.0 H 1028" marker-end="url(#arrow)"/><path class="arrow" d="M 720 443.0 H 694" marker-end="url(#arrow)"/><path class="arrow" d="M 386 443.0 H 360" marker-end="url(#arrow)"/>

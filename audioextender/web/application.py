@@ -1,4 +1,4 @@
-"""Local DJ Library Studio web interface; the AudioExtender CLI remains independent."""
+"""Local DJPrepper web interface; the legacy ``audioextender`` CLI remains independent."""
 
 # Runtime compatibility names are installed atomically by ``_bind_runtime``.
 # Their explicit declarations below keep that legacy facade visible to static
@@ -1131,7 +1131,7 @@ def create_app(
         **set_builder_services,
     )
 
-    application = install_error_handlers(FastAPI(title="DJ Library Studio", docs_url="/api/docs", redoc_url=None))
+    application = install_error_handlers(FastAPI(title="DJPrepper", docs_url="/api/docs", redoc_url=None))
     application.state.runtime = runtime
     application.state.frontend_assets = FrontendAssetService(runtime.paths.frontend)
     application.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
