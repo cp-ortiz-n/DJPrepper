@@ -60,7 +60,7 @@ def call(title: str, owner: str, symbol: str, tone: str = "service") -> Call:
 DIAGRAMS = (
     Diagram(
         "application-workflow-overview",
-        "DJ Library Studio workflow map",
+        "DJPrepper workflow map",
         "The common call path from a user action to durable state and a visible result.",
         (
             call("Choose an action", "Browser", "feature event", "browser"),

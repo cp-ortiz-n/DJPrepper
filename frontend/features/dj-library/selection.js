@@ -336,7 +336,7 @@ export function createDjLibrarySelection({
         const url = urlApi.createObjectURL(await response.blob());
         const link = documentRoot.createElement('a');
         link.href = url;
-        link.download = 'DJ Library Studio Selected Tracks.zip';
+        link.download = 'DJPrepper Selected Tracks.zip';
         link.click();
         defer(() => urlApi.revokeObjectURL(url), 1000);
       } catch (error) {

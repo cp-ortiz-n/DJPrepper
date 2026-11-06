@@ -30,9 +30,9 @@ _GENERATED_DIRECTORIES = {
 
 
 def validate_project_root(root: Path) -> None:
-    """Reject cleanup outside a DJ Library Studio repository root."""
+    """Reject cleanup outside a DJPrepper repository root."""
     if not (root / "pyproject.toml").is_file() or not (root / "audioextender").is_dir():
-        raise ValueError(f"Refusing cleanup: {root} is not the DJ Library Studio repository root")
+        raise ValueError(f"Refusing cleanup: {root} is not the DJPrepper repository root")
 
 
 def _runtime_cache_targets(root: Path) -> Iterable[Path]:

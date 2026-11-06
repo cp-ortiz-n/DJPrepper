@@ -1,6 +1,6 @@
-# AudioExtender architecture
+# DJPrepper architecture
 
-This is the maintainer map for DJ Library Studio and the AudioExtender CLI. Use
+This is the maintainer map for DJPrepper and the legacy `audioextender` CLI. Use
 it to decide where a manual change belongs before editing.
 
 Compatibility-sensitive rationale is recorded in the

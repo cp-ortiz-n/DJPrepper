@@ -62,13 +62,13 @@ export async function inferDescriptorEditor(editor, trackIds) {
   const bulkMode=Boolean(editor.querySelector('.descriptor-mode'));
   if(ids.length===1&&!bulkMode){
     const response=await fetch(`/api/downloaded-library/tracks/${ids[0]}/descriptor-suggestions`,{cache:'no-store'}),payload=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':apiErrorMessage(payload,'Identity suggestions could not be created.'));
+    if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart DJPrepper, then try again.':apiErrorMessage(payload,'Identity suggestions could not be created.'));
     for(const suggestion of payload.suggestions||[]){const input=editor.querySelector(`[data-descriptor-category="${suggestion.category}"]`);if(!input)continue;const values=String(input.value||'').split(',').map(value=>value.trim()).filter(Boolean);if(!values.some(value=>value.toLowerCase()===suggestion.value.toLowerCase()))values.push(suggestion.value);input.value=values.join(', ');}
     const crates=(payload.playlists_considered||[]).join(', ');status.textContent=`Suggested ${payload.suggestions?.length||0} tags from catalog, analysis${crates?`, and playlists: ${crates}`:''}. Review them, then save.`;
     return {...payload,applied:false};
   }
   const response=await fetch('/api/downloaded-library/descriptors/infer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({track_ids:ids,apply:true})}),payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart AudioExtender, then try again.':apiErrorMessage(payload,'Identity inference could not be applied.'));
+  if(!response.ok)throw new Error(response.status===404?'Identity inference is not loaded in the running server. Restart DJPrepper, then try again.':apiErrorMessage(payload,'Identity inference could not be applied.'));
   status.textContent=`Added inferred tags to ${payload.applied} of ${payload.processed} tracks.${payload.skipped_protected?.length?` Skipped ${payload.skipped_protected.length} manually protected track${payload.skipped_protected.length===1?'':'s'}.`:''} Manual tags were preserved.`;
   return payload;
 }

@@ -1,7 +1,7 @@
 # Browser workflow and accessibility smoke testing
 
 ARCH-011B adds a real-browser release check without making every fast local
-quality run launch Chromium. The browser server composes DJ Library Studio with
+quality run launch Chromium. The browser server composes DJPrepper with
 a temporary project, catalog, and connected music-library directory. It serves
 the repository's real frontend assets but never reads or writes the configured
 user catalog or music library.

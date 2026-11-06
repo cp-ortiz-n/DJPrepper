@@ -1,4 +1,4 @@
-"""Run DJ Library Studio with ``python -m audioextender.web``."""
+"""Run DJPrepper with ``python -m audioextender.web``."""
 
 import uvicorn
 

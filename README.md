@@ -1,15 +1,23 @@
-# DJ Library Studio
+# DJPrepper
 
-DJ Library Studio is a local macOS workspace for importing and organizing music,
+DJPrepper is a local macOS workspace for importing and organizing music,
 analyzing BPM, beat grids, key, structure, energy, timing, cues, and track
 compatibility, and creating DJ-friendly extended WAV edits. Its Set Builder can
 turn a musical brief into a validated, catalog-backed running order using local
-rules or optional local AI. The original AudioExtender command-line workflow
+rules or optional local AI. The legacy `audioextender` command-line workflow
 remains supported.
 
 Audio and catalog data stay on the machine unless an optional remote AI provider
 is explicitly configured. Local Ollama planning receives text and bounded
 catalog metadata, never audio.
+
+## Project naming
+
+**DJPrepper** is the user-facing project and application name. Internal names
+such as the `audioextender` Python package, `AUDIOEXTENDER_*` environment
+variables, existing cache/database identifiers, and the historical project
+folder remain unchanged for compatibility with current libraries, saved sets,
+scripts, and installations.
 
 ## Requirements
 
@@ -57,7 +65,8 @@ From the repository root:
 
 Then open [http://localhost:8765](http://localhost:8765).
 
-On macOS, you can instead double-click `Start AudioExtender.command`. The
+On macOS, you can instead double-click `Start DJPrepper.command`. The legacy
+`Start AudioExtender.command` launcher remains available for compatibility. The
 launcher can start Ollama, prepare the configured local model, start the web
 application, and open the browser. It fingerprints the backend and frontend
 source and restarts an older server before opening the page. Closing the browser

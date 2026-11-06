@@ -1,6 +1,6 @@
 # Repository map
 
-This is the concise navigation map for DJ Library Studio. Placement rules and
+This is the concise navigation map for DJPrepper. Placement rules and
 the complete ownership rationale live in [code-organization.md](code-organization.md).
 
 ## Application source

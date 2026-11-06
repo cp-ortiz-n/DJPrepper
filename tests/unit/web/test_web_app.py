@@ -964,7 +964,7 @@ class WebApiTests(unittest.TestCase):
     def test_index_is_the_audio_workspace(self) -> None:
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("DJ Library Studio", response.text)
+        self.assertIn("DJPrepper", response.text)
         self.assertIn("Bring music into your workspace", response.text)
         self.assertIn("Analyze for Library", response.text)
         self.assertIn("Set Builder", response.text)

@@ -1,4 +1,4 @@
-# DJ Library Studio development standards
+# DJPrepper development standards
 
 These rules apply to every change in this repository.
 

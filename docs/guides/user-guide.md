@@ -4,7 +4,7 @@ This guide covers the browser application, music-library workflows, processing c
 
 ## Local web application
 
-The AudioExtender CLI remains fully supported. DJ Library Studio is the broader
+The legacy `audioextender` CLI remains fully supported. DJPrepper is the broader
 local interface over the same tested processing engine; it does not upload audio
 to an external analysis service.
 
@@ -14,10 +14,11 @@ Start it from the project folder:
 python3 -m audioextender.web
 ```
 
-On macOS, you can instead double-click **Start AudioExtender.command** in the
-project folder. The launcher starts Ollama when necessary, downloads the
-configured local model on the first run, starts AudioExtender, and opens the
-browser. Closing its Terminal window stops AudioExtender; Ollama may remain
+On macOS, you can instead double-click **Start DJPrepper.command** in the
+project folder. The legacy **Start AudioExtender.command** file remains as a
+compatibility launcher. The launcher starts Ollama when necessary, downloads the
+configured local model on the first run, starts DJPrepper, and opens the
+browser. Closing its Terminal window stops DJPrepper; Ollama may remain
 available for the next launch.
 
 Then open [http://localhost:8765](http://localhost:8765). The dashboard supports
@@ -298,7 +299,7 @@ displaying an unknown target. Track **Keep** and **Reject** choices remain
 visible after selection and are not submitted as learning evidence until the
 set review is saved.
 
-When AudioExtender starts, its Terminal prints the detected Set Builder AI
+When DJPrepper starts, its Terminal prints the detected Set Builder AI
 provider and model. Every interpreted brief also logs the provider, model,
 response time, and vocabulary size without logging the brief or track metadata.
 The Set Builder card shows the same live state as **Local AI ready**, **Cloud AI
@@ -558,7 +559,7 @@ files that were skipped.
 
 Library filters support title search, detected editing category, preset, and
 edit result. Categories such as `rhythm-forward`, `slow/dynamic`, or
-`live/acoustic` are DJ Library Studio analysis classifications—not authoritative
+`live/acoustic` are DJPrepper analysis classifications—not authoritative
 commercial genre tags—so they remain useful even when a source file has no
 embedded genre metadata.
 
@@ -606,7 +607,7 @@ This generates contextual previews, asks which intro and outro candidate to use,
 and captures optional reason tags and notes. Results are appended to
 `workspace/output/reports/Candidate Feedback.md`.
 
-The feedback file is append-only: DJ Library Studio never regenerates or rewrites an
+The feedback file is append-only: DJPrepper never regenerates or rewrites an
 existing section, so selections, checkboxes, and notes you edit by hand remain
 intact. An unchanged candidate set is not duplicated. If an override or scoring
 improvement produces different candidates, a new timestamped generation is
@@ -803,7 +804,7 @@ disable that side of the extension.
 
 ### Analysis cache
 
-DJ Library Studio caches expensive feature analysis in `workspace/cache/`. The first run still
+DJPrepper caches expensive feature analysis in `workspace/cache/`. The first run still
 performs normal analysis; later runs of the same unchanged source can reuse it and
 proceed quickly to phrase selection and export. Demucs-derived vocal measurements
 are cached separately, so they can also be reused without repeating stem
@@ -862,7 +863,7 @@ does not replace or write the full extended WAV.
 
 ### Ranked candidate choices
 
-For every enabled intro and outro, DJ Library Studio ranks three musically distinct
+For every enabled intro and outro, DJPrepper ranks three musically distinct
 locations by default. Normal runs automatically use candidate 1. Interactive
 runs keep a larger pool available in pages of three. Overlapping
 versions of the same location are filtered so alternatives represent genuinely
@@ -875,7 +876,7 @@ python3 -m audioextender "workspace/input/Song.mp3" --choose-candidates
 ```
 
 Each option shows its source timestamps, loop quality, energy shape, buildup
-risk, bass-reset risk, and unique bar count. Before each prompt, DJ Library Studio
+risk, bass-reset risk, and unique bar count. Before each prompt, DJPrepper
 writes `Intro Candidate 1.wav` through candidate 3 inside
 `workspace/output/previews/Song/`. Outro candidates use the same folder. Listen to them
 while the prompt is waiting. Press Enter for the best option on the current page,
@@ -1034,7 +1035,7 @@ arrangement.
 ### Automatic fallback behavior
 
 When automatically selected candidate 1 violates a vocal, buildup, bass-reset,
-arrangement, or preset-quality safety rule, DJ Library Studio first checks the other
+arrangement, or preset-quality safety rule, DJPrepper first checks the other
 ranked locations at the same extension length. If the length was also selected
 automatically, it then tries progressively shorter bar counts. Every replacement
 must pass the normal safety rules and `MINIMUM_FALLBACK_LOOP_QUALITY`.
@@ -1105,7 +1106,7 @@ workspace/output/
 ```
 
 The JSON file records exact seconds, purpose, confidence, BPM, key, groove, and
-grid statistics. The Rekordbox XML contains a `DJ Library Studio Edits` playlist,
+grid statistics. The Rekordbox XML contains a `DJPrepper Edits` playlist,
 one basic 4/4 tempo-grid anchor per track, memory cues, and saved intro/outro
 loops. Suggested points include the first reliable downbeat, mix in, return to
 the original song, mix out, start of the added outro, and return to the natural
@@ -1116,7 +1117,7 @@ a later run replaces it rather than merging with an older XML collection.
 
 To import it in Rekordbox, open Preferences and select the generated XML under
 the Bridge/Imported Library setting. Open `rekordbox xml` in the browser tree,
-open Playlists, and drag `DJ Library Studio Edits` into the normal Playlists area.
+open Playlists, and drag `DJPrepper Edits` into the normal Playlists area.
 The XML uses documented memory cues (`Num=-1`) rather than Hot Cues, so it does
 not assign Hot Cue A–H for you. Rekordbox should still analyze each WAV normally;
 verify the imported grid and cues before performing. Disable companion exports
@@ -1158,20 +1159,20 @@ python3 -m audioextender --use-stems
 ```
 
 The first Demucs run may download a model. Separation is CPU-intensive and can
-take several minutes. AudioExtender caches the aligned `drums + bass + other`
+take several minutes. DJPrepper caches the aligned `drums + bass + other`
 instrumental mix as a lossless floating-point WAV alongside the compact analysis
 cache. Subsequent runs can therefore construct stem edits without rerunning
 Demucs. `--clear-cache` removes both analysis entries and cached instrumentals.
-AudioExtender supplies Demucs with the virtual environment's maintained `certifi`
+DJPrepper supplies Demucs with the virtual environment's maintained `certifi`
 certificate bundle for secure model downloads on Python.org macOS installations.
-Demucs's own separation percentage is forwarded into AudioExtender's live progress
+Demucs's own separation percentage is forwarded into DJPrepper's live progress
 bar. On Apple Silicon, use a native ARM64 Python installation; an Intel Python
 running through Rosetta can make stem separation dramatically slower and prevents
 PyTorch from using Apple's MPS acceleration.
-When PyTorch reports MPS as available, AudioExtender explicitly runs Demucs on the
+When PyTorch reports MPS as available, DJPrepper explicitly runs Demucs on the
 Apple GPU. It falls back to CPU automatically on systems where MPS is unavailable.
 
-When Demucs is enabled, AudioExtender also detects sustained vocal regions. Unless
+When Demucs is enabled, DJPrepper also detects sustained vocal regions. Unless
 a manual rule exists, the first sustained vocal entrance becomes the latest intro
 boundary and the final sustained vocal release becomes the earliest outro boundary.
 The detector smooths brief breaths, ad-libs, and stem leakage. If an automatically
@@ -1184,7 +1185,7 @@ end, and penalizes lyrics crossing either splice boundary. If the best remaining
 candidate exceeds the safety limits in `audioextender/core/defaults.py`, that extension is disabled
 instead of forcing a lyrically awkward repeat.
 
-For audible construction, AudioExtender aligns the separated stems with the
+For audible construction, DJPrepper aligns the separated stems with the
 original decode to compensate for MP3 encoder delay, then measures how accurately
 all stems reconstruct the source. If reliability clears the configured threshold
 and the candidate contains meaningful vocal activity, only `drums + bass + other`

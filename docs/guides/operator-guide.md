@@ -1,7 +1,7 @@
 # Operator guide
 
-This guide covers starting, monitoring, verifying, and maintaining a local DJ
-Library Studio installation. For everyday workflows, see the
+This guide covers starting, monitoring, verifying, and maintaining a local
+DJPrepper installation. For everyday workflows, see the
 [user guide](user-guide.md). For code and test ownership, see the
 [developer guide](developer-guide.md).
 
@@ -13,15 +13,16 @@ From the repository root, start the server with the project environment:
 .venv/bin/python -m audioextender.web
 ```
 
-On macOS, `Start AudioExtender.command` performs the same application startup
-and can also prepare the configured local Ollama model. Open
+On macOS, `Start DJPrepper.command` performs the same application startup and
+can also prepare the configured local Ollama model. The legacy
+`Start AudioExtender.command` file remains available for compatibility. Open
 [http://localhost:8765](http://localhost:8765) after startup.
 
 The launcher verifies both the rendered homepage and the lightweight runtime
 identity endpoint. The identity is an immutable SHA-256 hash of backend and
 frontend source captured when the server starts. If a process on port 8765 has a
 different revision—or predates the endpoint—the launcher replaces that stale
-AudioExtender process before starting the current package entry point. It never
+DJPrepper process before starting the current package entry point. It never
 terminates an unrelated application using the same port.
 
 Closing a browser tab does not stop active work. Closing the server process
@@ -30,7 +31,7 @@ operation is reported as interrupted or retryable instead of silently applied.
 
 If the page opens but the tabs do nothing after an update or restart, use the
 **Reload app** notice if it appears. If it does not, reload the tab or reopen
-the app with `Start AudioExtender.command`. A browser may still hold an older
+the app with `Start DJPrepper.command`. A browser may still hold an older
 frontend module while the server is serving a newer one. The app preserves
 basic tab switching during failed startup, but those views will not load data
 until the frontend finishes initializing. If a reload does not restore data,
@@ -42,7 +43,7 @@ the address above before troubleshooting the music library or Ollama.
 ## Verify the music library
 
 The configured music-library folder is the authoritative destination for
-managed audio. DJ Library Studio does not silently fall back to a temporary or
+managed audio. DJPrepper does not silently fall back to a temporary or
 local folder when an external drive is unavailable.
 
 After reconnecting an external drive:
@@ -101,7 +102,7 @@ matches to SQLite and leaves ambiguous or unmatched export rows untouched.
 
 - Export a public collection XML or UTF-16 tab-separated TXT file from
   Rekordbox; do not grant access to its private database. XML can carry stable
-  paths or DJ Library Studio identities. TXT matching is deliberately limited
+  paths or DJPrepper identities. TXT matching is deliberately limited
   to exact normalized artist, title, and duration.
 - Review match counts before applying, especially after moving a library or
   changing metadata.

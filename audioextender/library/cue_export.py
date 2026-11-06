@@ -175,7 +175,7 @@ def write_cue_sheet(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     document = {
-        "format": "DJ Library Studio cue sheet",
+        "format": "DJPrepper cue sheet",
         "version": 1,
         "source": str(source.resolve()),
         "output": str(output.resolve()),
@@ -189,7 +189,7 @@ def write_rekordbox_xml(results: Iterable[Any], path: Path) -> None:
     """Write the documented rekordbox XML playlist-sharing format."""
     tracks = [result for result in results if result.full_exported and result.output.exists()]
     root = ET.Element("DJ_PLAYLISTS", Version="1.0.0")
-    ET.SubElement(root, "PRODUCT", Name="DJ Library Studio", Version="1.0", Company="Local")
+    ET.SubElement(root, "PRODUCT", Name="DJPrepper", Version="1.0", Company="Local")
     collection = ET.SubElement(root, "COLLECTION", Entries=str(len(tracks)))
     for track_id, result in enumerate(tracks, start=1):
         attributes = {
@@ -253,7 +253,7 @@ def write_rekordbox_xml(results: Iterable[Any], path: Path) -> None:
         playlist_root,
         "NODE",
         Type="1",
-        Name="DJ Library Studio Edits",
+        Name="DJPrepper Edits",
         KeyType="0",
         Entries=str(len(tracks)),
     )

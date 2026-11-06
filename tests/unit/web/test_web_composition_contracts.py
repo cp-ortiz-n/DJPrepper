@@ -162,7 +162,7 @@ class WebCompositionContractTests(unittest.TestCase):
     def test_delivery_shell_contract_is_stable(self) -> None:
         shell = web.create_app()
 
-        self.assertEqual(shell.title, "DJ Library Studio")
+        self.assertEqual(shell.title, "DJPrepper")
         self.assertEqual(shell.docs_url, "/api/docs")
         self.assertIsNone(shell.redoc_url)
         routes = {(getattr(route, "path", ""), getattr(route, "name", "")) for route in shell.routes}

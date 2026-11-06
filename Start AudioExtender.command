@@ -12,7 +12,7 @@ cd "$PROJECT_DIR"
 
 PYTHON="$PROJECT_DIR/.venv/bin/python"
 if [[ ! -x "$PYTHON" ]]; then
-  echo "AudioExtender's Python environment is missing."
+  echo "DJPrepper's Python environment is missing."
   echo "Create it with: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
   read "?Press Return to close…"
   exit 1
@@ -29,21 +29,21 @@ if /usr/bin/curl -fsS "$APP_URL/" >/dev/null 2>&1; then
       "$PYTHON" -c 'import json, sys; print(json.load(sys.stdin).get("revision", ""))' 2>/dev/null || true
   )"
   if [[ -n "$RUNNING_RUNTIME_REVISION" && "$RUNNING_RUNTIME_REVISION" == "$EXPECTED_RUNTIME_REVISION" ]]; then
-    echo "AudioExtender is already running the current backend. Opening it now."
+    echo "DJPrepper is already running the current backend. Opening it now."
     /usr/bin/open "$APP_OPEN_URL"
     exit 0
   fi
-  echo "AudioExtender is running an outdated backend. Restarting it now."
+  echo "DJPrepper is running an outdated backend. Restarting it now."
 fi
 
 # A process from an older checkout can keep the port open while serving a broken
-# page after files move. Restart only a recognizable AudioExtender process; do
+# page after files move. Restart only a recognizable DJPrepper process; do
 # not terminate an unrelated application that happens to use the same port.
 STALE_APP_PID="$(/usr/sbin/lsof -tiTCP:8765 -sTCP:LISTEN 2>/dev/null | /usr/bin/head -n 1 || true)"
 if [[ -n "$STALE_APP_PID" ]]; then
   STALE_APP_COMMAND="$(/bin/ps -p "$STALE_APP_PID" -o command= 2>/dev/null || true)"
   if [[ "$STALE_APP_COMMAND" == *"web_app.py"* || "$STALE_APP_COMMAND" == *"audioextender.web"* ]]; then
-    echo "Restarting an outdated AudioExtender server…"
+    echo "Restarting an outdated DJPrepper server…"
     /bin/kill "$STALE_APP_PID"
     for attempt in {1..20}; do
       if ! /usr/sbin/lsof -tiTCP:8765 -sTCP:LISTEN >/dev/null 2>&1; then
@@ -88,7 +88,7 @@ if ! "$OLLAMA_BIN" list | /usr/bin/awk 'NR > 1 {print $1}' | /usr/bin/grep -Fxq 
   "$OLLAMA_BIN" pull "$MODEL"
 fi
 
-echo "Starting AudioExtender with local AI: $MODEL"
+echo "Starting DJPrepper with local AI: $MODEL"
 (
   for attempt in {1..60}; do
     if /usr/bin/curl -fsS "$APP_URL" >/dev/null 2>&1; then

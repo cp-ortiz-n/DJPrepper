@@ -157,7 +157,7 @@ def _batch_archive(dependencies: JobMediaRouteDependencies, request: BatchDownlo
             "Export Summary.txt",
             "\n".join(
                 [
-                    "DJ Library Studio batch export",
+                    "DJPrepper batch export",
                     f"Tracks selected: {len(jobs)}",
                     f"Files included: {len(included)}",
                     f"Files skipped: {len(skipped)}",
@@ -173,7 +173,7 @@ def _batch_archive(dependencies: JobMediaRouteDependencies, request: BatchDownlo
         )
     return FileResponse(
         archive,
-        filename="DJ Library Studio Selected Tracks.zip",
+        filename="DJPrepper Selected Tracks.zip",
         media_type="application/zip",
         background=BackgroundTask(archive.unlink, missing_ok=True),
     )

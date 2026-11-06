@@ -100,7 +100,7 @@ def _append_candidate_feedback_locked(output_directory: Path, results: Iterable[
                 "# Candidate Feedback",
                 "",
                 "This is an append-only listening log. Edit the `My final selection`, "
-                "checkboxes, tags, and notes directly. DJ Library Studio will not rewrite "
+                "checkboxes, tags, and notes directly. DJPrepper will not rewrite "
                 "existing sections. A changed candidate set creates a new generation.",
                 "",
                 "Suggested tags: `good`, `chopped`, `wrong phrase`, `vocals`, "
